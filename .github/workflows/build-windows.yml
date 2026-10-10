@@ -130,7 +130,7 @@ jobs:
       # tiny update for already installed copies: new / changed commands only
       - name: Pack commands update
         shell: pwsh
-        run: Compress-Archive -Path resources\\commands -DestinationPath dist\\commands-update.zip -Force
+        run: Compress-Archive -Path resources\commands -DestinationPath dist\commands-update.zip -Force
 
       - name: List dist
         shell: pwsh
