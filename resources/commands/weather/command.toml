@@ -24,8 +24,10 @@ type = "lua"
 script = "set_city.lua"
 sandbox = "standard"
 timeout = 5000
-phrases = [
+phrases.ru = [
     "установи город",
+]
+phrases.en = [
     "set city",
     "change city",
 ]

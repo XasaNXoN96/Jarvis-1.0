@@ -5,12 +5,24 @@ use std::path::PathBuf;
 
 use crate::{commands::{self, JCommandsList, JCommand}, config, models};
 use once_cell::sync::OnceCell;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::DB;
 
 static BACKEND: OnceCell<String> = OnceCell::new();
+// set when the backend failed to load (e.g. model files missing): classify() then returns None
+// and the caller falls back to plain text matching
+static UNAVAILABLE: AtomicBool = AtomicBool::new(false);
 
 pub async fn init(commands: &Vec<JCommandsList>) -> Result<(), String> {
+    let result = init_backend(commands).await;
+    if result.is_err() {
+        UNAVAILABLE.store(true, Ordering::SeqCst);
+    }
+    result
+}
+
+async fn init_backend(commands: &Vec<JCommandsList>) -> Result<(), String> {
     if BACKEND.get().is_some() {
         return Ok(());
     }
@@ -41,6 +53,9 @@ pub async fn init(commands: &Vec<JCommandsList>) -> Result<(), String> {
 }
 
 pub async fn classify(text: &str) -> Option<(String, f64)> {
+    if UNAVAILABLE.load(Ordering::SeqCst) {
+        return None;
+    }
     match BACKEND.get()?.as_str() {
         "none" => None,
         "intent-classifier" => {
@@ -82,7 +97,9 @@ pub fn get_command_by_intent<'a>(
     commands: &'a [JCommandsList],
     intent_id: &str,
 ) -> Option<(&'a PathBuf, &'a JCommand)> {
-    if matches!(BACKEND.get().map(|s| s.as_str()), Some("none")) {
+    if UNAVAILABLE.load(Ordering::SeqCst)
+        || matches!(BACKEND.get().map(|s| s.as_str()), Some("none"))
+    {
         return None;
     }
     commands::get_command_by_id(commands, intent_id)

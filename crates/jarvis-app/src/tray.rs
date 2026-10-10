@@ -15,6 +15,10 @@ use jarvis_core::{config, i18n, voices, ipc::{self, IpcEvent}, SettingsManager};
 const TRAY_ICON_BYTES: &[u8] = include_bytes!("../../../resources/icons/32x32.png");
 
 pub fn init_blocking(settings: SettingsManager) {
+    // GTK must be initialized before any tray/menu widget is created
+    #[cfg(target_os = "linux")]
+    gtk::init().unwrap();
+
     let icon = load_icon_from_bytes(TRAY_ICON_BYTES);
 
     // build menu with settings submenus
@@ -32,7 +36,6 @@ pub fn init_blocking(settings: SettingsManager) {
 
     #[cfg(target_os = "linux")]
     {
-        gtk::init().unwrap();
         glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
             if let Ok(event) = menu_channel.try_recv() {
                 handle_menu_event(&event, &settings, &tray_state);

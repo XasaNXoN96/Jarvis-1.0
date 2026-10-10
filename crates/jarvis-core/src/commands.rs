@@ -217,6 +217,13 @@ pub fn execute_command(cmd_path: &PathBuf, cmd_config: &JCommand, phrase: Option
                 exe_path_local.as_path()
             };
 
+            if !exe_path.exists() {
+                return Err(format!(
+                    "AHK program not found: {} (compile the matching .ahk file with AutoHotkey into .exe)",
+                    exe_path.display()
+                ));
+            }
+
             execute_exe(exe_path.to_str().unwrap(), &cmd_config.exe_args)
                 .map(|_| true)
                 .map_err(|e| format!("AHK process spawn error: {}", e))

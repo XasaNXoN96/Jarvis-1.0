@@ -13,11 +13,74 @@ enum VadState {
     VoiceActive,
 }
 
-pub fn start(text_cmd_rx: Receiver<String>, rt: &tokio::runtime::Runtime) -> Result<(), ()> {
-    main_loop(text_cmd_rx, rt)
+// print a line for the user (console), ignoring errors when there is no console
+fn say(msg: &str) {
+    use std::io::Write;
+    let _ = writeln!(std::io::stdout(), "{}", msg);
 }
 
-fn main_loop(text_cmd_rx: Receiver<String>, rt: &tokio::runtime::Runtime) -> Result<(), ()> {
+pub fn start(voice_mode: bool, text_cmd_rx: Receiver<String>, rt: &tokio::runtime::Runtime) -> Result<(), ()> {
+    if voice_mode {
+        match main_loop(&text_cmd_rx, rt) {
+            // microphone failed to start: don't die, keep working in text mode
+            Err(()) => warn!("Voice mode failed, switching to TEXT mode."),
+            Ok(()) => return Ok(()),
+        }
+    }
+    text_loop(&text_cmd_rx, rt)
+}
+
+// read commands typed in the console and pass them to the main loop
+pub fn console_input(tx: std::sync::mpsc::Sender<String>) {
+    let stdin = std::io::stdin();
+    let mut line = String::new();
+    loop {
+        line.clear();
+        match stdin.read_line(&mut line) {
+            Ok(0) | Err(_) => return, // no console / stdin closed
+            Ok(_) => {
+                let text = line.trim();
+                if text.is_empty() {
+                    continue;
+                }
+                if matches!(text, "exit" | "quit" | "выход") {
+                    crate::request_stop();
+                    return;
+                }
+                if tx.send(text.to_string()).is_err() {
+                    return;
+                }
+            }
+        }
+    }
+}
+
+// text-only mode: no microphone / speech recognition, commands come from console or GUI
+fn text_loop(text_cmd_rx: &Receiver<String>, rt: &tokio::runtime::Runtime) -> Result<(), ()> {
+    info!("TEXT mode: type a command and press Enter ('exit' to quit).");
+    say("Jarvis: text mode. Type a command and press Enter ('exit' to quit).");
+    voices::play_greet();
+    ipc::send(IpcEvent::Idle);
+
+    loop {
+        // run all queued commands first, stop only when the queue is empty
+        match text_cmd_rx.recv_timeout(std::time::Duration::from_millis(200)) {
+            Ok(text) => process_text_command(&text, rt),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                if should_stop() {
+                    info!("Stop signal received, shutting down...");
+                    voices::play_goodbye();
+                    ipc::send(IpcEvent::Stopping);
+                    break;
+                }
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+    Ok(())
+}
+
+fn main_loop(text_cmd_rx: &Receiver<String>, rt: &tokio::runtime::Runtime) -> Result<(), ()> {
     let frame_length: usize = 512;
     let sample_rate: usize = 16000;
     let mut frame_buffer: Vec<i16> = vec![0; frame_length];
@@ -363,6 +426,7 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
     
     if let Some((cmd_path, cmd_config)) = cmd_result {
         info!("Command found: {:?}", cmd_path);
+        say(&format!("> {}", cmd_config.id));
         
         // extract slots if needed
         let extracted_slots = if !cmd_config.slots.is_empty() {
@@ -389,6 +453,7 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
             }
             Err(msg) => {
                 error!("Error executing command: {}", msg);
+                say(&format!("! error: {}", msg));
                 voices::play_error();
                 ipc::send(IpcEvent::CommandExecuted {
                     id: cmd_config.id.clone(),
@@ -399,6 +464,7 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
         }
     } else {
         info!("No command found for: {}", text);
+        say(&format!("? command not found: {}", text));
         voices::play_not_found();
         ipc::send(IpcEvent::Error { 
             message: format!("Command not found: {}", text) 

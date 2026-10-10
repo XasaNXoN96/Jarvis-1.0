@@ -1,0 +1,97 @@
+[[commands]]
+id = "windows_1"
+type = "ahk"
+exe_path = "ahk/Roll up windows.exe"
+sounds.ru = ["ok1", "ok2", "ok3"]
+phrases.ru = [
+    "сверни все окна",
+    "сверни окна",
+]
+
+[[commands]]
+id = "windows_2"
+type = "ahk"
+exe_path = "ahk/Empty trash.exe"
+sounds.ru = ["ok1", "ok2", "ok3"]
+phrases.ru = [
+    "очисти корзину",
+    "почисти корзину",
+    "очистка корзины",
+]
+
+[[commands]]
+id = "windows_3"
+type = "ahk"
+exe_path = "ahk/Task manager open.exe"
+sounds.ru = ["ok1", "ok2", "ok3"]
+phrases.ru = [
+    "запусти диспетчер задач",
+    "открой диспетчер задач",
+    "диспетчер задач",
+]
+
+[[commands]]
+id = "windows_4"
+type = "ahk"
+exe_path = "ahk/screenshot.exe"
+sounds.ru = ["ok1", "ok2", "ok3"]
+phrases.ru = [
+    "сделай скриншот",
+    "сделай снимок экрана",
+    "сними экран",
+]
+
+[[commands]]
+id = "windows_5"
+type = "ahk"
+exe_path = "ahk/blocking.exe"
+sounds.ru = ["ok1", "ok2", "ok3", "ok4"]
+phrases.ru = [
+    "заблокируй компьютер",
+    "заблокируй комп",
+]
+
+[[commands]]
+id = "windows_6"
+type = "ahk"
+exe_path = "ahk/sleep.exe"
+sounds.ru = ["ok1", "ok2", "ok3", "ok4"]
+phrases.ru = [
+    "спящий режим",
+    "ждущий режим",
+    "иди поспи",
+]
+
+[[commands]]
+id = "windows_7"
+type = "ahk"
+exe_path = "ahk/clipboard.exe"
+sounds.ru = ["ok1", "ok2", "ok3"]
+phrases.ru = [
+    "открой буфер обмена",
+    "покажи буфер обмена",
+    "запусти буфер обмена",
+    "буфер обмена",
+]
+
+[[commands]]
+id = "windows_8"
+type = "ahk"
+exe_path = "ahk/Set language.exe"
+sounds.ru = ["ok1", "ok2", "ok3"]
+phrases.ru = [
+    "смени раскладку",
+    "поменяй раскладку",
+    "смени язык",
+    "поменяй язык",
+    "переключи на русский",
+    "переключи на английский",
+    "смени раскладку на русскую",
+    "поменяй раскладку на русскую",
+    "поменяй раскладку на английскую",
+    "смени раскладку на английскую",
+    "смени язык на русский",
+    "поменяй язык на русский",
+    "смени язык на английский",
+    "поменяй язык на английский",
+]

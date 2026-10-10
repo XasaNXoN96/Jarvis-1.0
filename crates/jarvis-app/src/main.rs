@@ -55,9 +55,17 @@ fn main() -> Result<(), String> {
     // init i18n
     i18n::init(&settings.lock().language);
 
-    // init recorder
-    if recorder::init().is_err() {
-        app::close(1);
+    // run mode: voice (microphone) or text-only. `--text` forces text mode.
+    let force_text = std::env::args().any(|a| a == "--text");
+    let mut voice_mode = !force_text;
+    if force_text {
+        info!("Text mode forced by --text flag.");
+    }
+
+    // init recorder (no microphone -> text mode)
+    if voice_mode && recorder::init().is_err() {
+        warn!("Microphone is not available, switching to TEXT mode.");
+        voice_mode = false;
     }
 
     // init models registry (scans available AI models)
@@ -65,10 +73,12 @@ fn main() -> Result<(), String> {
         warn!("Models registry init failed: {}", e);
     }
 
-    // init stt engine
-    if stt::init().is_err() {
-        // @TODO. Allow continuing even without STT, if commands is using keywords or smthng?
-        app::close(1); // cannot continue without stt
+    // init stt engine (no speech model -> text mode)
+    if voice_mode {
+        if let Err(e) = stt::init() {
+            warn!("Speech recognition is not available ({}), switching to TEXT mode.", e);
+            voice_mode = false;
+        }
     }
 
     // init commands
@@ -83,16 +93,17 @@ fn main() -> Result<(), String> {
     info!("Commands initialized. Count: {}, List: {:?}", cmds.len(), commands::list_paths(&cmds));
     COMMANDS_LIST.set(cmds).unwrap();
 
-    // init audio
+    // init audio (sounds are optional, continue without them)
     if audio::init().is_err() {
-        // @TODO. Allow continuing even without audio?
-        app::close(1); // cannot continue without audio
+        warn!("Audio output is not available, continuing without sounds.");
     }
 
-    // init wake-word engine
-    if let Err(e) = listener::init() {
-        error!("Wake-word engine init failed: {}", e);
-        app::close(1);
+    // init wake-word engine (needed for voice mode only)
+    if voice_mode {
+        if let Err(e) = listener::init() {
+            warn!("Wake-word engine init failed ({}), switching to TEXT mode.", e);
+            voice_mode = false;
+        }
     }
 
     // shared async runtime for intent classification, IPC, etc.
@@ -101,10 +112,10 @@ fn main() -> Result<(), String> {
     );
 
     // init intent-recognition engine
+    // (if it fails, commands are still matched by text similarity)
     rt.block_on(async {
         if let Err(e) = intent::init(COMMANDS_LIST.get().unwrap()).await {
-            error!("Failed to initialize intent classifier: {}", e);
-            app::close(1);
+            warn!("Intent classifier is not available ({}), using simple text matching.", e);
         }
     });
 
@@ -123,6 +134,7 @@ fn main() -> Result<(), String> {
 
     // channel for text commands (manually written in the GUI)
     let (text_cmd_tx, text_cmd_rx) = mpsc::channel::<String>();
+    let console_tx = text_cmd_tx.clone();
 
     ipc::set_action_handler(move |action| {
         match action {
@@ -157,15 +169,22 @@ fn main() -> Result<(), String> {
         ipc_rt.block_on(ipc::start_server());
     });
     
+    // console input: type a command and press Enter (works in both modes)
+    std::thread::spawn(move || app::console_input(console_tx));
+
     // start the app (in the background thread)
     let app_rt = Arc::clone(&rt);
     std::thread::spawn(move || {
-        let _ = app::start(text_cmd_rx, &app_rt);
+        let _ = app::start(voice_mode, text_cmd_rx, &app_rt);
     });
 
     tray::init_blocking(settings);
 
     Ok(())
+}
+
+pub fn request_stop() {
+    SHOULD_STOP.store(true, Ordering::SeqCst);
 }
 
 pub fn should_stop() -> bool {

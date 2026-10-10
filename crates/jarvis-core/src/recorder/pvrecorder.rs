@@ -54,7 +54,10 @@ pub fn read_microphone(frame_buffer: &mut [i16]) {
 
 pub fn start_recording(device_index: i32, frame_length: u32) -> Result<(), ()> {
     // ensure microphone is initialized
-    init_microphone(device_index, frame_length);
+    if !init_microphone(device_index, frame_length) {
+        error!("Cannot start recording: microphone is not available.");
+        return Err(());
+    }
 
     // start recording
     match RECORDER.get().unwrap().start() {
