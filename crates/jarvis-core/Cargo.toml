@@ -1,0 +1,64 @@
+[package]
+name = "jarvis-core"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+once_cell.workspace = true
+log.workspace = true
+rand.workspace = true
+seqdiff.workspace = true
+hound.workspace = true
+platform-dirs.workspace = true
+rodio.workspace = true
+kira.workspace = true
+pv_recorder.workspace = true
+rustpotter.workspace = true
+parking_lot.workspace = true
+toml.workspace = true
+sha2.workspace = true
+nnnoiseless = { workspace = true, optional = true }
+tokio-tungstenite = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
+fluent.workspace = true
+fluent-bundle.workspace = true
+unic-langid.workspace = true
+chrono.workspace = true
+sys-locale.workspace = true
+
+# pv_recorder = { workspace = true, optional = true }
+vosk = { version = "0.3.1", optional = true }
+intent-classifier = { version = "0.1.0", optional = true }
+# rustpotter = { workspace = true, optional = true }
+
+tokio = { version = "1", features = ["sync"], optional = true }
+
+mlua = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
+tempfile.workspace = true
+
+fastembed = { workspace = true, optional = true }
+ort = { workspace = true, optional = true }
+ndarray = { workspace = true, optional = true }
+tokenizers = { workspace = true, optional = true }
+regex = { workspace = true, optional = true }
+
+[target.'cfg(windows)'.dependencies]
+winrt-notification = { workspace = true, optional = true }
+
+[features]
+default = ["jarvis_app"]
+jarvis_app = [
+    "vosk", "intent-classifier", "fastembed", "tokio", "nnnoiseless", "tokio-tungstenite", "futures-util",
+    "lua",
+    "ort", "ndarray", "tokenizers", "regex",]
+
+intent = ["intent-classifier", "tokio"]
+lua = ["mlua", "reqwest", "winrt-notification"]
+lua_only = ["lua", "tokio"]

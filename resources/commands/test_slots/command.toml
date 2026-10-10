@@ -1,0 +1,14 @@
+[[commands]]
+id = "test_greet_name"
+type = "lua"
+script = "greet.lua"
+
+[commands.phrases]
+en = ["say hello to {name}", "greet {name}"]
+ru = ["поздоровайся с {name}", "привет {name}"]
+
+[commands.slots.name]
+entity = "person name"
+
+[commands.slots.city]
+entity = "city name"

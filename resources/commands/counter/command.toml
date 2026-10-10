@@ -1,0 +1,13 @@
+[[commands]]
+id = "counter"
+type = "lua"
+script = "script.lua"
+sandbox = "standard"
+timeout = 5000
+phrases.ru = [
+    "счётчик"
+]
+phrases.en = [
+    "counter",
+    "count",
+]

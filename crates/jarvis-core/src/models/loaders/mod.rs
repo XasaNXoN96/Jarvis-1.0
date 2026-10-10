@@ -1,0 +1,12 @@
+#[cfg(feature = "jarvis_app")]
+pub mod embedding;
+#[cfg(feature = "jarvis_app")]
+pub mod gliner;
+#[cfg(feature = "jarvis_app")]
+pub mod ort_model;
+#[cfg(feature = "jarvis_app")]
+pub mod intent_classifier;
+#[cfg(feature = "vosk")]
+pub mod vosk;
+#[cfg(feature = "nnnoiseless")]
+pub mod nnnoiseless;
