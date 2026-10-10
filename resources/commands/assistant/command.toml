@@ -491,3 +491,47 @@ triggers.ru = ["прочита буфер", "озвуч буфер", "читай
 triggers.en = ["read clipboard", "read the clipboard"]
 phrases.ru = ["прочитай буфер обмена"]
 phrases.en = ["read the clipboard"]
+
+[[commands]]
+id = "assistant_greet"
+type = "lua"
+script = "smalltalk.lua"
+sandbox = "full"
+timeout = 10000
+triggers.ru = ["привет", "здравств", "добрый день", "доброе утро", "добрый вечер", "доброй ночи", "приветству", "хай", "салют"]
+triggers.en = ["hello", "good morning", "good evening", "good afternoon", "greetings"]
+phrases.ru = ["привет", "здравствуй", "доброе утро"]
+phrases.en = ["hello", "good morning"]
+
+[[commands]]
+id = "assistant_howareyou"
+type = "lua"
+script = "smalltalk.lua"
+sandbox = "full"
+timeout = 10000
+triggers.ru = ["как дела", "как ты", "как поживае", "как жизнь", "как настроен"]
+triggers.en = ["how are you", "how is it going", "how do you do"]
+phrases.ru = ["как дела", "как ты"]
+phrases.en = ["how are you"]
+
+[[commands]]
+id = "assistant_who"
+type = "lua"
+script = "smalltalk.lua"
+sandbox = "full"
+timeout = 10000
+triggers.ru = ["кто ты", "как тебя зовут", "представь", "ты кто"]
+triggers.en = ["who are you", "what is your name", "what's your name"]
+phrases.ru = ["кто ты", "как тебя зовут"]
+phrases.en = ["who are you"]
+
+[[commands]]
+id = "assistant_help"
+type = "lua"
+script = "smalltalk.lua"
+sandbox = "full"
+timeout = 10000
+triggers.ru = ["что ты умеешь", "что умеешь", "помощь", "справк", "список команд", "что можешь"]
+triggers.en = ["what can you do", "help", "list commands", "what do you do"]
+phrases.ru = ["что ты умеешь", "помощь"]
+phrases.en = ["what can you do", "help"]

@@ -127,6 +127,11 @@ jobs:
         shell: pwsh
         run: Copy-Item dist\Jarvis-Setup-Lite.exe dist\Jarvis-Setup.exe
 
+      # tiny update for already installed copies: new / changed commands only
+      - name: Pack commands update
+        shell: pwsh
+        run: Compress-Archive -Path resources\\commands -DestinationPath dist\\commands-update.zip -Force
+
       - name: List dist
         shell: pwsh
         run: Get-ChildItem dist | Format-Table Name, Length
@@ -142,8 +147,9 @@ jobs:
         with:
           tag_name: build-latest
           name: Latest build (installer)
-          body: Automatic Windows build of the latest commit. Jarvis-Setup.exe (with the Piper neural voice) or Jarvis-Setup-Lite.exe (smaller, Windows voices only). jarvis-app.exe alone (about 30 MB) replaces the program in an already installed Jarvis (no need to download the installer again).
+          body: Automatic Windows build of the latest commit. Jarvis-Setup.exe (with the Piper neural voice) or Jarvis-Setup-Lite.exe (smaller, Windows voices only). jarvis-app.exe alone (about 30 MB) replaces the program in an already installed Jarvis (no need to download the installer again). commands-update.zip (tiny): unpack into the resources folder of an installed Jarvis to get new commands.
           files: |
             dist/Jarvis-Setup.exe
             dist/Jarvis-Setup-Lite.exe
             build/Jarvis/jarvis-app.exe
+            dist/commands-update.zip
