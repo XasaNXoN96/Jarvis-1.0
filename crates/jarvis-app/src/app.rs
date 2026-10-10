@@ -414,7 +414,10 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
         }
     };
     
-    let cmd_result = if let Some((intent_id, confidence)) = 
+    let cmd_result = if let Some(found) = commands::fetch_by_triggers(text, commands_list) {
+        info!("Keyword trigger matched: {}", found.1.id);
+        Some(found)
+    } else if let Some((intent_id, confidence)) = 
         rt.block_on(intent::classify(text)) 
     {
         info!("Intent recognized: {} (confidence: {:.2})", intent_id, confidence);

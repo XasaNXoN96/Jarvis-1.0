@@ -1,7 +1,9 @@
 [[commands]]
 id = "windows_1"
-type = "ahk"
-exe_path = "ahk/Roll up windows.exe"
+type = "lua"
+script = "actions.lua"
+sandbox = "full"
+timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3"]
 phrases.ru = [
     "сверни все окна",
@@ -10,8 +12,10 @@ phrases.ru = [
 
 [[commands]]
 id = "windows_2"
-type = "ahk"
-exe_path = "ahk/Empty trash.exe"
+type = "lua"
+script = "actions.lua"
+sandbox = "full"
+timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3"]
 phrases.ru = [
     "очисти корзину",
@@ -21,8 +25,10 @@ phrases.ru = [
 
 [[commands]]
 id = "windows_3"
-type = "ahk"
-exe_path = "ahk/Task manager open.exe"
+type = "lua"
+script = "actions.lua"
+sandbox = "full"
+timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3"]
 phrases.ru = [
     "запусти диспетчер задач",
@@ -32,8 +38,10 @@ phrases.ru = [
 
 [[commands]]
 id = "windows_4"
-type = "ahk"
-exe_path = "ahk/screenshot.exe"
+type = "lua"
+script = "actions.lua"
+sandbox = "full"
+timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3"]
 phrases.ru = [
     "сделай скриншот",
@@ -43,8 +51,10 @@ phrases.ru = [
 
 [[commands]]
 id = "windows_5"
-type = "ahk"
-exe_path = "ahk/blocking.exe"
+type = "lua"
+script = "actions.lua"
+sandbox = "full"
+timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3", "ok4"]
 phrases.ru = [
     "заблокируй компьютер",
@@ -53,8 +63,10 @@ phrases.ru = [
 
 [[commands]]
 id = "windows_6"
-type = "ahk"
-exe_path = "ahk/sleep.exe"
+type = "lua"
+script = "actions.lua"
+sandbox = "full"
+timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3", "ok4"]
 phrases.ru = [
     "спящий режим",
@@ -63,21 +75,11 @@ phrases.ru = [
 ]
 
 [[commands]]
-id = "windows_7"
-type = "ahk"
-exe_path = "ahk/clipboard.exe"
-sounds.ru = ["ok1", "ok2", "ok3"]
-phrases.ru = [
-    "открой буфер обмена",
-    "покажи буфер обмена",
-    "запусти буфер обмена",
-    "буфер обмена",
-]
-
-[[commands]]
 id = "windows_8"
-type = "ahk"
-exe_path = "ahk/Set language.exe"
+type = "lua"
+script = "actions.lua"
+sandbox = "full"
+timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3"]
 phrases.ru = [
     "смени раскладку",

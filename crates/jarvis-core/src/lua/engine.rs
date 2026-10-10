@@ -76,6 +76,8 @@ impl LuaEngine {
         api::core::register(&self.lua, &jarvis)?;
         api::audio::register(&self.lua, &jarvis)?;
         api::context::register(&self.lua, &jarvis, context)?;
+        api::parse::register(&self.lua, &jarvis)?;
+        api::timer::register(&self.lua, &jarvis)?;
         
         // sandbox-controlled APIs
         if self.sandbox.allows_http() {

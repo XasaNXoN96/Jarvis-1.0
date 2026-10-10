@@ -1,15 +1,4 @@
 [[commands]]
-id = "jarvis_1"
-type = "ahk"
-exe_path = "ahk/reboot.exe"
-sounds.ru = ["ok1", "ok2", "ok3"]
-phrases.ru = [
-    "перезагрузись",
-    "перезагрузи себя",
-    "выполни перезагрузку",
-]
-
-[[commands]]
 id = "jarvis_2"
 type = "voice"
 sounds.ru = ["stupid"]

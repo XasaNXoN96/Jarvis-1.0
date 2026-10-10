@@ -86,6 +86,51 @@ pub fn commands_hash(commands: &[JCommandsList]) -> String {
 }
 
 
+// Look up a command by keyword triggers (see JCommand::triggers).
+// Returns the command whose matching trigger has the most word stems.
+pub fn fetch_by_triggers<'a>(
+    phrase: &str,
+    commands: &'a [JCommandsList],
+) -> Option<(&'a PathBuf, &'a JCommand)> {
+    let lang = i18n::get_language();
+    let normalized = phrase.to_lowercase().replace('ё', "е");
+    let words: Vec<&str> = normalized
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+
+    let mut best: Option<(&PathBuf, &JCommand)> = None;
+    let mut best_score = 0usize;
+
+    for cmd_list in commands {
+        for cmd in &cmd_list.commands {
+            for trigger in cmd.get_triggers(&lang) {
+                let stems: Vec<String> = trigger
+                    .to_lowercase()
+                    .replace('ё', "е")
+                    .split_whitespace()
+                    .map(|s| s.to_string())
+                    .collect();
+                if stems.is_empty() {
+                    continue;
+                }
+                if stems.iter().all(|stem| words.iter().any(|w| w.starts_with(stem.as_str()))) {
+                    // more stems = more specific; same score -> smaller id, so the result is stable
+                    let better = stems.len() > best_score
+                        || (stems.len() == best_score
+                            && best.map(|(_, c)| cmd.id < c.id).unwrap_or(false));
+                    if better {
+                        best_score = stems.len();
+                        best = Some((&cmd_list.path, cmd));
+                    }
+                }
+            }
+        }
+    }
+
+    best
+}
+
 pub fn fetch_command<'a>(
     phrase: &str,
     commands: &'a [JCommandsList],

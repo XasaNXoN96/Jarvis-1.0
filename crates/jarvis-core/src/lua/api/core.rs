@@ -37,6 +37,15 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
     })?;
     jarvis.set("sleep", sleep_fn)?;
     
+    // @ jarvis.out(text)
+    // print a line to the console (visible in text mode)
+    let out_fn = lua.create_function(|_, text: String| {
+        use std::io::Write;
+        let _ = writeln!(std::io::stdout(), "{}", text);
+        Ok(())
+    })?;
+    jarvis.set("out", out_fn)?;
+
     // @ jarvis.speak(text)
     // @TODO: update when TTS will be implemented
     let speak_fn = lua.create_function(|_, text: String| {

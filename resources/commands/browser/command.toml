@@ -1,7 +1,9 @@
 [[commands]]
 id = "browser_open"
-type = "ahk"
-exe_path = "ahk/Run browser.exe"
+type = "lua"
+script = "actions.lua"
+sandbox = "full"
+timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3", "ok4"]
 sounds.en = ["ok1", "ok2", "ok3"]
 sounds.ua = ["ok1", "ok2", "ok3", "ok4", "ok5", "ok6"]
@@ -36,8 +38,10 @@ phrases.ua = [
 
 [[commands]]
 id = "browser_close"
-type = "ahk"
-exe_path = "ahk/Close browser.exe"
+type = "lua"
+script = "actions.lua"
+sandbox = "full"
+timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3", "ok4"]
 sounds.en = ["ok1", "ok2", "ok3"]
 sounds.ua = ["ok1", "ok2", "ok3", "ok4", "ok5", "ok6"]
@@ -64,8 +68,10 @@ phrases.ua = [
 
 [[commands]]
 id = "open_google"
-type = "ahk"
-exe_path = "ahk/Run website.exe"
+type = "lua"
+script = "actions.lua"
+sandbox = "full"
+timeout = 15000
 exe_args = ["http://google.com"]
 sounds.ru = ["ok1", "ok2", "ok3", "ok4"]
 sounds.en = ["ok1", "ok2", "ok3"]

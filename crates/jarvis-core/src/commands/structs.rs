@@ -59,6 +59,13 @@ pub struct JCommand {
     #[serde(default)]
     pub phrases: HashMap<String, Vec<String>>,
 
+    // Multi-language keyword triggers for commands with parameters
+    // ("поставь таймер на 5 минут"). Each trigger is a space-separated list of word
+    // stems; the command matches when every stem starts some word of the phrase.
+    // Checked BEFORE intent recognition, the trigger with the most stems wins.
+    #[serde(default)]
+    pub triggers: HashMap<String, Vec<String>>,
+
     // Slot definitions: slot_name -> how to extract it
     #[serde(default)]
     pub slots: HashMap<String, SlotDefinition>,
@@ -92,6 +99,7 @@ impl Clone for JCommand {
 
             sounds: self.sounds.clone(),
             phrases: self.phrases.clone(),
+            triggers: self.triggers.clone(),
 
             slots: self.slots.clone(),
 
@@ -113,6 +121,11 @@ impl JCommand {
         self.phrases_cache.write().insert(lang.to_string(), Arc::clone(&result));
         
         result
+    }
+
+    // get keyword triggers for current language
+    pub fn get_triggers(&self, lang: &str) -> Vec<String> {
+        self.resolve_localized(&self.triggers, lang)
     }
 
     // get all phrases (for backwards compat)

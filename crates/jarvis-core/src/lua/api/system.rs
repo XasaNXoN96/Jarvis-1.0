@@ -5,14 +5,60 @@ use std::process::Command;
 
 use crate::lua::sandbox::SandboxLevel;
 
+
+// Show a desktop notification (toast on Windows). Never fails, errors are only logged.
+pub fn show_notification(title: &str, message: &str) {
+    log::info!("[Lua] NOTIFY: {} - {}", title, message);
+
+    // platform-specific notification
+    #[cfg(target_os = "windows")]
+    {
+        use winrt_notification::{Toast, Duration as ToastDuration};
+
+        if let Err(e) = Toast::new(Toast::POWERSHELL_APP_ID)
+            .title(title)
+            .text1(message)
+            .duration(ToastDuration::Short)
+            .show()
+        {
+            log::warn!("[Lua] Failed to show toast notification: {}", e);
+            // fallback to msg.exe
+            let _ = Command::new("msg")
+                .args(["*", "/time:10", &format!("{}: {}", title, message)])
+                .spawn();
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let _ = Command::new("notify-send")
+            .args([title, message])
+            .spawn();
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let script = format!(
+            r#"display notification "{}" with title "{}""#,
+            message.replace("\"", "\\\""),
+            title.replace("\"", "\\\"")
+        );
+        let _ = Command::new("osascript")
+            .args(["-e", &script])
+            .spawn();
+    }
+
+}
+
 pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Result<()> {
     let system = lua.create_table()?;
     
     // jarvis.system.open(url_or_path) - always available
     let open_fn = lua.create_function(|_, target: String| {
         let result = if cfg!(target_os = "windows") {
-            Command::new("cmd")
-                .args(["/C", "start", "", &target])
+            // ShellExecute via rundll32: no cmd.exe parsing, so `&` in URLs is safe
+            Command::new("rundll32")
+                .args(["url.dll,FileProtocolHandler", &target])
                 .spawn()
         } else if cfg!(target_os = "macos") {
             Command::new("open")
@@ -34,8 +80,56 @@ pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Resul
     })?;
     system.set("open", open_fn)?;
     
-    // jarvis.system.exec(cmd, args?) - only in full sandbox
+    // jarvis.system.run(program, args?, wait?) - only in full sandbox
+    // Starts a program directly (no shell), window hidden on Windows.
+    // wait = true (default): returns { success, code, stdout, stderr }
+    // wait = false: starts it and returns { success }
     if sandbox.allows_exec() {
+        let run_fn = lua.create_function(|lua, (program, args, wait): (String, Option<Table>, Option<bool>)| {
+            let mut command = Command::new(&program);
+            if let Some(args_table) = args {
+                for arg in args_table.sequence_values::<String>().flatten() {
+                    command.arg(arg);
+                }
+            }
+
+            #[cfg(target_os = "windows")]
+            {
+                use std::os::windows::process::CommandExt;
+                command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+            }
+
+            let result = lua.create_table()?;
+            if wait.unwrap_or(true) {
+                match command.output() {
+                    Ok(output) => {
+                        result.set("success", output.status.success())?;
+                        result.set("code", output.status.code().unwrap_or(-1))?;
+                        result.set("stdout", String::from_utf8_lossy(&output.stdout).to_string())?;
+                        result.set("stderr", String::from_utf8_lossy(&output.stderr).to_string())?;
+                    }
+                    Err(e) => {
+                        log::warn!("[Lua] Failed to run {}: {}", program, e);
+                        result.set("success", false)?;
+                        result.set("code", -1)?;
+                        result.set("stdout", "")?;
+                        result.set("stderr", e.to_string())?;
+                    }
+                }
+            } else {
+                match command.spawn() {
+                    Ok(_) => result.set("success", true)?,
+                    Err(e) => {
+                        log::warn!("[Lua] Failed to start {}: {}", program, e);
+                        result.set("success", false)?;
+                        result.set("stderr", e.to_string())?;
+                    }
+                }
+            }
+            Ok(result)
+        })?;
+        system.set("run", run_fn)?;
+
         let exec_fn = lua.create_function(|lua, (cmd, args): (String, Option<Table>)| {
             let mut command = if cfg!(target_os = "windows") {
                 let mut c = Command::new("cmd");
@@ -72,50 +166,11 @@ pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Resul
     
     // jarvis.system.notify(title, message) - always available
     let notify_fn = lua.create_function(|_, (title, message): (String, String)| {
-        log::info!("[Lua] NOTIFY: {} - {}", title, message);
-        
-        // platform-specific notification
-        #[cfg(target_os = "windows")]
-        {
-            use winrt_notification::{Toast, Duration as ToastDuration};
-            
-            if let Err(e) = Toast::new(Toast::POWERSHELL_APP_ID)
-                .title(&title)
-                .text1(&message)
-                .duration(ToastDuration::Short)
-                .show()
-            {
-                log::warn!("[Lua] Failed to show toast notification: {}", e);
-                // fallback to msg.exe
-                let _ = Command::new("msg")
-                    .args(["*", "/time:10", &format!("{}: {}", title, message)])
-                    .spawn();
-            }
-        }
-        
-        #[cfg(target_os = "linux")]
-        {
-            let _ = Command::new("notify-send")
-                .args([&title, &message])
-                .spawn();
-        }
-        
-        #[cfg(target_os = "macos")]
-        {
-            let script = format!(
-                r#"display notification "{}" with title "{}""#,
-                message.replace("\"", "\\\""),
-                title.replace("\"", "\\\"")
-            );
-            let _ = Command::new("osascript")
-                .args(["-e", &script])
-                .spawn();
-        }
-        
+        show_notification(&title, &message);
         Ok(true)
     })?;
     system.set("notify", notify_fn)?;
-    
+
     // jarvis.system.clipboard - subtable
     let clipboard = lua.create_table()?;
     

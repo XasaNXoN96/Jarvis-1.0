@@ -1,0 +1,233 @@
+[[commands]]
+id = "assistant_website"
+type = "lua"
+script = "website.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["откр сайт", "зайд сайт", "зайд на", "перейд сайт", "перейд на", "откр браузер и", "запуст браузер и", "найд гугл", "найд интернет", "найд ютуб", "загугл", "поищ", "откр ютуб", "откр ютьюб", "откр гугл", "откр яндекс", "откр вконтакте", "откр телеграм", "откр ватсап", "откр фейсбук", "откр инстаграм", "откр твиттер", "откр гитхаб", "откр википед", "откр почт", "откр хабр", "откр твич", "откр дискорд", "откр реддит", "откр нетфликс", "откр тикток", "откр озон", "откр вайлдберриз", "откр авито", "откр алиэкспресс", "откр амазон", "откр кинопоиск", "откр переводчик", "зайд ютуб", "зайд ютьюб", "зайд гугл", "зайд яндекс", "зайд вконтакте", "зайд телеграм", "зайд ватсап", "зайд фейсбук", "зайд инстаграм", "зайд твиттер", "зайд гитхаб", "зайд википед", "зайд почт", "зайд хабр", "зайд твич", "зайд дискорд", "зайд реддит", "зайд нетфликс", "зайд тикток", "зайд озон", "зайд вайлдберриз", "зайд авито", "зайд алиэкспресс", "зайд амазон", "зайд кинопоиск", "зайд переводчик", "перейд ютуб", "перейд ютьюб", "перейд гугл", "перейд яндекс", "перейд вконтакте", "перейд телеграм", "перейд ватсап", "перейд фейсбук", "перейд инстаграм", "перейд твиттер", "перейд гитхаб", "перейд википед", "перейд почт", "перейд хабр", "перейд твич", "перейд дискорд", "перейд реддит", "перейд нетфликс", "перейд тикток", "перейд озон", "перейд вайлдберриз", "перейд авито", "перейд алиэкспресс", "перейд амазон", "перейд кинопоиск", "перейд переводчик", "включ ютуб", "включ ютьюб", "включ гугл", "включ яндекс", "включ вконтакте", "включ телеграм", "включ ватсап", "включ фейсбук", "включ инстаграм", "включ твиттер", "включ гитхаб", "включ википед", "включ почт", "включ хабр", "включ твич", "включ дискорд", "включ реддит", "включ нетфликс", "включ тикток", "включ озон", "включ вайлдберриз", "включ авито", "включ алиэкспресс", "включ амазон", "включ кинопоиск", "включ переводчик"]
+triggers.en = ["open website", "go to", "visit", "search for", "google"]
+phrases.ru = ["открой сайт ютуб", "зайди на сайт example.com", "найди в гугле погоду"]
+phrases.en = ["open website youtube", "go to example.com", "search for weather"]
+
+[[commands]]
+id = "assistant_volume_set"
+type = "lua"
+script = "volume.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["громкост", "звук на", "звук процент"]
+triggers.en = ["volume", "sound level"]
+phrases.ru = ["громкость 50 процентов", "поставь звук на 30"]
+phrases.en = ["volume 50 percent", "set volume to 30"]
+
+[[commands]]
+id = "assistant_volume_up"
+type = "lua"
+script = "volume.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["громче", "погромче", "прибав звук", "увелич громкост", "увелич звук", "добав звук", "добав громкост"]
+triggers.en = ["volume up", "louder", "turn it up"]
+phrases.ru = ["громче", "сделай громче на 20"]
+phrases.en = ["volume up", "louder"]
+
+[[commands]]
+id = "assistant_volume_down"
+type = "lua"
+script = "volume.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["тише", "потише", "убав звук", "уменьш громкост", "уменьш звук", "сниз громкост", "сниз звук"]
+triggers.en = ["volume down", "quieter", "turn it down"]
+phrases.ru = ["тише", "сделай тише на 20"]
+phrases.en = ["volume down", "quieter"]
+
+[[commands]]
+id = "assistant_volume_mute"
+type = "lua"
+script = "volume.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["выключ звук", "отключ звук", "без звук", "выключ громкост", "отключ громкост"]
+triggers.en = ["mute", "sound off"]
+phrases.ru = ["выключи звук", "беззвучный режим"]
+phrases.en = ["mute", "sound off"]
+
+[[commands]]
+id = "assistant_volume_unmute"
+type = "lua"
+script = "volume.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["включ звук", "верн звук", "включ громкост", "со звук"]
+triggers.en = ["unmute", "sound on"]
+phrases.ru = ["включи звук", "верни звук"]
+phrases.en = ["unmute", "sound on"]
+
+[[commands]]
+id = "assistant_brightness_set"
+type = "lua"
+script = "brightness.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["яркост"]
+triggers.en = ["brightness"]
+phrases.ru = ["яркость 70 процентов", "сделай яркость на 50"]
+phrases.en = ["brightness 70 percent"]
+
+[[commands]]
+id = "assistant_brightness_up"
+type = "lua"
+script = "brightness.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["ярче", "поярче", "прибав яркост", "увелич яркост"]
+triggers.en = ["brighter", "brightness up"]
+phrases.ru = ["ярче", "сделай ярче на 30"]
+phrases.en = ["brighter"]
+
+[[commands]]
+id = "assistant_brightness_down"
+type = "lua"
+script = "brightness.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["темнее", "потемнее", "убав яркост", "уменьш яркост", "сниз яркост"]
+triggers.en = ["dimmer", "brightness down"]
+phrases.ru = ["темнее", "сделай темнее на 30"]
+phrases.en = ["dimmer"]
+
+[[commands]]
+id = "assistant_timer_set"
+type = "lua"
+script = "timer.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["таймер", "засек"]
+triggers.en = ["timer", "countdown"]
+phrases.ru = ["поставь таймер на 5 минут", "таймер на час"]
+phrases.en = ["set a timer for 5 minutes", "timer for 1 hour"]
+
+[[commands]]
+id = "assistant_timer_cancel"
+type = "lua"
+script = "timer.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["отмен таймер", "останов таймер", "удал таймер", "выключ таймер", "отмен напоминан", "отмен все таймер"]
+triggers.en = ["cancel timer", "stop timer", "cancel reminder"]
+phrases.ru = ["отмени таймер", "отмени напоминание"]
+phrases.en = ["cancel the timer"]
+
+[[commands]]
+id = "assistant_timer_status"
+type = "lua"
+script = "timer.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["сколько осталось", "какие таймер", "статус таймер"]
+triggers.en = ["how much time left", "timer status"]
+phrases.ru = ["сколько осталось"]
+phrases.en = ["how much time is left"]
+
+[[commands]]
+id = "assistant_reminder"
+type = "lua"
+script = "reminder.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["напомн", "напоминан", "предупред", "мне через", "останов через", "остановис через", "прекрат через", "сообщи через"]
+triggers.en = ["remind", "reminder", "warn me", "tell me in"]
+phrases.ru = ["напомни через 5 минут позвонить маме", "поставь напоминание на 10 минут", "скажи мне через 5 минут чтобы я закончил игру", "остановись через 5 минут"]
+phrases.en = ["remind me in 5 minutes to call mom", "set a reminder for 10 minutes", "tell me in 5 minutes to stop playing"]
+
+[[commands]]
+id = "assistant_power_off"
+type = "lua"
+script = "power.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["выключ комп", "выключ пк", "выключ ноутбук", "заверш работ комп", "выруб комп"]
+triggers.en = ["shut down computer", "turn off computer", "shutdown computer", "shut down pc"]
+phrases.ru = ["выключи компьютер через 10 минут", "выключи компьютер"]
+phrases.en = ["shut down the computer in 10 minutes"]
+
+[[commands]]
+id = "assistant_power_restart"
+type = "lua"
+script = "power.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["перезагруз комп", "перезагруз пк", "перезагруз ноутбук"]
+triggers.en = ["restart computer", "reboot computer", "restart pc"]
+phrases.ru = ["перезагрузи компьютер через 5 минут"]
+phrases.en = ["restart the computer in 5 minutes"]
+
+[[commands]]
+id = "assistant_power_cancel"
+type = "lua"
+script = "power.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["отмен выключ", "отмен перезагруз", "не выключ комп"]
+triggers.en = ["cancel shutdown", "cancel restart", "abort shutdown"]
+phrases.ru = ["отмени выключение", "отмени перезагрузку"]
+phrases.en = ["cancel shutdown"]
+
+[[commands]]
+id = "assistant_program_open"
+type = "lua"
+script = "program.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["откр блокнот", "откр notepad", "откр калькулятор", "откр calculator", "откр пейнт", "откр paint", "откр проводник", "откр explorer", "откр диспетчер", "откр taskmgr", "откр task manager", "откр командную", "откр командная", "откр cmd", "откр терминал", "откр terminal", "откр powershell", "откр паувершелл", "откр пауэршелл", "откр настройки", "откр параметры", "откр settings", "откр панель управления", "откр панель", "откр control panel", "откр ворд", "откр word", "откр эксель", "откр excel", "откр пауэрпоинт", "откр powerpoint", "откр хром", "откр chrome", "откр эдж", "откр edge", "откр фаерфокс", "откр firefox", "откр дискорд", "откр discord", "откр телеграм", "откр telegram", "откр спотифай", "откр spotify", "откр стим", "откр steam", "откр обс", "откр obs", "откр влс", "откр vlc", "запуст блокнот", "запуст notepad", "запуст калькулятор", "запуст calculator", "запуст пейнт", "запуст paint", "запуст проводник", "запуст explorer", "запуст диспетчер", "запуст taskmgr", "запуст task manager", "запуст командную", "запуст командная", "запуст cmd", "запуст терминал", "запуст terminal", "запуст powershell", "запуст паувершелл", "запуст пауэршелл", "запуст настройки", "запуст параметры", "запуст settings", "запуст панель управления", "запуст панель", "запуст control panel", "запуст ворд", "запуст word", "запуст эксель", "запуст excel", "запуст пауэрпоинт", "запуст powerpoint", "запуст хром", "запуст chrome", "запуст эдж", "запуст edge", "запуст фаерфокс", "запуст firefox", "запуст дискорд", "запуст discord", "запуст телеграм", "запуст telegram", "запуст спотифай", "запуст spotify", "запуст стим", "запуст steam", "запуст обс", "запуст obs", "запуст влс", "запуст vlc", "включ блокнот", "включ notepad", "включ калькулятор", "включ calculator", "включ пейнт", "включ paint", "включ проводник", "включ explorer", "включ диспетчер", "включ taskmgr", "включ task manager", "включ командную", "включ командная", "включ cmd", "включ терминал", "включ terminal", "включ powershell", "включ паувершелл", "включ пауэршелл", "включ настройки", "включ параметры", "включ settings", "включ панель управления", "включ панель", "включ control panel", "включ ворд", "включ word", "включ эксель", "включ excel", "включ пауэрпоинт", "включ powerpoint", "включ хром", "включ chrome", "включ эдж", "включ edge", "включ фаерфокс", "включ firefox", "включ дискорд", "включ discord", "включ телеграм", "включ telegram", "включ спотифай", "включ spotify", "включ стим", "включ steam", "включ обс", "включ obs", "включ влс", "включ vlc"]
+triggers.en = ["open блокнот", "open notepad", "open калькулятор", "open calculator", "open пейнт", "open paint", "open проводник", "open explorer", "open диспетчер", "open taskmgr", "open task manager", "open командную", "open командная", "open cmd", "open терминал", "open terminal", "open powershell", "open паувершелл", "open пауэршелл", "open настройки", "open параметры", "open settings", "open панель управления", "open панель", "open control panel", "open ворд", "open word", "open эксель", "open excel", "open пауэрпоинт", "open powerpoint", "open хром", "open chrome", "open эдж", "open edge", "open фаерфокс", "open firefox", "open дискорд", "open discord", "open телеграм", "open telegram", "open спотифай", "open spotify", "open стим", "open steam", "open обс", "open obs", "open влс", "open vlc", "launch блокнот", "launch notepad", "launch калькулятор", "launch calculator", "launch пейнт", "launch paint", "launch проводник", "launch explorer", "launch диспетчер", "launch taskmgr", "launch task manager", "launch командную", "launch командная", "launch cmd", "launch терминал", "launch terminal", "launch powershell", "launch паувершелл", "launch пауэршелл", "launch настройки", "launch параметры", "launch settings", "launch панель управления", "launch панель", "launch control panel", "launch ворд", "launch word", "launch эксель", "launch excel", "launch пауэрпоинт", "launch powerpoint", "launch хром", "launch chrome", "launch эдж", "launch edge", "launch фаерфокс", "launch firefox", "launch дискорд", "launch discord", "launch телеграм", "launch telegram", "launch спотифай", "launch spotify", "launch стим", "launch steam", "launch обс", "launch obs", "launch влс", "launch vlc", "start блокнот", "start notepad", "start калькулятор", "start calculator", "start пейнт", "start paint", "start проводник", "start explorer", "start диспетчер", "start taskmgr", "start task manager", "start командную", "start командная", "start cmd", "start терминал", "start terminal", "start powershell", "start паувершелл", "start пауэршелл", "start настройки", "start параметры", "start settings", "start панель управления", "start панель", "start control panel", "start ворд", "start word", "start эксель", "start excel", "start пауэрпоинт", "start powerpoint", "start хром", "start chrome", "start эдж", "start edge", "start фаерфокс", "start firefox", "start дискорд", "start discord", "start телеграм", "start telegram", "start спотифай", "start spotify", "start стим", "start steam", "start обс", "start obs", "start влс", "start vlc"]
+phrases.ru = ["открой блокнот", "запусти дискорд", "открой ворд"]
+phrases.en = ["open notepad", "launch discord"]
+
+[[commands]]
+id = "assistant_program_close"
+type = "lua"
+script = "program.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["закр блокнот", "закр notepad", "закр калькулятор", "закр calculator", "закр пейнт", "закр paint", "закр проводник", "закр explorer", "закр диспетчер", "закр taskmgr", "закр task manager", "закр командную", "закр командная", "закр cmd", "закр терминал", "закр terminal", "закр powershell", "закр паувершелл", "закр пауэршелл", "закр настройки", "закр параметры", "закр settings", "закр панель управления", "закр панель", "закр control panel", "закр ворд", "закр word", "закр эксель", "закр excel", "закр пауэрпоинт", "закр powerpoint", "закр хром", "закр chrome", "закр эдж", "закр edge", "закр фаерфокс", "закр firefox", "закр дискорд", "закр discord", "закр телеграм", "закр telegram", "закр спотифай", "закр spotify", "закр стим", "закр steam", "закр обс", "закр obs", "закр влс", "закр vlc"]
+triggers.en = ["close блокнот", "close notepad", "close калькулятор", "close calculator", "close пейнт", "close paint", "close проводник", "close explorer", "close диспетчер", "close taskmgr", "close task manager", "close командную", "close командная", "close cmd", "close терминал", "close terminal", "close powershell", "close паувершелл", "close пауэршелл", "close настройки", "close параметры", "close settings", "close панель управления", "close панель", "close control panel", "close ворд", "close word", "close эксель", "close excel", "close пауэрпоинт", "close powerpoint", "close хром", "close chrome", "close эдж", "close edge", "close фаерфокс", "close firefox", "close дискорд", "close discord", "close телеграм", "close telegram", "close спотифай", "close spotify", "close стим", "close steam", "close обс", "close obs", "close влс", "close vlc"]
+phrases.ru = ["закрой блокнот", "закрой дискорд"]
+phrases.en = ["close notepad", "close discord"]
