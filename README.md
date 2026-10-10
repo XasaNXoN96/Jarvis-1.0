@@ -29,7 +29,29 @@ Examples (Russian; most have English equivalents). Numbers can be said as words 
 | «скажи мне через 5 минут чтобы я закончил игру», «остановись через 5 минут» | warns you when time is up |
 | «выключи компьютер через 10 минут», «перезагрузи компьютер», «отмени выключение» | power (no time given = 1 minute, so you can cancel) |
 
-Timers and reminders live in memory: they are lost if Jarvis is closed. A scheduled shutdown is handled by Windows itself.
+| «разбуди меня завтра в 7:30», «напомни в 18:00 про тренировку» | alarm / reminder at a clock time |
+| «я играю, остановись через час», «рабочий режим» | game mode: warns you 5 minutes before the end and when time is up |
+| «сколько времени», «какое сегодня число», «сколько заряда» | time, date, battery (spoken) |
+| «запиши идею купить молоко», «что я записывал», «открой заметки» | voice notes (`Documents\Jarvis-notes.txt`) |
+| «пауза», «следующий трек», «предыдущий трек» | media keys (Spotify, browser, VLC ...) |
+| select text with the mouse + «озвучь этот текст», «прочитай буфер обмена», «хватит читать» | reads the text aloud |
+| «выключи озвучку» / «включи озвучку» | turns Jarvis' own voice off / on |
+| «режим текста» / «режим голоса» (also: tray menu) | microphone off (text only) / on |
+| «включи удалённое управление» | phone remote (see below) |
+
+Jarvis answers aloud (female voice) and now and then adds a dry remark. Timers and reminders are saved to disk and survive a restart. A scheduled shutdown is handled by Windows itself.
+
+### Voice
+
+Jarvis speaks with the Piper neural voice if `piper\` is installed next to the program (full installer), otherwise with the best female Windows voice of the current language (install a Russian one in Windows: Settings -> Time & language -> Speech). Voices are chosen in `.github/workflows/build-windows.yml` (`PIPER_RU_VOICE`, `PIPER_EN_VOICE`); samples: https://rhasspy.github.io/piper-samples/
+
+### Phone remote
+
+Say «включи удалённое управление»: Jarvis copies a link like `http://192.168.x.x:9713/?t=<secret>` to the clipboard. Open it on a phone in the same Wi-Fi: a page with a text box and quick buttons sends commands to the PC. Off by default, protected by the secret token (do not share the link); Windows may ask once to allow Jarvis through the firewall. «выключи удалённое управление» stops it.
+
+### Start with Windows
+
+Tick "Start Jarvis with Windows" in the installer: it starts in the background (`--background`, no console window) with the tray icon.
 
 ### Adding your own commands
 

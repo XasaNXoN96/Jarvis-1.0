@@ -1,5 +1,6 @@
 ; Inno Setup script. Run from the repository root: ISCC.exe installer\jarvis.iss
 ; The installer is written to the dist\ folder.
+; Parameters: /DSrcDir=build\Jarvis /DOutName=Jarvis-Setup
 
 [Setup]
 AppName=Jarvis
@@ -9,7 +10,7 @@ DefaultDirName={localappdata}\Programs\Jarvis
 DefaultGroupName=Jarvis
 PrivilegesRequired=lowest
 OutputDir=..\dist
-OutputBaseFilename=Jarvis-Setup
+OutputBaseFilename={#OutName}
 Compression=lzma2
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -24,7 +25,7 @@ Name: "autostart"; Description: "Start Jarvis with Windows (in the background, t
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Jarvis"; ValueData: """{app}\jarvis-app.exe"" --background"; Flags: uninsdeletevalue; Tasks: autostart
 
 [Files]
-Source: "..\build\Jarvis\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "..\{#SrcDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
 Name: "{group}\Jarvis"; Filename: "{app}\jarvis-app.exe"; WorkingDir: "{app}"

@@ -40,13 +40,61 @@ jobs:
           Copy-Item resources\vosk\README.md "$out\resources\vosk"
           Get-ChildItem $out -Recurse | Measure-Object -Property Length -Sum
 
-      - name: Build installer (Inno Setup)
+      # Lite installer: Windows built-in voices only
+      - name: Build lite installer
         shell: pwsh
         run: |
           choco install innosetup -y --no-progress
           New-Item -ItemType Directory -Force dist | Out-Null
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer\jarvis.iss
-          Get-ChildItem dist
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DSrcDir=build\Jarvis /DOutName=Jarvis-Setup-Lite installer\jarvis.iss
+
+      # Full installer: adds the Piper neural voice (offline). Change the voice names to switch voices:
+      # list and samples: https://rhasspy.github.io/piper-samples/
+      - name: Add Piper neural voices
+        id: piper
+        continue-on-error: true
+        shell: pwsh
+        env:
+          PIPER_RU_VOICE: ru_RU-irina-medium
+          PIPER_EN_VOICE: en_US-amy-medium
+        run: |
+          $ErrorActionPreference = "Stop"
+          Copy-Item build\Jarvis build\JarvisFull -Recurse
+          $piper = "build\JarvisFull\piper"
+          Invoke-WebRequest "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_windows_amd64.zip" -OutFile piper.zip
+          Expand-Archive piper.zip -DestinationPath build\JarvisFull
+          New-Item -ItemType Directory -Force "$piper\voices" | Out-Null
+          foreach ($pair in @(@("ru", $env:PIPER_RU_VOICE), @("en", $env:PIPER_EN_VOICE))) {
+            $lang = $pair[0]; $name = $pair[1]
+            # ru_RU-irina-medium -> ru/ru_RU/irina/medium/ru_RU-irina-medium
+            $parts = $name -split "-"
+            $base = "https://huggingface.co/rhasspy/piper-voices/resolve/main/$($parts[0].Split('_')[0])/$($parts[0])/$($parts[1])/$($parts[2])/$name"
+            Invoke-WebRequest "$base.onnx" -OutFile "$piper\voices\$lang.onnx"
+            Invoke-WebRequest "$base.onnx.json" -OutFile "$piper\voices\$lang.onnx.json"
+            # model card with the voice license: keep it next to the voice and show it in the log
+            try {
+              $card = "https://huggingface.co/rhasspy/piper-voices/raw/main/$($parts[0].Split('_')[0])/$($parts[0])/$($parts[1])/MODEL_CARD"
+              Invoke-WebRequest $card -OutFile "$piper\voices\$lang.MODEL_CARD.txt"
+              Write-Host "=== MODEL CARD $name ==="
+              Get-Content "$piper\voices\$lang.MODEL_CARD.txt"
+            } catch { Write-Host "no model card for $name" }
+          }
+          Get-ChildItem $piper -Recurse | Measure-Object -Property Length -Sum
+
+      - name: Build full installer
+        if: steps.piper.outcome == 'success'
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DSrcDir=build\JarvisFull /DOutName=Jarvis-Setup installer\jarvis.iss
+
+      - name: Without Piper the lite installer is the only one
+        if: steps.piper.outcome != 'success'
+        shell: pwsh
+        run: Copy-Item dist\Jarvis-Setup-Lite.exe dist\Jarvis-Setup.exe
+
+      - name: List dist
+        shell: pwsh
+        run: Get-ChildItem dist | Format-Table Name, Length
 
       - name: Upload dist folder
         uses: actions/upload-artifact@v4
@@ -59,5 +107,7 @@ jobs:
         with:
           tag_name: build-latest
           name: Latest build (installer)
-          body: Automatic Windows build of the latest commit. Download Jarvis-Setup.exe.
-          files: dist/Jarvis-Setup.exe
+          body: Automatic Windows build of the latest commit. Jarvis-Setup.exe (with the Piper neural voice) or Jarvis-Setup-Lite.exe (smaller, Windows voices only).
+          files: |
+            dist/Jarvis-Setup.exe
+            dist/Jarvis-Setup-Lite.exe
