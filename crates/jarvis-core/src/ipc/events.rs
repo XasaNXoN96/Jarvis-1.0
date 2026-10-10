@@ -16,6 +16,12 @@ pub enum IpcEvent {
     // Command was executed
     CommandExecuted { id: String, success: bool },
     
+    // Line of text for the user (answers of commands, notes, lists)
+    Output { text: String },
+
+    // Jarvis is speaking
+    Speaking,
+
     // Returned to idle state
     Idle,
     

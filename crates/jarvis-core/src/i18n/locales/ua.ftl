@@ -142,3 +142,4 @@ search-error-not-running = Асистент не запущено
 search-error-failed = Не вдалося виконати команду
 settings-no-voices = Голоси не знайдено
 tray-mic-muted = Мікрофон вимкнено (лише текст)
+tray-open-window = Відкрити вікно

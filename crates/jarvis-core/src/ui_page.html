@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jarvis</title>
+<style>
+  :root {
+    --bg1: #060a18; --bg2: #0b1330; --panel: #0d1630cc; --line: #1b2750;
+    --text: #dce6ff; --dim: #7f8db5; --accent: #5ad1ff; --ok: #5be3a1; --err: #ff6b7a; --warn: #ffd166;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: radial-gradient(1200px 700px at 70% -10%, #14224f 0%, var(--bg2) 40%, var(--bg1) 100%);
+    color: var(--text); font: 15px/1.45 "Segoe UI", system-ui, sans-serif;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .main { flex: 1; display: flex; min-height: 0; }
+
+  /* sidebar */
+  nav { width: 150px; padding: 18px 10px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+  .brand { display: flex; align-items: center; gap: 8px; padding: 4px 10px 14px; font-weight: 600; letter-spacing: .06em; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); box-shadow: 0 0 0 0 transparent; transition: .3s; }
+  .dot.on { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+  nav button {
+    display: flex; align-items: center; gap: 10px; text-align: left; border: 0; background: transparent; color: var(--dim);
+    padding: 10px 12px; border-radius: 10px; font: inherit; cursor: pointer;
+  }
+  nav button:hover { background: #ffffff0d; color: var(--text); }
+  nav button.active { background: #5ad1ff1f; color: var(--accent); }
+  nav .grow { flex: 1; }
+  nav .small { color: var(--dim); font-size: 12px; padding: 0 12px; }
+
+  /* pages */
+  .pages { flex: 1; position: relative; min-width: 0; }
+  .page { position: absolute; inset: 0; display: none; padding: 16px 18px; overflow: auto; }
+  .page.active { display: flex; flex-direction: column; }
+
+  /* orb */
+  #page-orb { align-items: center; justify-content: center; }
+  #orb { width: min(100%, 360px); aspect-ratio: 1; }
+  #status { margin-top: 6px; color: var(--dim); text-align: center; min-height: 24px; max-width: 90%; }
+  #state { margin-top: 10px; font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--accent); }
+
+  /* chat */
+  #log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
+  .msg { max-width: 88%; padding: 8px 12px; border-radius: 14px; white-space: pre-wrap; word-break: break-word; }
+  .me { align-self: flex-end; background: #1e3a78; border-bottom-right-radius: 4px; }
+  .bot { align-self: flex-start; background: #121c3d; border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+  .err { align-self: flex-start; background: #3a1620; color: var(--err); }
+  .note { align-self: center; color: var(--dim); font-size: 12px; }
+
+  /* commands */
+  .cmd { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; background: var(--panel); }
+  .cmd b { color: var(--accent); font-weight: 600; }
+  .chip { display: inline-block; margin: 4px 6px 0 0; padding: 3px 10px; border-radius: 999px; background: #ffffff10; color: var(--text); cursor: pointer; font-size: 13px; }
+  .chip:hover { background: #5ad1ff33; }
+  h2 { margin: 0 0 12px; font-size: 16px; font-weight: 600; }
+
+  /* settings */
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; margin-bottom: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .row small { color: var(--dim); display: block; }
+  .btns { display: flex; gap: 6px; flex-shrink: 0; }
+  .btn { border: 1px solid var(--line); background: #ffffff0a; color: var(--text); padding: 7px 12px; border-radius: 9px; cursor: pointer; font: inherit; }
+  .btn:hover { background: #5ad1ff26; border-color: var(--accent); }
+
+  /* input bar */
+  .bar { padding: 12px 14px 14px; border-top: 1px solid var(--line); background: #060a18d9; }
+  form { display: flex; gap: 8px; }
+  #input {
+    flex: 1; padding: 13px 16px; border-radius: 12px; border: 1px solid var(--line); background: #0d1630; color: var(--text);
+    font: inherit; outline: none;
+  }
+  #input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px #5ad1ff22; }
+  #send { padding: 0 18px; border: 0; border-radius: 12px; background: var(--accent); color: #04101f; font-weight: 600; cursor: pointer; font: inherit; font-weight: 600; }
+  #send:hover { filter: brightness(1.1); }
+  #conn { margin-top: 6px; font-size: 12px; color: var(--dim); }
+
+  @media (max-width: 520px) { nav { width: 56px; } nav button span, .brand b, nav .small { display: none; } }
+</style>
+</head>
+<body>
+<div class="main">
+  <nav>
+    <div class="brand"><span class="dot" id="dot"></span><b>JARVIS</b></div>
+    <button data-page="orb" class="active">◉ <span>Орб</span></button>
+    <button data-page="chat">💬 <span>Чат</span></button>
+    <button data-page="commands">☰ <span>Команды</span></button>
+    <button data-page="settings">⚙ <span>Настройки</span></button>
+    <div class="grow"></div>
+    <div class="small">Enter — отправить</div>
+  </nav>
+
+  <div class="pages">
+    <section class="page active" id="page-orb">
+      <canvas id="orb" width="720" height="720"></canvas>
+      <div id="state">готов</div>
+      <div id="status">Скажите «Джарвис» или напишите команду внизу</div>
+    </section>
+
+    <section class="page" id="page-chat">
+      <div id="log"></div>
+    </section>
+
+    <section class="page" id="page-commands">
+      <h2>Что я умею <span style="color:var(--dim);font-weight:400">— нажмите на фразу, чтобы вставить её</span></h2>
+      <div id="commands">Загрузка…</div>
+    </section>
+
+    <section class="page" id="page-settings">
+      <h2>Настройки</h2>
+      <div class="row"><div>Микрофон<small>выключите, чтобы управлять только текстом</small></div>
+        <div class="btns"><button class="btn" data-cmd="режим голоса">Включить</button><button class="btn" data-cmd="режим текста">Выключить</button></div></div>
+      <div class="row"><div>Голос Jarvis<small>озвучка ответов</small></div>
+        <div class="btns"><button class="btn" data-cmd="включи озвучку">Включить</button><button class="btn" data-cmd="выключи озвучку">Выключить</button></div></div>
+      <div class="row"><div>Пульт для телефона<small>ссылка копируется в буфер обмена</small></div>
+        <div class="btns"><button class="btn" data-cmd="включи удалённое управление">Включить</button><button class="btn" data-cmd="выключи удалённое управление">Выключить</button></div></div>
+      <div class="row"><div>Таймеры<small>отменить все таймеры и напоминания</small></div>
+        <div class="btns"><button class="btn" data-cmd="отмени таймер">Отменить</button></div></div>
+      <div class="row"><div>Остановить чтение<small>если Jarvis читает длинный текст</small></div>
+        <div class="btns"><button class="btn" data-cmd="хватит читать">Стоп</button></div></div>
+    </section>
+  </div>
+</div>
+
+<div class="bar">
+  <form id="form" autocomplete="off">
+    <input id="input" placeholder="Напишите команду…" autofocus>
+    <button id="send" type="submit">Отправить</button>
+  </form>
+  <div id="conn">Подключение…</div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const WS_URL = 'ws://127.0.0.1:9712';
+let ws = null, connected = false;
+let state = 'idle', stateUntil = 0;
+
+// ---------- navigation ----------
+function show(name) {
+  document.querySelectorAll('nav button[data-page]').forEach(b => b.classList.toggle('active', b.dataset.page === name));
+  document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + name));
+  if (name === 'commands') loadCommands();
+  if (name === 'chat') { const l = $('#log'); l.scrollTop = l.scrollHeight; }
+  $('#input').focus();
+}
+document.querySelectorAll('nav button[data-page]').forEach(b => b.onclick = () => show(b.dataset.page));
+
+// ---------- chat ----------
+function add(kind, text) {
+  const d = document.createElement('div');
+  d.className = 'msg ' + kind;
+  d.textContent = String(text).trim();
+  $('#log').appendChild(d);
+  $('#log').scrollTop = $('#log').scrollHeight;
+  while ($('#log').children.length > 300) $('#log').removeChild($('#log').firstChild);
+}
+function note(text) { const d = document.createElement('div'); d.className = 'note'; d.textContent = text; $('#log').appendChild(d); }
+
+function setStatus(text) { $('#status').textContent = text; }
+function setState(name, ms) {
+  state = name; stateUntil = ms ? performance.now() + ms : 0;
+  const label = { idle: 'готов', listening: 'слушаю', wake: 'слышу', speaking: 'говорю', busy: 'выполняю', error: 'ошибка', off: 'нет связи' };
+  $('#state').textContent = label[name] || name;
+}
+
+// ---------- connection ----------
+function connect() {
+  try { ws = new WebSocket(WS_URL); } catch (e) { setTimeout(connect, 2000); return; }
+  ws.onopen = () => {
+    connected = true; $('#dot').classList.add('on'); $('#conn').textContent = 'Подключено к Jarvis';
+    setState('idle'); note('— подключено —');
+  };
+  ws.onclose = () => {
+    connected = false; $('#dot').classList.remove('on'); $('#conn').textContent = 'Нет связи с Jarvis… переподключаюсь';
+    setState('off'); setTimeout(connect, 2000);
+  };
+  ws.onmessage = ev => {
+    let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+    switch (m.event) {
+      case 'wake_word_detected': setState('wake', 1500); setStatus('Слушаю…'); break;
+      case 'listening': setState('listening'); setStatus('Слушаю…'); break;
+      case 'speech_recognized': add('me', m.text); setStatus(m.text); setState('busy', 2500); break;
+      case 'command_executed': if (!m.success) add('err', 'Не получилось выполнить: ' + m.id); break;
+      case 'output': add('bot', m.text); setStatus(m.text); setState('speaking', 2500); break;
+      case 'speaking': setState('speaking', 3500); break;
+      case 'error': add('err', m.message); setStatus(m.message); setState('error', 2500); break;
+      case 'idle': if (state !== 'speaking') setState('idle'); break;
+      case 'stopping': add('note', 'Jarvis завершает работу'); setState('off'); break;
+    }
+  };
+}
+function sendCommand(text) {
+  text = text.trim();
+  if (!text) return;
+  if (!connected) { add('err', 'Нет связи с Jarvis'); return; }
+  ws.send(JSON.stringify({ action: 'text_command', text }));
+}
+$('#form').onsubmit = e => { e.preventDefault(); sendCommand($('#input').value); $('#input').value = ''; };
+document.querySelectorAll('[data-cmd]').forEach(b => b.onclick = () => { sendCommand(b.dataset.cmd); show('chat'); });
+
+// ---------- commands page ----------
+let commandsLoaded = false;
+async function loadCommands() {
+  if (commandsLoaded) return;
+  try {
+    const r = await fetch('/commands');
+    const data = await r.json();
+    const box = $('#commands'); box.textContent = '';
+    for (const c of data.commands) {
+      const d = document.createElement('div'); d.className = 'cmd';
+      const t = document.createElement('b'); t.textContent = c.pack + ' · ' + c.id; d.appendChild(t); d.appendChild(document.createElement('br'));
+      for (const p of c.phrases) {
+        const chip = document.createElement('span'); chip.className = 'chip'; chip.textContent = p;
+        chip.onclick = () => { $('#input').value = p.replace(/\{[^}]*\}/g, '').trim(); $('#input').focus(); };
+        d.appendChild(chip);
+      }
+      box.appendChild(d);
+    }
+    commandsLoaded = true;
+  } catch (e) { $('#commands').textContent = 'Не удалось загрузить список команд'; }
+}
+
+// ---------- orb (dotted sphere) ----------
+const canvas = $('#orb'), ctx = canvas.getContext('2d');
+const N = 520, pts = [];
+for (let i = 0; i < N; i++) {           // fibonacci sphere
+  const y = 1 - (i / (N - 1)) * 2, r = Math.sqrt(1 - y * y), th = Math.PI * (3 - Math.sqrt(5)) * i;
+  pts.push([Math.cos(th) * r, y, Math.sin(th) * r]);
+}
+let angle = 0, level = 0;
+function frame(t) {
+  if (stateUntil && performance.now() > stateUntil) setState(connected ? 'idle' : 'off');
+  const target = { idle: 0.05, listening: 0.55, wake: 0.8, speaking: 0.7, busy: 0.4, error: 0.6, off: 0 }[state] ?? 0.05;
+  level += (target - level) * 0.06;
+  const speed = 0.004 + level * 0.012;
+  angle += speed;
+  const W = canvas.width, H = canvas.height, R = W * 0.34;
+  ctx.clearRect(0, 0, W, H);
+  const cos = Math.cos(angle), sin = Math.sin(angle), tilt = 0.35, ct = Math.cos(tilt), st = Math.sin(tilt);
+  const pulse = 1 + Math.sin(t / 220) * 0.03 * (level * 3);
+  const hue = state === 'error' ? 350 : state === 'listening' || state === 'wake' ? 150 : 200;
+  for (const [x0, y0, z0] of pts) {
+    // wobble the surface a little when active
+    const w = 1 + Math.sin(t / 300 + x0 * 5 + y0 * 4 + z0 * 3) * 0.06 * level * 2;
+    let x = x0 * cos + z0 * sin, z = -x0 * sin + z0 * cos, y = y0;
+    const y2 = y * ct - z * st, z2 = y * st + z * ct;
+    const scale = (2.6 / (2.6 - z2)) * R * pulse * w;
+    const px = W / 2 + x * scale, py = H / 2 + y2 * scale;
+    const depth = (z2 + 1) / 2;                       // 0 back .. 1 front
+    ctx.fillStyle = `hsla(${hue}, 90%, ${55 + depth * 30}%, ${0.18 + depth * 0.75})`;
+    ctx.beginPath(); ctx.arc(px, py, 1.2 + depth * 2.4, 0, Math.PI * 2); ctx.fill();
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+connect();
+show('orb');
+</script>
+</body>
+</html>

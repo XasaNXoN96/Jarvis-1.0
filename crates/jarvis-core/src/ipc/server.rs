@@ -6,7 +6,13 @@ use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::broadcast;
-use tokio_tungstenite::{accept_async, tungstenite::Message};
+use tokio_tungstenite::{
+    accept_hdr_async,
+    tungstenite::{
+        handshake::server::{ErrorResponse, Request, Response},
+        Message,
+    },
+};
 
 use super::events::{IpcAction, IpcEvent};
 
@@ -105,12 +111,38 @@ pub async fn start_server() {
     }
 }
 
+// A web page in the user's browser must not be able to talk to Jarvis (it could send commands
+// like "shut down the computer"). Only our own window and the Tauri GUI are allowed;
+// clients that send no Origin header at all (native programs) are fine.
+fn check_origin(
+    req: &Request,
+    response: Response,
+) -> Result<Response, ErrorResponse> {
+    const ALLOWED: &[&str] = &[
+        "http://127.0.0.1:9714",
+        "http://localhost:9714",
+        "tauri://localhost",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+    ];
+    match req.headers().get("origin").and_then(|v| v.to_str().ok()) {
+        None => Ok(response),
+        Some(origin) if ALLOWED.contains(&origin) => Ok(response),
+        Some(origin) => {
+            warn!("IPC: connection from foreign origin '{}' rejected", origin);
+            let mut err = ErrorResponse::new(Some("forbidden".to_string()));
+            *err.status_mut() = tokio_tungstenite::tungstenite::http::StatusCode::FORBIDDEN;
+            Err(err)
+        }
+    }
+}
+
 async fn handle_client(
     stream: TcpStream,
     peer_addr: SocketAddr,
     mut event_rx: broadcast::Receiver<IpcEvent>,
 ) {
-    let ws_stream = match accept_async(stream).await {
+    let ws_stream = match accept_hdr_async(stream, check_origin).await {
         Ok(ws) => {
             info!("IPC: Client connected: {}", peer_addr);
             ws

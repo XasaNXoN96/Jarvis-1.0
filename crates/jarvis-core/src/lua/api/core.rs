@@ -42,6 +42,9 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
     let out_fn = lua.create_function(|_, text: String| {
         use std::io::Write;
         let _ = writeln!(std::io::stdout(), "{}", text);
+        // also show it in the Jarvis window
+        #[cfg(feature = "jarvis_app")]
+        crate::ipc::send(crate::ipc::IpcEvent::Output { text });
         Ok(())
     })?;
     jarvis.set("out", out_fn)?;

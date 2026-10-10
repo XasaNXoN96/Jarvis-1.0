@@ -183,6 +183,24 @@ fn main() -> Result<(), String> {
         ipc_rt.block_on(ipc::start_server());
     });
     
+    // the Jarvis window (chat, orb, commands): a local page shown in an app-style Edge/Chrome window.
+    // `--background`: no window at start (tray menu "Open window"), `--no-ui`: no window at all,
+    // `--console`: keep the console window open
+    jarvis_core::ui::start();
+    {
+        let args: Vec<String> = std::env::args().collect();
+        let has = |flag: &str| args.iter().any(|a| a == flag);
+        if !has("--background") && !has("--no-ui") && jarvis_core::ui::open_window() {
+            #[cfg(target_os = "windows")]
+            if !has("--console") {
+                // the window replaces the console
+                unsafe {
+                    winapi::um::wincon::FreeConsole();
+                }
+            }
+        }
+    }
+
     // console input: type a command and press Enter (works in both modes)
     std::thread::spawn(move || app::console_input(console_tx));
 

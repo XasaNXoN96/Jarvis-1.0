@@ -70,6 +70,8 @@ fn fire(entry: &TimerEntry, late: bool) {
         use std::io::Write;
         let _ = writeln!(std::io::stdout(), "!!! {}: {}", entry.title, message);
     }
+    #[cfg(feature = "jarvis_app")]
+    crate::ipc::send(crate::ipc::IpcEvent::Output { text: format!("{}: {}", entry.title, message) });
     show_notification(&entry.title, &message);
     tts::speak(&message);
 

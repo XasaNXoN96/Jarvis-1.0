@@ -149,6 +149,9 @@ fn handle_menu_event(event: &MenuEvent, settings: &SettingsManager, tray_state: 
 
     // -- action items
     match id {
+        "open_ui" => {
+            jarvis_core::ui::open_window();
+        }
         "exit" => std::process::exit(0),
         "restart" => {
             info!("Restarting from tray menu...");

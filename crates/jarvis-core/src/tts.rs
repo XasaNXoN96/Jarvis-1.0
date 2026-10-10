@@ -239,6 +239,9 @@ pub fn speak(text: &str) {
     }
     info!("TTS: {}", text.chars().take(120).collect::<String>());
 
+    #[cfg(feature = "jarvis_app")]
+    crate::ipc::send(crate::ipc::IpcEvent::Speaking);
+
     // interrupt whatever is being said
     stop();
     let generation = GENERATION.load(Ordering::SeqCst);

@@ -48,6 +48,7 @@ pub mod audio_buffer;
 pub mod tts;
 
 pub mod remote;
+pub mod ui;
 
 #[cfg(feature = "lua")]
 pub mod lua;
