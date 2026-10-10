@@ -142,7 +142,8 @@ jobs:
         with:
           tag_name: build-latest
           name: Latest build (installer)
-          body: Automatic Windows build of the latest commit. Jarvis-Setup.exe (with the Piper neural voice) or Jarvis-Setup-Lite.exe (smaller, Windows voices only).
+          body: Automatic Windows build of the latest commit. Jarvis-Setup.exe (with the Piper neural voice) or Jarvis-Setup-Lite.exe (smaller, Windows voices only). jarvis-app.exe alone (about 30 MB) replaces the program in an already installed Jarvis (no need to download the installer again).
           files: |
             dist/Jarvis-Setup.exe
             dist/Jarvis-Setup-Lite.exe
+            build/Jarvis/jarvis-app.exe

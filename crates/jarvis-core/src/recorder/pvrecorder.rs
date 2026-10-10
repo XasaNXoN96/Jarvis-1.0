@@ -1,9 +1,43 @@
 use once_cell::sync::OnceCell;
 use pv_recorder::{PvRecorder, PvRecorderBuilder};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+use crate::APP_DIR;
 
 static RECORDER: OnceCell<PvRecorder> = OnceCell::new();
 static IS_RECORDING: AtomicBool = AtomicBool::new(false);
+
+// pv_recorder looks for its library at a compile-time path (the build machine's folder),
+// which does not exist on the user's PC. Look next to the program instead.
+fn library_path() -> Option<PathBuf> {
+    let name = if cfg!(target_os = "windows") {
+        "libpv_recorder.dll"
+    } else if cfg!(target_os = "macos") {
+        "libpv_recorder.dylib"
+    } else {
+        "libpv_recorder.so"
+    };
+    let candidates = [
+        APP_DIR.join(name),
+        APP_DIR.join("lib").join(name),
+        APP_DIR.join("lib").join("windows").join("amd64").join(name),
+    ];
+    let found = candidates.into_iter().find(|p| p.exists());
+    match &found {
+        Some(p) => debug!("pvrecorder library: {}", p.display()),
+        None => debug!("pvrecorder library not found next to the program, using the default path"),
+    }
+    found
+}
+
+fn builder(frame_length: i32) -> PvRecorderBuilder {
+    let builder = PvRecorderBuilder::new(frame_length);
+    match library_path() {
+        Some(path) => builder.library_path(&path),
+        None => builder,
+    }
+}
 
 pub fn init_microphone(device_index: i32, frame_length: u32) -> bool {
     if RECORDER.get().is_some() {
@@ -11,7 +45,7 @@ pub fn init_microphone(device_index: i32, frame_length: u32) -> bool {
     }
     
     // initialize
-    let pv_recorder = PvRecorderBuilder::new(frame_length as i32)
+    let pv_recorder = builder(frame_length as i32)
         .device_index(device_index)
         // .frame_length(frame_length as i32)
         .init();
@@ -106,7 +140,7 @@ pub fn stop_recording() -> Result<(), ()> {
 }
 
 pub fn list_audio_devices() -> Vec<String> {
-    let audio_devices = PvRecorderBuilder::default().get_available_devices();
+    let audio_devices = builder(512).get_available_devices();
     match audio_devices {
         Ok(audio_devices) => audio_devices,
         Err(err) => {
