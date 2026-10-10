@@ -1,0 +1,55 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Editor directories and files
+.vscode
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Etc
+__other
+psd
+list.py
+tree.txt
+
+# Rust / Cargo 🔧
+# Ignore Cargo build output, generated files, and common Rust artifacts
+/target/
+**/target/
+/target/doc/
+
+# Binaries and dynamic libraries
+*.exe
+# *.dll
+*.so
+*.dylib
+
+# Static libraries
+*.a
+# *.lib
+
+# Rust compilation artifacts
+*.rlib
+*.rmeta
+
+# Backup files and editor temp files
+*.rs.bk
+
+# Ignore packaged crates
+*.crate
+
+# Ignore AI models
+/resources/models/*
