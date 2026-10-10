@@ -1,0 +1,63 @@
+name: Build Windows installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "README.md"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build jarvis-app (release)
+        shell: pwsh
+        run: |
+          $env:LIB = "$PWD\lib\windows\amd64;$env:LIB"
+          cargo build --release -p jarvis-app
+
+      - name: Assemble program folder
+        shell: pwsh
+        run: |
+          $out = "build\Jarvis"
+          New-Item -ItemType Directory -Force $out | Out-Null
+          Copy-Item target\release\jarvis-app.exe $out
+          Copy-Item lib\windows\amd64\*.dll $out
+          foreach ($d in "commands", "sound", "keywords", "rustpotter") {
+            Copy-Item "resources\$d" "$out\resources\$d" -Recurse
+          }
+          New-Item -ItemType Directory -Force "$out\resources\vosk" | Out-Null
+          Copy-Item resources\vosk\README.md "$out\resources\vosk"
+          Get-ChildItem $out -Recurse | Measure-Object -Property Length -Sum
+
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          New-Item -ItemType Directory -Force dist | Out-Null
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer\jarvis.iss
+          Get-ChildItem dist
+
+      - name: Upload dist folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to release "build-latest"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-latest
+          name: Latest build (installer)
+          body: Automatic Windows build of the latest commit. Download Jarvis-Setup.exe.
+          files: dist/Jarvis-Setup.exe
