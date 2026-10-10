@@ -81,6 +81,41 @@ jobs:
           }
           Get-ChildItem $piper -Recurse | Measure-Object -Property Length -Sum
 
+      # Speech recognition model (Vosk, Russian) taken from the release v0.1 archive (jarvis-master.zip)
+      # so nobody has to copy model folders by hand. Change VOSK_MODELS to add English / Ukrainian.
+      - name: Add Vosk speech model
+        id: vosk
+        if: steps.piper.outcome == 'success'
+        continue-on-error: true
+        shell: pwsh
+        env:
+          VOSK_MODELS: vosk-model-small-ru-0.22
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ProgressPreference = "SilentlyContinue"
+          Invoke-WebRequest "https://github.com/${{ github.repository }}/releases/download/v0.1/jarvis-master.zip" -OutFile models.zip
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead("$PWD\models.zip")
+          $dstRoot = "$PWD\build\JarvisFull\resources\vosk"
+          New-Item -ItemType Directory -Force $dstRoot | Out-Null
+          $count = 0
+          foreach ($model in $env:VOSK_MODELS.Split(",")) {
+            $prefix = "jarvis-master/resources/vosk/$($model.Trim())/"
+            foreach ($entry in $zip.Entries) {
+              if ($entry.FullName.StartsWith($prefix) -and $entry.Name -ne "") {
+                $target = Join-Path $dstRoot $entry.FullName.Substring("jarvis-master/resources/vosk/".Length)
+                New-Item -ItemType Directory -Force (Split-Path $target) | Out-Null
+                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $target, $true)
+                $count++
+              }
+            }
+          }
+          $zip.Dispose()
+          Remove-Item models.zip
+          Write-Host "Vosk files extracted: $count"
+          if ($count -eq 0) { throw "model not found in the archive" }
+          Get-ChildItem $dstRoot | Format-Table Name
+
       - name: Build full installer
         if: steps.piper.outcome == 'success'
         shell: pwsh

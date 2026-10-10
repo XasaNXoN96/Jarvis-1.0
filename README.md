@@ -68,7 +68,7 @@ target\release\jarvis-app.exe --text   # text only
 
 ## Notes
 
-- Vosk models (~419 MB) are not stored in git, see `resources/vosk/README.md`.
+- Vosk models (~419 MB) are not stored in git. The full installer already contains the Russian model (the CI takes it from the `v0.1` release archive, see `VOSK_MODELS` in the workflow); for the lite installer or other languages see `resources/vosk/README.md`.
 - Commands live in `resources/commands/*/command.toml`.
 - `ahk` commands need the `.ahk` files in `resources/commands/*/ahk/` compiled to `.exe` with AutoHotkey.
 
