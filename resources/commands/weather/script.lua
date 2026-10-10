@@ -1,29 +1,28 @@
--- weather command using wttr.in API
+-- weather (wttr.in): "какая погода", "погода в Ташкенте", "какая погода в Москве завтра"
 
-local lang = jarvis.context.language
+local STOP = {
+  "какая", "какой", "каков", "погода", "погоду", "погоды", "в", "во", "на", "сейчас", "сегодня", "завтра", "пожалуйста", "мне", "скажи", "покажи",
+  "what", "is", "the", "weather", "in", "like", "today", "now", "please", "tell", "me", "how",
+}
 
--- get saved city or use default
-local city = jarvis.state.get("city") or "Moscow"
+local function urlencode(s)
+  return (s:gsub("[^%w%-_%.~]", function(c) return string.format("%%%02X", c:byte()) end))
+end
 
-jarvis.log("info", "Fetching weather for: " .. city)
+local city = strip_words(phrase, STOP)
+if city == "" then
+  city = jarvis.state.get("city") or "Tashkent"
+end
 
--- build URL
-local url = "https://wttr.in/" .. city .. "?format=3&lang=" .. lang
+local url = "https://wttr.in/" .. urlencode(city) .. "?format=3&lang=" .. (jarvis.context.language == "ua" and "uk" or jarvis.context.language)
+jarvis.log("info", "Weather for " .. city .. ": " .. url)
 
--- make request
 local response = jarvis.http.get(url)
-
 if response.ok then
-    jarvis.log("info", "Weather: " .. response.body)
-    
-    -- show notification
-    local title = lang == "ru" and "Погода" or "Weather"
-    jarvis.system.notify(title, response.body)
-    
-    jarvis.audio.play_ok()
+  local body = (response.body or ""):gsub("%s+$", "")
+  say(T("Погода", "Weather"), body, body)
 else
-    jarvis.log("error", "Failed to fetch weather: " .. (response.error or "unknown error"))
-    jarvis.audio.play_error()
+  say(T("Погода", "Weather"), T("Не удалось получить погоду (нет интернета?)", "Could not get the weather (no internet?)"))
 end
 
 return { chain = false }

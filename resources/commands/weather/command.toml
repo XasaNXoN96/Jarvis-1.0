@@ -1,8 +1,10 @@
 [[commands]]
 id = "weather"
 type = "lua"
+triggers.ru = ["погод"]
+triggers.en = ["weather"]
 script = "script.lua"
-timeout = 5000
+timeout = 20000
 sandbox = "standard"
 
 [commands.phrases]
@@ -13,14 +15,13 @@ en = ["what's the weather in {city}", "weather in {city}"]
 ru = ["weather_ru_1", "weather_ru_2"]
 en = ["weather_en_1", "weather_en_2"]
 
-[commands.slots.city]
-entity = "city name"
-context = ["in", "for", "at", "в", "для"]
 
 
 [[commands]]
 id = "set_city"
 type = "lua"
+triggers.ru = ["установ город","смен город","измен город","мой город"]
+triggers.en = ["set city","change city","my city"]
 script = "set_city.lua"
 sandbox = "standard"
 timeout = 5000

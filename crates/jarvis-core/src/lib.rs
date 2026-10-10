@@ -49,6 +49,7 @@ pub mod tts;
 
 pub mod remote;
 pub mod ui;
+pub mod filesearch;
 
 #[cfg(feature = "lua")]
 pub mod lua;

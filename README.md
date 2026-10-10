@@ -43,6 +43,19 @@ Examples (Russian; most have English equivalents). Numbers can be said as words 
 | «режим текста» / «режим голоса» (also: tray menu) | microphone off (text only) / on |
 | «включи удалённое управление» | phone remote (see below) |
 
+More:
+
+| Say | What happens |
+|---|---|
+| «найди на моём компьютере файл 123», «найди файл отчёт» | searches the computer in the background (your folders first, then everything), lists the best matches |
+| «открой первый результат», «открой второй файл», «покажи в папке» | opens a found file / shows it in Explorer |
+| «открой загрузки / документы / рабочий стол / корзину», «открой диск D» | folders and drives |
+| «открой настройки звука / экрана / сети / bluetooth / обновления …», «диспетчер устройств», «управление дисками», «службы» | Windows Settings pages and tools |
+| «сколько оперативной памяти занято», «загрузка процессора», «свободное место на диске», «какой у меня IP», «сколько работает компьютер» | computer info (spoken) |
+| «переведи на английский привет», «найди в википедии …», «покажи на карте Ташкент», «как добраться до вокзала», «включи песню …» | opens the right web page |
+| «какая погода в Ташкенте», «установи город Самарканд» | weather (needs internet) |
+| «привет», «как дела», «кто ты», «что ты умеешь» | small talk and the list of commands |
+
 Jarvis answers aloud (female voice) and now and then adds a dry remark. Timers and reminders are saved to disk and survive a restart. A scheduled shutdown is handled by Windows itself.
 
 ### Voice

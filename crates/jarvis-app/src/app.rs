@@ -324,9 +324,7 @@ fn recognize_command(
                     // for tbr in config::ASSISTANT_PHRASES_TBR {
                     //     recognized_voice = recognized_voice.replace(tbr, "");
                     // }
-                    for tbr in config::get_phrases_to_remove(&i18n::get_language()) {
-                        recognized_voice = recognized_voice.replace(tbr, "");
-                    }
+                    recognized_voice = remove_phrases(&recognized_voice, config::get_phrases_to_remove(&i18n::get_language()));
 
                     recognized_voice = recognized_voice.trim().to_string();
                     
@@ -384,6 +382,24 @@ fn recognize_command(
 }
 
 
+// Removes the given words / phrases ("джарвис", "сэр", "скажи" ...) as WHOLE words only,
+// so that "скажи" does not cut a piece out of "расскажи".
+fn remove_phrases(text: &str, phrases: &[&str]) -> String {
+    let mut padded = format!(" {} ", text);
+    for phrase in phrases {
+        let needle = format!(" {} ", phrase);
+        // twice: removing one phrase can make the neighbour match ("а  а")
+        for _ in 0..2 {
+            padded = padded.replace(&needle, " ");
+        }
+        // phrase glued to punctuation ("джарвис," / "сэр.")
+        for punct in [",", ".", "!", "?"] {
+            padded = padded.replace(&format!(" {}{} ", phrase, punct), " ");
+        }
+    }
+    padded.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 fn process_text_command(text: &str, rt: &tokio::runtime::Runtime) {
     info!("Processing text command: {}", text);
     
@@ -393,9 +409,7 @@ fn process_text_command(text: &str, rt: &tokio::runtime::Runtime) {
     // for tbr in config::ASSISTANT_PHRASES_TBR {
     //     filtered = filtered.replace(tbr, "");
     // }
-    for tbr in config::get_phrases_to_remove(&i18n::get_language()) {
-        filtered = filtered.replace(tbr, "");
-    }
+    filtered = remove_phrases(&filtered, config::get_phrases_to_remove(&i18n::get_language()));
 
     let filtered = filtered.trim();
     

@@ -74,6 +74,27 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
     app.set("is_mic_muted", lua.create_function(|_, ()| Ok(crate::MIC_MUTED.load(std::sync::atomic::Ordering::SeqCst)))?)?;
     jarvis.set("app", app)?;
 
+    // jarvis.files.search(query): background search on this computer, the answer arrives by itself
+    // jarvis.files.results() -> { {path=, name=, dir=, is_dir=}, ... } (last finished search)
+    let files = lua.create_table()?;
+    files.set("search", lua.create_function(|_, query: String| {
+        crate::filesearch::start(&query);
+        Ok(())
+    })?)?;
+    files.set("results", lua.create_function(|lua, ()| {
+        let out = lua.create_table()?;
+        for (i, item) in crate::filesearch::results().iter().enumerate() {
+            let row = lua.create_table()?;
+            row.set("path", item.path.display().to_string())?;
+            row.set("name", item.path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default())?;
+            row.set("dir", item.path.parent().map(|p| p.display().to_string()).unwrap_or_default())?;
+            row.set("is_dir", item.is_dir)?;
+            out.set(i + 1, row)?;
+        }
+        Ok(out)
+    })?)?;
+    jarvis.set("files", files)?;
+
     // jarvis.remote.enable() -> url | nil, error ; disable() ; is_enabled()
     let remote = lua.create_table()?;
     remote.set("enable", lua.create_function(|_, ()| {

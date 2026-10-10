@@ -1,32 +1,12 @@
--- set city for weather command
+-- "установи город Ташкент": the city used when you only ask "какая погода"
 
-local phrase = jarvis.context.phrase
-local lang = jarvis.context.language
-
--- try to extract city name from phrase
--- this is a simple example - you might want better parsing
-local city = phrase:match("город%s+(.+)") or phrase:match("city%s+(.+)")
-
-if city then
-    city = city:gsub("^%s*(.-)%s*$", "%1") -- trim
-    
-    -- save to state (shared with weather command)
-    jarvis.state.set("city", city)
-    
-    local msg = lang == "ru" 
-        and "Город установлен: " .. city
-        or "City set to: " .. city
-    
-    jarvis.log("info", msg)
-    jarvis.system.notify("Jarvis", msg)
-    jarvis.audio.play_ok()
-else
-    local msg = lang == "ru"
-        and "Не удалось определить город"
-        or "Could not determine city"
-    
-    jarvis.log("warn", msg)
-    jarvis.audio.play_not_found()
+local city = strip_words(phrase, {
+  "установи", "поставь", "смени", "измени", "мой", "город", "городом", "по", "умолчанию", "на", "пожалуйста",
+  "set", "change", "my", "city", "default", "to", "please", "the",
+})
+if city == "" then
+  say(T("Город", "City"), T("Скажите город, например: установи город Ташкент", "Say the city, e.g. set city Tashkent"))
+  return
 end
-
-return { chain = false }
+jarvis.state.set("city", city)
+say(T("Город", "City"), city, T("Запомнил город " .. city, "City saved: " .. city))

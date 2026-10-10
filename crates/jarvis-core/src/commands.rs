@@ -99,8 +99,9 @@ pub fn fetch_by_triggers<'a>(
         .filter(|w| !w.is_empty())
         .collect();
 
-    let mut best: Option<(&PathBuf, &JCommand)> = None;
-    let mut best_score = 0usize;
+    // best = (stems count, total characters of the stems, command). Ties on the stems count are
+    // decided by the longer (more specific) trigger, then by the smaller id so the result is stable.
+    let mut best: Option<(usize, usize, &PathBuf, &JCommand)> = None;
 
     for cmd_list in commands {
         for cmd in &cmd_list.commands {
@@ -115,20 +116,25 @@ pub fn fetch_by_triggers<'a>(
                     continue;
                 }
                 if stems.iter().all(|stem| words.iter().any(|w| w.starts_with(stem.as_str()))) {
-                    // more stems = more specific; same score -> smaller id, so the result is stable
-                    let better = stems.len() > best_score
-                        || (stems.len() == best_score
-                            && best.map(|(_, c)| cmd.id < c.id).unwrap_or(false));
+                    let count = stems.len();
+                    let chars: usize = stems.iter().map(|s| s.chars().count()).sum();
+                    let better = match &best {
+                        None => true,
+                        Some((bc, bch, _, bcmd)) => {
+                            count > *bc
+                                || (count == *bc && chars > *bch)
+                                || (count == *bc && chars == *bch && cmd.id < bcmd.id)
+                        }
+                    };
                     if better {
-                        best_score = stems.len();
-                        best = Some((&cmd_list.path, cmd));
+                        best = Some((count, chars, &cmd_list.path, cmd));
                     }
                 }
             }
         }
     }
 
-    best
+    best.map(|(_, _, path, cmd)| (path, cmd))
 }
 
 pub fn fetch_command<'a>(
