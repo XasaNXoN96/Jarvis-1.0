@@ -31,6 +31,7 @@ pub struct TrayMenu {
 pub struct TrayState {
     pub radio_groups: Vec<RadioGroup>,
     pub gain_toggle: CheckMenuItem,
+    pub mic_toggle: CheckMenuItem,
 }
 
 // BUILD
@@ -160,6 +161,15 @@ pub fn build(settings: &SettingsManager) -> TrayMenu {
         None,
     );
 
+    // -- microphone off = text-only mode
+    let mic_toggle = CheckMenuItem::with_id(
+        "toggle:mic_muted",
+        i18n::t("tray-mic-muted"),
+        true,
+        jarvis_core::MIC_MUTED.load(std::sync::atomic::Ordering::SeqCst),
+        None,
+    );
+
     // -- assemble main menu
     let _ = menu.append(&lang_sub);
     let _ = menu.append(&voice_sub);
@@ -167,6 +177,7 @@ pub fn build(settings: &SettingsManager) -> TrayMenu {
     let _ = menu.append(&ns_sub);
     let _ = menu.append(&vad_sub);
     let _ = menu.append(&gain_toggle);
+    let _ = menu.append(&mic_toggle);
     let _ = menu.append(&PredefinedMenuItem::separator());
     let _ = menu.append(&MenuItem::with_id("restart", i18n::t("tray-restart"), true, None));
     let _ = menu.append(&MenuItem::with_id("settings", i18n::t("tray-settings"), true, None));
@@ -177,6 +188,7 @@ pub fn build(settings: &SettingsManager) -> TrayMenu {
         state: TrayState {
             radio_groups,
             gain_toggle,
+            mic_toggle,
         },
     }
 }

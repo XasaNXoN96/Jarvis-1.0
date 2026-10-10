@@ -27,6 +27,14 @@ mod tray;
 static SHOULD_STOP: AtomicBool = AtomicBool::new(false);
 
 fn main() -> Result<(), String> {
+    // `--background`: no console window (used by autostart); the tray icon stays
+    #[cfg(target_os = "windows")]
+    if std::env::args().any(|a| a == "--background") {
+        unsafe {
+            winapi::um::wincon::FreeConsole();
+        }
+    }
+
     // initialize directories
     config::init_dirs()?;
 
@@ -44,6 +52,10 @@ fn main() -> Result<(), String> {
     // set global DB (for core modules that read settings at init time)
     DB.set(settings.arc().clone())
             .expect("DB already initialized");
+
+    // speech output and timers saved by the previous run
+    jarvis_core::tts::init();
+    jarvis_core::lua::init_timers();
 
     // init voices
     let voice_id = settings.lock().voice.clone();
@@ -135,6 +147,8 @@ fn main() -> Result<(), String> {
     // channel for text commands (manually written in the GUI)
     let (text_cmd_tx, text_cmd_rx) = mpsc::channel::<String>();
     let console_tx = text_cmd_tx.clone();
+    // phone / remote control feeds commands through the same channel (off until enabled)
+    jarvis_core::remote::set_sender(text_cmd_tx.clone());
 
     ipc::set_action_handler(move |action| {
         match action {
@@ -148,7 +162,7 @@ fn main() -> Result<(), String> {
             }
             IpcAction::SetMuted { muted } => {
                 info!("Received mute request: {}", muted);
-                // TODO: implement mute
+                jarvis_core::MIC_MUTED.store(muted, Ordering::SeqCst);
             }
             IpcAction::TextCommand { text } => {
                 info!("Received text command: {}", text);

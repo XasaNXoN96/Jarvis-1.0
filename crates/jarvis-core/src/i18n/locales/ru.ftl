@@ -141,3 +141,4 @@ settings-gliner-models-hint = Модели GLiNER не найдены.
 search-error-not-running = Ассистент не запущен
 search-error-failed = Не удалось выполнить команду
 settings-no-voices = Голоса не найдены
+tray-mic-muted = Микрофон выключен (только текст)

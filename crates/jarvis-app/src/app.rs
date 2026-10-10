@@ -123,6 +123,12 @@ fn main_loop(text_cmd_rx: &Receiver<String>, rt: &tokio::runtime::Runtime) -> Re
             continue 'wake_word;
         }
 
+        // microphone switched off (tray / command): wait for text commands only
+        if jarvis_core::MIC_MUTED.load(std::sync::atomic::Ordering::SeqCst) {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            continue 'wake_word;
+        }
+
         recorder::read_microphone(&mut frame_buffer);
         let processed = audio_processing::process(&frame_buffer);
         

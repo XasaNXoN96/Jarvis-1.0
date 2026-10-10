@@ -26,7 +26,7 @@ impl LuaEngine {
                 StdLib::TABLE | StdLib::STRING | StdLib::MATH | StdLib::UTF8
             }
             SandboxLevel::Full => {
-                StdLib::TABLE | StdLib::STRING | StdLib::MATH | StdLib::UTF8 | StdLib::OS
+                StdLib::TABLE | StdLib::STRING | StdLib::MATH | StdLib::UTF8 | StdLib::OS | StdLib::IO
             }
         };
         
@@ -111,8 +111,15 @@ impl LuaEngine {
         self.register_api(&context)?;
         
         // load script
-        let script_content = fs::read_to_string(script_path)
+        let mut script_content = fs::read_to_string(script_path)
             .map_err(|e| LuaError::LoadError(format!("{}: {}", script_path.display(), e)))?;
+
+        // shared helpers: <commands dir>/_prelude.lua is placed in front of every script
+        if let Some(prelude_path) = script_path.parent().and_then(|p| p.parent()).map(|p| p.join("_prelude.lua")) {
+            if let Ok(prelude) = fs::read_to_string(&prelude_path) {
+                script_content = format!("{}\n{}", prelude, script_content);
+            }
+        }
         
         let script_name = script_path.file_name()
             .unwrap()

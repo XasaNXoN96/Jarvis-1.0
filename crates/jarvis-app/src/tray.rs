@@ -124,6 +124,12 @@ fn handle_menu_event(event: &MenuEvent, settings: &SettingsManager, tray_state: 
     // -- toggle: "toggle:key"
     if let Some(key) = id.strip_prefix("toggle:") {
         match key {
+            "mic_muted" => {
+                // not a saved setting: the microphone is switched off for this run
+                let muted = tray_state.mic_toggle.is_checked();
+                jarvis_core::MIC_MUTED.store(muted, std::sync::atomic::Ordering::SeqCst);
+                info!("Tray: microphone muted = {}", muted);
+            }
             "gain_normalizer" => {
                 // CheckMenuItem auto-toggles on click, just read the new state
                 let new_val = tray_state.gain_toggle.is_checked();

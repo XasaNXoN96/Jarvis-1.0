@@ -10,6 +10,9 @@ pub use engine::LuaEngine;
 pub use sandbox::SandboxLevel;
 pub use error::LuaError;
 
+// timers saved by the previous run are restored at start-up
+pub use api::timer::init as init_timers;
+
 use std::path::PathBuf;
 use std::time::Duration;
 

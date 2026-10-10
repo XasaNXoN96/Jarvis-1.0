@@ -45,6 +45,10 @@ pub mod voices;
 
 pub mod audio_buffer;
 
+pub mod tts;
+
+pub mod remote;
+
 #[cfg(feature = "lua")]
 pub mod lua;
 
@@ -61,6 +65,8 @@ pub static APP_DIRS: OnceCell<AppDirs> = OnceCell::new();
 pub static APP_CONFIG_DIR: OnceCell<PathBuf> = OnceCell::new();
 pub static APP_LOG_DIR: OnceCell<PathBuf> = OnceCell::new();
 pub static DB: OnceCell<Arc<RwLock<db::structs::Settings>>> = OnceCell::new();
+// microphone switched off from the tray / a command: Jarvis keeps working from text input
+pub static MIC_MUTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 pub static COMMANDS_LIST: OnceCell<Vec<JCommandsList>> = OnceCell::new();
 
 // re-exports

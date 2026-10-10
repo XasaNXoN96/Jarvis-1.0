@@ -162,8 +162,8 @@ sandbox = "full"
 timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3"]
 sounds.en = ["ok1", "ok2", "ok3"]
-triggers.ru = ["напомн", "напоминан", "предупред", "мне через", "останов через", "остановис через", "прекрат через", "сообщи через"]
-triggers.en = ["remind", "reminder", "warn me", "tell me in"]
+triggers.ru = ["напомн", "напоминан", "предупред", "мне через", "останов через", "остановис через", "прекрат через", "сообщи через", "разбуд", "будильник"]
+triggers.en = ["remind", "reminder", "warn me", "tell me in", "alarm", "wake me"]
 phrases.ru = ["напомни через 5 минут позвонить маме", "поставь напоминание на 10 минут", "скажи мне через 5 минут чтобы я закончил игру", "остановись через 5 минут"]
 phrases.en = ["remind me in 5 minutes to call mom", "set a reminder for 10 minutes", "tell me in 5 minutes to stop playing"]
 
@@ -231,3 +231,263 @@ triggers.ru = ["закр блокнот", "закр notepad", "закр каль
 triggers.en = ["close блокнот", "close notepad", "close калькулятор", "close calculator", "close пейнт", "close paint", "close проводник", "close explorer", "close диспетчер", "close taskmgr", "close task manager", "close командную", "close командная", "close cmd", "close терминал", "close terminal", "close powershell", "close паувершелл", "close пауэршелл", "close настройки", "close параметры", "close settings", "close панель управления", "close панель", "close control panel", "close ворд", "close word", "close эксель", "close excel", "close пауэрпоинт", "close powerpoint", "close хром", "close chrome", "close эдж", "close edge", "close фаерфокс", "close firefox", "close дискорд", "close discord", "close телеграм", "close telegram", "close спотифай", "close spotify", "close стим", "close steam", "close обс", "close obs", "close влс", "close vlc"]
 phrases.ru = ["закрой блокнот", "закрой дискорд"]
 phrases.en = ["close notepad", "close discord"]
+
+[[commands]]
+id = "assistant_info_time"
+type = "lua"
+script = "info.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["сколько врем", "который час", "скажи врем", "текущ врем", "время сейчас"]
+triggers.en = ["what time", "current time", "time is it"]
+phrases.ru = ["сколько времени", "который час"]
+phrases.en = ["what time is it"]
+
+[[commands]]
+id = "assistant_info_date"
+type = "lua"
+script = "info.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["как сегодня числ", "как сегодня дат", "как сегодня день", "како число", "какой день"]
+triggers.en = ["what date", "what day", "today's date"]
+phrases.ru = ["какое сегодня число", "какой сегодня день"]
+phrases.en = ["what is the date today"]
+
+[[commands]]
+id = "assistant_info_battery"
+type = "lua"
+script = "info.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["заряд", "батаре", "сколько заряд"]
+triggers.en = ["battery"]
+phrases.ru = ["сколько заряда", "какой заряд батареи"]
+phrases.en = ["battery level"]
+
+[[commands]]
+id = "assistant_note_add"
+type = "lua"
+script = "notes.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["запиш иде", "запиш замет", "запиш мысл", "запомн", "заметк"]
+triggers.en = ["write down", "remember that", "add a note", "note that"]
+phrases.ru = ["запиши идею купить молоко", "запомни позвонить маме"]
+phrases.en = ["write down buy milk"]
+
+[[commands]]
+id = "assistant_note_read"
+type = "lua"
+script = "notes.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["что запис", "прочита замет", "покаж замет", "мои замет", "последн замет"]
+triggers.en = ["read my notes", "show my notes", "latest notes", "my notes"]
+phrases.ru = ["что я записывал", "прочитай заметки"]
+phrases.en = ["read my notes"]
+
+[[commands]]
+id = "assistant_note_open"
+type = "lua"
+script = "notes.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["откр замет"]
+triggers.en = ["open notes", "open my notes"]
+phrases.ru = ["открой заметки"]
+phrases.en = ["open notes"]
+
+[[commands]]
+id = "assistant_media_playpause"
+type = "lua"
+script = "media.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["пауз", "продолж воспроизвед", "продолж музык", "включ музык", "продолж видео"]
+triggers.en = ["pause music", "resume music", "play music", "pause video", "pause the music"]
+phrases.ru = ["пауза", "продолжи воспроизведение"]
+phrases.en = ["pause the music"]
+
+[[commands]]
+id = "assistant_media_next"
+type = "lua"
+script = "media.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["следующ трек", "следующ песн", "следующ композиц", "следующ видео", "переключ трек"]
+triggers.en = ["next track", "next song", "skip song", "skip track"]
+phrases.ru = ["следующий трек", "следующая песня"]
+phrases.en = ["next track"]
+
+[[commands]]
+id = "assistant_media_prev"
+type = "lua"
+script = "media.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["предыдущ трек", "предыдущ песн", "предыдущ композиц", "прошл трек", "прошл песн"]
+triggers.en = ["previous track", "previous song", "last song"]
+phrases.ru = ["предыдущий трек"]
+phrases.en = ["previous track"]
+
+[[commands]]
+id = "assistant_game_on"
+type = "lua"
+script = "game.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["игров режим", "я игра", "я пошел игра", "поигра", "я буду игра"]
+triggers.en = ["game mode", "i'm going to play", "i am going to play", "gaming session"]
+phrases.ru = ["игровой режим на час", "я играю, остановись через час"]
+phrases.en = ["game mode for one hour"]
+
+[[commands]]
+id = "assistant_game_off"
+type = "lua"
+script = "game.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["рабоч режим", "конец игр", "закончил игр", "хват игр"]
+triggers.en = ["work mode", "stop gaming", "done gaming"]
+phrases.ru = ["рабочий режим", "я закончил играть"]
+phrases.en = ["work mode"]
+
+[[commands]]
+id = "assistant_remote_on"
+type = "lua"
+script = "remote.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["включ удален управлен", "включ пульт", "включ управлен телефон", "включ управлен с телефон"]
+triggers.en = ["enable remote", "remote control on", "turn on remote", "start remote"]
+phrases.ru = ["включи удалённое управление", "включи пульт"]
+phrases.en = ["enable remote control"]
+
+[[commands]]
+id = "assistant_remote_off"
+type = "lua"
+script = "remote.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["выключ удален управлен", "выключ пульт", "отключ пульт", "отключ удален управлен"]
+triggers.en = ["disable remote", "remote control off", "turn off remote", "stop remote"]
+phrases.ru = ["выключи удалённое управление", "выключи пульт"]
+phrases.en = ["disable remote control"]
+
+[[commands]]
+id = "assistant_mic_off"
+type = "lua"
+script = "mic.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["режим текст", "текстов режим", "выключ микрофон", "отключ микрофон"]
+triggers.en = ["text mode", "microphone off", "mic off", "mute microphone"]
+phrases.ru = ["режим текста", "выключи микрофон"]
+phrases.en = ["text mode"]
+
+[[commands]]
+id = "assistant_mic_on"
+type = "lua"
+script = "mic.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["режим голос", "голосов режим", "включ микрофон"]
+triggers.en = ["voice mode", "microphone on", "mic on", "unmute microphone"]
+phrases.ru = ["режим голоса", "включи микрофон"]
+phrases.en = ["voice mode"]
+
+[[commands]]
+id = "assistant_tts_stop"
+type = "lua"
+script = "speech.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["хват чита", "хват говор", "замолч", "перестан говор", "перестан чита", "хватит озвуч"]
+triggers.en = ["stop reading", "stop talking", "be quiet", "shut up"]
+phrases.ru = ["хватит читать", "замолчи"]
+phrases.en = ["stop reading"]
+
+[[commands]]
+id = "assistant_tts_off"
+type = "lua"
+script = "speech.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["выключ озвучк", "отключ озвучк", "не говор вслух", "озвучк выключ"]
+triggers.en = ["voice off", "speech off", "stop speaking aloud", "disable speech"]
+phrases.ru = ["выключи озвучку"]
+phrases.en = ["speech off"]
+
+[[commands]]
+id = "assistant_tts_on"
+type = "lua"
+script = "speech.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["включ озвучк", "говор вслух", "озвучк включ"]
+triggers.en = ["voice on", "speech on", "enable speech"]
+phrases.ru = ["включи озвучку"]
+phrases.en = ["speech on"]
+
+[[commands]]
+id = "assistant_read_selection"
+type = "lua"
+script = "speech.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["озвуч", "прочита вслух", "прочита выделенн", "прочита этот", "прочита текст", "прочита мне", "read this", "read aloud", "read selection", "read the selected"]
+triggers.en = ["read this", "read aloud", "read the selected text", "read selection"]
+phrases.ru = ["озвучь этот текст", "прочитай выделенный текст"]
+phrases.en = ["read this text aloud"]
+
+[[commands]]
+id = "assistant_read_clipboard"
+type = "lua"
+script = "speech.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["прочита буфер", "озвуч буфер", "читай буфер", "read clipboard"]
+triggers.en = ["read clipboard", "read the clipboard"]
+phrases.ru = ["прочитай буфер обмена"]
+phrases.en = ["read the clipboard"]
