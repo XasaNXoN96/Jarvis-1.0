@@ -124,6 +124,18 @@
   .chip { display: inline-block; margin: 4px 6px 0 0; padding: 3px 10px; border-radius: 999px; background: #ffffff10; color: var(--text); cursor: pointer; font-size: 13px; }
   .chip:hover { background: #5ad1ff33; }
   small.dim { color: var(--dim); }
+  details.grp { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); margin-bottom: 10px; }
+  details.grp > summary { list-style: none; cursor: pointer; padding: 12px 14px; display: flex; align-items: center; gap: 10px; }
+  details.grp > summary::-webkit-details-marker { display: none; }
+  details.grp > summary::before { content: "▸"; color: var(--dim); width: 12px; transition: .2s; }
+  details.grp[open] > summary::before { transform: rotate(90deg); }
+  details.grp.off { opacity: .55; }
+  .grp .gt { flex: 1; min-width: 0; } .grp .gt b { font-size: 15px; } .grp .gt small { display: block; color: var(--dim); }
+  .grp .gc { color: var(--dim); font-size: 12px; white-space: nowrap; }
+  .grp .body { padding: 0 14px 12px; }
+  .cmdrow { padding: 8px 0; border-top: 1px solid var(--line); }
+  .cmdrow:first-child { border-top: 0; }
+  .cmdrow .id { color: var(--dim); font-size: 11px; margin-left: 6px; }
 
   /* input bar */
   .bottom { padding: 12px 16px 10px; border-top: 1px solid var(--line); background: #060a18d9; }
@@ -194,13 +206,17 @@
           </div>
         </div>
       </div>
-      <div class="card"><h3><span class="ei">🧩</span>Подключённые модули</h3><div id="modules"><div class="empty">Загрузка…</div></div>
-        <small class="dim">Отключённый модуль перестаёт отвечать на свои команды. Основной модуль отключить нельзя.</small></div>
+      <div class="card"><h3><span class="ei">🧩</span>Разделы команд</h3><div id="modules"><div class="empty">Загрузка…</div></div>
+        <small class="dim">Выключенный раздел перестаёт отвечать на свои команды (например, выключите «Файлы и папки», и «найди файл» не сработает). Включить обратно можно здесь или на странице «Команды».</small></div>
     </section>
 
     <section class="page" id="page-commands">
-      <h1>Что я умею</h1>
-      <p class="lead">Нажмите на фразу, чтобы вставить её в поле ввода.</p>
+      <h1>Команды по разделам</h1>
+      <p class="lead">Нажмите на раздел, чтобы раскрыть его. Нажмите на фразу — она вставится в поле ввода. Переключатель справа включает или выключает весь раздел.</p>
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <input type="text" id="cmd-search" placeholder="Найти команду, например: таймер" style="flex:1;min-width:220px">
+        <button class="btn" id="cmd-expand">Раскрыть все</button><button class="btn" id="cmd-collapse">Свернуть все</button>
+      </div>
       <div id="commands">Загрузка…</div>
     </section>
 
@@ -497,21 +513,22 @@ function renderTimers() {
     box.appendChild(d);
   }
 }
-const MODULE_NAMES = { assistant: 'Основной помощник', browser: 'Браузер', steam: 'Steam и игры', windows: 'Окна Windows', weather: 'Погода', jarvis: 'Разговор', counter: 'Счётчик', stop: 'Стоп', terminate: 'Выключение Jarvis', calculator: 'Калькулятор' };
 async function loadModules() {
   try {
     const list = await (await fetch('/modules')).json();
     const box = $('#modules'); box.textContent = '';
-    for (const m of list) {
+    for (const g of list) {
       const d = document.createElement('div'); d.className = 'item';
-      d.innerHTML = '<span class="st ' + (m.disabled ? 'bad' : '') + '"></span><div class="grow"><div class="t"></div><div class="m"></div></div><label class="sw"><input type="checkbox"><span></span></label>';
-      d.querySelector('.t').textContent = MODULE_NAMES[m.name] || m.name; d.querySelector('.m').textContent = m.commands + ' ' + (m.commands % 10 === 1 && m.commands !== 11 ? 'команда' : 'команд(ы)');
-      const cb = d.querySelector('input'); cb.checked = !m.disabled; if (m.name === 'assistant') cb.disabled = true;
-      cb.onchange = async () => { await action('module', { pack: m.name, disabled: !cb.checked }); loadModules(); };
+      d.innerHTML = '<span class="ei"></span><div class="grow"><div class="t"></div><div class="m"></div></div><label class="sw"><input type="checkbox"><span></span></label>';
+      d.querySelector('.ei').textContent = g.emoji; d.querySelector('.t').textContent = g.title;
+      d.querySelector('.m').textContent = g.commands + ' ' + cmdWord(g.commands) + ' · ' + g.about;
+      const cb = d.querySelector('input'); cb.checked = !g.disabled; if (g.locked) cb.disabled = true;
+      cb.onchange = async () => { await action('group', { key: g.key, disabled: !cb.checked }); commandsLoaded = false; loadModules(); };
       box.appendChild(d);
     }
-  } catch (e) { $('#modules').textContent = 'Не удалось загрузить модули'; }
+  } catch (e) { $('#modules').textContent = 'Не удалось загрузить разделы'; }
 }
+const cmdWord = n => { const m = n % 10, h = n % 100; return (h >= 11 && h <= 14) ? 'команд' : m === 1 ? 'команда' : (m >= 2 && m <= 4) ? 'команды' : 'команд'; };
 setInterval(() => { if (currentPage === 'panel') refreshState(); }, 2500);
 setInterval(() => { if (currentPage === 'panel') renderTimers(); }, 1000);
 setInterval(() => { if (currentPage !== 'panel') refreshMicState(); }, 4000);
@@ -623,27 +640,51 @@ async function refreshRemote() {
 $('#remote-alt-btn').onclick = () => { const a = $('#remote-alt'); a.style.display = a.style.display === 'none' ? 'block' : 'none'; };
 setInterval(() => { if (currentPage === 'settings') refreshRemote(); }, 1500);
 
-// ---------- commands page ----------
+// ---------- commands page: by sections ----------
 let commandsLoaded = false;
 async function loadCommands() {
   if (commandsLoaded) return;
   try {
-    const r = await fetch('/commands');
-    const data = await r.json();
+    const data = await (await fetch('/commands')).json();
     const box = $('#commands'); box.textContent = '';
-    for (const c of data.commands) {
-      const d = document.createElement('div'); d.className = 'cmd';
-      const t = document.createElement('b'); t.textContent = (MODULE_NAMES[c.pack] || c.pack) + ' · ' + c.id; d.appendChild(t); d.appendChild(document.createElement('br'));
-      for (const p of c.phrases) {
-        const chip = document.createElement('span'); chip.className = 'chip'; chip.textContent = p;
-        chip.onclick = () => { $('#input').value = p.replace(/\{[^}]*\}/g, '').trim(); show('home'); $('#input').focus(); };
-        d.appendChild(chip);
+    for (const g of data.groups) {
+      const cmds = data.commands.filter(c => c.group === g.key);
+      if (!cmds.length) continue;
+      const det = document.createElement('details'); det.className = 'grp' + (g.disabled ? ' off' : ''); det.dataset.key = g.key;
+      const sum = document.createElement('summary');
+      sum.innerHTML = '<span style="font-size:20px"></span><div class="gt"><b></b><small></small></div><span class="gc"></span><label class="sw"><input type="checkbox"><span></span></label>';
+      sum.firstChild.textContent = g.emoji; sum.querySelector('b').textContent = g.title; sum.querySelector('small').textContent = g.about;
+      sum.querySelector('.gc').textContent = cmds.length + ' ' + cmdWord(cmds.length);
+      const cb = sum.querySelector('input'); cb.checked = !g.disabled; if (g.key === 'control') cb.disabled = true;
+      sum.querySelector('label').onclick = e => e.stopPropagation();   // the switch does not open/close the section
+      cb.onchange = async () => { await action('group', { key: g.key, disabled: !cb.checked }); det.classList.toggle('off', !cb.checked); };
+      det.appendChild(sum);
+      const body = document.createElement('div'); body.className = 'body';
+      for (const c of cmds) {
+        const row = document.createElement('div'); row.className = 'cmdrow'; row.dataset.text = (c.phrases.join(' ') + ' ' + c.id).toLowerCase();
+        for (const p of c.phrases) {
+          const chip = document.createElement('span'); chip.className = 'chip'; chip.textContent = p;
+          chip.onclick = () => { $('#input').value = p.replace(/\{[^}]*\}/g, '').trim(); show('home'); $('#input').focus(); };
+          row.appendChild(chip);
+        }
+        body.appendChild(row);
       }
-      box.appendChild(d);
+      det.appendChild(body); box.appendChild(det);
     }
-    commandsLoaded = true;
+    commandsLoaded = true; filterCommands();
   } catch (e) { $('#commands').textContent = 'Не удалось загрузить список команд'; }
 }
+function filterCommands() {
+  const q = $('#cmd-search').value.trim().toLowerCase();
+  document.querySelectorAll('#commands details.grp').forEach(det => {
+    let any = false;
+    det.querySelectorAll('.cmdrow').forEach(r => { const hit = !q || r.dataset.text.includes(q); r.style.display = hit ? '' : 'none'; any = any || hit; });
+    det.style.display = any ? '' : 'none'; if (q && any) det.open = true;
+  });
+}
+$('#cmd-search').oninput = filterCommands;
+$('#cmd-expand').onclick = () => document.querySelectorAll('#commands details.grp').forEach(d => d.open = true);
+$('#cmd-collapse').onclick = () => document.querySelectorAll('#commands details.grp').forEach(d => d.open = false);
 
 // ---------- hologram: orb and avatar ----------
 const canvas = $('#orb'), ctx = canvas.getContext('2d');

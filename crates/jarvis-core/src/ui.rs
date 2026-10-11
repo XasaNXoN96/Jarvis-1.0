@@ -60,15 +60,21 @@ fn commands_json() -> String {
                 if phrases.is_empty() {
                     continue;
                 }
+                let pack_name = pack.path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
                 list.push(json!({
                     "id": cmd.id,
-                    "pack": pack.path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
-                    "phrases": phrases.iter().take(4).collect::<Vec<_>>(),
+                    "pack": pack_name,
+                    "group": crate::uistate::group_key(&pack_name, &cmd.id),
+                    "phrases": phrases.iter().take(5).collect::<Vec<_>>(),
                 }));
             }
         }
     }
-    json!({ "language": lang, "commands": list }).to_string()
+    let groups: Vec<_> = crate::uistate::GROUPS
+        .iter()
+        .map(|g| json!({ "key": g.0, "emoji": g.1, "title": g.2, "about": g.3, "disabled": crate::uistate::is_group_disabled(g.0) }))
+        .collect();
+    json!({ "language": lang, "commands": list, "groups": groups }).to_string()
 }
 
 fn pack_name(path: &std::path::Path) -> String {
@@ -76,17 +82,24 @@ fn pack_name(path: &std::path::Path) -> String {
 }
 
 fn modules_json() -> serde_json::Value {
-    let mut list = Vec::new();
+    let mut counts: std::collections::HashMap<&'static str, usize> = std::collections::HashMap::new();
     if let Some(commands) = COMMANDS_LIST.get() {
         for pack in commands {
             let name = pack_name(&pack.path);
-            list.push(json!({
-                "name": name,
-                "commands": pack.commands.len(),
-                "disabled": crate::uistate::is_pack_disabled(&name),
-            }));
+            for cmd in &pack.commands {
+                *counts.entry(crate::uistate::group_key(&name, &cmd.id)).or_insert(0) += 1;
+            }
         }
     }
+    let list: Vec<_> = crate::uistate::GROUPS
+        .iter()
+        .map(|g| json!({
+            "key": g.0, "emoji": g.1, "title": g.2, "about": g.3,
+            "commands": counts.get(g.0).copied().unwrap_or(0),
+            "disabled": crate::uistate::is_group_disabled(g.0),
+            "locked": g.0 == "control",
+        }))
+        .collect();
     json!(list)
 }
 
@@ -139,13 +152,13 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             #[cfg(not(feature = "lua"))]
             json!({ "ok": false })
         }
-        "module" => {
-            let pack = body.get("pack").and_then(|v| v.as_str()).unwrap_or("");
+        "group" => {
+            let key = body.get("key").and_then(|v| v.as_str()).unwrap_or("");
             let disabled = body.get("disabled").and_then(|v| v.as_bool()).unwrap_or(false);
-            if pack.is_empty() || pack == "assistant" {
-                return json!({ "ok": false, "message": "Основной модуль отключить нельзя" });
+            if key.is_empty() || key == "control" {
+                return json!({ "ok": false, "message": "Этот раздел отключить нельзя" });
             }
-            crate::uistate::set_pack_disabled(pack, disabled);
+            crate::uistate::set_group_disabled(key, disabled);
             json!({ "ok": true })
         }
         "ai_test" => ai_test(),

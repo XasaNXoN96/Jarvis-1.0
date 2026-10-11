@@ -79,22 +79,30 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
         let lang = crate::i18n::get_language();
         let mut n = 0;
         if let Some(list) = crate::COMMANDS_LIST.get() {
-            for pack in list {
-                for cmd in &pack.commands {
-                    let phrases = cmd.get_phrases(&lang);
-                    if phrases.is_empty() {
-                        continue;
+            // by section, in the order of the window (sound, timers, ...)
+            for g in crate::uistate::GROUPS {
+                for pack in list {
+                    let pack_name = pack.path.file_name().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+                    for cmd in &pack.commands {
+                        if crate::uistate::group_key(&pack_name, &cmd.id) != g.0 {
+                            continue;
+                        }
+                        let phrases = cmd.get_phrases(&lang);
+                        if phrases.is_empty() {
+                            continue;
+                        }
+                        n += 1;
+                        let row = lua.create_table()?;
+                        row.set("pack", pack_name.as_str())?;
+                        row.set("group", format!("{} {}", g.1, g.2))?;
+                        row.set("id", cmd.id.as_str())?;
+                        let ph = lua.create_table()?;
+                        for (i, p) in phrases.iter().enumerate() {
+                            ph.set(i + 1, p.as_str())?;
+                        }
+                        row.set("phrases", ph)?;
+                        out.set(n, row)?;
                     }
-                    n += 1;
-                    let row = lua.create_table()?;
-                    row.set("pack", pack.path.file_name().map(|p| p.to_string_lossy().to_string()).unwrap_or_default())?;
-                    row.set("id", cmd.id.as_str())?;
-                    let ph = lua.create_table()?;
-                    for (i, p) in phrases.iter().enumerate() {
-                        ph.set(i + 1, p.as_str())?;
-                    }
-                    row.set("phrases", ph)?;
-                    out.set(n, row)?;
                 }
             }
         }

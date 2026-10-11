@@ -113,10 +113,46 @@ pub fn settings_json() -> Value {
 }
 
 // ---------------------------------------------------------------------------------------------
-// switched-off command packs ("modules")
+// command sections ("groups"): the commands page and the panel show commands by topic, and a whole
+// section can be switched off
 // ---------------------------------------------------------------------------------------------
+// (key, emoji, title, short description)
+pub const GROUPS: &[(&str, &str, &str, &str)] = &[
+    ("sound", "🔊", "Звук и экран", "громкость, яркость, музыка: пауза, следующий трек"),
+    ("timers", "⏱", "Таймеры и напоминания", "таймер, напоминание, будильник, «остановись через…»"),
+    ("apps", "🌐", "Программы и сайты", "открыть сайт, браузер, блокнот, калькулятор, закрыть программу"),
+    ("files", "📁", "Файлы и папки", "найти файл, открыть папку, диск, настройки Windows"),
+    ("text", "📝", "Заметки", "записать мысль, прочитать и открыть заметки"),
+    ("voice", "🎤", "Голос и озвучка", "микрофон, озвучка, чтение выделенного текста, проверка голоса"),
+    ("system", "🖥", "Компьютер и питание", "выключить, перезагрузить, заблокировать, свернуть окна, скриншот"),
+    ("info", "📊", "Информация", "время, дата, батарея, память, процессор, диск, IP"),
+    ("web", "🌍", "Интернет", "погода, Википедия, перевод, карты, музыка"),
+    ("games", "🎮", "Игры", "игровой режим и таймер игры, Steam"),
+    ("remote", "📱", "Пульт для телефона", "управление с телефона"),
+    ("talk", "💬", "Разговор и помощь", "привет, «что ты умеешь», диагностика, шутки"),
+    ("control", "⛔", "Управление Jarvis", "стоп, выключить Jarvis (отключить нельзя)"),
+];
+
+pub fn group_key(pack: &str, id: &str) -> &'static str {
+    let id = id.strip_prefix("assistant_").unwrap_or(id);
+    let starts = |p: &str| id.starts_with(p);
+    if starts("volume") || starts("brightness") || starts("media") { return "sound"; }
+    if starts("timer") || id == "reminder" { return "timers"; }
+    if starts("file") || id == "place_open" || id == "disk_open" { return "files"; }
+    if starts("note") { return "text"; }
+    if starts("tts") || starts("read_") || starts("mic_") { return "voice"; }
+    if starts("power") || id == "unlock" || pack == "windows" { return "system"; }
+    if starts("info") || starts("sys_") { return "info"; }
+    if id == "wiki" || id == "translate" || id == "maps" || id == "music_search" || pack == "weather" { return "web"; }
+    if starts("game") || pack == "steam" { return "games"; }
+    if starts("remote") { return "remote"; }
+    if pack == "stop" || pack == "terminate" { return "control"; }
+    if id == "website" || starts("program") || pack == "browser" || pack == "calculator" { return "apps"; }
+    "talk"
+}
+
 static DISABLED: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| {
-    let set: HashSet<String> = file("disabled_packs.json")
+    let set: HashSet<String> = file("disabled_groups.json")
         .and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
         .unwrap_or_default()
@@ -125,17 +161,24 @@ static DISABLED: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| {
     Mutex::new(set)
 });
 
-pub fn is_pack_disabled(pack: &str) -> bool {
-    DISABLED.lock().contains(pack)
+pub fn is_group_disabled(group: &str) -> bool {
+    group != "control" && DISABLED.lock().contains(group)
 }
 
-pub fn set_pack_disabled(pack: &str, disabled: bool) {
+pub fn set_group_disabled(group: &str, disabled: bool) {
+    if group == "control" {
+        return;
+    }
     let mut set = DISABLED.lock();
-    if disabled { set.insert(pack.to_string()); } else { set.remove(pack); }
-    if let Some(p) = file("disabled_packs.json") {
+    if disabled { set.insert(group.to_string()); } else { set.remove(group); }
+    if let Some(p) = file("disabled_groups.json") {
         let list: Vec<&String> = set.iter().collect();
         let _ = std::fs::write(p, serde_json::to_string(&list).unwrap_or_default());
     }
+}
+
+pub fn group_title(key: &str) -> String {
+    GROUPS.iter().find(|g| g.0 == key).map(|g| g.2.to_string()).unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------------------------

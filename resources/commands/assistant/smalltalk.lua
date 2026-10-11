@@ -34,12 +34,12 @@ else -- help: every command with example phrases
   jarvis.app.show_page("commands")           -- the window shows the full list with clickable phrases
   local list = jarvis.app.commands()
   jarvis.out(T("Все команды (" .. #list .. "):", "All commands (" .. #list .. "):"))
-  local pack
+  local group
   for _, c in ipairs(list) do
-    if c.pack ~= pack then
-      pack = c.pack
+    if c.group ~= group then
+      group = c.group
       jarvis.out("")
-      jarvis.out("[" .. pack .. "]")
+      jarvis.out("[" .. group .. "]")
     end
     local examples = {}
     for i = 1, math.min(2, #c.phrases) do examples[#examples + 1] = "«" .. c.phrases[i] .. "»" end

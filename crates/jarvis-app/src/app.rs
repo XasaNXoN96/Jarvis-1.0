@@ -481,8 +481,9 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
 
         // a module switched off in the Jarvis window
         let pack = cmd_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-        if jarvis_core::uistate::is_pack_disabled(&pack) {
-            let msg = format!("Модуль «{}» отключён (включить: окно Jarvis → Панель → Модули)", pack);
+        let group = jarvis_core::uistate::group_key(&pack, &cmd_config.id);
+        if jarvis_core::uistate::is_group_disabled(group) {
+            let msg = format!("Раздел «{}» отключён (включить: окно Jarvis → Команды)", jarvis_core::uistate::group_title(group));
             say(&msg);
             ipc::send(IpcEvent::Output { text: msg });
             jarvis_core::uistate::log_action(text, &cmd_config.id, false);
