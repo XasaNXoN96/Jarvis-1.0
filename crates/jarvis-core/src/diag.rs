@@ -115,12 +115,27 @@ pub enum PiperFacts {
 }
 
 pub fn piper_check(tts_on: bool, windows_voice: bool, test: PiperFacts, last: Option<(u64, Result<(), String>)>) -> Check {
+    piper_check_play(tts_on, windows_voice, test, last, None)
+}
+
+// `play`: the last real playback. A sound file made by Piper is not proof that it was heard.
+pub fn piper_check_play(tts_on: bool, windows_voice: bool, test: PiperFacts, last: Option<(u64, Result<(), String>)>, play: Option<(u64, Result<(), String>)>) -> Check {
     let (name, key) = ("Голос Piper", "piper");
-    let last_txt = match &last {
-        Some((t, Ok(()))) => format!(" Последняя фраза озвучена {}.", ago(*t)),
-        Some((t, Err(e))) => format!(" Последняя ошибка озвучки {}: {}.", ago(*t), e),
+    let mut last_txt = match &last {
+        Some((t, Ok(()))) => format!(" Последний синтез {} успешен.", ago(*t)),
+        Some((t, Err(e))) => format!(" Последняя ошибка синтеза {}: {}.", ago(*t), e),
         None => String::new(),
     };
+    match &play {
+        Some((t, Ok(()))) => last_txt.push_str(&format!(" Последнее воспроизведение {} прошло без ошибок.", ago(*t))),
+        Some((t, Err(e))) => {
+            if matches!(test, PiperFacts::Ok(_)) {
+                return check(key, name, Status::Error, format!("Звук создаётся, но не воспроизводится ({}): {}.", ago(*t), e), "Проверьте устройство вывода звука в Параметры Windows → Система → Звук и громкость; нажмите «Проверить звук» в Настройках → Голос.");
+            }
+            last_txt.push_str(&format!(" Последняя ошибка воспроизведения {}: {}.", ago(*t), e));
+        }
+        None => last_txt.push_str(" Воспроизведение в этом запуске ещё не проверялось."),
+    }
     let off = if tts_on { "" } else { " Озвучка ответов сейчас выключена пользователем." };
     match test {
         PiperFacts::NotInstalled => {
@@ -130,7 +145,12 @@ pub fn piper_check(tts_on: bool, windows_voice: bool, test: PiperFacts, last: Op
                 check(key, name, Status::Error, format!("Голос Джарвиса (Piper) не установлен, ответы не звучат.{}", off), "Настройки → Голос → «Установить голос Джарвиса» (нужен интернет, ≈80 МБ).")
             }
         }
-        PiperFacts::Ok(bytes) => check(key, name, if tts_on { Status::Ok } else { Status::Warn }, format!("Пробная фраза синтезирована ({} КБ звука, без воспроизведения).{}{}", bytes / 1024, last_txt, off), if tts_on { "" } else { "Включите озвучку: Настройки → Приватность." }),
+        PiperFacts::Ok(bytes) => {
+            // synthesis proven; playing is proven only by a real playback of this run
+            let st = if !tts_on { Status::Warn } else if play.is_some() { Status::Ok } else { Status::Unchecked };
+            let fix = if !tts_on { "Включите озвучку: Настройки → Приватность." } else if play.is_none() { "Нажмите «Проверить звук» в Настройках → Голос, затем повторите проверку." } else { "" };
+            check(key, name, st, format!("Пробная фраза синтезирована ({} КБ звука, без воспроизведения).{}{}", bytes / 1024, last_txt, off), fix)
+        }
         PiperFacts::Failed(e) => check(key, name, Status::Error, format!("Piper не смог создать звук: {}.{}", e, last_txt), "Переустановите голос: Настройки → Голос → «Установить голос Джарвиса». Проверьте, что антивирус не блокирует piper.exe."),
         PiperFacts::Interrupted => check(key, name, Status::Unchecked, format!("Проверка прервана: Джарвис начал говорить.{}", last_txt), "Повторите проверку."),
     }
@@ -381,7 +401,7 @@ pub fn run() -> Vec<Check> {
         crate::tts::SynthCheck::Failed(e) => PiperFacts::Failed(e),
         crate::tts::SynthCheck::Interrupted => PiperFacts::Interrupted,
     };
-    let piper = piper_check(crate::tts::is_enabled(), crate::uistate::voice_name().starts_with("win:"), test, crate::tts::last_synth());
+    let piper = piper_check_play(crate::tts::is_enabled(), crate::uistate::voice_name().starts_with("win:"), test, crate::tts::last_synth(), crate::tts::last_play());
     let ai_status = crate::ai::status_json();
     let ai = ai_check(crate::uistate::settings().ai_enabled, &ai_status);
     let latency = latency_check(ai_status.get("timing").filter(|t| !t.is_null()));

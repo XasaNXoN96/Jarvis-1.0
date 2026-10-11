@@ -185,7 +185,8 @@ fn restart_app() {
         }
     };
     
-    match Command::new(&exe_path).spawn() {
+    // the new copy waits until this one has quit (only one Jarvis runs at a time)
+    match Command::new(&exe_path).arg("--wait-instance").spawn() {
         Ok(_) => {
             info!("Spawned new instance, exiting current...");
             std::process::exit(0);

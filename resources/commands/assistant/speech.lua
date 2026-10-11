@@ -65,6 +65,14 @@ end
 
 -- the preview is cut by characters (jarvis.text.preview): the old cut with string.sub counted bytes and split a Russian letter
 -- in two, the broken string made jarvis.reply fail with "invalid UTF-8" and nothing was read aloud
+-- nothing is reported as "reading" when the voice cannot speak (speech off, no Piper voice): the reason is said instead
+local can, why = jarvis.tts.can_speak()
+if not can then
+  say(T("Озвучка", "Speech"),
+      T("Не могу прочитать вслух: ", "Cannot read aloud: ") .. tostring(why) .. T(". Включите озвучку или установите голос в Настройках → Голос.", ". Turn speech on or install the voice in Settings → Voice."),
+      false)
+  return
+end
 say(T("Читаю", "Reading"), jarvis.text.preview(text, 80), false)
 -- the clipboard text goes only to the local voice (Piper), never to an AI or another service
 jarvis.speak(text)

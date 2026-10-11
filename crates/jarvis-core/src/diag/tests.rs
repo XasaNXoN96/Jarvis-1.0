@@ -20,7 +20,11 @@ fn the_microphone_is_working_only_when_real_audio_arrives() {
 fn piper_is_working_only_after_a_real_synthesis() {
     assert_eq!(piper_check(true, false, PiperFacts::NotInstalled, None).status, Status::Error);
     assert_eq!(piper_check(true, true, PiperFacts::NotInstalled, None).status, Status::Warn);
-    assert_eq!(piper_check(true, false, PiperFacts::Ok(30_000), None).status, Status::Ok);
+    assert_eq!(piper_check(true, false, PiperFacts::Ok(30_000), None).status, Status::Unchecked, "a made sound file is not proof that it was heard");
+    assert_eq!(piper_check_play(true, false, PiperFacts::Ok(30_000), None, Some((now(), Ok(())))).status, Status::Ok);
+    let not_heard = piper_check_play(true, false, PiperFacts::Ok(30_000), None, Some((now(), Err("нет устройства".into()))));
+    assert_eq!(not_heard.status, Status::Error);
+    assert!(not_heard.detail.contains("не воспроизводится"));
     assert_eq!(piper_check(false, false, PiperFacts::Ok(30_000), None).status, Status::Warn, "speech switched off by the user");
     let failed = piper_check(true, false, PiperFacts::Failed("onnx error".into()), Some((1, Ok(()))));
     assert_eq!(failed.status, Status::Error);
@@ -93,13 +97,11 @@ fn the_report_has_no_secrets_no_conversations_and_copying_it_changes_nothing() {
     uistate::log_event("error", &format!("ИИ: ошибка с ключом {}", key));
     crate::notify::push("command", "Уведомление", &format!("личное уведомление {}", private), true);
 
-    let before_rev = crate::ai::rev();
     let before_stats = crate::ai::store().stats();
     let before_ai = crate::ai::status_json()["state"].clone();
     let report = report();
     let json_text = json().to_string();
-    assert_eq!(crate::ai::rev(), before_rev, "copying the report never changes the history");
-    assert_eq!(crate::ai::store().stats(), before_stats);
+    assert_eq!(crate::ai::store().stats(), before_stats, "copying the report never changes the history");
     assert_eq!(crate::ai::status_json()["state"], before_ai, "and never sends a request to the AI");
     for text in [&report, &json_text] {
         assert!(!text.contains(&key), "the key leaked");

@@ -1167,7 +1167,17 @@ function applyPrivacy(s) {
   $('#nt-show').checked = !!s.notify_show; $('#nt-speak').checked = !!s.notify_speak; $('#nt-sound').checked = !!s.notify_sound;
   $('#ext-on').checked = !!s.ext_enabled; $('#ext-show').checked = !!s.ext_show; $('#ext-speak').checked = !!s.ext_speak; $('#ext-strict').checked = !!s.ext_strict;
   const st = s.ext_status || {}; const ST = { off: 'выключено', starting: 'запуск…', on: 'работает', denied: 'Windows не дала доступ', error: 'ошибка', unsupported: 'недоступно' };
-  $('#ext-status').textContent = (ST[st.state] || st.state || '') + (st.detail ? ' — ' + st.detail : '');
+  let extTxt = (ST[st.state] || st.state || '') + (st.detail ? ' — ' + st.detail : '');
+  const xs = st.stats;
+  // what really happened, step by step (counts and the program name only, never the text)
+  if (xs && st.state !== 'off') {
+    extTxt += '. Проверок Windows: ' + xs.polls + ', сейчас в центре уведомлений: ' + xs.in_center + ', получено новых: ' + xs.received +
+      (xs.unknown_app ? ', программа не распознана: ' + xs.unknown_app : '') + (xs.not_allowed ? ', не из разрешённых: ' + xs.not_allowed : '') +
+      (xs.no_text ? ', без текста: ' + xs.no_text : '') + ', показано: ' + xs.shown + ', передано в озвучку: ' + xs.queued_speech + (xs.not_spoken ? ', не озвучено: ' + xs.not_spoken : '') + '.';
+    if (xs.last_stage) extTxt += ' Последнее: ' + xs.last_stage + (xs.last_app ? ' (' + xs.last_app + ')' : '') + '.';
+  }
+  const pb = st.playback; if (pb && st.state !== 'off') extTxt += pb.ok ? ' Последнее воспроизведение звука: без ошибок.' : ' Ошибка воспроизведения звука: ' + pb.error + '.';
+  $('#ext-status').textContent = extTxt;
   extLists = { allowed: s.ext_allowed || [], blocked: s.ext_blocked || [], seen: s.ext_seen || [] }; renderExtLists();
   if (s.ui && s.ui['jarvis-mode'] && s.ui['jarvis-mode'] !== mode) setMode(s.ui['jarvis-mode'], true);
 }

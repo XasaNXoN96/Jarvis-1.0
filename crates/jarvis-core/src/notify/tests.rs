@@ -100,11 +100,11 @@ fn external_notifications_are_shown_once_only_when_allowed_and_never_logged() {
     let id = format!("n{}", rand::random::<u32>());
     let secret = format!("код подтверждения {}", rand::random::<u32>());
     // already in the notification center when the watcher started: not shown again
-    assert!(on_external(&id, "Telegram", &[secret.clone()], true).is_none());
-    assert!(on_external(&id, "Telegram", &[secret.clone()], false).is_none(), "the same id is never shown twice");
+    assert!(on_external(&id, "Telegram", "", &[secret.clone()], true).is_none());
+    assert!(on_external(&id, "Telegram", "", &[secret.clone()], false).is_none(), "the same id is never shown twice");
     let id2 = format!("{}b", id);
-    assert!(on_external(&id2, "Telegram", &["Анна".into(), secret.clone()], false).is_some());
-    assert!(on_external(&format!("{}c", id), "Outlook", &["письмо".into()], false).is_none(), "not on the allowed list");
+    assert!(on_external(&id2, "Telegram", "", &["Анна".into(), secret.clone()], false).is_some());
+    assert!(on_external(&format!("{}c", id), "Outlook", "", &["письмо".into()], false).is_none(), "not on the allowed list");
     let n = recent(10).into_iter().find(|n| n.kind == "external" && n.text.contains(&secret)).unwrap();
     assert_eq!(n.source, "Telegram");
     assert!(!n.spoken, "external notifications are not read aloud unless that is switched on");
@@ -168,6 +168,115 @@ fn a_refusal_of_windows_never_looks_like_working() {
     assert_eq!(ext_status_json()["state"], "error");
     // the diagnostics report names the state, not "working"
     assert!(crate::diag::report().contains("внешние вкл (error)"));
+    ext_stop();
+    uistate::set_for_tests(UiSettings::default());
+}
+
+#[test]
+fn the_real_names_and_ids_of_telegram_match_the_word_the_user_wrote() {
+    // what Windows reports for Telegram Desktop (installer and Microsoft Store versions)
+    assert!(app_matches("Telegram", "Telegram Desktop", "TelegramMessengerLLP.TelegramDesktop_t4vj0pshhgkwm!Telegram.TelegramDesktop.Store"));
+    assert!(app_matches("telegram", "", "Telegram.TelegramDesktop"));
+    assert!(app_matches("Telegram Desktop", "Telegram Desktop", ""));
+    assert!(app_matches("WhatsApp", "WhatsApp", "5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App"));
+    assert!(!app_matches("Mail", "Gmail", "com.squirrel.gmail.gmail"), "never the middle of a word");
+    assert!(!app_matches("Tele", "Telegram Desktop", ""), "a piece of a word is not a name");
+    assert!(!app_matches("", "Telegram", ""));
+    assert_eq!(app_label("", "TelegramMessengerLLP.TelegramDesktop_t4vj0pshhgkwm!Telegram.TelegramDesktop.Store"), "TelegramDesktop");
+    assert_eq!(app_label("Telegram Desktop", "x"), "Telegram Desktop");
+    let s = UiSettings { ext_enabled: true, ext_strict: true, ext_allowed: vec!["Telegram".into()], ext_blocked: vec!["Spam".into()], ..UiSettings::default() };
+    assert!(ext_allowed_id(&s, "Telegram Desktop", "TelegramMessengerLLP.TelegramDesktop_x!App"), "the user's 'Telegram' lets Telegram Desktop through");
+    assert!(!ext_allowed_id(&s, "", ""), "an unrecognized program is never let through");
+    assert!(!ext_allowed_id(&s, "Spam Messenger", ""), "excluded");
+}
+
+fn speak_settings() -> UiSettings {
+    UiSettings { ext_speak: true, ext_show: true, ..ext_settings() }
+}
+
+fn last_note_with(t: &str) -> Option<Note> {
+    recent(20).into_iter().find(|n| n.text.contains(t))
+}
+
+#[test]
+fn an_allowed_telegram_notification_goes_to_the_voice_queue_and_the_rest_does_not() {
+    let _g = uistate::TEST_LOCK.lock();
+    let r = || rand::random::<u32>();
+    uistate::set_for_tests(speak_settings());
+    *crate::tts::TEST_CAN_SPEAK.lock() = Some(Ok(()));
+    ext_stop();
+    handle_line_for_tests(r#"{"type":"access","status":"Allowed"}"#);
+    handle_line_for_tests(r#"{"type":"poll","count":3}"#);
+    let before = ext_stats();
+    assert_eq!(before.in_center, 3);
+
+    // a real-looking Telegram notification: display name "Telegram Desktop", the user's list says "Telegram"
+    let t = format!("Привет! Как дела? 👋 {}", r());
+    handle_line_for_tests(&format!(r#"{{"type":"note","id":"tg{}","app":"Telegram Desktop","aumid":"TelegramMessengerLLP.TelegramDesktop_t4vj0pshhgkwm!Telegram.TelegramDesktop.Store","texts":["Анна","{}"],"initial":false}}"#, r(), t));
+    let n = last_note_with(&t).expect("shown");
+    assert!(n.spoken, "handed to the voice queue");
+    assert_eq!(n.source, "Telegram Desktop");
+    let st = ext_stats();
+    assert_eq!(st.queued_speech, before.queued_speech + 1);
+    assert!(st.last_stage.contains("очередь озвучки"), "{}", st.last_stage);
+    assert!(!st.last_stage.contains(&t) && !format!("{:?}", st).contains(&t), "the statistics never hold the text");
+
+    // the same notification again: never spoken twice
+    let id = format!("tg{}", r());
+    let t2 = format!("второе {}", r());
+    let line = format!(r#"{{"type":"note","id":"{}","app":"Telegram Desktop","aumid":"","texts":["{}"],"initial":false}}"#, id, t2);
+    handle_line_for_tests(&line);
+    handle_line_for_tests(&line);
+    assert_eq!(recent(20).iter().filter(|n| n.text.contains(&t2)).count(), 1);
+
+    // empty or hidden text: shown, not spoken
+    handle_line_for_tests(&format!(r#"{{"type":"note","id":"e{}","app":"Telegram Desktop","aumid":"","texts":["  "],"initial":false}}"#, r()));
+    assert!(ext_stats().last_stage.contains("текст недоступен"));
+    assert!(!recent(1)[0].spoken);
+
+    // a program Windows could not name: not handled at all
+    let u = format!("кто это {}", r());
+    handle_line_for_tests(&format!(r#"{{"type":"note","id":"u{}","app":"","aumid":"","texts":["{}"],"initial":false}}"#, r(), u));
+    assert!(last_note_with(&u).is_none());
+    assert!(ext_stats().last_stage.contains("не распознана"));
+
+    // not on the list
+    let o = format!("письмо {}", r());
+    handle_line_for_tests(&format!(r#"{{"type":"note","id":"o{}","app":"Outlook","aumid":"","texts":["{}"],"initial":false}}"#, r(), o));
+    assert!(last_note_with(&o).is_none());
+
+    *crate::tts::TEST_CAN_SPEAK.lock() = None;
+    ext_stop();
+    uistate::set_for_tests(UiSettings::default());
+}
+
+#[test]
+fn speech_off_dnd_and_a_missing_voice_are_reported_not_hidden() {
+    let _g = uistate::TEST_LOCK.lock();
+    let r = || rand::random::<u32>();
+    let note = |label: &str| {
+        let t = format!("{} {}", label, r());
+        handle_line_for_tests(&format!(r#"{{"type":"note","id":"s{}","app":"Telegram","aumid":"","texts":["{}"],"initial":false}}"#, r(), t));
+        (last_note_with(&t).unwrap(), ext_stats().last_stage)
+    };
+    ext_stop();
+    handle_line_for_tests(r#"{"type":"access","status":"Allowed"}"#);
+
+    // Piper missing (or broken): shown, not counted as spoken, the reason is in the status
+    uistate::set_for_tests(speak_settings());
+    *crate::tts::TEST_CAN_SPEAK.lock() = Some(Err("голос Джарвиса (Piper) не установлен".into()));
+    let (n, st) = note("нет голоса");
+    assert!(n.shown && !n.spoken);
+    assert!(st.contains("не удалось озвучить") && st.contains("Piper"), "{}", st);
+
+    // do not disturb: nothing shown or spoken, and it says why
+    *crate::tts::TEST_CAN_SPEAK.lock() = Some(Ok(()));
+    uistate::set_for_tests(UiSettings { dnd: true, ..speak_settings() });
+    let (n, st) = note("тихо");
+    assert!(!n.shown && !n.spoken);
+    assert!(st.contains("Не беспокоить"), "{}", st);
+
+    *crate::tts::TEST_CAN_SPEAK.lock() = None;
     ext_stop();
     uistate::set_for_tests(UiSettings::default());
 }

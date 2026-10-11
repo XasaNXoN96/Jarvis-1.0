@@ -38,6 +38,19 @@ fn main() -> Result<(), String> {
     // initialize directories
     config::init_dirs()?;
 
+    // one Jarvis at a time: a second start shows the window of the running one and quits
+    // (two copies ran every spoken command twice and wrote every question and answer twice)
+    {
+        let restarting = std::env::args().any(|a| a == "--wait-instance");
+        let wait = std::time::Duration::from_secs(if restarting { 15 } else { 0 });
+        if !jarvis_core::instance::acquire_or_wait(jarvis_core::instance::NAME, wait) {
+            if !std::env::args().any(|a| a == "--background" || a == "--no-ui") {
+                jarvis_core::ui::open_window();
+            }
+            return Ok(());
+        }
+    }
+
     // initialize logging
     log::init_logging()?;
 

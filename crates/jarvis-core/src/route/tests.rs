@@ -72,3 +72,13 @@ fn a_question_about_a_program_is_a_question_not_a_launch() {
         assert!(apps::parse_request(t).is_none(), "{}", t);
     }
 }
+
+#[test]
+fn local_commands_never_go_to_the_ai_or_a_web_search() {
+    for text in ["сколько времени", "открой блокнот", "поставь таймер на 5 минут", "какое сегодня число", "громкость 50 процентов"] {
+        assert_eq!(decide(text, true), Route::Command, "{} stays a local command even with the AI connected", text);
+        assert_eq!(decide(text, false), Route::Command);
+    }
+    assert_eq!(decide("что такое python", true), Route::Ai);
+    assert_eq!(decide("что такое python", false), Route::Command, "without the AI (switched off) nothing is sent");
+}

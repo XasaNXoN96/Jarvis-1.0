@@ -193,22 +193,27 @@ fn store(child: Child, generation: u64) -> bool {
     true
 }
 
-fn wait_current(generation: u64) {
+// Some(true): the player finished normally, Some(false): it failed, None: interrupted (stop / a newer phrase)
+fn wait_current(generation: u64) -> Option<bool> {
     // poll so that stop() (which kills the child) ends the wait quickly
     loop {
         if GENERATION.load(Ordering::SeqCst) != generation {
-            return;
+            return None;
         }
         let mut slot = CURRENT.lock();
         match slot.as_mut() {
             Some(child) => match child.try_wait() {
-                Ok(Some(_)) | Err(_) => {
+                Ok(Some(status)) => {
                     *slot = None;
-                    return;
+                    return Some(status.success());
+                }
+                Err(_) => {
+                    *slot = None;
+                    return Some(false);
                 }
                 Ok(None) => {}
             },
-            None => return,
+            None => return None,
         }
         drop(slot);
         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -254,6 +259,49 @@ fn note_synth(result: Result<(), String>) {
     *LAST_SYNTH.lock() = Some((t, result));
 }
 
+// the last real playback (unix time, Ok or the error): making a sound file is not the same as hearing it
+static LAST_PLAY: Lazy<Mutex<Option<(u64, Result<(), String>)>>> = Lazy::new(|| Mutex::new(None));
+
+fn note_play(result: Result<(), String>) {
+    if let Err(e) = &result {
+        warn!("TTS: playback failed: {}", e);
+    }
+    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    *LAST_PLAY.lock() = Some((t, result));
+}
+
+pub fn last_play() -> Option<(u64, Result<(), String>)> {
+    LAST_PLAY.lock().clone()
+}
+
+pub fn last_play_json() -> serde_json::Value {
+    match last_play() {
+        None => serde_json::json!(null),
+        Some((t, Ok(()))) => serde_json::json!({ "at": t, "ok": true }),
+        Some((t, Err(e))) => serde_json::json!({ "at": t, "ok": false, "error": e }),
+    }
+}
+
+// the tests decide whether a voice "is installed" (the test machine has no Piper)
+#[cfg(test)]
+pub static TEST_CAN_SPEAK: Lazy<Mutex<Option<Result<(), String>>>> = Lazy::new(|| Mutex::new(None));
+
+// can a phrase be said right now? (the reason when not: the user is told instead of a silent "success")
+pub fn can_speak() -> Result<(), String> {
+    #[cfg(test)]
+    if let Some(r) = TEST_CAN_SPEAK.lock().clone() {
+        return r;
+    }
+    if !is_enabled() {
+        return Err("озвучка выключена".into());
+    }
+    if crate::uistate::voice_name().starts_with("win:") || piper_voice(&tts_lang()).is_some() {
+        Ok(())
+    } else {
+        Err("голос Джарвиса (Piper) не установлен".into())
+    }
+}
+
 pub enum SynthCheck {
     NotInstalled,
     Ok(u64),          // bytes of sound made
@@ -284,17 +332,22 @@ fn piper_synth(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64
     let mut command = Command::new(exe);
     command
         .arg("--model")
-        .arg(model)
+        .arg(ansi_safe(model))
         .arg("--output_file")
-        .arg(wav)
+        .arg(ansi_safe_new(wav))
         .arg("--length_scale")
         .arg(format!("{:.2}", 1.0 / crate::uistate::voice_rate()))
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(std::fs::File::create(&err_file).map(Stdio::from).unwrap_or_else(|_| Stdio::null()));
-    // piper looks for espeak-ng-data and its dlls next to piper.exe
+    // piper looks for espeak-ng-data and its dlls next to piper.exe; the folder is also given explicitly,
+    // because piper builds the default from its own path, which breaks in a folder with non-Latin letters
     if let Some(dir) = exe.parent() {
         command.current_dir(dir);
+        let data = dir.join("espeak-ng-data");
+        if data.is_dir() && !is_ascii(&data) {
+            command.arg("--espeak_data").arg(ansi_safe(&data));
+        }
     }
     hide_window(&mut command);
 
@@ -334,7 +387,48 @@ fn piper_synth(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64
     }
 }
 
+fn is_ascii(p: &Path) -> bool {
+    p.to_string_lossy().is_ascii()
+}
+
+// Piper (a C++ program) receives its arguments in the ANSI code page: a path with Russian letters
+// (C:\Users\Иван\...) arrives broken and Piper can open neither the voice nor its output file.
+// The short 8.3 form of such a path has only Latin letters.
+#[cfg(target_os = "windows")]
+fn ansi_safe(p: &Path) -> PathBuf {
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    if is_ascii(p) {
+        return p.to_path_buf();
+    }
+    let wide: Vec<u16> = p.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    let mut buf = vec![0u16; 1024];
+    let n = unsafe { winapi::um::fileapi::GetShortPathNameW(wide.as_ptr(), buf.as_mut_ptr(), buf.len() as u32) } as usize;
+    if n == 0 || n >= buf.len() {
+        return p.to_path_buf();
+    }
+    PathBuf::from(std::ffi::OsString::from_wide(&buf[..n]))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn ansi_safe(p: &Path) -> PathBuf {
+    p.to_path_buf()
+}
+
+// the same for a file that does not exist yet: the folder in its short form + the (Latin) file name
+fn ansi_safe_new(p: &Path) -> PathBuf {
+    match (p.parent(), p.file_name()) {
+        (Some(dir), Some(name)) if !is_ascii(p) => ansi_safe(dir).join(name),
+        _ => p.to_path_buf(),
+    }
+}
+
 fn play_wav(wav: &Path, generation: u64) {
+    // a sound file Piper made, but without any sound in it, is a failure, not a success
+    let size = std::fs::metadata(wav).map(|m| m.len()).unwrap_or(0);
+    if size <= 44 {
+        note_play(Err(format!("Piper создал пустой звуковой файл ({} байт)", size)));
+        return;
+    }
     #[cfg(target_os = "windows")]
     {
         let mut player = Command::new("powershell");
@@ -345,10 +439,17 @@ fn play_wav(wav: &Path, generation: u64) {
                 wav.display().to_string().replace('\'', "''")
             ));
         hide_window(&mut player);
-        if let Ok(child) = player.spawn() {
-            if store(child, generation) {
-                wait_current(generation);
+        match player.spawn() {
+            Ok(child) => {
+                if store(child, generation) {
+                    match wait_current(generation) {
+                        Some(true) => note_play(Ok(())),
+                        Some(false) => note_play(Err("проигрыватель Windows не смог воспроизвести звук (нет устройства вывода или файл не открылся)".into())),
+                        None => {} // interrupted on purpose
+                    }
+                }
             }
+            Err(e) => note_play(Err(format!("PowerShell для воспроизведения не запустился: {}", e))),
         }
     }
     #[cfg(not(target_os = "windows"))]

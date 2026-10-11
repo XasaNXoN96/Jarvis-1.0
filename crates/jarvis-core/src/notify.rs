@@ -221,26 +221,57 @@ fn beep() {}
 // notifications of other programs
 // ---------------------------------------------------------------------------------------------
 
+// Does an entry of the allowed / excluded list name this program? Windows reports a display name
+// ("Telegram Desktop") and an application id ("TelegramMessengerLLP.TelegramDesktop_...!Telegram.TelegramDesktop.Store",
+// "Telegram.TelegramDesktop"): the user writes "Telegram". An entry matches whole words of the name (any case) or the
+// beginning of a part of the id, never the middle of a word ("Mail" does not match "Gmail").
+pub fn app_matches(entry: &str, name: &str, aumid: &str) -> bool {
+    let words = |t: &str| -> Vec<String> { t.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).map(|w| w.to_lowercase()).collect() };
+    let e = words(entry);
+    if e.is_empty() {
+        return false;
+    }
+    let n = words(name);
+    // all the words of the entry appear in the name, in order and next to each other
+    if n.windows(e.len()).any(|w| w == e.as_slice()) {
+        return true;
+    }
+    let joined: String = e.concat();
+    words(aumid).iter().any(|part| part.starts_with(&joined))
+}
+
 // is a notification of this program let through? (pure, tested)
 pub fn ext_allowed(s: &UiSettings, app: &str) -> bool {
+    ext_allowed_id(s, app, "")
+}
+
+pub fn ext_allowed_id(s: &UiSettings, app: &str, aumid: &str) -> bool {
     if !s.ext_enabled {
         return false;
     }
-    let app = app.trim();
-    let listed = |list: &[String]| !app.is_empty() && list.iter().any(|x| x.trim().eq_ignore_ascii_case(app));
+    let (app, aumid) = (app.trim(), aumid.trim());
+    if app.is_empty() && aumid.is_empty() {
+        return false; // an unrecognized program is never let through
+    }
+    let listed = |list: &[String]| list.iter().any(|x| app_matches(x, app, aumid));
     if listed(&s.ext_blocked) {
         return false;
     }
     if s.ext_strict {
-        // a program without a name, or one that is not on the list, is never let through automatically
+        // a program that is not on the list is never let through automatically
         return listed(&s.ext_allowed);
     }
     true
 }
 
+// the texts of a notification without empty lines
+pub fn ext_parts(texts: &[String]) -> Vec<String> {
+    texts.iter().map(|t| t.split_whitespace().collect::<Vec<_>>().join(" ")).filter(|t| !t.is_empty()).collect()
+}
+
 // (title, text) of an external notification; a notification without any text still says where it comes from
 pub fn ext_texts(app: &str, texts: &[String]) -> (String, String) {
-    let parts: Vec<String> = texts.iter().map(|t| t.split_whitespace().collect::<Vec<_>>().join(" ")).filter(|t| !t.is_empty()).collect();
+    let parts = ext_parts(texts);
     let app = if app.trim().is_empty() { "Неизвестная программа".to_string() } else { app.trim().to_string() };
     match parts.len() {
         0 => (app, "Новое уведомление (без текста)".to_string()),
@@ -249,15 +280,64 @@ pub fn ext_texts(app: &str, texts: &[String]) -> (String, String) {
     }
 }
 
+// a readable program name when Windows gives only the application id
+pub fn app_label(name: &str, aumid: &str) -> String {
+    if !name.trim().is_empty() {
+        return name.trim().to_string();
+    }
+    // "TelegramMessengerLLP.TelegramDesktop_t4vj0pshhgkwm!Telegram.TelegramDesktop.Store" -> "TelegramDesktop"
+    let main = aumid.split('!').next().unwrap_or("");
+    let part = main.rsplit('.').next().unwrap_or(main);
+    part.split('_').next().unwrap_or(part).trim().to_string()
+}
+
+// ---- what happened to the notifications of other programs: counts and the last stage, never their text ----
+#[derive(Clone, Default, Serialize, Debug)]
+pub struct ExtStats {
+    pub polls: u64,         // times Windows was asked
+    pub in_center: u64,     // notifications in the notification center at the last check
+    pub received: u64,      // new notifications received
+    pub unknown_app: u64,   // the program could not be recognized: not handled
+    pub not_allowed: u64,   // not on the allowed list / excluded
+    pub no_text: u64,       // the text is empty or hidden: shown, not spoken
+    pub repeats: u64,
+    pub shown: u64,
+    pub queued_speech: u64, // handed to the voice queue (Piper)
+    pub not_spoken: u64,    // should have been spoken but could not (see last_stage)
+    pub last_stage: String,
+    pub last_app: String,   // only the program name
+    pub last_at: u64,
+}
+
+static EXT_STATS: Lazy<Mutex<ExtStats>> = Lazy::new(|| Mutex::new(ExtStats::default()));
+
+fn stage(app: &str, text: &str, count: impl FnOnce(&mut ExtStats)) {
+    let mut st = EXT_STATS.lock();
+    count(&mut st);
+    st.last_stage = text.to_string();
+    if !app.is_empty() {
+        st.last_app = app.chars().take(80).collect();
+    }
+    st.last_at = now();
+    info!("Notifications of other programs: {} ({})", text, app); // the stage and the program, never the text
+}
+
+pub fn ext_stats() -> ExtStats {
+    EXT_STATS.lock().clone()
+}
+
 static EXT_IDS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
 
 // one notification reported by Windows. `initial`: it was already in the notification center when the watcher
 // started (it is not shown again, only the program name is remembered for the list of the settings).
-pub fn on_external(id: &str, app: &str, texts: &[String], initial: bool) -> Option<u64> {
-    crate::uistate::remember_app(app);
+pub fn on_external(id: &str, app: &str, aumid: &str, texts: &[String], initial: bool) -> Option<u64> {
+    let label = app_label(app, aumid);
+    crate::uistate::remember_app(&label);
     {
         let mut ids = EXT_IDS.lock();
         if !ids.insert(id.to_string()) {
+            drop(ids);
+            stage(&label, "повтор — пропущено", |s| s.repeats += 1);
             return None; // the same notification again: never shown or read twice
         }
         if ids.len() > 2000 {
@@ -267,18 +347,45 @@ pub fn on_external(id: &str, app: &str, texts: &[String], initial: bool) -> Opti
     if initial {
         return None;
     }
-    let s = crate::uistate::settings();
-    if !ext_allowed(&s, app) {
-        return None; // not allowed: the content is dropped here, it goes nowhere
-    }
-    let (title, text) = ext_texts(app, texts);
-    // a program that posts the same text twice with two ids
-    if !crate::guard::first(&format!("ext:{}:{}", crate::guard::norm(&title), crate::guard::norm(&text)), crate::guard::NOTIFY_WINDOW) {
+    if label.is_empty() {
+        stage("", "уведомление получено, но программа не распознана — не обработано", |s| { s.received += 1; s.unknown_app += 1; });
         return None;
     }
-    let p = plan(&prefs_external(&s), false, false);
-    let say: String = format!("Уведомление от {}. {}", app.trim(), text).chars().take(220).collect();
-    Some(deliver("external", &title, &text, app, false, p, &say))
+    stage(&label, "уведомление получено, программа распознана", |s| s.received += 1);
+    let s = crate::uistate::settings();
+    if !ext_allowed_id(&s, &label, aumid) {
+        stage(&label, "программа не в списке разрешённых или исключена — не показано", |s| s.not_allowed += 1);
+        return None; // not allowed: the content is dropped here, it goes nowhere
+    }
+    let (title, text) = ext_texts(&label, texts);
+    // a program that posts the same text twice with two ids
+    if !crate::guard::first(&format!("ext:{}:{}", crate::guard::norm(&title), crate::guard::norm(&text)), crate::guard::NOTIFY_WINDOW) {
+        stage(&label, "тот же текст повторно — пропущено", |s| s.repeats += 1);
+        return None;
+    }
+    let has_text = !ext_parts(texts).is_empty();
+    let mut p = plan(&prefs_external(&s), false, false);
+    if !has_text {
+        // empty or hidden by the program ("show text" off in Telegram): shown, never spoken
+        p.speak = false;
+        stage(&label, "текст недоступен (пустой или скрыт программой) — показано без озвучки", |s| s.no_text += 1);
+    } else if s.ext_speak && !p.speak {
+        let why = if s.dnd { "включён режим «Не беспокоить» — не озвучено" } else if !crate::tts::is_enabled() { "озвучка выключена — не озвучено" } else { "озвучивание уведомлений выключено" };
+        stage(&label, why, |s| s.not_spoken += 1);
+    } else if p.speak {
+        if let Err(why) = crate::tts::can_speak() {
+            p.speak = false;
+            p.sound = s.notify_sound && !s.dnd;
+            stage(&label, &format!("не удалось озвучить: {}", why), |s| s.not_spoken += 1);
+        } else {
+            stage(&label, "текст передан в очередь озвучки (Piper)", |s| s.queued_speech += 1);
+        }
+    }
+    if p.show {
+        EXT_STATS.lock().shown += 1;
+    }
+    let say: String = format!("Уведомление от {}. {}", label, text).chars().take(220).collect();
+    Some(deliver("external", &title, &text, &label, false, p, &say))
 }
 
 // ---- the watcher process (Windows): PowerShell with the official WinRT API, only while the switch is on ----
@@ -298,7 +405,7 @@ fn ext_set(state: &str, detail: &str) {
 
 pub fn ext_status_json() -> Value {
     let st = EXT_STATE.lock().clone();
-    json!({ "state": st.state, "detail": st.detail })
+    json!({ "state": st.state, "detail": st.detail, "stats": ext_stats(), "playback": crate::tts::last_play_json() })
 }
 
 // start or stop the watcher as the settings say
@@ -343,18 +450,21 @@ try {
   while ($true) {
     if ($ParentPid -gt 0 -and -not (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue)) { exit 0 }
     $list = Await ($listener.GetNotificationsAsync([Windows.UI.Notifications.NotificationKinds]::Toast)) $listType
+    Emit @{ type = 'poll'; count = $list.Count }
     foreach ($n in $list) {
       $key = [string]$n.Id
       if ($seen.ContainsKey($key)) { continue }
       $seen[$key] = $true
       $app = ''
+      $aumid = ''
+      try { $aumid = [string]$n.AppInfo.AppUserModelId } catch {}
       try { $app = [string]$n.AppInfo.DisplayInfo.DisplayName } catch {}
       $texts = @()
       try {
         $b = $n.Notification.Visual.GetBinding([Windows.UI.Notifications.KnownNotificationBindings]::ToastGeneric)
         if ($b) { $texts = @($b.GetTextElements() | ForEach-Object { [string]$_.Text }) }
       } catch {}
-      Emit @{ type = 'note'; id = $key; app = $app; texts = $texts; initial = $first }
+      Emit @{ type = 'note'; id = $key; app = $app; aumid = $aumid; texts = $texts; initial = $first }
     }
     $first = $false
     Start-Sleep -Seconds 2
@@ -398,7 +508,14 @@ fn handle_line(line: &str) {
                 Value::String(s) => vec![s.clone()],
                 _ => Vec::new(),
             };
-            on_external(v["id"].as_str().unwrap_or(""), v["app"].as_str().unwrap_or(""), &texts, v["initial"].as_bool().unwrap_or(false));
+            on_external(v["id"].as_str().unwrap_or(""), v["app"].as_str().unwrap_or(""), v["aumid"].as_str().unwrap_or(""), &texts, v["initial"].as_bool().unwrap_or(false));
+        }
+        // one check of the notification center: only how many notifications are there, nothing of their content
+        "poll" => {
+            let n = v["count"].as_u64().unwrap_or(0);
+            let mut st = EXT_STATS.lock();
+            st.polls += 1;
+            st.in_center = n;
         }
         "error" => {
             let msg: String = v["message"].as_str().unwrap_or("").chars().take(200).collect();

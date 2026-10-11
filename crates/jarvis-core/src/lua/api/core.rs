@@ -99,6 +99,8 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
     tts.set("set_enabled", lua.create_function(|_, on: bool| { crate::tts::set_enabled(on); Ok(()) })?)?;
     tts.set("diagnose", lua.create_function(|_, ()| { crate::tts::diagnose(); Ok(()) })?)?;
     tts.set("is_enabled", lua.create_function(|_, ()| Ok(crate::tts::is_enabled()))?)?;
+    // jarvis.tts.can_speak() -> true | false, reason: whether a phrase can be said right now (speech on, a voice installed)
+    tts.set("can_speak", lua.create_function(|_, ()| Ok(match crate::tts::can_speak() { Ok(()) => (true, None), Err(why) => (false, Some(why)) }))?)?;
     jarvis.set("tts", tts)?;
 
     // jarvis.app.set_mic_muted(bool): switch the microphone off (text-only) / on

@@ -117,7 +117,12 @@ mod tests {
 
     // runs the real command; returns its result and the last reply it gave
     fn read_clipboard(text: &str) -> (Result<crate::lua::CommandResult, LuaError>, String) {
+        read_clipboard_with(text, Ok(()))
+    }
+
+    fn read_clipboard_with(text: &str, voice: Result<(), String>) -> (Result<crate::lua::CommandResult, LuaError>, String) {
         let _g = CLIPBOARD_LOCK.lock();
+        *crate::tts::TEST_CAN_SPEAK.lock() = Some(voice);
         crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow_mut().clear());
         *crate::lua::api::system::TEST_CLIPBOARD.lock() = Some(text.to_string());
         let script = speech_script();
@@ -130,6 +135,7 @@ mod tests {
         };
         let r = execute(&script, ctx, SandboxLevel::Full, Duration::from_secs(10));
         *crate::lua::api::system::TEST_CLIPBOARD.lock() = None;
+        *crate::tts::TEST_CAN_SPEAK.lock() = None;
         let last = crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow().last().cloned().unwrap_or_default());
         (r, last)
     }
@@ -225,6 +231,16 @@ mod tests {
         for name in ["office.lua", "selftest.lua", "volume.lua", "speech.lua"] {
             let src = fs::read_to_string(speech_script().parent().unwrap().join(name)).unwrap();
             assert!(!src.contains("stderr or \"\"):sub(") && !src.contains("err:gsub(\"%s+$\", \"\"):sub("), "{}: a byte cut of an error text is left", name);
+        }
+    }
+
+    #[test]
+    fn reading_aloud_is_never_reported_when_the_voice_cannot_speak() {
+        for why in ["голос Джарвиса (Piper) не установлен", "озвучка выключена"] {
+            let (r, shown) = read_clipboard_with("Привет, это текст для чтения 📚", Err(why.to_string()));
+            assert!(r.is_ok());
+            assert!(!shown.starts_with("Читаю"), "nothing is said to be read: {:?}", shown);
+            assert!(shown.contains("Не могу прочитать вслух") && shown.contains(why), "the reason is told: {:?}", shown);
         }
     }
 }

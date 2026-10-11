@@ -261,12 +261,12 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
                 {
                     use std::os::windows::process::CommandExt;
                     let _ = Command::new("cmd")
-                        .args(["/C", &format!("ping -n 3 127.0.0.1 >nul & start \"\" \"{}\"", exe.display())])
+                        .args(["/C", &format!("ping -n 3 127.0.0.1 >nul & start \"\" \"{}\" --wait-instance", exe.display())])
                         .creation_flags(0x0800_0000)
                         .spawn();
                 }
                 #[cfg(not(target_os = "windows"))]
-                let _ = Command::new(&exe).spawn();
+                let _ = Command::new(&exe).arg("--wait-instance").spawn();
                 std::thread::spawn(|| {
                     std::thread::sleep(Duration::from_millis(400));
                     std::process::exit(0);
@@ -642,6 +642,16 @@ pub fn open_window() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_same_message_from_the_window_is_handled_once() {
+        // a retry or a double press sends the same request id: the second one never reaches the router again
+        let rid = format!("w-test-{}", rand::random::<u32>());
+        let first = chat_action(&json!({ "op": "ask", "text": "сколько времени", "rid": rid }));
+        assert!(first.get("repeat").is_none(), "the first one is handled: {}", first);
+        let second = chat_action(&json!({ "op": "ask", "text": "сколько времени", "rid": rid }));
+        assert_eq!(second["repeat"], true, "the second one is recognized as the same message: {}", second);
+    }
 
     #[test]
     fn history_and_settings_are_never_deleted_without_the_confirmation() {
