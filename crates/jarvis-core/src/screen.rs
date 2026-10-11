@@ -7,7 +7,9 @@ pub fn capture() -> Result<Vec<u8>, String> {
     use std::os::windows::process::CommandExt;
     let path = std::env::temp_dir().join(format!("jarvis_screen_{}.jpg", std::process::id()));
     let script = format!(
-        "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; \
+        "Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool SetProcessDPIAware();' -Name Dpi -Namespace Jarvis; \
+         [void][Jarvis.Dpi]::SetProcessDPIAware(); \
+         Add-Type -AssemblyName System.Windows.Forms,System.Drawing; \
          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; \
          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height; \
          $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size); \
@@ -20,7 +22,9 @@ pub fn capture() -> Result<Vec<u8>, String> {
         path.display().to_string().replace('\'', "''")
     );
     let out = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", &script])
+        // DPI-aware first: with display scaling above 100% the picture would be only a part of the screen;
+        // the script goes as UTF-16 base64, so its quotes need no escaping on the command line
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", &crate::appindex::encoded_command(&script)])
         .creation_flags(0x0800_0000)
         .output()
         .map_err(|e| format!("PowerShell не запустился: {}", e))?;

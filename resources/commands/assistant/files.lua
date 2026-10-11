@@ -22,7 +22,6 @@ local function said_index()
 end
 
 if id == "assistant_file_search" then
-  jarvis.state.set("file_sel", "")
   local what, err = jarvis.files.search(jarvis.context.phrase or phrase)
   if not what then
     say(TITLE, err)
@@ -65,7 +64,7 @@ if id == "assistant_file_more" then
 end
 
 -- the chosen result: said now, or chosen earlier in this conversation ("второй", "следующий")
-local selected = tonumber(jarvis.state.get("file_sel") or "")
+local selected = jarvis.files.selected()
 
 if id == "assistant_file_next" then
   local n = (selected or 0) + 1
@@ -74,7 +73,7 @@ if id == "assistant_file_next" then
     say(TITLE, T("Это был последний результат (всего " .. #list .. ")", "That was the last result (" .. #list .. " in total)"))
     return
   end
-  jarvis.state.set("file_sel", tostring(n))
+  jarvis.files.select(n)
   jarvis.session.start("file", 60)
   jarvis.session.set_data(tostring(n))
   say(TITLE, n .. ". " .. item.name .. " — " .. item.dir .. T(". Открыть или показать папку?", ". Open it or show the folder?"),
@@ -96,11 +95,12 @@ if not item then
   say(TITLE, T("Результата номер " .. n .. " нет (найдено " .. #list .. ")", "No result number " .. n .. " (found " .. #list .. ")"))
   return
 end
-jarvis.state.set("file_sel", tostring(n))
+jarvis.files.select(n)
 
 if id == "assistant_file_folder" then
   -- show the file in Explorer (selected)
-  launch("explorer.exe", { "/select," .. item.path:gsub("/", "\\") })
+  local shown, why = jarvis.files.reveal(item.path)
+  if not shown then say(T("Папка", "Folder"), T("Не удалось показать: ", "Cannot show: ") .. tostring(why)); return end
   say(T("Папка", "Folder"), item.dir, T("Показываю папку", "Showing the folder"))
 else
   if WIN and not jarvis.system.exists(item.path) then

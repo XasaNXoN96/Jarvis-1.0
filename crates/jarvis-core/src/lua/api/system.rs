@@ -15,7 +15,9 @@ pub fn shell_open(target: &str) -> Result<(), String> {
     let lower = target.to_lowercase();
     if lower.starts_with("http://") || lower.starts_with("https://") {
         if let Some(exe) = crate::uistate::browser_exe(&crate::uistate::settings().browser) {
-            match shell_execute(exe, Some(target)) {
+            // one argument for the browser: spaces and quotes of the address are encoded, the address is quoted
+            let arg = format!("\"{}\"", target.replace('"', "%22").replace(' ', "%20"));
+            match shell_execute(exe, Some(&arg)) {
                 Ok(()) => return Ok(()),
                 Err(e) => log::warn!("Browser {} did not start ({}), the default browser is used", exe, e),
             }
@@ -58,6 +60,12 @@ fn open_target(target: &str) -> bool {
     match shell_open(target) {
         Ok(()) => true,
         Err(e) => {
+            // cmd would read & | < > ^ % ! ( ) " in a file name as its own syntax ("x&calc" would start calc):
+            // such a target is never given to it
+            if target.chars().any(|c| matches!(c, '&' | '|' | '<' | '>' | '^' | '%' | '!' | '(' | ')' | '"' | '\n' | '\r')) {
+                log::warn!("[Lua] open '{}' failed: {}", target, e);
+                return false;
+            }
             log::warn!("[Lua] open '{}' failed: {}; trying cmd start", target, e);
             // second chance: cmd /C start "" target
             use std::os::windows::process::CommandExt;
@@ -357,6 +365,12 @@ pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Resul
         Ok(std::env::var(&name).ok())
     })?;
     system.set("env", env_fn)?;
+
+    // jarvis.system.folder("documents" | "desktop" | "downloads" | "pictures" | "videos" | "music") -> path | nil:
+    // where Windows really keeps it (it can be moved to another drive or into OneDrive)
+    system.set("folder", lua.create_function(|_, name: String| {
+        Ok(crate::filesearch::known_folder(&name).map(|p| p.to_string_lossy().to_string()))
+    })?)?;
     
     // jarvis.system.platform - read-only string
     let platform = if cfg!(target_os = "windows") {

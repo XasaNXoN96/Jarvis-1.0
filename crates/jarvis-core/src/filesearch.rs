@@ -33,6 +33,21 @@ static GENERATION: AtomicU64 = AtomicU64::new(0);
 static RESULTS: Lazy<Mutex<Vec<FoundItem>>> = Lazy::new(|| Mutex::new(Vec::new()));
 static STATE: Lazy<Mutex<SearchState>> = Lazy::new(|| Mutex::new(SearchState::default()));
 static HISTORY: Lazy<Mutex<VecDeque<Value>>> = Lazy::new(|| Mutex::new(VecDeque::new()));
+// the result the user chose in this search ("второй", "следующий"); forgotten when a new search starts
+static SELECTED: Lazy<Mutex<Option<usize>>> = Lazy::new(|| Mutex::new(None));
+
+pub fn selected() -> Option<usize> {
+    *SELECTED.lock()
+}
+
+pub fn select(n: usize) -> bool {
+    if n >= 1 && n <= RESULTS.lock().len() {
+        *SELECTED.lock() = Some(n);
+        true
+    } else {
+        false
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct FoundItem {
@@ -93,6 +108,7 @@ const KINDS: &[(&str, &str, &[&str])] = &[
     ("документ", "документы", &["doc", "docx", "pdf", "txt", "rtf", "odt", "xls", "xlsx", "ppt", "pptx", "md"]),
     ("презентац", "презентации", &["ppt", "pptx", "pps", "ppsx", "odp", "key"]),
     ("фото", "фотографии", &["jpg", "jpeg", "png", "heic", "heif", "webp", "gif", "bmp", "tif", "tiff", "raw", "cr2", "nef", "dng"]),
+    ("фотограф", "фотографии", &["jpg", "jpeg", "png", "heic", "heif", "webp", "gif", "bmp", "tif", "tiff", "raw", "cr2", "nef", "dng"]),
     ("фотк", "фотографии", &["jpg", "jpeg", "png", "heic", "heif", "webp", "gif", "bmp"]),
     ("картинк", "картинки", &["jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "heic"]),
     ("изображен", "изображения", &["jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "heic", "tif", "tiff"]),
@@ -146,6 +162,30 @@ const MONTHS: &[(&str, u32)] = &[
     ("january", 1), ("february", 2), ("march", 3), ("april", 4), ("june", 6), ("july", 7), ("august", 8), ("september", 9), ("october", 10), ("november", 11), ("december", 12),
 ];
 
+// "октября", "марте", "may" -> the month; "мартин", "августина" are names, not months
+fn month_of(t: &str) -> Option<u32> {
+    if ["май", "мая", "мае", "may"].contains(&t) {
+        return Some(5);
+    }
+    MONTHS.iter().find(|(s, _)| t.starts_with(s) && t.chars().count() - s.chars().count() <= if s.is_ascii() { 0 } else { 1 }).map(|(_, m)| *m)
+}
+
+// a kind of file said as a word: the stem with a short ending ("документы", "фотографии"), not a longer word
+// that only starts the same ("фотошоп" is not a photo)
+fn kind_of(t: &str) -> Option<&'static (&'static str, &'static str, &'static [&'static str])> {
+    KINDS.iter().find(|(s, _, _)| {
+        if !t.starts_with(s) {
+            return false;
+        }
+        let extra = t.chars().count() - s.chars().count();
+        match *s {
+            "фото" | "видео" | "аудио" => extra == 0,
+            _ if s.is_ascii() => extra <= 1,
+            _ => extra <= 3,
+        }
+    })
+}
+
 fn tokens(text: &str) -> Vec<String> {
     text.to_lowercase()
         .replace('ё', "е")
@@ -189,11 +229,18 @@ pub fn parse(text: &str, now: chrono::DateTime<chrono::Local>) -> Query {
     // the text inside the file: everything after the marker, as it was said
     const CONTENT: &[&str] = &[
         "содержащий текст", "содержащий слово", "содержащие текст", "содержащие слово", "содержащий", "содержащие", "содержащая", "содержит текст",
-        "содержит слово", "содержит", "с текстом", "в котором есть текст", "в котором есть слово", "внутри которого", "где есть текст", "где написано",
+        "содержит слово", "содержит", "в котором содержится слово", "в котором содержится текст", "в котором содержится", "содержится", "с текстом", "в котором есть текст", "в котором есть слово", "внутри которого", "где есть текст", "где написано",
         "в тексте которого", "containing the text", "containing the word", "containing", "with the text", "with text", "that contains",
     ];
     let mut head = low.clone();
-    if let Some((pos, marker)) = CONTENT.iter().filter_map(|m| low.find(m).map(|p| (p, *m))).min_by_key(|(p, m)| (*p, usize::MAX - m.len())) {
+    // a marker counts only as whole words ("содержит" must not cut "содержится" in the middle)
+    let at_words = |p: usize, m: &str| -> bool {
+        let before_ok = low[..p].chars().last().map(|c| !c.is_alphanumeric()).unwrap_or(true);
+        let after_ok = low[p + m.len()..].chars().next().map(|c| !c.is_alphanumeric()).unwrap_or(true);
+        before_ok && after_ok
+    };
+    let found = CONTENT.iter().filter_map(|m| low.match_indices(m).find(|(p, _)| at_words(*p, m)).map(|(p, _)| (p, *m))).min_by_key(|(p, m)| (*p, usize::MAX - m.len()));
+    if let Some((pos, marker)) = found {
         // the same position in the original text (lower case keeps the byte length for Russian and Latin letters)
         let orig_tail = text.get(pos + marker.len()..).unwrap_or(&low[pos + marker.len()..]);
         q.content = orig_tail.trim().trim_matches(|c: char| c == '«' || c == '»' || c == '"' || c == '\'' || c == '“' || c == '”' || c == ',' || c == '.').trim().to_string();
@@ -226,7 +273,8 @@ pub fn parse(text: &str, now: chrono::DateTime<chrono::Local>) -> Query {
         let t = w[i].as_str();
         let prev = if i > 0 { w[i - 1].as_str() } else { "" };
         let next = w.get(i + 1).map(|s| s.as_str()).unwrap_or("");
-        let in_prep = prev == "в" || prev == "во" || prev == "на" || prev == "in" || prev == "on" || prev == "из";
+        let in_folder_word = ["папке", "папку", "папки", "folder"].contains(&prev) && i >= 2 && ["в", "во", "из", "in"].contains(&w[i - 2].as_str());
+        let in_prep = prev == "в" || prev == "во" || prev == "на" || prev == "in" || prev == "on" || prev == "из" || in_folder_word;
         if (t.starts_with("рабоч") && next.starts_with("стол")) || t == "desktop" {
             q.scope = Scope::Desktop; mark(&mut used, i); if next.starts_with("стол") { mark(&mut used, i + 1); }
         } else if ["диске", "диск", "диска", "drive", "disk"].contains(&t) {
@@ -266,7 +314,7 @@ pub fn parse(text: &str, now: chrono::DateTime<chrono::Local>) -> Query {
             if ["этот", "этом", "последний", "прошлый", "this", "last"].contains(&prev) { mark(&mut used, i - 1); }
         } else if t.starts_with("недавн") || t == "recent" || t == "recently" || t == "latest" {
             q.recent = true; q.since = Some(now_ts.saturating_sub(14 * 86_400)); mark(&mut used, i);
-        } else if let Some(m) = MONTHS.iter().find(|(s, _)| t.starts_with(s)).map(|(_, m)| *m).or(if ["май", "мая", "мае", "may"].contains(&t) { Some(5) } else { None }) {
+        } else if let Some(m) = month_of(t) {
             // the year said after the month, else this year (or the last one for a month still ahead)
             let said_year = w.get(i + 1).and_then(|y| y.parse::<i32>().ok()).filter(|y| (1990..=2100).contains(y));
             let y = said_year.unwrap_or(if m > now.month() { now.year() - 1 } else { now.year() });
@@ -281,6 +329,7 @@ pub fn parse(text: &str, now: chrono::DateTime<chrono::Local>) -> Query {
     }
 
     // what kind
+    let mut kind_words: Vec<String> = Vec::new();
     for i in 0..w.len() {
         if used[i] { continue; }
         let t = w[i].as_str();
@@ -301,12 +350,21 @@ pub fn parse(text: &str, now: chrono::DateTime<chrono::Local>) -> Query {
             mark(&mut used, i);
             continue;
         }
-        if let Some((_, readable, exts)) = KINDS.iter().find(|(s, _, _)| t.starts_with(s)) {
+        if let Some((_, readable, exts)) = kind_of(t) {
             for e in exts.iter() {
                 if !q.exts.contains(&e.to_string()) { q.exts.push(e.to_string()); }
             }
             if q.kind.is_empty() { q.kind = readable.to_string(); }
+            kind_words.push(t.to_string());
             mark(&mut used, i);
+        }
+    }
+    // "найди папку фото": a folder has no extension, the kind word is a part of its name
+    if q.folders_only && !q.exts.is_empty() {
+        q.exts.clear();
+        q.kind.clear();
+        for (i, t) in w.iter().enumerate() {
+            if kind_words.contains(t) { used[i] = false; }
         }
     }
     if q.kind.is_empty() && !q.exts.is_empty() {
@@ -370,12 +428,15 @@ fn is_empty_query(q: &Query) -> bool {
 // ---------------------------------------------------------------------------------------------
 
 fn skip_dir(name_lower: &str) -> bool {
-    matches!(
+    let windows = matches!(
         name_lower,
         "windows" | "program files" | "program files (x86)" | "programdata" | "$recycle.bin" | "system volume information" | "appdata"
-            | "node_modules" | ".git" | "$windows.~bt" | "$windows.~ws" | "winsxs" | "windowsapps" | "proc" | "sys" | "dev" | "usr" | "lib"
-            | "lib64" | "bin" | "sbin" | "etc" | "var" | "run" | "snap" | "boot" | "target" | "__pycache__" | ".cache"
-    )
+            | "node_modules" | ".git" | "$windows.~bt" | "$windows.~ws" | "winsxs" | "windowsapps" | "__pycache__" | ".cache"
+    );
+    // the system folders of Linux; on Windows "dev" or "lib" are ordinary folders of the user
+    let unix = cfg!(not(target_os = "windows"))
+        && matches!(name_lower, "proc" | "sys" | "dev" | "usr" | "lib" | "lib64" | "bin" | "sbin" | "etc" | "var" | "run" | "snap" | "boot");
+    windows || unix
 }
 
 fn edit_distance(a: &str, b: &str) -> usize {
@@ -447,7 +508,7 @@ pub fn content_supported(ext: &str) -> bool {
 // the text of a file, for the formats that can really be read; None when it cannot be read
 fn file_text(path: &Path, ext: &str) -> Option<String> {
     let meta = std::fs::metadata(path).ok()?;
-    if meta.len() > CONTENT_MAX_BYTES {
+    if meta.len() > CONTENT_MAX_BYTES || cloud_only(&meta) {
         return None;
     }
     if TEXT_EXTS.contains(&ext) {
@@ -456,7 +517,11 @@ fn file_text(path: &Path, ext: &str) -> Option<String> {
             let u: Vec<u16> = bytes[2..].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
             return Some(String::from_utf16_lossy(&u));
         }
-        return Some(String::from_utf8_lossy(&bytes).to_string());
+        return Some(match String::from_utf8(bytes) {
+            Ok(t) => t,
+            // old Notepad files are in the Windows Cyrillic code page
+            Err(e) => cp1251(e.as_bytes()),
+        });
     }
     if ZIP_DOCS.contains(&ext) {
         let bytes = std::fs::read(path).ok()?;
@@ -475,6 +540,44 @@ fn file_text(path: &Path, ext: &str) -> Option<String> {
         return Some(text);
     }
     None
+}
+
+// a OneDrive file that is only in the cloud: reading it would download it, so it is not read
+#[cfg(target_os = "windows")]
+fn cloud_only(meta: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const OFFLINE: u32 = 0x1000;
+    const RECALL_ON_OPEN: u32 = 0x40000;
+    const RECALL_ON_DATA_ACCESS: u32 = 0x400000;
+    meta.file_attributes() & (OFFLINE | RECALL_ON_OPEN | RECALL_ON_DATA_ACCESS) != 0
+}
+
+#[cfg(not(target_os = "windows"))]
+fn cloud_only(_meta: &std::fs::Metadata) -> bool {
+    false
+}
+
+// Windows-1251 -> text (Cyrillic letters, Ё/ё, the usual punctuation; anything else becomes "?")
+pub(crate) fn cp1251(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|&b| match b {
+            0x00..=0x7F => b as char,
+            0xC0..=0xFF => char::from_u32(0x0410 + (b as u32 - 0xC0)).unwrap_or('?'),
+            0xA8 => 'Ё',
+            0xB8 => 'ё',
+            0x96 => '–',
+            0x97 => '—',
+            0xAB => '«',
+            0xBB => '»',
+            0x93 => '“',
+            0x94 => '”',
+            0x85 => '…',
+            0xB9 => '№',
+            0xA0 => ' ',
+            _ => '?',
+        })
+        .collect()
 }
 
 // the entries of a zip archive (Office documents) whose names are wanted: stored or deflated
@@ -615,7 +718,7 @@ impl Search {
                 self.content_unsupported += 1;
                 return;
             }
-            if self.content_checked >= CONTENT_MAX_FILES {
+            if self.content_checked >= CONTENT_MAX_FILES || self.cancelled() {
                 return;
             }
             self.content_checked += 1;
@@ -646,12 +749,19 @@ impl Search {
                 }
             };
             for entry in entries.flatten() {
+                if self.cancelled() {
+                    return;
+                }
                 let name = entry.file_name().to_string_lossy().to_string();
                 let path = entry.path();
                 let ft = entry.file_type().ok();
                 let is_dir = ft.map(|t| t.is_dir()).unwrap_or(false);
-                // links to folders are not followed (no endless loops through junctions)
+                // links and junctions ("My Music", "Application Data") are neither followed (no endless loops) nor
+                // shown as files
                 let is_link = ft.map(|t| t.is_symlink()).unwrap_or(false);
+                if is_link {
+                    continue;
+                }
                 self.consider(&path, &name, is_dir);
                 if is_dir && !is_link && !skip_dir(&name.to_lowercase()) && !name.starts_with('$') {
                     queue.push_back(path);
@@ -665,60 +775,154 @@ fn home() -> Option<PathBuf> {
     std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).ok().map(PathBuf::from)
 }
 
-// a known folder of the user, also inside OneDrive (Windows often moves Desktop / Documents there)
-fn user_folder(names: &[&str]) -> Vec<PathBuf> {
-    let Some(h) = home() else { return Vec::new() };
-    let mut out = Vec::new();
-    for n in names {
-        for p in [h.join(n), h.join("OneDrive").join(n)] {
-            if p.is_dir() && !out.contains(&p) {
-                out.push(p);
+// where Windows really keeps a folder of the user ("documents", "desktop", "downloads", "pictures", "videos",
+// "music"): it can be moved to another drive or into OneDrive, so the system is asked (SHGetKnownFolderPath)
+#[cfg(target_os = "windows")]
+pub fn known_folder(name: &str) -> Option<PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    use winapi::um::knownfolders::*;
+    let id = match name {
+        "documents" => &FOLDERID_Documents,
+        "desktop" => &FOLDERID_Desktop,
+        "downloads" => &FOLDERID_Downloads,
+        "pictures" => &FOLDERID_Pictures,
+        "videos" => &FOLDERID_Videos,
+        "music" => &FOLDERID_Music,
+        _ => return None,
+    };
+    unsafe {
+        let mut p: winapi::shared::ntdef::PWSTR = std::ptr::null_mut();
+        let hr = winapi::um::shlobj::SHGetKnownFolderPath(id, 0, std::ptr::null_mut(), &mut p);
+        let out = if hr == 0 && !p.is_null() {
+            let mut len = 0;
+            while *p.add(len) != 0 {
+                len += 1;
             }
+            Some(PathBuf::from(std::ffi::OsString::from_wide(std::slice::from_raw_parts(p, len))))
+        } else {
+            None
+        };
+        if !p.is_null() {
+            winapi::um::combaseapi::CoTaskMemFree(p as *mut _);
+        }
+        out
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn known_folder(name: &str) -> Option<PathBuf> {
+    let sub = match name {
+        "documents" => "Documents",
+        "desktop" => "Desktop",
+        "downloads" => "Downloads",
+        "pictures" => "Pictures",
+        "videos" => "Videos",
+        "music" => "Music",
+        _ => return None,
+    };
+    home().map(|h| h.join(sub))
+}
+
+// a folder of the user: where Windows keeps it, and the same name inside the personal and the work OneDrive
+fn user_folder(key: &str, names: &[&str]) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut add = |p: PathBuf| {
+        if p.is_dir() && !out.contains(&p) {
+            out.push(p);
+        }
+    };
+    if let Some(p) = known_folder(key) {
+        add(p);
+    }
+    let mut bases: Vec<PathBuf> = home().into_iter().collect();
+    for var in ["OneDrive", "OneDriveCommercial", "OneDriveConsumer"] {
+        if let Ok(v) = std::env::var(var) {
+            bases.push(PathBuf::from(v));
+        }
+    }
+    if let Some(h) = home() {
+        bases.push(h.join("OneDrive"));
+    }
+    for b in bases {
+        for n in names {
+            add(b.join(n));
         }
     }
     out
 }
 
-fn all_drives() -> Vec<PathBuf> {
-    let mut roots = Vec::new();
-    #[cfg(target_os = "windows")]
-    for letter in b'C'..=b'Z' {
-        let root = PathBuf::from(format!("{}:\\", letter as char));
-        if root.exists() {
-            roots.push(root);
-        }
-    }
-    roots
+// the drives of this computer and their kind, without touching them: a disconnected network drive or an empty
+// card reader must not freeze the search or show a "there is no disk" window
+#[cfg(target_os = "windows")]
+fn drives() -> Vec<(char, u32)> {
+    use winapi::um::fileapi::{GetDriveTypeW, GetLogicalDrives};
+    static ERROR_MODE: std::sync::Once = std::sync::Once::new();
+    ERROR_MODE.call_once(|| unsafe {
+        winapi::um::errhandlingapi::SetErrorMode(winapi::um::winbase::SEM_FAILCRITICALERRORS | winapi::um::winbase::SEM_NOOPENFILEERRORBOX);
+    });
+    let mask = unsafe { GetLogicalDrives() };
+    (0..26u32)
+        .filter(|i| mask & (1 << i) != 0)
+        .map(|i| {
+            let letter = (b'A' + i as u8) as char;
+            let root: Vec<u16> = format!("{}:\\", letter).encode_utf16().chain(std::iter::once(0)).collect();
+            (letter, unsafe { GetDriveTypeW(root.as_ptr()) })
+        })
+        .collect()
 }
+
+#[cfg(not(target_os = "windows"))]
+fn drives() -> Vec<(char, u32)> {
+    Vec::new()
+}
+
+const DRIVE_REMOTE: u32 = 4;
+const DRIVE_CDROM: u32 = 5;
+
+// "везде": the local drives (network and CD/DVD drives are searched only when named: "на диске Z")
+fn all_drives() -> Vec<PathBuf> {
+    drives()
+        .into_iter()
+        .filter(|(l, t)| *l >= 'C' && *t != DRIVE_REMOTE && *t != DRIVE_CDROM && *t > 1)
+        .map(|(l, _)| PathBuf::from(format!("{}:\\", l)))
+        .collect()
+}
+
+const USER_FOLDERS: &[(&str, &[&str])] = &[
+    ("desktop", &["Desktop", "Рабочий стол"]),
+    ("documents", &["Documents", "Документы"]),
+    ("downloads", &["Downloads", "Загрузки"]),
+    ("pictures", &["Pictures", "Изображения"]),
+    ("videos", &["Videos", "Видео"]),
+    ("music", &["Music", "Музыка"]),
+];
 
 // the folders of a scope; Err when the place does not exist
 pub fn roots(scope: &Scope) -> Result<Vec<PathBuf>, String> {
     let r = match scope {
         Scope::User => {
-            let mut v = user_folder(&["Desktop", "Documents", "Downloads", "Pictures", "Videos", "Music"]);
-            if let Some(h) = home() {
-                let od = h.join("OneDrive");
-                if od.is_dir() {
-                    v.push(od);
+            let mut v = Vec::new();
+            for (k, names) in USER_FOLDERS {
+                for p in user_folder(k, names) {
+                    if !v.contains(&p) {
+                        v.push(p);
+                    }
                 }
             }
             v
         }
-        Scope::Desktop => user_folder(&["Desktop", "Рабочий стол"]),
-        Scope::Documents => user_folder(&["Documents", "Документы"]),
-        Scope::Downloads => user_folder(&["Downloads", "Загрузки"]),
-        Scope::Pictures => user_folder(&["Pictures", "Изображения"]),
-        Scope::Videos => user_folder(&["Videos", "Видео"]),
-        Scope::Music => user_folder(&["Music", "Музыка"]),
+        Scope::Desktop => user_folder("desktop", USER_FOLDERS[0].1),
+        Scope::Documents => user_folder("documents", USER_FOLDERS[1].1),
+        Scope::Downloads => user_folder("downloads", USER_FOLDERS[2].1),
+        Scope::Pictures => user_folder("pictures", USER_FOLDERS[3].1),
+        Scope::Videos => user_folder("videos", USER_FOLDERS[4].1),
+        Scope::Music => user_folder("music", USER_FOLDERS[5].1),
         Scope::Drive(l) => {
-            let root = PathBuf::from(format!("{}:\\", l));
-            if !cfg!(target_os = "windows") || !root.exists() {
+            // only the list of drives here (instant); whether it can be read is checked in the search thread
+            if !drives().iter().any(|(d, t)| d == l && *t > 1) {
                 return Err(format!("Диска {}: нет на этом компьютере", l));
             }
-            if std::fs::read_dir(&root).is_err() {
-                return Err(format!("Диск {}: недоступен (нет прав или диск не готов)", l));
-            }
-            vec![root]
+            vec![PathBuf::from(format!("{}:\\", l))]
         }
         Scope::Everywhere => {
             let mut v: Vec<PathBuf> = home().into_iter().collect();
@@ -748,6 +952,11 @@ fn rank(mut items: Vec<FoundItem>, by_date: bool) -> Vec<FoundItem> {
 // runs the whole search of a query (blocking); used by the background thread and the tests
 fn run(q: &Query, generation: u64) -> Result<(Vec<FoundItem>, Search), String> {
     let dirs = roots(&q.scope)?;
+    if let Scope::Drive(l) = q.scope {
+        if std::fs::read_dir(&dirs[0]).is_err() {
+            return Err(format!("Диск {}: недоступен (диск не вставлен, сеть отключена или нет прав)", l));
+        }
+    }
     let mut s = Search::new(q.clone(), generation);
     s.deadline = Some(Instant::now() + if matches!(q.scope, Scope::Everywhere | Scope::Drive(_)) { WIDE_LIMIT } else { USER_LIMIT });
     for d in &dirs {
@@ -917,11 +1126,16 @@ fn start_with(q: Query, voice: bool) -> Result<String, String> {
         RESULTS.lock().clear();
         return Err(e);
     }
-    let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     let what = describe(&q);
     info!("File search started: {}", what);
+    let generation;
     {
         let mut st = STATE.lock();
+        // a new search: the old list and the old choice are gone ("открой второй" must not open an old file)
+        generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+        RESULTS.lock().clear();
+        *SELECTED.lock() = None;
+        st.shown = 0;
         st.busy = true;
         st.label = what.clone();
         st.message = String::new();
@@ -931,18 +1145,20 @@ fn start_with(q: Query, voice: bool) -> Result<String, String> {
     std::thread::spawn(move || {
         let started = Instant::now();
         let outcome = run(&q, generation);
+        // published under the lock: a cancel or a newer search in between wins, never the old results
+        let mut st = STATE.lock();
         if GENERATION.load(Ordering::SeqCst) != generation {
             return; // a newer search replaced this one, or it was cancelled
         }
         match outcome {
             Ok((found, s)) => {
                 *RESULTS.lock() = found.clone();
+                st.busy = false;
+                drop(st);
                 remember("search", &describe(&q), &format!("найдено {} за {} с", found.len(), started.elapsed().as_secs()));
-                STATE.lock().busy = false;
                 announce(&q, &found, &s, voice);
             }
             Err(e) => {
-                let mut st = STATE.lock();
                 st.busy = false;
                 st.message = e.clone();
                 drop(st);
@@ -990,6 +1206,7 @@ pub fn state_json() -> Value {
         .map(|it| {
             json!({
                 "name": it.path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+                "path": it.path.to_string_lossy(),
                 "dir": it.path.parent().map(|p| p.display().to_string()).unwrap_or_default(),
                 "ext": ext_of(&it.path),
                 "is_dir": it.is_dir,
@@ -1006,6 +1223,12 @@ pub fn result_path(n: usize) -> Option<PathBuf> {
     results().get(n.wrapping_sub(1)).map(|i| i.path.clone())
 }
 
+// the same for a path the window shows: it must be one of the results of the last search
+pub fn open_result_path(path: &str, reveal: bool) -> Result<String, String> {
+    let n = results().iter().position(|i| i.path.to_string_lossy() == path).ok_or("этого файла нет в последних результатах поиска")?;
+    open_result(n + 1, reveal)
+}
+
 // open the n-th result (1-based) or show it selected in Explorer; only results of the last search, checked to exist
 pub fn open_result(n: usize, reveal: bool) -> Result<String, String> {
     let path = result_path(n).ok_or("такого результата нет")?;
@@ -1020,6 +1243,14 @@ pub fn open_result(n: usize, reveal: bool) -> Result<String, String> {
     }
     remember("open", &name, if reveal { "показан в папке" } else { "открыт" });
     Ok(name)
+}
+
+// show a file selected in Explorer (the "показать в папке" of the voice commands too)
+pub fn reveal_path(path: &Path) -> Result<(), String> {
+    if !path.exists() {
+        return Err(format!("{} больше нет на месте", path.display()));
+    }
+    reveal_in_explorer(path)
 }
 
 #[cfg(all(target_os = "windows", not(test)))]
@@ -1086,6 +1317,7 @@ pub(crate) fn run_for_tests(q: &Query) -> Result<Vec<FoundItem>, String> {
 pub(crate) fn set_results_for_tests(items: Vec<PathBuf>) {
     *RESULTS.lock() = items.into_iter().map(|p| FoundItem { is_dir: p.is_dir(), path: p, size: 0, modified: 0, score: 0 }).collect();
     STATE.lock().shown = PAGE.min(RESULTS.lock().len());
+    *SELECTED.lock() = None;
 }
 
 #[cfg(test)]

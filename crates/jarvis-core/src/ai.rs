@@ -1265,7 +1265,10 @@ pub fn base64(data: &[u8]) -> String {
 }
 
 pub fn vision_body(conf: &ProviderConf, question: &str, mime: &str, b64: &str) -> Value {
-    let system = "Ты — голосовой помощник Джарвис. Тебе прислали снимок экрана пользователя. Ответь коротко и по делу, на языке вопроса.";
+    vision_body_with(conf, "Ты — голосовой помощник Джарвис. Тебе прислали снимок экрана пользователя. Ответь коротко и по делу, на языке вопроса.", question, mime, b64)
+}
+
+pub fn vision_body_with(conf: &ProviderConf, system: &str, question: &str, mime: &str, b64: &str) -> Value {
     match conf.kind {
         Kind::OpenAiCompatible => json!({
             "model": conf.model, "stream": false,
@@ -1319,6 +1322,90 @@ pub fn ask_about_screen(question: &str) -> Result<String, AiError> {
 #[cfg(not(feature = "lua"))]
 pub fn ask_about_screen(_question: &str) -> Result<String, AiError> {
     screen_conf().map(|_| String::new()).and(Err(AiError::Other("в этой сборке нет сетевого модуля".into())))
+}
+
+// ---------------------------------------------------------------------------------------------
+// a picture attached in the chat: one question about it, sent only because the user attached it
+// ---------------------------------------------------------------------------------------------
+pub const MAX_IMAGE_BYTES: usize = 4 * 1024 * 1024;
+const IMAGE_TYPES: &[&str] = &["image/png", "image/jpeg", "image/webp", "image/gif"];
+
+// checks what the window sent: a supported picture type, real base64, not too big
+pub fn check_image(mime: &str, b64: &str) -> Result<(), AiError> {
+    if !IMAGE_TYPES.contains(&mime) {
+        return Err(AiError::Other("поддерживаются картинки PNG, JPEG, WEBP и GIF".into()));
+    }
+    if b64.is_empty() || !b64.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'+' || c == b'/' || c == b'=') {
+        return Err(AiError::Other("картинка повреждена".into()));
+    }
+    if b64.len() / 4 * 3 > MAX_IMAGE_BYTES {
+        return Err(AiError::Other(format!("картинка больше {} МБ", MAX_IMAGE_BYTES / 1024 / 1024)));
+    }
+    Ok(())
+}
+
+// stores the question (with a mark that a picture was attached; the picture itself is not kept) and asks the
+// provider in the background; the answer or the error appears in the same conversation
+pub fn ask_about_image(chat_id: Option<&str>, question: &str, name: &str, mime: &str, b64: String) -> Result<String, AiError> {
+    ask_about_image_with(store(), conf_from_settings(), chat_id, question, name, mime, b64).map(|(id, _)| id)
+}
+
+pub fn ask_about_image_with(store: &'static Store, conf: Result<ProviderConf, AiError>, chat_id: Option<&str>, question: &str, name: &str, mime: &str, b64: String) -> Result<(String, std::thread::JoinHandle<()>), AiError> {
+    let conf = conf?;
+    check_image(mime, &b64)?;
+    let question = question.trim();
+    if question.chars().count() > MAX_MESSAGE_CHARS {
+        return Err(AiError::TooLong);
+    }
+    let question = if question.is_empty() { "Что на этой картинке?".to_string() } else { question.to_string() };
+    let chat = match chat_id.and_then(|id| store.load(id)) {
+        Some(c) => c,
+        None => store.active_or_new(),
+    };
+    if is_busy(&chat.id) {
+        return Err(AiError::Busy);
+    }
+    let flag = Arc::new(AtomicBool::new(false));
+    JOBS.lock().insert(chat.id.clone(), flag.clone());
+    let shown_name: String = name.chars().filter(|c| !c.is_control()).take(60).collect();
+    store.append_with(&chat.id, "user", &format!("🖼 {} — {}", if shown_name.is_empty() { "картинка" } else { &shown_name }, question), "", "image");
+    store.set_active(&chat.id);
+    let id = chat.id.clone();
+    let mime = mime.to_string();
+    let handle = std::thread::spawn(move || {
+        let system = "Ты — голосовой помощник Джарвис. Пользователь прислал картинку и вопрос о ней. Ответь коротко и по делу, на языке вопроса.";
+        let result = request_image(&conf, system, &question, &mime, &b64);
+        drop(b64);
+        let stopped = flag.load(Ordering::SeqCst);
+        match result {
+            _ if stopped => { store.append(&id, "error", &AiError::Cancelled.user_text()); }
+            Ok(answer) => { store.append_with(&id, "assistant", &answer, "", "ai"); }
+            Err(e) => { status_error(&e); store.append(&id, "error", &format!("{} (Модель провайдера должна уметь смотреть картинки.)", e.user_text())); }
+        }
+        JOBS.lock().remove(&id);
+        bump();
+    });
+    Ok((chat.id, handle))
+}
+
+#[cfg(feature = "lua")]
+fn request_image(conf: &ProviderConf, system: &str, question: &str, mime: &str, b64: &str) -> Result<String, AiError> {
+    let body = vision_body_with(conf, system, question, mime, b64);
+    let resp = with_key(conf, client()?.post(endpoint(conf)).json(&body)).send().map_err(|e| net_error(conf, e))?;
+    let status = resp.status().as_u16();
+    let text = resp.text().map_err(|e| net_error(conf, e))?;
+    if !(200..300).contains(&status) {
+        return Err(map_status(conf, status, &text));
+    }
+    let v: Value = serde_json::from_str(&text).map_err(|_| AiError::BadResponse)?;
+    let answer = parse_answer(conf, &v)?;
+    status_set(Conn::Connected, "");
+    Ok(answer)
+}
+
+#[cfg(not(feature = "lua"))]
+fn request_image(_conf: &ProviderConf, _system: &str, _question: &str, _mime: &str, _b64: &str) -> Result<String, AiError> {
+    Err(AiError::Other("в этой сборке нет сетевого модуля".into()))
 }
 
 #[cfg(test)]

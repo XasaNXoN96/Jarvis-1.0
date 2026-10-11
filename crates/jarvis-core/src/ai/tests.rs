@@ -816,3 +816,42 @@ fn the_picture_is_sent_in_the_format_of_each_provider() {
     assert_eq!(b["messages"][0]["content"][0]["source"]["data"], "AAAA");
     assert_eq!(b["messages"][0]["content"][0]["source"]["media_type"], "image/jpeg");
 }
+
+// a picture attached in the chat: sent once with its question, never stored, only with the AI switched on
+#[test]
+fn a_picture_question_sends_the_picture_and_keeps_only_the_text() {
+    let m = mock(vec![(200, ok_body("На картинке кот."), 0)]);
+    let store = leaked_store();
+    let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    let (id, h) = ask_about_image_with(store, conf(&m.base), None, "Кто это?", "кот.png", "image/png", png.to_string()).unwrap();
+    h.join().unwrap();
+    let msgs = messages(store, &id);
+    assert_eq!(msgs.len(), 2);
+    assert!(msgs[0].content.contains("кот.png") && msgs[0].content.contains("Кто это?"));
+    assert!(!msgs.iter().any(|x| x.content.contains(png)), "the picture is not kept in the history");
+    assert_eq!(msgs[1].content, "На картинке кот.");
+    let req = m.requests.lock()[0].clone();
+    assert!(req.contains("data:image/png;base64,") && req.contains("Кто это?"), "{}", &req[..req.len().min(400)]);
+
+    // checked before anything is sent or stored
+    let store2 = leaked_store();
+    assert!(matches!(ask_about_image_with(store2, Err(AiError::Disabled), None, "x", "a.png", "image/png", png.into()), Err(AiError::Disabled)));
+    assert!(ask_about_image_with(store2, conf(&m.base), None, "x", "a.exe", "application/x-msdownload", png.into()).is_err());
+    assert!(ask_about_image_with(store2, conf(&m.base), None, "x", "a.png", "image/png", "not base64 !!".into()).is_err());
+    assert!(check_image("image/png", &"A".repeat(MAX_IMAGE_BYTES / 3 * 4 + 8)).is_err(), "too big");
+    assert!(store2.list().is_empty(), "nothing stored for a refused picture");
+}
+
+#[test]
+fn a_picture_question_reports_a_provider_error_in_the_conversation() {
+    let m = mock(vec![(400, json!({"error": {"message": "image input not supported"}}).to_string(), 0)]);
+    let store = leaked_store();
+    let (id, h) = ask_about_image_with(store, conf(&m.base), None, "", "a.jpg", "image/jpeg", "AAAA".into()).unwrap();
+    h.join().unwrap();
+    let msgs = messages(store, &id);
+    assert!(msgs[0].content.contains("Что на этой картинке?"), "the default question");
+    assert_eq!(msgs[1].role, "error");
+    assert!(msgs[1].content.contains("картинки"), "{}", msgs[1].content);
+    assert!(!is_busy(&id));
+}
+

@@ -125,18 +125,21 @@ pub fn fetch_site<'a>(phrase: &str, commands: &'a [JCommandsList]) -> Option<(&'
 // "verb + name" phrase; an ambiguous name also comes here, the program command then asks which one.
 pub fn fetch_indexed_program<'a>(phrase: &str, commands: &'a [JCommandsList]) -> Option<(&'a PathBuf, &'a JCommand)> {
     let (action, words) = crate::apps::split_request(phrase)?;
-    if action != crate::apps::Action::Open || words.len() > 4 {
+    if words.len() > 4 {
         return None;
     }
+    let id = if action == crate::apps::Action::Open { "assistant_program_open" } else { "assistant_program_close" };
     if let Some((_, c)) = fetch_by_triggers(phrase, commands) {
-        if c.id != "assistant_program_open" {
+        if c.id != id {
             return None;
         }
     }
-    if crate::appindex::find(&words) == crate::appindex::Found::Nothing {
+    // the first scan of a new computer still runs: the program command waits for it and answers itself
+    if !crate::appindex::index_pending() && crate::appindex::find_now(&words) == crate::appindex::Found::Nothing {
         return None;
     }
-    commands.iter().flat_map(|l| l.commands.iter().map(move |c| (&l.path, c))).find(|(_, c)| c.id == "assistant_program_open")
+    // "закрой" an installed program: the program command answers that only the main list can be closed
+    commands.iter().flat_map(|l| l.commands.iter().map(move |c| (&l.path, c))).find(|(_, c)| c.id == id)
 }
 
 pub fn fetch_by_triggers<'a>(

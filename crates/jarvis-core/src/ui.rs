@@ -298,8 +298,8 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         }
         "file_cancel" => json!({ "ok": true, "stopped": crate::filesearch::cancel() }),
         "file_open" | "file_reveal" => {
-            let n = body.get("n").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-            match crate::filesearch::open_result(n, name == "file_reveal") {
+            let path = body.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            match crate::filesearch::open_result_path(path, name == "file_reveal") {
                 Ok(f) => json!({ "ok": true, "message": format!("{}: {}", if name == "file_reveal" { "Показываю в папке" } else { "Открываю" }, f) }),
                 Err(e) => json!({ "ok": false, "message": e }),
             }
@@ -455,6 +455,15 @@ fn chat_action(body: &serde_json::Value) -> serde_json::Value {
             let text = body.get("text").and_then(|v| v.as_str()).unwrap_or("");
             let chat = if id.is_empty() { None } else { Some(id) };
             match crate::ai::send(chat, text, true) {
+                Ok(chat_id) => json!({ "ok": true, "id": chat_id }),
+                Err(e) => json!({ "ok": false, "message": e.user_text() }),
+            }
+        }
+        // a picture attached to a question: sent to the provider only because the user attached it
+        "image" => {
+            let f = |k: &str| body.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let chat = if id.is_empty() { None } else { Some(id) };
+            match crate::ai::ask_about_image(chat, &f("text"), &f("name"), &f("mime"), f("data")) {
                 Ok(chat_id) => json!({ "ok": true, "id": chat_id }),
                 Err(e) => json!({ "ok": false, "message": e.user_text() }),
             }

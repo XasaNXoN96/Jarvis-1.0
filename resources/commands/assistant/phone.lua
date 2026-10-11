@@ -89,6 +89,16 @@ while i <= #words do
 end
 local text = table.concat(rest, " ")
 local low = jarvis.text.lower(text)
+-- "отправь файл на телефон": the remote page receives a link or a text, not files
+local FILE_WORDS = { ["файл"] = true, ["файлы"] = true, ["фото"] = true, ["фотку"] = true, ["фотографию"] = true, ["документ"] = true,
+  ["картинку"] = true, ["видео"] = true, ["этот"] = true, ["file"] = true, ["photo"] = true, ["document"] = true }
+local only_file = #rest > 0
+for _, w in ipairs(rest) do if not FILE_WORDS[jarvis.text.lower(w)] then only_file = false end end
+if only_file then
+  say(T("Телефон", "Phone"), T("Пульт телефона принимает ссылку или текст, но не файлы. Отправьте файл через мессенджер или облако.",
+      "The phone remote receives a link or a text, not files."))
+  return
+end
 if low == "" or low == "буфер" or low == "буфер обмена" or low == "из буфера" or low == "из буфера обмена" or low == "clipboard" then
   text = clip
 end

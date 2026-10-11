@@ -66,6 +66,14 @@ fn an_ambiguous_name_never_starts_a_random_program() {
     assert_eq!(choose("дабл").map(|a| a.name), None, "a word that fits nothing chooses nothing");
     assert_eq!(choose("double").unwrap().name, "Double Commander");
     assert!(choose("девятый").is_none());
+    // a number inside another command is not a choice
+    assert!(choose("поставь таймер на 2 минуты").is_none());
+    assert!(choose("громкость двадцать").is_none());
+    assert!(choose("пятница").is_none());
+    assert_eq!(choose("номер два").unwrap().name, pending()[1].name);
+    set_pending(vec![app("7-Zip File Manager", "C:\\SM\\7z.lnk"), app("WinZip", "C:\\SM\\wz.lnk")]);
+    assert_eq!(choose("7 zip").unwrap().name, "7-Zip File Manager", "a name with a digit is a name");
+    assert_eq!(choose("винзип").unwrap().name, "WinZip");
     set_pending(Vec::new());
     assert_eq!(find_in(&list, &w("ворд")), Found::Nothing);
     assert_eq!(find_in(&list, &w("vs")), Found::Nothing, "two letters fit too many names");
@@ -107,6 +115,11 @@ fn shortcuts_are_collected_without_junk_and_registered_apps_are_read() {
     assert_eq!(reg[1].exe, "code.exe");
     assert_eq!(reg[2].exe, "winword.exe");
     assert!(parse_registered("not json").is_empty(), "a broken answer gives nothing, not garbage");
+    assert!(try_parse_registered("{\"start\":{\"value\":5}}").is_err(), "another shape is reported, not taken for an empty program");
+    let wrapped = try_parse_registered(r#"{"start":{"value":[{"Name":"Paint","AppID":"Microsoft.Paint!App"}],"Count":1},"paths":null}"#).unwrap();
+    assert_eq!(wrapped.len(), 1, "the {{value, Count}} form of PowerShell 5.1");
+    assert!(try_parse_registered(r#"{"start":null,"paths":[]}"#).unwrap().is_empty());
+    assert_eq!(encoded_command("ab"), "YQBiAA==", "UTF-16LE base64 for -EncodedCommand");
     assert!(parse_registered("\u{feff}{\"start\":{\"Name\":\"Paint\",\"AppID\":\"Microsoft.Paint!App\"}}").len() == 1, "one element without a list");
 
     // the same program from two places is kept once, the Start menu first, the program file name is kept

@@ -304,7 +304,17 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
         })
     })?)?;
     files.set("cancel", lua.create_function(|_, ()| Ok(crate::filesearch::cancel()))?)?;
+    // jarvis.files.reveal(path) -> true | nil, error: the file selected in Explorer (paths with spaces and commas too)
+    files.set("reveal", lua.create_function(|_, path: String| {
+        Ok(match crate::filesearch::reveal_path(std::path::Path::new(&path)) {
+            Ok(()) => (Some(true), None),
+            Err(e) => (None, Some(e)),
+        })
+    })?)?;
     files.set("busy", lua.create_function(|_, ()| Ok(crate::filesearch::is_busy()))?)?;
+    // jarvis.files.selected() -> the number chosen in this search | nil; select(n) -> true when there is such a result
+    files.set("selected", lua.create_function(|_, ()| Ok(crate::filesearch::selected()))?)?;
+    files.set("select", lua.create_function(|_, n: usize| Ok(crate::filesearch::select(n)))?)?;
     files.set("results", lua.create_function(|lua, ()| {
         let out = lua.create_table()?;
         for (i, item) in crate::filesearch::results().iter().enumerate() {

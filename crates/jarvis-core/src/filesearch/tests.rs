@@ -56,6 +56,24 @@ fn the_phrase_becomes_a_query_name_kind_place_time_and_text() {
     assert_eq!(p("найди файл Мой Отчёт 2024 Final").name, "отчет 2024 final", "mixed case and spaces");
     assert!(is_empty_query(&p("найди файл")));
     assert_eq!(p("find all pdf files").exts, ["pdf"]);
+    // names that only begin like a month or a kind are names
+    let q = p("найди файл мартин");
+    assert_eq!((q.name.as_str(), q.since), ("мартин", None));
+    assert_eq!(p("найди файл августина").since, None);
+    let q = p("найди файл фотошоп");
+    assert_eq!((q.name.as_str(), q.exts.len()), ("фотошоп", 0));
+    assert!(p("найди фотографии").exts.contains(&"jpg".to_string()));
+    assert_eq!(p("найди файлы с марта").since, month_range(2026, 3).0, "the forms of a month name");
+    assert_eq!(p("найди файлы за март").since, month_range(2026, 3).0);
+    // a folder named like a kind of file
+    let q = p("найди папку фото");
+    assert!(q.folders_only && q.exts.is_empty());
+    assert_eq!(q.name, "фото");
+    // the text marker as whole words
+    assert_eq!(p("найди файл в котором содержится слово ключ").content, "ключ");
+    // "в папке видео" is the folder
+    let q = p("найди отчёт в папке видео");
+    assert_eq!((q.scope.clone(), q.name.as_str(), q.exts.len()), (Scope::Videos, "отчет", 0));
     assert_eq!(p("find file report on drive e").scope, Scope::Drive('E'));
 }
 
@@ -209,6 +227,9 @@ fn office_documents_are_read_and_unsupported_formats_are_not() {
     std::fs::write(&broken, b"not a zip").unwrap();
     assert_eq!(file_text(&broken, "docx").unwrap(), "", "a damaged document gives no text, no crash");
     assert!(file_text(&dir.join("e.pdf"), "pdf").is_none());
+    let ansi = dir.join("f.txt");
+    std::fs::write(&ansi, [0xCF, 0xF0, 0xE8, 0xE2, 0xE5, 0xF2, 0x20, 0xA8, 0xEB, 0xEA, 0xE0]).unwrap(); // "Привет Ёлка" in Windows-1251
+    assert_eq!(file_text(&ansi, "txt").unwrap(), "Привет Ёлка", "old Notepad files are read too");
     assert!(!content_supported("pdf") && !content_supported("doc") && content_supported("docx") && content_supported("py"));
     assert!(text_contains(&strip_xml("<w:t>ICT</w:t><w:t>ERA</w:t>"), "ictera"), "a word split into runs is still found");
     let _ = std::fs::remove_dir_all(&dir);
@@ -241,4 +262,10 @@ fn the_form_of_the_window_makes_the_same_query() {
     assert_eq!(q.scope, Scope::Drive('D'));
     assert!(q.exts.contains(&"jpg".to_string()) && q.since.is_some());
     assert!(query_from_form("", "folder", "", "", "").folders_only);
+}
+
+#[test]
+fn folders_of_users_are_not_skipped_on_windows_and_system_ones_are() {
+    assert!(skip_dir("windows") && skip_dir("appdata") && skip_dir("node_modules"));
+    assert_eq!(skip_dir("dev"), cfg!(not(target_os = "windows")), "\\Documents\\dev is an ordinary folder on Windows");
 }

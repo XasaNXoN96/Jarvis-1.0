@@ -1,28 +1,20 @@
 -- voice notes: "запиши идею купить молоко", "что я записывал", "открой заметки"
 
 local id = jarvis.context.command_id
-local home = jarvis.system.env("USERPROFILE") or jarvis.system.env("HOME") or "."
-local path = home .. "/Documents/Jarvis-notes.txt"
+local path = docs_path("Jarvis-notes.txt")
 
 if id == "assistant_note_open" then
-  local f = io.open(path, "a")
-  if f then f:close() end
+  if not jarvis.fs.exists(path) then write_text(path, "") end
   open(path)
   say(T("Заметки", "Notes"), path, T("Открываю заметки", "Opening your notes"))
   return
 end
 
 if id == "assistant_note_read" then
-  local f = io.open(path, "r")
-  if not f then
-    say(T("Заметки", "Notes"), T("Заметок пока нет", "No notes yet"))
-    return
-  end
   local lines = {}
-  for line in f:lines() do
+  for _, line in ipairs(read_lines(path) or {}) do
     if line ~= "" then lines[#lines + 1] = line end
   end
-  f:close()
   if #lines == 0 then
     say(T("Заметки", "Notes"), T("Заметок пока нет", "No notes yet"))
     return
@@ -51,12 +43,10 @@ if text == "" then
   return
 end
 
-local f = io.open(path, "a")
-if not f then
+local line = string.format("[%s-%s-%s %s:%s] %s\n", jarvis.context.time.year, jarvis.context.time.month,
+  jarvis.context.time.day, jarvis.context.time.hour, jarvis.context.time.minute, text)
+if not append_text(path, line) then
   say(T("Заметки", "Notes"), T("Не удалось записать в ", "Cannot write to ") .. path)
   return
 end
-f:write(string.format("[%s-%s-%s %s:%s] %s\n", jarvis.context.time.year, jarvis.context.time.month,
-  jarvis.context.time.day, jarvis.context.time.hour, jarvis.context.time.minute, text))
-f:close()
 say(T("Заметка", "Note"), text, T("Записал", "Noted"), "note")

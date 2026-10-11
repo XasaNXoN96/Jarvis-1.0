@@ -78,9 +78,13 @@ mod win {
         String::from_utf16_lossy(&buf[..n.max(0) as usize])
     }
 
+    // the window of Jarvis itself: its page is called "Джарвис" (a browser adds " — Microsoft Edge" and the like);
+    // a GitHub page or a folder "Jarvis-1.0" in another program is not it
     pub fn is_jarvis(hwnd: HWND) -> bool {
         let t = title(hwnd).to_lowercase();
-        t.contains("jarvis") || t.contains("джарвис") || t.contains("127.0.0.1:9714")
+        let t = t.trim();
+        t == "джарвис" || t == "jarvis" || t.starts_with("джарвис - ") || t.starts_with("джарвис — ") || t.starts_with("jarvis - ") || t.starts_with("jarvis — ")
+            || t.contains("127.0.0.1:9714")
     }
 
     // the next normal visible window under the Jarvis window (the one the user worked in before)

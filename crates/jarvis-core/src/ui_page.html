@@ -437,7 +437,7 @@
           <div id="conv-list"></div>
         </aside>
         <div class="chatmain">
-          <div class="chathead"><b id="chat-title">Диалог</b><span class="grow"></span><button class="btn small" id="chat-clear" type="button">Очистить</button></div>
+          <div class="chathead"><b id="chat-title">Диалог</b><span class="grow"></span><button class="btn small" id="chat-image" type="button" title="Задать вопрос о картинке: она уйдёт выбранному ИИ-провайдеру и не сохраняется в Джарвисе">🖼 Картинка</button><input type="file" id="chat-image-file" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none"><button class="btn small" id="chat-clear" type="button">Очистить</button></div>
           <div class="privacy" id="chat-privacy"></div>
           <div class="banner" id="ai-setup" style="display:none"><span id="ai-setup-text"></span> <button class="btn small" id="ai-setup-btn" type="button">Открыть настройки</button></div>
           <div id="ai-log"><div class="empty">Напишите вопрос в поле внизу и нажмите «Отправить». Ответит выбранная нейросеть.</div></div>
@@ -975,11 +975,12 @@ async function filesLoad() {
     $('#fs-status').textContent = r.busy ? 'Ищу: ' + r.label + '…' : (r.message ? r.message.split('\n')[0] : '');
     $('#fs-list').innerHTML = (r.results || []).map((f, i) => '<div class="fs-row"><div><b>' + (f.is_dir ? '📁 ' : '') + esc(f.name) + '</b><small>' +
       (f.is_dir ? 'папка' : esc((f.ext || 'файл').toUpperCase()) + ' · ' + esc(f.size)) + ' · изменён ' + esc(f.modified) + '</small><small>' + esc(f.dir) + '</small></div>' +
-      '<div class="acts"><button class="btn small" type="button" data-open="' + (i + 1) + '">Открыть</button><button class="btn small" type="button" data-rev="' + (i + 1) + '">Показать в папке</button></div></div>').join('') ||
+      '<div class="acts"><button class="btn small" type="button" data-open="' + i + '">Открыть</button><button class="btn small" type="button" data-rev="' + i + '">Показать в папке</button></div></div>').join('') ||
       (r.busy ? '' : '<div class="empty">' + (r.message ? esc(r.message).replace(/\n/g, '<br>') : 'Введите имя, выберите тип или папку и нажмите «Найти».') + '</div>');
     $('#fs-list').querySelectorAll('button[data-open],button[data-rev]').forEach(b => b.onclick = async () => {
-      const rev = !!b.dataset.rev, n = +(b.dataset.rev || b.dataset.open);
-      try { const x = await action(rev ? 'file_reveal' : 'file_open', { n }); $('#fs-status').textContent = x.message || ''; } catch (e) { $('#fs-status').textContent = 'Нет связи с Джарвисом'; }
+      const rev = b.dataset.rev !== undefined, row = (r.results || [])[+(rev ? b.dataset.rev : b.dataset.open)];
+      if (!row) return;
+      try { const x = await action(rev ? 'file_reveal' : 'file_open', { path: row.path }); $('#fs-status').textContent = x.message || ''; } catch (e) { $('#fs-status').textContent = 'Нет связи с Джарвисом'; }
     });
     const kinds = { search: '🔍', launch: '🖥', open: '📄' };
     $('#fs-history').innerHTML = (r.history || []).map(h => '<div class="hist-row"><span>' + new Date(h.time * 1000).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) + '</span><span>' + (kinds[h.kind] || '') + ' ' + esc(h.text) + ' — ' + esc(h.result) + '</span></div>').join('') || '<div class="empty">Пока пусто.</div>';
@@ -1284,6 +1285,25 @@ async function aiRefreshList() {
   }
   return d;
 }
+// a question about a picture: the text in the field below is the question (or "Что на этой картинке?")
+$('#chat-image').onclick = () => $('#chat-image-file').click();
+$('#chat-image-file').onchange = () => {
+  const file = $('#chat-image-file').files[0];
+  $('#chat-image-file').value = '';
+  if (!file) return;
+  if (file.size > 4 * 1024 * 1024) { showToast('Картинка больше 4 МБ'); return; }
+  const reader = new FileReader();
+  reader.onload = async () => {
+    const url = String(reader.result || ''), comma = url.indexOf(',');
+    const question = $('#input').value.trim();
+    try {
+      const r = await chatApi({ op: 'image', id: aiActive, text: question, name: file.name, mime: file.type, data: url.slice(comma + 1) });
+      if (r.ok) { $('#input').value = ''; await pollNow(true); } else { showToast(r.message || 'Не удалось отправить картинку'); }
+    } catch (e) { showToast('Нет связи с Джарвисом'); }
+  };
+  reader.onerror = () => showToast('Не удалось прочитать файл');
+  reader.readAsDataURL(file);
+};
 async function aiOpen() { await aiRefreshList(); await pollNow(true); }
 $('#chat-new').onclick = async () => { await chatApi({ op: 'new' }); await pollNow(true); aiRefreshList(); curInput().focus(); };
 $('#chat-clear').onclick = async () => {

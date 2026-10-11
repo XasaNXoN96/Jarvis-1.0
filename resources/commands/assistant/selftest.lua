@@ -41,10 +41,7 @@ local id = jarvis.timer.after(5, T("Диагностика", "Diagnostics"), T("
 check(#jarvis.timer.list() == before + 1, T("Таймеры работают (тест сработает через 5 секунд)", "Timers work (the test fires in 5 seconds)"), T("Таймер не создался", "The timer was not created"))
 
 -- notes folder
-local home = jarvis.system.env("USERPROFILE") or "."
-local f = io.open(home .. "/Documents/Jarvis-notes.txt", "a")
-check(f ~= nil, T("Папка для заметок доступна", "Notes folder is writable"), T("Нельзя писать в Документы", "Cannot write to Documents"))
-if f then f:close() end
+check(append_text(docs_path("Jarvis-notes.txt"), ""), T("Папка для заметок доступна", "Notes folder is writable"), T("Нельзя писать в Документы", "Cannot write to Documents"))
 
 -- commands
 local n = #jarvis.app.commands()

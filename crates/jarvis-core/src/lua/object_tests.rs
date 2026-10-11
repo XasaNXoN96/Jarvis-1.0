@@ -590,7 +590,7 @@ fn installed_programs_are_routed_without_taking_the_phrases_of_other_commands() 
         assert_eq!(w.route(phrase).as_deref(), id, "{}", phrase);
     }
     assert_eq!(commands::fetch_indexed_program("открой непонятноеслово", &w.list).map(|(_, c)| c.id.clone()), None);
-    assert_eq!(commands::fetch_indexed_program("закрой krita", &w.list).map(|(_, c)| c.id.clone()), None, "closing needs the fixed list");
+    assert_eq!(commands::fetch_indexed_program("закрой krita", &w.list).map(|(_, c)| c.id.clone()).as_deref(), Some("assistant_program_close"), "the close command explains that it cannot");
     crate::appindex::set_for_tests(Vec::new());
 }
 

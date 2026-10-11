@@ -154,8 +154,8 @@ fn query_param<'a>(path: &'a str, name: &str) -> Option<&'a str> {
     query.split('&').find_map(|kv| kv.split_once('=').filter(|(k, _)| *k == name).map(|(_, v)| v))
 }
 
-// GET /poll?after=<last id the page has>: the messages after it. A freshly opened page (after=0) gets only
-// what was sent in the last seconds, never an old signal.
+// GET /poll?after=<last id the page has>: the messages after it. A freshly opened page (after=0) gets the
+// waiting links and texts, and a ring only when it is fresh.
 fn poll(after: u64) -> serde_json::Value {
     let now = now_secs();
     PHONE.lock().last_seen = now;
@@ -166,7 +166,9 @@ fn poll(after: u64) -> serde_json::Value {
     let msgs: Vec<serde_json::Value> = ob
         .1
         .iter()
-        .filter(|m| if after == 0 { now.saturating_sub(m.at) <= 15 } else { m.id > after })
+        // a page opened just now gets what is still waiting: a link or a text (up to two minutes), a ring only
+        // when it is fresh (an old "find my phone" must not start sounding)
+        .filter(|m| if after == 0 { m.kind != "ring" || now.saturating_sub(m.at) <= 30 } else { m.id > after })
         .map(|m| serde_json::json!({ "id": m.id, "kind": m.kind, "data": m.data }))
         .collect();
     serde_json::json!({ "last": ob.0, "msgs": msgs })
@@ -285,8 +287,19 @@ pub fn start() -> Result<String, String> {
             None
         }
     };
-    let listener = TcpListener::bind(("0.0.0.0", PORT))
-        .map_err(|e| format!("cannot listen on port {}: {}", PORT, e))?;
+    // switched off a moment ago: the old listener closes within a fraction of a second, so try again briefly
+    let mut attempt = 0;
+    let listener = loop {
+        match TcpListener::bind(("0.0.0.0", PORT)) {
+            Ok(l) => break l,
+            Err(e) if attempt < 10 => {
+                attempt += 1;
+                let _ = e;
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            Err(e) => return Err(format!("cannot listen on port {}: {}", PORT, e)),
+        }
+    };
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
     RUNNING.store(true, Ordering::SeqCst);
     info!("Remote control started on port {}", PORT);
@@ -630,19 +643,22 @@ for (const [list, box] of [[quick, 'quick'], [media, 'media']])
 $('f').onsubmit = e => { e.preventDefault(); const i = $('t'); if (i.value.trim()) send(i.value.trim()); i.value=''; };
 
 // ---------- connection: the page asks the computer for news every 2 seconds ----------
-let lastId = 0, lastOk = 0, failures = 0, timer = null;
+let lastId = 0, lastOk = 0, failures = 0, timer = null, polling = false, shownId = 0;
 const hhmm = t => new Date(t).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
 function connected() { lastOk = Date.now(); failures = 0; $('c-state').textContent = 'есть'; $('c-state').className = 'ok'; $('c-err').textContent = ''; $('c-last').textContent = hhmm(lastOk); }
 function lost(why) { failures++; $('c-state').textContent = 'нет связи'; $('c-state').className = 'bad'; $('c-err').textContent = why; }
 async function poll() {
   clearTimeout(timer);
+  if (polling) return; // one request at a time: two at once would show the same message twice
+  polling = true;
   try {
     const r = await fetch('/poll?after=' + lastId, {headers:{'X-Token':token}});
     if (r.status === 403) { lost('Ссылка не подходит: откройте новую ссылку или QR-код на компьютере.'); }
     else if (r.status === 503) { lost('Пульт выключен на компьютере. Включите его на главной странице Jarvis.'); }
     else if (!r.ok) { lost('Компьютер ответил ошибкой ' + r.status + '.'); }
-    else { const j = await r.json(); connected(); for (const m of j.msgs) handle(m); lastId = j.last; }
+    else { const j = await r.json(); connected(); for (const m of j.msgs) { if (m.id > shownId || j.last < shownId) { handle(m); shownId = m.id; } } lastId = j.last; if (j.last < shownId) shownId = j.last; }
   } catch (e) { lost('Компьютер не отвечает. Проверьте, что Jarvis запущен и телефон в той же Wi-Fi сети.'); }
+  polling = false;
   timer = setTimeout(poll, failures ? Math.min(2000 * (failures + 1), 10000) : 2000);
 }
 $('c-retry').onclick = () => { failures = 0; $('c-state').textContent = 'проверяю…'; $('c-state').className = ''; poll(); reportSoon(); };
@@ -824,6 +840,16 @@ mod tests {
         send_to_phone("ring", "").unwrap();
         OUTBOX.lock().1.back_mut().unwrap().at -= MSG_TTL_SECS + 1;
         assert!(poll(last)["msgs"].as_array().unwrap().is_empty(), "an hour-old signal must not sound");
+        OUTBOX.lock().1.clear();
+
+        // a page opened later (after=0) still gets a waiting text, but not an old ring
+        send_to_phone("text", "ждёт").unwrap();
+        send_to_phone("ring", "").unwrap();
+        for m in OUTBOX.lock().1.iter_mut() {
+            m.at -= 60;
+        }
+        let kinds: Vec<_> = poll(0)["msgs"].as_array().unwrap().iter().map(|m| m["kind"].as_str().unwrap().to_string()).collect();
+        assert_eq!(kinds, ["text"]);
         OUTBOX.lock().1.clear();
         RUNNING.store(false, Ordering::SeqCst);
     }

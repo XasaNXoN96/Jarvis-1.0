@@ -20,6 +20,13 @@ if not found then
   return
 end
 
+-- "закрой" works only for the programs of the main list (their process name is known)
+if closing and (found.ambiguous or found.indexed) then
+  say(T("Программа", "Program"), T("Закрыть голосом можно только программы из основного списка (Word, Chrome, Telegram и другие). Эту программу закройте сами.",
+      "Only programs of the main list can be closed by voice."))
+  return
+end
+
 -- a name that fits several installed programs ("командер"): never a random one, the user chooses
 if found.ambiguous then
   local lines = {}
@@ -32,10 +39,6 @@ end
 
 -- an installed program from the index (Start menu, desktop, registered apps)
 if found.indexed then
-  if closing then
-    say(T("Программа", "Program"), T("Закрыть голосом можно только программы из основного списка: ", "Only programs of the main list can be closed by voice: ") .. found.name)
-    return
-  end
   local key = "open:" .. found.name
   if not jarvis.app.once(key, 4) then
     say(T("Программа", "Program"), found.name .. T(" уже запускается", " is already starting"))

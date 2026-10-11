@@ -230,6 +230,8 @@ struct Registered {
 #[serde(untagged)]
 enum OneOrMany<T> {
     Many(Vec<T>),
+    // Windows PowerShell 5.1 sometimes writes an array as { "value": [...], "Count": n }
+    Wrapped { value: Vec<T> },
     One(T),
 }
 impl<T> Default for OneOrMany<T> {
@@ -240,31 +242,37 @@ impl<T> Default for OneOrMany<T> {
 impl<T> OneOrMany<T> {
     fn into_vec(self) -> Vec<T> {
         match self {
-            OneOrMany::Many(v) => v,
+            OneOrMany::Many(v) | OneOrMany::Wrapped { value: v } => v,
             OneOrMany::One(x) => vec![x],
         }
     }
 }
 
+// no defaults: an object of another shape is an error to report, not an empty program
 #[derive(Deserialize)]
 struct StartApp {
-    #[serde(rename = "Name", default)]
+    #[serde(rename = "Name")]
     name: String,
-    #[serde(rename = "AppID", default)]
+    #[serde(rename = "AppID")]
     app_id: String,
 }
 
 #[derive(Deserialize)]
 struct AppPath {
-    #[serde(default)]
     exe: String,
-    #[serde(default)]
     path: String,
 }
 
 // the answer of the PowerShell part of the scan (Get-StartApps + App Paths), as JSON
 pub(crate) fn parse_registered(json: &str) -> Vec<IndexedApp> {
-    let Ok(r) = serde_json::from_str::<Registered>(json.trim_start_matches('\u{feff}')) else { return Vec::new() };
+    try_parse_registered(json).unwrap_or_default()
+}
+
+pub(crate) fn try_parse_registered(json: &str) -> Result<Vec<IndexedApp>, String> {
+    let text = json.trim().trim_start_matches('\u{feff}');
+    // a null list (nothing registered) is written as null by ConvertTo-Json
+    let text = text.replace("\"start\":null", "\"start\":[]").replace("\"paths\":null", "\"paths\":[]");
+    let r = serde_json::from_str::<Registered>(&text).map_err(|e| format!("непонятный ответ PowerShell ({})", e))?;
     let mut out = Vec::new();
     for s in r.start.into_vec() {
         let name = s.name.trim().to_string();
@@ -285,7 +293,7 @@ pub(crate) fn parse_registered(json: &str) -> Vec<IndexedApp> {
         let name = exe.trim_end_matches(".exe").to_string();
         out.push(IndexedApp { name, launch: path, source: "app_paths".into(), exe });
     }
-    out
+    Ok(out)
 }
 
 // one list without repeats: the same program from several places is kept once (Start menu first)
@@ -330,10 +338,10 @@ fn scan() -> Vec<IndexedApp> {
         .filter(|p| p.exists())
         .collect();
     let shortcuts = scan_dirs(&start_dirs, &desktop_dirs);
-    let registered = match registered_apps() {
-        Ok(json) => {
+    let registered = match registered_apps().and_then(|json| try_parse_registered(&json)) {
+        Ok(list) => {
             LAST_ERROR.lock().clear();
-            parse_registered(&json)
+            list
         }
         Err(e) => {
             warn!("Programs index: registered apps not read: {}", e);
@@ -353,15 +361,16 @@ fn registered_apps() -> Result<String, String> {
     const SCRIPT: &str = r#"[Console]::OutputEncoding = [Text.Encoding]::UTF8
 $r = [ordered]@{ start = @(); paths = @() }
 try { $r.start = @(Get-StartApps | Select-Object Name, AppID) } catch {}
-foreach ($h in 'HKLM:', 'HKCU:') {
-  Get-ChildItem "$h\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths" -ErrorAction SilentlyContinue | ForEach-Object {
+foreach ($k in 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths', 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths') {
+  Get-ChildItem $k -ErrorAction SilentlyContinue | ForEach-Object {
     $d = $_.GetValue('')
     if ($d) { $r.paths += [pscustomobject]@{ exe = $_.PSChildName; path = [Environment]::ExpandEnvironmentVariables(([string]$d).Trim('"')) } }
   }
 }
 $r | ConvertTo-Json -Depth 3 -Compress"#;
     let mut child = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", SCRIPT])
+        // the script as UTF-16 base64: no quoting or line-break questions on the command line
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", &encoded_command(SCRIPT)])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .creation_flags(0x0800_0000)
@@ -387,6 +396,12 @@ $r | ConvertTo-Json -Depth 3 -Compress"#;
     }
     let bytes = reader.join().unwrap_or_default();
     Ok(String::from_utf8_lossy(&bytes).to_string())
+}
+
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub(crate) fn encoded_command(script: &str) -> String {
+    let bytes: Vec<u8> = script.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+    crate::ai::base64(&bytes)
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -489,6 +504,16 @@ pub fn find_in(list: &[IndexedApp], words: &[String]) -> Found {
     }
 }
 
+// for the routing of a phrase: never waits (the first scan may still run)
+pub fn find_now(words: &[String]) -> Found {
+    find_in(&apps(), words)
+}
+
+pub fn index_pending() -> bool {
+    ensure_loaded();
+    INDEX.read().apps.is_empty() && is_scanning()
+}
+
 pub fn find(words: &[String]) -> Found {
     ensure_loaded();
     // the very first scan of this computer is still running: wait for it a little instead of saying "not found"
@@ -530,27 +555,35 @@ pub fn pending() -> Vec<IndexedApp> {
     PENDING.lock().clone()
 }
 
-// "второй", "2", "тотал" -> the chosen entry of the pending list
+// "второй", "2", "номер три", "тотал" -> the chosen entry of the pending list. Only a short answer counts: in
+// "поставь таймер на 2 минуты" the number is not a choice, and "двадцать" is not "два".
 pub fn choose(answer: &str) -> Option<IndexedApp> {
     let list = pending();
     if list.is_empty() {
         return None;
     }
-    let words = tokens(answer);
-    const ORD: &[(&str, usize)] = &[("перв", 1), ("втор", 2), ("трет", 3), ("четв", 4), ("пят", 5), ("шест", 6), ("седьм", 7), ("восьм", 8),
-        ("first", 1), ("second", 2), ("third", 3), ("fourth", 4), ("fifth", 5), ("один", 1), ("два", 2), ("три", 3), ("четыре", 4)];
-    for w in &words {
-        if let Ok(n) = w.parse::<usize>() {
-            return list.get(n.wrapping_sub(1)).cloned();
-        }
-        if let Some((_, n)) = ORD.iter().find(|(s, _)| w.starts_with(s)) {
-            return list.get(n - 1).cloned();
-        }
+    const FILLER: &[&str] = &["номер", "вариант", "давай", "открой", "запусти", "программу", "пожалуйста", "number", "the", "one", "open"];
+    let words: Vec<String> = tokens(answer).into_iter().filter(|w| !FILLER.contains(&w.as_str())).collect();
+    if words.is_empty() || words.len() > 3 {
+        return None;
     }
-    match find_in(&list, &words) {
-        Found::One(a) => Some(a),
-        _ => None,
+    // a name first ("7 zip", "тотал")
+    if let Found::One(a) = find_in(&list, &words) {
+        return Some(a);
     }
+    if words.len() != 1 {
+        return None;
+    }
+    let w = words[0].as_str();
+    const ORD: &[(&str, usize)] = &[
+        ("один", 1), ("одна", 1), ("первый", 1), ("первую", 1), ("первая", 1), ("первое", 1), ("два", 2), ("две", 2), ("второй", 2), ("вторую", 2), ("вторая", 2),
+        ("три", 3), ("третий", 3), ("третью", 3), ("третья", 3), ("четыре", 4), ("четвертый", 4), ("четвертую", 4), ("пять", 5), ("пятый", 5), ("пятую", 5),
+        ("шесть", 6), ("шестой", 6), ("шестую", 6), ("семь", 7), ("седьмой", 7), ("седьмую", 7), ("восемь", 8), ("восьмой", 8), ("восьмую", 8),
+        ("first", 1), ("second", 2), ("third", 3), ("fourth", 4), ("fifth", 5),
+    ];
+    let w = w.replace('ё', "е");
+    let n = w.parse::<usize>().ok().or_else(|| ORD.iter().find(|(s, _)| *s == w).map(|(_, n)| *n))?;
+    list.get(n.wrapping_sub(1)).cloned()
 }
 
 // start an entry of the index (never anything else): checked to exist first

@@ -164,10 +164,34 @@ local function strip_leading(text, stop)
 end
 
 local PS = { "-NoProfile", "-ExecutionPolicy", "Bypass" }
+-- files of the user (tasks, notes): read and written by Jarvis itself, so a Cyrillic user name or a folder moved
+-- to OneDrive works (Lua's io.open cannot open such paths on Windows)
+local function docs_path(name)
+  local dir = jarvis.system.folder and jarvis.system.folder("documents")
+  if not dir then dir = (jarvis.system.env("USERPROFILE") or jarvis.system.env("HOME") or ".") .. "/Documents" end
+  return dir .. "/" .. name
+end
+local function read_lines(path)
+  local ok, text = pcall(jarvis.fs.read, path)
+  if not ok or not text then return nil end
+  local list = {}
+  for raw in (text:gsub("\r", "") .. "\n"):gmatch("([^\n]*)\n") do list[#list + 1] = raw end
+  if list[#list] == "" then list[#list] = nil end
+  return list
+end
+local function write_text(path, text)
+  return (pcall(jarvis.fs.write, path, text))
+end
+local function append_text(path, text)
+  if not jarvis.fs.exists(path) then return write_text(path, text) end
+  return (pcall(jarvis.fs.append, path, text))
+end
+
 local function powershell(command)
   local args = { table.unpack(PS) }
   args[#args + 1] = "-Command"
-  args[#args + 1] = command
+  -- the answer in UTF-8: Russian error texts of Windows are readable, not "????"
+  args[#args + 1] = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; " .. command
   return run("powershell", args)
 end
 local function ps_file(name, extra)

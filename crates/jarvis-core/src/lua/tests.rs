@@ -434,6 +434,8 @@ mod tests {
         }
         crate::remote::phone_for_tests(true, true);
         assert!(run("assistant_phone_text", "отправь на телефон", "  ").contains("Нечего отправлять"));
+        assert!(run("assistant_phone_text", "отправь файл на телефон", "").contains("не файлы"), "a file is not sent as the word «файл»");
+        assert!(crate::remote::queued_for_tests().is_empty());
         assert!(crate::remote::queued_for_tests().is_empty());
         crate::remote::phone_for_tests(false, false);
     }
@@ -482,6 +484,9 @@ mod tests {
         // the fixed list still works first
         let r = run("assistant_program_open", "program.lua", "открой блокнот");
         assert!(r.contains("Блокнот"), "{}", r);
+        // closing works only for the fixed list: an ambiguous name is never opened instead
+        let r = run("assistant_program_close", "program.lua", "закрой командер");
+        assert!(r.contains("основного списка") && !r.contains("Какую программу"), "{}", r);
         crate::session::end();
         crate::appindex::set_for_tests(Vec::new());
         let _ = std::fs::remove_dir_all(&base);

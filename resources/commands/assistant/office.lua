@@ -367,16 +367,26 @@ local function confirm_session(text)
     powershell("Clear-RecycleBin -Force -ErrorAction SilentlyContinue")
     say(title, T("Корзина очищена", "Recycle bin emptied"))
   elseif data == "tasks_clear" then
-    local home = jarvis.system.env("USERPROFILE") or jarvis.system.env("HOME") or "."
-    local f = io.open(home .. "/Documents/Jarvis-tasks.txt", "w")
-    if f then f:close(); say(T("Задачи", "Tasks"), T("Все задачи стёрты", "All tasks deleted"))
+    if write_text(docs_path("Jarvis-tasks.txt"), "") then say(T("Задачи", "Tasks"), T("Все задачи стёрты", "All tasks deleted"))
     else say(T("Задачи", "Tasks"), T("Не удалось стереть задачи", "Could not delete the tasks")) end
   end
 end
 
 -- ---------- what to do with a found file ----------
-local ORDINALS = { ["первый"] = 1, ["первую"] = 1, ["один"] = 1, ["второй"] = 2, ["вторую"] = 2, ["два"] = 2, ["третий"] = 3, ["третью"] = 3, ["три"] = 3,
-                   ["четвертый"] = 4, ["четыре"] = 4, ["пятый"] = 5, ["пять"] = 5 }
+-- "второй", "седьмую", "номер 3", "пять": the number of a result (whole words: "пятница" is not five)
+local FILE_ORD = { { "перв", 1 }, { "втор", 2 }, { "трет", 3 }, { "четв", 4 }, { "пят", 5 }, { "шест", 6 }, { "седьм", 7 }, { "восьм", 8 }, { "девят", 9 }, { "десят", 10 } }
+local FILE_NUM = { ["один"] = 1, ["одну"] = 1, ["два"] = 2, ["две"] = 2, ["три"] = 3, ["четыре"] = 4, ["пять"] = 5, ["шесть"] = 6, ["семь"] = 7,
+                   ["восемь"] = 8, ["девять"] = 9, ["десять"] = 10, ["first"] = 1, ["second"] = 2, ["third"] = 3, ["fourth"] = 4, ["fifth"] = 5 }
+local function result_number(w)
+  if FILE_NUM[w] then return FILE_NUM[w] end
+  local d = tonumber(w)
+  if d and d >= 1 and d == math.floor(d) then return d end
+  for _, o in ipairs(FILE_ORD) do
+    if w:sub(1, #o[1]) == o[1] and jarvis.text.len(w) - jarvis.text.len(o[1]) <= 3 then return o[2] end
+  end
+  return nil
+end
+
 local function file_session(text)
   local tokens = tokens_of(text)
   local exact = set_of({ "да", "нет", "не", "ничего" })
@@ -385,18 +395,29 @@ local function file_session(text)
     if exact[stem] then return whole:find(" " .. stem .. " ", 1, true) ~= nil end
     return whole:find(stem, 1, true) ~= nil
   end
+  -- a word of the phrase begins with the stem (not a part inside another word: "сообщение" has no "ещ")
+  local has_tok = function(...)
+    for _, stem in ipairs({ ... }) do
+      for _, w in ipairs(tokens) do if w:sub(1, #stem) == stem then return true end end
+    end
+    return false
+  end
+  local short = #tokens <= 4 -- an answer to the question is short; a long phrase is another command
   local list = jarvis.files.results()
   local data = jarvis.session.data()
-  -- the chosen result: said now ("второй"), chosen before, or the only one; never a random one of several
-  local n = tonumber(data:match("(%d+)"))
+  -- the chosen result: said now ("второй"), chosen before in this search, or the only one; never a random one
+  local n = jarvis.files.selected()
+  if data:find("^confirm_delete") then n = tonumber(data:match("(%d+)")) or n end
   local said = false
-  for _, w in ipairs(tokens) do if ORDINALS[w] then n = ORDINALS[w]; said = true end end
-  if not said then
-    for _, w in ipairs(tokens) do local d = tonumber(w); if d and d >= 1 and d <= #list then n = math.floor(d); said = true end end
+  if short then
+    for _, w in ipairs(tokens) do
+      local k = result_number(w)
+      if k then n = k; said = true end
+    end
   end
   if not n and #list == 1 then n = 1 end
   local item = n and list[n] or nil
-  if n then jarvis.state.set("file_sel", tostring(n)) end
+  if n and item then jarvis.files.select(n) end
 
   -- waiting for "да" / "нет" after "удалить?"
   if data:find("^confirm_delete") then
@@ -422,20 +443,21 @@ local function file_session(text)
     say(T("Файл", "File"), T("Хорошо", "Okay"), T("Хорошо", "Okay"))
     return
   end
-  -- "ещё": the next page; "следующий": the next result
-  if has("ещ") or has("больше") or has("остальн") or has("дальше") then
+  -- "ещё": the next page; "следующий": the next result (not "ещё громче", not "следующий трек")
+  local other = has_tok("громк", "громч", "тише", "звук", "трек", "песн", "композиц", "видео", "вкладк", "окн", "слайд", "страниц")
+  if #tokens <= 3 and not other and has_tok("ещ", "больше", "остальн", "дальше") then
     say(T("Файл", "File"), jarvis.files.more(), false)
     return
   end
-  if has("следующ") then
+  if #tokens <= 3 and not other and has_tok("следующ") then
     local m = (n or 0) + 1
     if not list[m] then say(T("Файл", "File"), T("Это был последний результат", "That was the last result")); return end
     jarvis.session.set_data(tostring(m))
-    jarvis.state.set("file_sel", tostring(m))
+    jarvis.files.select(m)
     say(T("Файл", "File"), m .. ". " .. list[m].name .. " — " .. list[m].dir .. T(". Открыть или показать папку?", ". Open it or show the folder?"), T("Номер " .. m .. ". Открыть?", "Number " .. m .. ". Open it?"))
     return
   end
-  local wants_action = has("запуск") or has("запуст") or has("открой") or has("открыв") or has("открыть") or has("папк") or has("копир") or has("удал") or has("сотр") or has("покаж")
+  local wants_action = short and has_tok("запуск", "запуст", "открой", "открыв", "открыть", "папк", "копир", "удал", "сотр", "покаж", "где")
   if not n and wants_action then
     say(T("Файл", "File"), T("Найдено " .. #list .. ". Скажите номер, например «второй».", "Found " .. #list .. ". Say the number."), T("Какой номер?", "Which number?"))
     return
@@ -451,6 +473,12 @@ local function file_session(text)
     return
   end
 
+  if not short or has_tok("телефон") then
+    -- a whole sentence or a phone command ("отправь на телефон …") is not an answer about the file
+    jarvis.session.finish()
+    jarvis.app.run_text(text)
+    return
+  end
   if has("запуск") or has("запуст") or has("открой") or has("открыв") or has("открыть") or has("включ") or has("играй") or has("воспроизв") or has("смотр") or has("слуша") then
     jarvis.session.finish()
     local ok = pcall(open, item.path)
@@ -458,7 +486,8 @@ local function file_session(text)
     else say(T("Файл", "File"), T("Не удалось открыть ", "Could not open ") .. item.name, T("Не удалось открыть файл", "Could not open the file")) end
   elseif has("папк") or has("где") or has("располож") then
     jarvis.session.finish()
-    launch("explorer.exe", { "/select," .. item.path:gsub("/", "\\") })
+    local shown, why = jarvis.files.reveal(item.path)
+    if not shown then say(T("Папка", "Folder"), T("Не удалось показать: ", "Cannot show: ") .. tostring(why)); return end
     say(T("Папка", "Folder"), item.dir, T("Показываю папку", "Showing the folder"))
   elseif has("копир") or has("отправ") or has("перешл") or has("поделис") then
     jarvis.session.finish()

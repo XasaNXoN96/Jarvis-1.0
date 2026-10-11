@@ -2,33 +2,26 @@
 -- One task per line in Documents\Jarvis-tasks.txt (the user can edit the file by hand too).
 
 local id = jarvis.context.command_id
-local home = jarvis.system.env("USERPROFILE") or jarvis.system.env("HOME") or "."
-local path = home .. "/Documents/Jarvis-tasks.txt"
+local path = docs_path("Jarvis-tasks.txt")
 local TITLE = T("Задачи", "Tasks")
 
 local function read_tasks()
   local list = {}
-  local f = io.open(path, "r")
-  if not f then return list end
-  for raw in f:lines() do
+  for _, raw in ipairs(read_lines(path) or {}) do
     local line = raw:gsub("^%s+", ""):gsub("%s+$", "")
     if line ~= "" then list[#list + 1] = line end
   end
-  f:close()
   return list
 end
 
 local function write_tasks(list)
-  local f = io.open(path, "w")
-  if not f then return false end
-  for _, t in ipairs(list) do f:write(t .. "\n") end
-  f:close()
-  return true
+  local lines = {}
+  for _, t in ipairs(list) do lines[#lines + 1] = t .. "\n" end
+  return write_text(path, table.concat(lines))
 end
 
 if id == "assistant_task_open" then
-  local f = io.open(path, "a")
-  if f then f:close() end
+  if not jarvis.fs.exists(path) then write_text(path, "") end
   open(path)
   say(TITLE, path, T("Открываю задачи", "Opening your tasks"))
   return
