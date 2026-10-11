@@ -159,6 +159,7 @@ pub fn settings_json() -> Value {
         "ai_fallback": s.ai_fallback,
         "tts_enabled": crate::tts::is_enabled(),
         "piper": crate::tts::piper_available(),
+        "speech": json!({ "enabled": crate::tts::is_enabled(), "piper": crate::tts::piper_available(), "windows_voice": voice_name().starts_with("win:") }),
     })
 }
 

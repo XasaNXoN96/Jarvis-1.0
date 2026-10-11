@@ -26,6 +26,8 @@ pub const MAX_CONTEXT_MESSAGES: usize = 16;
 pub const MAX_CONTEXT_CHARS: usize = 8_000;
 pub const MAX_MESSAGE_CHARS: usize = 8_000;
 const MAX_STORED_MESSAGES: usize = 500;
+// how long the provider may stay silent (no answer started, or a stream that stopped) before the error is shown
+const STALL_LIMIT: Duration = Duration::from_secs(45);
 
 // ---------------------------------------------------------------------------------------------
 // provider
@@ -1031,12 +1033,19 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
         };
         // wait for the answer; show every fragment at once, react to "Stop" within a fraction of a second
         let mut probe_out = Probe::default();
+        let mut last_activity = std::time::Instant::now();
         let result = loop {
             if cancel.load(Ordering::SeqCst) {
                 break Err(AiError::Cancelled);
             }
+            if last_activity.elapsed() > STALL_LIMIT {
+                // nothing arrives any more: stop waiting, the request thread is told to give up
+                cancel.store(true, Ordering::SeqCst);
+                break Err(AiError::Timeout);
+            }
             match rx.recv_timeout(Duration::from_millis(60)) {
                 Ok(Msg::Delta(d)) => {
+                    last_activity = std::time::Instant::now();
                     chunks += 1;
                     if first_chunk.is_none() {
                         first_chunk = Some(t0.elapsed().as_millis() as u64);

@@ -58,68 +58,77 @@
   h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
   .lead { color: var(--dim); margin: 0 0 16px; }
 
-  /* home: JARVIS PRO dashboard */
-  #page-home { padding: 16px 20px; overflow: hidden; }
-  .hgrid { flex: 1; min-height: 0; display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr) 320px; grid-template-rows: minmax(0, 1fr) auto; grid-template-areas: "nc right" "bottom right"; }
-  .nc { grid-area: nc; display: flex; flex-direction: column; min-height: 0; padding: 14px 16px; position: relative; overflow: hidden;
-        background: radial-gradient(900px 300px at 20% -20%, #10306088, transparent 70%), var(--panel); border-color: #5ad1ff33; box-shadow: 0 0 40px #5ad1ff10 inset; }
-  .nc::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(90,209,255,.03) 0 1px, transparent 1px 4px); }
-  .nc-head { display: flex; align-items: center; gap: 16px; flex-shrink: 0; position: relative; z-index: 1; }
-  .nc-orb { width: 128px; flex-shrink: 0; text-align: center; transition: width .35s; }
-  #orb { width: 100%; aspect-ratio: 1; cursor: pointer; filter: drop-shadow(0 0 6px rgba(90,209,255,.8)) drop-shadow(0 0 16px rgba(90,209,255,.3)); }
-  #state { margin-top: 0; font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--accent); text-shadow: 0 0 10px #5ad1ff88; }
-  .nc-text { min-width: 0; flex: 1; }
-  .nc-label { font-size: 11px; letter-spacing: .3em; color: var(--accent); margin-bottom: 4px; }
-  #status { color: var(--text); font-size: 17px; min-height: 24px; overflow-wrap: anywhere; }
-  .banner { margin-top: 8px; padding: 8px 12px; border-radius: 12px; border: 1px solid #ffd16655; background: #3a2d0acc; color: #ffe3a3; font-size: 13px; }
-  .banner b { color: #fff1c9; }
-  .hlog { flex: 1; min-height: 120px; overflow-y: auto; display: flex; flex-direction: column; gap: 9px; padding: 10px 4px 8px 0; position: relative; z-index: 1; }
-  .hlog::-webkit-scrollbar { width: 8px; } .hlog::-webkit-scrollbar-thumb { background: #5ad1ff33; border-radius: 8px; }
-  .hlog .empty { margin: auto 0; text-align: center; }
-  .examples { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 10px; }
-  .ex { border: 1px solid var(--line); background: #0d163099; color: var(--dim); padding: 6px 14px; border-radius: 999px; font: inherit; font-size: 14px; cursor: pointer; }
+  /* home: JARVIS PRO. A big hologram sphere in the middle, the input under it, the cards on the right */
+  #page-home { padding: 14px 18px 14px 12px; overflow: hidden; }
+  #page-home::after { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+    background: repeating-linear-gradient(0deg, rgba(90,209,255,.04) 0 1px, transparent 1px 4px); animation: scan 7s linear infinite; }
+  @keyframes scan { from { background-position-y: 0; } to { background-position-y: 80px; } }
+  .hgrid { flex: 1; min-height: 0; display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) 282px; position: relative; z-index: 1; }
+  .hcenter { display: flex; flex-direction: column; min-height: 0; min-width: 0; position: relative; }
+  .vchip.floating { position: absolute; top: 2px; right: 4px; z-index: 3; }
+  .hero { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 6px 8px; }
+  .orbwrap { width: min(100%, 380px, 46vh); text-align: center; flex-shrink: 0; transition: width .35s; }
+  #orb { width: 100%; aspect-ratio: 1; cursor: pointer; display: block;
+         filter: drop-shadow(0 0 6px rgba(90,209,255,.85)) drop-shadow(0 0 20px rgba(90,209,255,.35)); }
+  #state { margin-top: 2px; font-size: 12px; letter-spacing: .2em; text-transform: uppercase; color: var(--accent); text-shadow: 0 0 12px #5ad1ff88; }
+  .herotext { max-width: 760px; min-width: 0; }
+  #status { margin-top: 10px; color: var(--text); font-size: 18px; line-height: 1.4; min-height: 26px; overflow-wrap: anywhere; }
+  .howto { margin-top: 8px; color: var(--dim); font-size: 14px; }
+  .examples { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 14px; }
+  .ex { border: 1px solid var(--line); background: #0d163099; color: var(--dim); padding: 5px 14px; border-radius: 999px; font: inherit; font-size: 13px; cursor: pointer; }
   .ex:hover { color: var(--accent); border-color: var(--accent); }
-  .composer { display: flex; gap: 8px; flex-shrink: 0; position: relative; z-index: 1; padding-top: 8px; border-top: 1px solid var(--line); }
-  .composer input { flex: 1; min-width: 0; padding: 12px 15px; border-radius: 12px; border: 1px solid var(--line); background: #0d1630; color: var(--text); font: inherit; outline: none; }
+  .banner { margin-top: 14px; padding: 10px 16px; border-radius: 12px; border: 1px solid #ffd16655; background: #3a2d0acc; color: #ffe3a3; font-size: 14px; text-align: left; }
+  .banner b { color: #fff1c9; }
+  .hlog { display: none; flex: 1; min-height: 120px; overflow-y: auto; flex-direction: column; gap: 9px; padding: 8px 4px 8px 0; }
+  .hlog::-webkit-scrollbar { width: 8px; } .hlog::-webkit-scrollbar-thumb { background: #5ad1ff33; border-radius: 8px; }
+  /* a conversation has begun: the sphere moves to the corner, the history takes the room */
+  #page-home.has-msgs .hero { flex: 0 0 auto; flex-direction: row; justify-content: flex-start; text-align: left; gap: 16px; padding: 0 70px 6px 0; }
+  #page-home.has-msgs .orbwrap { width: 128px; }
+  #page-home.has-msgs #status { margin-top: 4px; font-size: 16px; }
+  #page-home.has-msgs .howto, #page-home.has-msgs .examples { display: none; }
+  #page-home.has-msgs .hlog { display: flex; }
+  #page-home.big:not(.has-msgs) .orbwrap { width: min(100%, 470px, 54vh); }
+  #page-home.big .examples, #page-home.big .howto, #page-home.big .banner { display: none !important; }
+  .composer { display: flex; gap: 8px; flex-shrink: 0; padding-top: 10px; border-top: 1px solid var(--line); }
+  .composer input { flex: 1; min-width: 0; padding: 13px 16px; border-radius: 12px; border: 1px solid var(--line); background: #0d1630; color: var(--text); font: inherit; outline: none; }
   .composer input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px #5ad1ff22; }
   .composer .ib { width: 46px; border: 1px solid var(--line); border-radius: 12px; background: #0d1630; color: var(--text); cursor: pointer; font-size: 18px; flex-shrink: 0; }
   .composer .ib:hover { border-color: var(--accent); } .composer .ib.off { color: #ff9aa6; border-color: #ff6b7a77; }
-  .composer .sb { padding: 0 20px; border: 0; border-radius: 12px; background: var(--accent); color: #04101f; cursor: pointer; font: inherit; font-weight: 600; flex-shrink: 0; }
+  .composer .sb { padding: 0 22px; border: 0; border-radius: 12px; background: var(--accent); color: #04101f; cursor: pointer; font: inherit; font-weight: 600; flex-shrink: 0; }
   .composer .sb.stop { background: #ff6b7a; color: #1a0508; }
-  .hright { grid-area: right; display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-y: auto; }
-  .hbottom { grid-area: bottom; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; height: 196px; min-height: 0; }
-  .hbottom .card, .hright .card { display: flex; flex-direction: column; min-height: 0; }
-  .card.pro h3 { font-size: 12px; letter-spacing: .24em; text-transform: uppercase; color: var(--accent); margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
-  .card.pro .scroll { flex: 1; min-height: 0; overflow-y: auto; }
-  .hrow { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--dim); letter-spacing: .06em; }
-  .hrow b { color: var(--text); font-weight: 600; text-align: right; }
-  .hbar { height: 6px; border-radius: 6px; background: #ffffff14; overflow: hidden; margin: 4px 0 11px; } .hbar i { display: block; height: 100%; border-radius: 6px; width: 0; background: linear-gradient(90deg, #3a7bff, var(--accent)); transition: width .6s; }
+  /* the cards on the right: the whole height, they scroll by themselves */
+  .hright { display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-y: auto; padding-right: 2px; }
+  .hright::-webkit-scrollbar { width: 6px; } .hright::-webkit-scrollbar-thumb { background: #5ad1ff33; border-radius: 6px; }
+  .hright .card { flex-shrink: 0; background: #0b1330d9; border-color: #5ad1ff2e; }
+  .card.pro h3 { font-size: 13px; letter-spacing: .22em; text-transform: uppercase; color: var(--accent); margin: 0 0 12px; font-weight: 600; }
+  .evcard .scroll { max-height: 170px; } .hubcard .scroll { max-height: 230px; }
+  .card.pro .scroll { overflow-y: auto; }
+  .hrow { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 13px; color: var(--dim); letter-spacing: .05em; margin-top: 2px; }
+  .hrow span { white-space: nowrap; } .hrow b { color: var(--text); font-weight: 600; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+  .hsub { text-align: right; color: var(--text); font-weight: 600; font-size: 13px; }
+  .hbar { height: 8px; border-radius: 8px; background: #ffffff14; overflow: hidden; margin: 5px 0 12px; } .hbar i { display: block; height: 100%; border-radius: 8px; width: 0; background: linear-gradient(90deg, #3a7bff, var(--accent)); transition: width .6s; }
   .hbar.warn i { background: linear-gradient(90deg, #ffb347, var(--warn)); } .hbar.hot i { background: linear-gradient(90deg, #ff6b7a, #ff9aa6); }
-  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; letter-spacing: .12em; border: 1px solid var(--line); color: var(--dim); white-space: nowrap; }
-  .pill.ok { color: var(--ok); border-color: #5be3a177; } .pill.bad { color: var(--err); border-color: #ff6b7a77; } .pill.warn { color: var(--warn); border-color: #ffd16677; } .pill.info { color: var(--accent); border-color: #5ad1ff77; }
+  .pill { display: inline-block; padding: 3px 12px; border-radius: 999px; font-size: 11px; letter-spacing: .12em; border: 1px solid var(--line); color: var(--dim); white-space: nowrap; }
+  .pill.ok { color: var(--ok); border-color: #5be3a177; } .pill.bad { color: var(--err); border-color: #ff6b7a77; background: #3a162033; } .pill.warn { color: var(--warn); border-color: #ffd16677; } .pill.info { color: var(--accent); border-color: #5ad1ff77; }
   .evrow { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; padding: 3px 0; border-bottom: 1px solid #ffffff08; }
   .evrow time { color: var(--dim); font-variant-numeric: tabular-nums; flex-shrink: 0; } .evrow span { min-width: 0; overflow-wrap: anywhere; }
   .evrow.error span { color: #ff9aa6; } .evrow.start span, .evrow.ai span { color: var(--accent); } .evrow.voice span { color: #7af0e0; }
   .hubrow { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px solid #ffffff08; font-size: 13px; } .hubrow .n { flex: 1; min-width: 0; } .hubrow small { display: block; color: var(--dim); font-size: 11.5px; }
-  .aicard .big { font-size: 18px; font-weight: 600; margin: 2px 0 2px; } .aicard small { color: var(--dim); display: block; font-size: 12px; overflow-wrap: anywhere; }
-  .aicard .acts { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-  /* big sphere while listening */
-  #page-home.big .nc-orb { width: 200px; }
-  #page-home.big .examples { display: none; }
-  /* narrower window: the right panel goes below the conversation; the conversation keeps a comfortable height */
-  @media (max-width: 1100px) {
+  .aicard small { color: var(--dim); display: block; font-size: 12.5px; overflow-wrap: anywhere; margin-top: 4px; }
+  .aicard .acts { display: flex; gap: 8px; margin-top: 12px; flex-direction: column; align-items: flex-start; }
+  body.on-home .topbar { display: none; }
+  /* narrower window: the cards go under the conversation, the input stays at the bottom of the conversation */
+  @media (max-width: 1000px) {
     #page-home { overflow-y: auto; }
-    .hgrid { flex: none; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; grid-template-areas: "nc" "right" "bottom"; }
-    .nc { height: clamp(380px, 68vh, 640px); }
+    .hgrid { flex: none; grid-template-columns: minmax(0, 1fr); }
+    .hcenter { height: clamp(430px, 78vh, 700px); }
     .hright { overflow: visible; display: grid; grid-template-columns: 1fr 1fr; align-items: start; }
-    .hright .card, .hbottom .card { min-height: auto; }
-    .hbottom { height: auto; } .hbottom .card { height: 210px; }
   }
   @media (max-width: 760px) {
     nav { width: 64px; padding: 14px 6px; } nav button span:not(.ei), .brand b, .brand small, nav .small { display: none; } nav button { justify-content: center; padding: 12px 6px; }
-    .hright, .hbottom { grid-template-columns: 1fr; } .nc-head { gap: 10px; } .nc-orb { width: 88px; } #status { font-size: 15px; }
-    .tb-title span { display: none; } .topbar { padding: 10px 14px; } #page-home { padding: 12px; }
-    .composer .sb { padding: 0 12px; }
+    .hright { grid-template-columns: 1fr; } #status { font-size: 15px; } .orbwrap { width: min(70%, 260px, 36vh); }
+    #page-home.has-msgs .orbwrap { width: 84px; } #page-home.has-msgs .hero { gap: 10px; padding-right: 0; }
+    .tb-title span { display: none; } .topbar { padding: 10px 14px; } #page-home { padding: 10px; } .composer .sb { padding: 0 12px; }
   }
 
   /* dialog */
@@ -218,6 +227,7 @@
   .cmdrow .id { color: var(--dim); font-size: 11px; margin-left: 6px; }
 
   body.on-home .bottom { display: none; }
+  .ai-msg.user .msgtools { justify-content: flex-end; margin-top: 4px; } .ai-msg.user .msgtools button { color: #9fb4e6; }
   .srcb { display: inline-block; margin: 0 8px 4px 0; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); font-size: 11px; letter-spacing: .08em; }
   .ai-msg.streaming::after { content: "▍"; color: var(--accent); animation: blink 1s infinite; margin-left: 2px; }
   /* input bar */
@@ -257,13 +267,16 @@
   <div class="pages">
     <section class="page active" id="page-home">
       <div class="hgrid">
-        <div class="card nc" id="nc">
-          <div class="nc-head">
-            <div class="nc-orb"><canvas id="orb" width="760" height="760" title="Нажмите: Jarvis начнёт слушать"></canvas><div id="state">готов</div></div>
-            <div class="nc-text">
-              <div class="nc-label">NEURAL INTERFACE</div>
+        <div class="hcenter">
+          <span class="vchip floating" id="voice-chip-h" data-state="ERROR" title="Состояние голоса"><i></i><span class="vl">VOICE</span><b>…</b></span>
+          <div class="hero">
+            <div class="orbwrap"><canvas id="orb" width="760" height="760" title="Нажмите: Jarvis начнёт слушать"></canvas><div id="state">готов</div></div>
+            <div class="herotext">
               <div id="status">Здравствуйте! Чем могу помочь?</div>
+              <div class="howto" id="howto">Нажмите на шар или скажите «Джарвис», затем команду. Или напишите её внизу.</div>
+              <div class="examples" id="examples"></div>
               <div class="banner" id="voice-banner" style="display:none"></div>
+              <div class="banner" id="speech-banner" style="display:none"></div>
             </div>
           </div>
           <div class="hlog" id="h-log"></div>
@@ -281,23 +294,21 @@
             <div class="hrow"><span>RAM USAGE</span><b id="hl-ram">N/A</b></div><div class="hbar" id="hb-ram"><i></i></div>
             <div class="hrow"><span>DISK USAGE</span><b id="hl-disk">N/A</b></div><div class="hbar" id="hb-disk"><i></i></div>
             <div class="hrow"><span>TEMPERATURE</span><b id="hl-temp">N/A</b></div>
-            <div class="hrow" style="margin-top:8px"><span>NETWORK STATUS</span><b id="hl-net">N/A</b></div>
-            <div class="hrow" style="margin-top:8px"><span>PC STATUS</span><b id="hl-pc">N/A</b></div>
+            <div class="hrow" style="margin-top:12px"><span>NETWORK STATUS</span><b id="hl-net">N/A</b></div><div class="hsub" id="hl-ip"></div>
+            <div class="hrow" style="margin-top:12px"><span>PC STATUS</span><b id="hl-pc">N/A</b></div>
           </div>
           <div class="card pro aicard" id="card-ai">
             <h3>AI Connection</h3>
             <div class="hrow"><span>PROVIDER</span><b id="ai-prov">—</b></div>
             <div class="hrow"><span>MODEL</span><b id="ai-mod">—</b></div>
-            <div class="hrow" style="margin-top:6px"><span>STATE</span><b><span class="pill" id="ai-pill">—</span></b></div>
+            <div class="hrow" style="margin-top:10px"><span>STATE</span><b><span class="pill" id="ai-pill">—</span></b></div>
             <small id="ai-detail"></small>
             <small id="ai-timing"></small>
             <div class="acts"><button class="btn small" id="ai-check" type="button">Проверить подключение</button><button class="btn small" id="ai-settings" type="button">Настройки ИИ</button></div>
           </div>
+          <div class="card pro evcard"><h3>Command Output</h3><div class="scroll" id="events"><div class="empty">Событий пока нет.</div></div></div>
+          <div class="card pro hubcard"><h3>Intelligence Hub</h3><div class="scroll" id="hub"></div></div>
         </aside>
-        <div class="hbottom">
-          <div class="card pro"><h3>Command Output</h3><div class="scroll" id="events"><div class="empty">Событий пока нет.</div></div></div>
-          <div class="card pro"><h3>Intelligence Hub</h3><div class="scroll" id="hub"></div></div>
-        </div>
       </div>
     </section>
 
@@ -665,7 +676,7 @@ function healthCard(h) {
   $('#hl-ram').textContent = h.ram_total ? Math.round(h.ram_pct) + '% · ' + h.ram_used.toFixed(1) + ' / ' + h.ram_total.toFixed(0) + ' ГБ' : 'N/A'; hBar('ram', h.ram_pct || 0);
   $('#hl-disk').textContent = h.disk_pct == null ? 'N/A' : Math.round(h.disk_pct) + '% · свободно ' + h.disk_free.toFixed(0) + ' ГБ'; hBar('disk', h.disk_pct || 0);
   $('#hl-temp').textContent = h.temperature == null ? 'N/A' : h.temperature.toFixed(0) + ' °C';
-  $('#hl-net').textContent = h.network + (h.ip ? ' · ' + h.ip : '');
+  $('#hl-net').textContent = h.network; $('#hl-ip').textContent = h.ip || '';
   const pc = h.pc_status || 'N/A'; $('#hl-pc').innerHTML = '<span class="pill ' + (pc === 'OK' ? 'ok' : 'warn') + '">' + esc(pc) + '</span>';
 }
 const AI_PILL = { CONNECTED: 'ok', DISCONNECTED: '', ERROR: 'bad', CHECKING: 'info' };
@@ -714,12 +725,35 @@ function hubCard(s) {
 }
 function voiceChip(v) {
   if (!v) return;
-  const c = $('#voice-chip'); c.dataset.state = v.state; $('#voice-chip-t').textContent = v.state; c.title = v.detail || '';
+  for (const c of document.querySelectorAll('.vchip')) { c.dataset.state = v.state; c.querySelector('b').textContent = v.state; c.title = v.detail || ''; }
   // the sphere follows the real state of the voice
   if (performance.now() > stateUntil) { const map = { LISTENING: 'listening', SPEAKING: 'speaking' }; const want = map[v.state] || (v.state === 'ERROR' ? 'error' : 'idle'); if (state !== want && state !== 'busy' && state !== 'wake') setState(want); }
 }
+// Jarvis answers with his OWN voice: when that is not possible the user is told why, with a button to fix it
+function applySpeech(s) {
+  const sp = s.speech || {}, b = $('#speech-banner');
+  let html = '';
+  if (!sp.enabled) html = '<b>Озвучка выключена:</b> Jarvis отвечает только текстом. <button class="btn small" data-speech="on" type="button">Включить голос Jarvis</button>';
+  else if (!sp.piper && !sp.windows_voice) html = '<b>Голос Jarvis не установлен</b>, поэтому ответы пока не звучат (чужой голос Windows не подставляется). <button class="btn small" data-speech="install" type="button">Установить голос Jarvis</button> <span id="speech-prog"></span>';
+  if (b.dataset.html === html) return;
+  b.dataset.html = html; b.innerHTML = html; b.style.display = html ? 'block' : 'none';
+  const on = b.querySelector('[data-speech=on]'); if (on) on.onclick = async () => { await action('tts_toggle', { value: true }); pollNow(); };
+  const ins = b.querySelector('[data-speech=install]');
+  if (ins) ins.onclick = async () => {
+    ins.disabled = true; try { await action('voice_install'); } catch (e) {}
+    for (;;) {
+      await new Promise(r => setTimeout(r, 1000));
+      let st; try { st = await (await fetch('/voice-install')).json(); } catch (e) { continue; }
+      const pr = $('#speech-prog'); if (pr) pr.textContent = st.running ? (st.step || 'Загрузка') + ' — ' + st.percent + '%' : '';
+      if (st.running) continue;
+      if (st.error) { if (pr) pr.textContent = 'Ошибка: ' + st.error; ins.disabled = false; return; }
+      break;
+    }
+    pollNow();
+  };
+}
 function applyState(s) {
-  applySession(s);
+  applySession(s); applySpeech(s);
   if (micMuted !== !!s.mic_muted) { micMuted = !!s.mic_muted; renderMic(); }
   applyVoice(s); voiceChip(s.voice_state); healthCard(s.health); aiCard(s.ai); eventsCard(s.events); hubCard(s);
   if (currentPage === 'panel') renderPanel(s);
@@ -842,7 +876,12 @@ function msgEl(m) {
       const tools = document.createElement('div'); tools.className = 'msgtools';
       const cp = document.createElement('button'); cp.type = 'button'; cp.textContent = '⧉ Копировать ответ'; cp.onclick = () => copyText(m.content, cp); tools.appendChild(cp); d.appendChild(tools);
     }
-  } else d.textContent = m.content;
+  } else {
+    d.textContent = m.content;
+    // the user's own phrase can be copied as well (to send it again or to change it)
+    const tools = document.createElement('div'); tools.className = 'msgtools';
+    const cp = document.createElement('button'); cp.type = 'button'; cp.textContent = '⧉ Копировать'; cp.onclick = () => copyText(m.content, cp); tools.appendChild(cp); d.appendChild(tools);
+  }
   return d;
 }
 // only what changed is redrawn: a growing answer does not flicker and the scroll position is kept
@@ -866,24 +905,21 @@ function syncMessages(log, chat) {
   if (atBottom || growing) log.scrollTop = log.scrollHeight;
   return msgs.length;
 }
-const EXAMPLES = ['Что ты умеешь?', 'Сколько будет 2 + 2?', 'Объясни, что такое Python', 'Открой Word', 'Помоги с моим проектом'];
-// the examples only fill the field: nothing is run until the user presses Enter
-function showExamples(log) {
-  const box = document.createElement('div'); box.className = 'empty';
-  box.innerHTML = '<div>Напишите сообщение или команду. Например:</div><div class="examples"></div>';
+const EXAMPLES = ['таймер на 5 минут', 'сколько времени', 'громкость 50 процентов', 'найди файл…', 'открой браузер', 'включи удалённое управление', 'что ты умеешь', 'Объясни, что такое Python', 'Сколько будет 2 + 2?'];
+// the chips only fill the field: nothing is run until the user presses Enter
+(function buildExamples() {
   for (const ex of EXAMPLES) {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'ex'; b.textContent = '«' + ex + '»';
-    b.onclick = () => { const i = curInput(); i.value = ex; i.focus(); updateComposers(); };
-    box.querySelector('.examples').appendChild(b);
+    b.onclick = () => { const i = $('#h-input'); i.value = ex.replace('…', ' ').replace(/ +$/, ex.endsWith('…') ? ' ' : ''); i.focus(); updateComposers(); };
+    $('#examples').appendChild(b);
   }
-  log.appendChild(box);
-}
+})();
 function renderChatViews() {
   const chat = chatCache;
   aiBusy = !!(lastState && lastState.ai_busy);
   if (currentPage === 'home') {
-    const log = $('#h-log'); const n = syncMessages(log, chat);
-    if (!n && !aiBusy) showExamples(log);
+    const n = syncMessages($('#h-log'), chat);
+    $('#page-home').classList.toggle('has-msgs', n > 0 || aiBusy);
   }
   if (currentPage === 'chat' && chatTab === 'ai') {
     const log = $('#ai-log'); const n = syncMessages(log, chat);
