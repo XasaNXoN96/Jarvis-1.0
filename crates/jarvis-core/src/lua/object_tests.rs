@@ -5,7 +5,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use parking_lot::Mutex;
 use serde_json::{json, Value};
 
 use crate::commands::{self, JCommandsList};
