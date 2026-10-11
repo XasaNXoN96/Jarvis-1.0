@@ -239,3 +239,25 @@ mod tests {
         assert!(!super::super::pvrecorder::is_open());
     }
 }
+
+// the DLL we ship must export every function the Rust wrapper loads; an old DLL made every start fail with
+// "library could not be loaded" (a missing symbol is reported by the wrapper as a load error)
+#[cfg(test)]
+mod shipped_library {
+    #[test]
+    fn windows_dll_exports_everything_the_wrapper_needs() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../lib/windows/amd64/libpv_recorder.dll");
+        let bytes = std::fs::read(path).expect("lib/windows/amd64/libpv_recorder.dll");
+        for name in [
+            "pv_recorder_init", "pv_recorder_delete", "pv_recorder_start", "pv_recorder_stop", "pv_recorder_read",
+            "pv_recorder_set_debug_logging", "pv_recorder_get_is_recording", "pv_recorder_get_selected_device",
+            "pv_recorder_get_available_devices", "pv_recorder_free_available_devices", "pv_recorder_sample_rate",
+            "pv_recorder_version",
+        ] {
+            let mut needle = vec![0u8];
+            needle.extend_from_slice(name.as_bytes());
+            needle.push(0);
+            assert!(bytes.windows(needle.len()).any(|w| w == needle.as_slice()), "{} is missing from libpv_recorder.dll", name);
+        }
+    }
+}

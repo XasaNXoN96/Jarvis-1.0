@@ -60,7 +60,8 @@ fn library_path() -> Option<PathBuf> {
         APP_DIR.join("lib").join(name),
         APP_DIR.join("lib").join("windows").join("amd64").join(name),
     ];
-    let found = candidates.into_iter().find(|p| p.exists()).or_else(embedded_library);
+    // the built-in copy always matches this build; a stale file next to the program (older installer) must not win
+    let found = embedded_library().or_else(|| candidates.into_iter().find(|p| p.exists()));
     match &found {
         Some(p) => debug!("pvrecorder library: {}", p.display()),
         None => debug!("pvrecorder library not found next to the program, using the default path"),
@@ -109,7 +110,8 @@ fn try_open(index: i32, frame_length: u32, devices: &[String]) -> Result<(PvReco
         Err(e) => {
             let (cause, text) = diag::classify(e.status(), true);
             warn!("Microphone {} ({}): open failed: {:?}", index, name, e);
-            return Err(fail(Stage::OpenFailed, cause, text.to_string()));
+            let detail = if cause == Cause::Library { format!("{} [{}]", text, e.message()) } else { text.to_string() };
+            return Err(fail(Stage::OpenFailed, cause, detail));
         }
     };
     if let Err(e) = rec.start() {
