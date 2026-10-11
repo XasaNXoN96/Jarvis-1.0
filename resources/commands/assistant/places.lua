@@ -55,7 +55,11 @@ local letter = phrase:match("диск%s+([a-zа-я])%f[%A]") or phrase:match("di
 local CYR = { ["д"] = "D", ["с"] = "C", ["е"] = "E", ["э"] = "E", ["ф"] = "F", ["г"] = "G" }
 if letter and (jarvis.context.command_id == "assistant_disk_open") then
   letter = (CYR[letter] or letter):upper()
-  run("explorer.exe", { letter .. ":\\" })
+  if WIN and not jarvis.system.exists(letter .. ":\\") then
+    say(T("Диск", "Drive"), T("Диска " .. letter .. ": нет на этом компьютере", "There is no drive " .. letter .. ": on this computer"))
+    return
+  end
+  launch("explorer.exe", { letter .. ":\\" })
   say(T("Диск", "Drive"), letter .. ":", T("Открываю диск " .. letter, "Opening drive " .. letter))
   return
 end
@@ -92,7 +96,7 @@ end
 
 local name = RU and best.name_ru or best.name_en
 if best.kind == "folder" then
-  run("explorer.exe", { best.target })
+  launch("explorer.exe", { best.target })
 else
   open(best.target)
 end

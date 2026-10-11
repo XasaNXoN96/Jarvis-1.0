@@ -60,10 +60,10 @@ if closing then
     say(T("Программа", "Program"), found.name .. T(" не запущена", " is not running"))
   end
 else
-  local ok = open(found.start)
+  local ok = pcall(open, found.start)
   if ok then
     say(T("Открываю", "Opening"), found.name, T("Открываю " .. found.name, "Opening " .. found.name), "program")
   else
-    say(T("Программа", "Program"), T("Не удалось запустить ", "Could not start ") .. found.name)
+    say(T("Программа", "Program"), T("Не удалось запустить ", "Could not start ") .. found.name .. T(" (возможно, не установлена)", " (maybe it is not installed)"))
   end
 end

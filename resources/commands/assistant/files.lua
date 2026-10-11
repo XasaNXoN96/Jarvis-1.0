@@ -70,7 +70,7 @@ end
 
 if id == "assistant_file_folder" then
   -- show the file in Explorer (selected)
-  run("explorer.exe", { "/select," .. item.path:gsub("/", "\\") })
+  launch("explorer.exe", { "/select," .. item.path:gsub("/", "\\") })
   say(T("Папка", "Folder"), item.dir, T("Показываю папку", "Showing the folder"))
 else
   open(item.path)

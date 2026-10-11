@@ -11,26 +11,25 @@ use crate::lua::sandbox::SandboxLevel;
 #[cfg(target_os = "windows")]
 pub fn shell_open(target: &str) -> Result<(), String> {
     use std::os::windows::ffi::OsStrExt;
-    use winapi::um::shellapi::ShellExecuteW;
+    use winapi::um::shellapi::{ShellExecuteExW, SEE_MASK_FLAG_NO_UI, SHELLEXECUTEINFOW};
     use winapi::um::winuser::SW_SHOWNORMAL;
 
     let wide = |s: &str| -> Vec<u16> { std::ffi::OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect() };
     let verb = wide("open");
     let file = wide(target);
-    let code = unsafe {
-        ShellExecuteW(
-            std::ptr::null_mut(),
-            verb.as_ptr(),
-            file.as_ptr(),
-            std::ptr::null(),
-            std::ptr::null(),
-            SW_SHOWNORMAL,
-        )
-    } as isize;
-    if code > 32 {
-        Ok(())
-    } else {
-        Err(format!("ShellExecute returned {}", code))
+    unsafe {
+        let mut info: SHELLEXECUTEINFOW = std::mem::zeroed();
+        info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
+        // NO_UI: no Windows error dialog (it would block Jarvis until someone clicks OK); the error comes back to us
+        info.fMask = SEE_MASK_FLAG_NO_UI;
+        info.lpVerb = verb.as_ptr();
+        info.lpFile = file.as_ptr();
+        info.nShow = SW_SHOWNORMAL;
+        if ShellExecuteExW(&mut info) != 0 {
+            Ok(())
+        } else {
+            Err(format!("ShellExecuteEx failed: {}", std::io::Error::last_os_error()))
+        }
     }
 }
 
@@ -209,6 +208,9 @@ pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Resul
         Ok(true)
     })?;
     system.set("notify", notify_fn)?;
+
+    // jarvis.system.exists(path) -> true when the file / folder / drive exists
+    system.set("exists", lua.create_function(|_, path: String| Ok(std::path::Path::new(&path).exists()))?)?;
 
     let popup_fn = lua.create_function(|_, (title, message): (String, String)| {
         show_popup(&title, &message);

@@ -371,7 +371,19 @@ fn execute_lua_command(
         }
         Err(e) => {
             error!("Lua command {} failed: {}", cmd_config.id, e);
-            Err(e.to_string())
+            // "Runtime error: runtime error: [string \"program.lua\"]:24: text" -> "text"
+            let full = e.to_string();
+            let short = match full.find("]:") {
+                Some(i) => {
+                    let rest = &full[i + 2..];
+                    match rest.find(": ") {
+                        Some(j) if rest[..j].chars().all(|c| c.is_ascii_digit()) => rest[j + 2..].to_string(),
+                        _ => full.clone(),
+                    }
+                }
+                None => full.clone(),
+            };
+            Err(short)
         }
     }
 }

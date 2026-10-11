@@ -13,6 +13,15 @@ local function run(program, args)
   return jarvis.system.run(program, args or {})
 end
 
+-- start a program and do not wait for it (explorer, GUI tools): a waiting run() would freeze Jarvis
+local function launch(program, args)
+  if not WIN then
+    jarvis.log("info", "[not windows, skipped] launch " .. program .. " " .. table.concat(args or {}, " "))
+    return { success = true }
+  end
+  return jarvis.system.run(program, args or {}, false)
+end
+
 -- open a URL / file / program through the shell
 local function open(target)
   if not WIN then
