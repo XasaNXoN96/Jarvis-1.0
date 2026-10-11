@@ -223,6 +223,9 @@ fn serve(stream: TcpStream, tls: Option<std::sync::Arc<rustls::ServerConfig>>) -
     if !is_running() {
         return Ok(()); // switched off: the connection is dropped without an answer
     }
+    // on Windows an accepted connection inherits "non-blocking" from the listener: the first read would fail at once
+    // ("would block") before the phone has sent its request, and the page would stay empty
+    stream.set_nonblocking(false)?;
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
     let mut first = [0u8; 1];
