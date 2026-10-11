@@ -230,9 +230,14 @@ const PAGE: &str = r#"<!doctype html>
   button { padding: 12px 14px; border-radius: 10px; border: 0; background: #238636; color: #fff; font-size: 16px; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .grid button { background: #21262d; border: 1px solid #30363d; }
+  #mic { width: 100%; padding: 18px; margin-bottom: 14px; font-size: 18px; background: #1f6feb; }
+  #mic.on { background: #da3633; }
+  #heard { min-height: 22px; color: #58a6ff; margin-bottom: 8px; }
   #status { margin-top: 14px; min-height: 22px; color: #8b949e; }
 </style></head><body>
 <h1>Jarvis</h1>
+<button id="mic" type="button">🎤 Сказать команду</button>
+<div id="heard"></div>
 <form id="f"><input id="t" placeholder="Команда, например: таймер на 5 минут" autocomplete="off"><button>Отправить</button></form>
 <div class="grid" id="quick"></div>
 <div id="status"></div>
@@ -248,6 +253,24 @@ async function send(text) {
     status.textContent = r.ok ? '✓ ' + text : 'Ошибка: ' + r.status;
   } catch (e) { status.textContent = 'Нет связи с компьютером'; }
 }
+// voice: the browser listens through the phone microphone and sends the recognized text as a command.
+// Browsers allow the microphone only on secure pages (https); on plain http over Wi-Fi it may be refused.
+// Then use the microphone button on the phone keyboard in the text field below - it works everywhere.
+const micBtn = document.getElementById('mic'), heard = document.getElementById('heard');
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null;
+micBtn.onclick = () => {
+  if (!SR) { heard.textContent = 'Браузер не умеет слушать. Нажмите значок микрофона на клавиатуре в поле ниже.'; return; }
+  if (rec) { rec.stop(); return; }
+  rec = new SR(); rec.lang = 'ru-RU'; rec.interimResults = true; rec.continuous = false;
+  micBtn.classList.add('on'); micBtn.textContent = '🔴 Слушаю… (нажмите, чтобы остановить)';
+  let final = '';
+  rec.onresult = e => { let t = ''; for (const r of e.results) { t += r[0].transcript; if (r.isFinal) final = t; } heard.textContent = '«' + t + '»'; };
+  rec.onerror = e => { heard.textContent = (e.error === 'not-allowed' || e.error === 'service-not-allowed')
+    ? 'Браузер не дал доступ к микрофону на http. Используйте микрофон на клавиатуре в поле ниже.' : 'Ошибка микрофона: ' + e.error; };
+  rec.onend = () => { micBtn.classList.remove('on'); micBtn.textContent = '🎤 Сказать команду'; rec = null; if (final.trim()) send(final.trim()); };
+  try { rec.start(); } catch (e) { rec = null; micBtn.classList.remove('on'); }
+};
 document.getElementById('f').onsubmit = e => { e.preventDefault(); const i = document.getElementById('t'); if (i.value.trim()) send(i.value.trim()); i.value=''; };
 for (const q of quick) { const b = document.createElement('button'); b.textContent = q; b.onclick = () => send(q); document.getElementById('quick').appendChild(b); }
 </script></body></html>
