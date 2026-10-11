@@ -466,6 +466,18 @@ pub fn speak(text: &str) {
         let _done = Done;
         // voice choice from the settings: "" = automatic, "piper", "win:<name>"
         let choice = crate::uistate::voice_name();
+        if choice == "piper" {
+            // the user chose the Jarvis voice: never the Windows voice instead
+            match piper_voice(&lang) {
+                Some((exe, model)) => {
+                    if !speak_piper(&exe, &model, &text, generation) {
+                        tell_once("Голос Jarvis (Piper) не смог произнести фразу. Windows-голос не используется, потому что выбран голос Jarvis. Скажите «проверь голос».");
+                    }
+                }
+                None => tell_once("Голос Jarvis (Piper) не установлен на этом компьютере. Откройте Настройки → Голос и нажмите «Установить голос Jarvis». Пока выбран только голос Jarvis, Windows-голос не используется."),
+            }
+            return;
+        }
         if !choice.starts_with("win:") {
             if let Some((exe, model)) = piper_voice(&lang) {
                 if speak_piper(&exe, &model, &text, generation) {
@@ -485,9 +497,7 @@ pub fn piper_available() -> bool {
 // voices to choose from in the settings: ("", automatic), ("piper", ...), ("win:<name>", ...)
 pub fn list_voices() -> Vec<(String, String)> {
     let mut list = vec![(String::new(), "Автоматически (лучший доступный)".to_string())];
-    if piper_available() {
-        list.push(("piper".to_string(), "Jarvis (Piper, нейросеть)".to_string()));
-    }
+    list.push(("piper".to_string(), if piper_available() { "Jarvis (Piper, нейросеть)".to_string() } else { "Jarvis (Piper) — не установлен, нажмите «Установить голос»".to_string() }));
     #[cfg(target_os = "windows")]
     {
         let mut command = Command::new("powershell");

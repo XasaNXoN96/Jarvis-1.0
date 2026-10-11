@@ -162,6 +162,10 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             json!({ "ok": true })
         }
         "ai_test" => ai_test(),
+        "voice_install" => match crate::voice_install::start() {
+            Ok(()) => json!({ "ok": true }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
         "restart_voice" => {
             // starts a fresh Jarvis without --text (after this one has closed and freed its ports) and quits
             if let Ok(exe) = std::env::current_exe() {
@@ -410,6 +414,7 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
             let result = if req.path == "/settings" { apply_settings(&body) } else { run_action(&body) };
             respond(&mut stream, "200 OK", "application/json", &result.to_string());
         }
+        ("GET", "/voice-install") => respond(&mut stream, "200 OK", "application/json", &crate::voice_install::status_json().to_string()),
         ("GET", "/chats") => respond(&mut stream, "200 OK", "application/json", &chats_json().to_string()),
         ("POST", "/chat") => {
             if !req.custom_header {

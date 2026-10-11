@@ -275,6 +275,8 @@
       </div>
 
       <div class="card" style="margin-bottom:14px"><h3><span class="ei">🔊</span>Голос</h3>
+        <div class="setrow" id="vi-row"><div class="l">Голос Jarvis<small id="vi-hint">Свой женский голос Jarvis (≈80 МБ), чтобы не говорил голос Windows</small></div>
+          <div class="r"><button class="btn" id="vi-btn">Установить голос Jarvis</button></div></div>
         <div class="setrow"><div class="l">Голос<small id="voice-hint">Jarvis (Piper) — нейросетевой голос, работает без интернета</small></div>
           <div class="r"><select id="voice-select"><option value="">Автоматически</option></select></div></div>
         <div class="setrow"><div class="l">Скорость речи</div>
@@ -755,6 +757,19 @@ async function loadSettings() {
   } catch (e) {}
 }
 $('#mic-select').onchange = e => { saveSettings({ mic_device: +e.target.value }); $('#mic-msg').className = 'msgline ok'; $('#mic-msg').textContent = 'Сохранено. Перезапустите Jarvis, чтобы микрофон сменился.'; };
+$('#vi-btn').onclick = async () => {
+  try { await action('voice_install'); } catch (e) {}
+  const h = $('#vi-hint'), b = $('#vi-btn'); b.disabled = true;
+  for (;;) {
+    await new Promise(r => setTimeout(r, 1000));
+    let st; try { st = await (await fetch('/voice-install')).json(); } catch (e) { continue; }
+    if (st.running) { h.textContent = (st.step || 'Загрузка') + ' — ' + st.percent + '%'; continue; }
+    if (st.error) { h.textContent = 'Ошибка: ' + st.error; b.disabled = false; return; }
+    break;
+  }
+  h.textContent = 'Голос Jarvis установлен'; b.disabled = false;
+  voicesLoaded = false; await saveSettings({ voice_name: 'piper' }); setTimeout(loadSettings, 600);
+};
 $('#voice-select').onchange = e => saveSettings({ voice_name: e.target.value });
 $('#rate').oninput = e => { $('#rate-v').textContent = (+e.target.value).toFixed(2).replace(/0$/, '') + '×'; saveSettings({ voice_rate: +e.target.value }); };
 $('#tts-on').onchange = e => action('tts_toggle', { value: e.target.checked });

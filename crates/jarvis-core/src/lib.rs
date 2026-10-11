@@ -52,6 +52,7 @@ pub mod ui;
 pub mod uistate;
 pub mod session;
 pub mod secret;
+pub mod voice_install;
 pub mod ai;
 pub mod filesearch;
 
