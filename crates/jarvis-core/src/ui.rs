@@ -407,7 +407,7 @@ pub fn open_window() -> bool {
         let app = format!("--app={}", link);
         // Edge ships with Windows; Chrome as a second choice (both give a window without address bar)
         for browser in ["msedge", "chrome"] {
-            if try_start(&["/C", "start", "", browser, &app, "--window-size=1180,760"]) {
+            if try_start(&["/C", "start", "", browser, &app, "--window-size=1040,740"]) {
                 info!("UI: window opened in {}", browser);
                 return true;
             }
