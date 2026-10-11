@@ -124,6 +124,28 @@
   .chip { display: inline-block; margin: 4px 6px 0 0; padding: 3px 10px; border-radius: 999px; background: #ffffff10; color: var(--text); cursor: pointer; font-size: 13px; }
   .chip:hover { background: #5ad1ff33; }
   small.dim { color: var(--dim); }
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; } .tabs button { border: 1px solid var(--line); background: transparent; color: var(--dim); padding: 6px 14px; border-radius: 999px; font: inherit; cursor: pointer; }
+  .tabs button.active { color: var(--accent); border-color: var(--accent); background: #5ad1ff1a; }
+  .aichat { flex: 1; min-height: 0; display: flex; gap: 14px; }
+  .convs { width: 210px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; min-height: 0; } #conv-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+  .conv { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 10px; border: 1px solid transparent; cursor: pointer; color: var(--dim); }
+  .conv:hover { background: #ffffff0a; } .conv.active { background: #5ad1ff1a; color: var(--text); border-color: var(--line); }
+  .conv .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .conv .x { opacity: 0; border: 0; background: transparent; color: var(--dim); cursor: pointer; } .conv:hover .x { opacity: 1; } .conv .x:hover { color: var(--err); }
+  .chatmain { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+  .chathead { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; } .chathead .grow { flex: 1; } .chathead b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .privacy { color: var(--dim); font-size: 12px; margin-bottom: 8px; }
+  #ai-log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; min-height: 0; } #ai-log::-webkit-scrollbar { width: 8px; } #ai-log::-webkit-scrollbar-thumb { background: #5ad1ff33; border-radius: 8px; }
+  .ai-msg { max-width: 92%; padding: 9px 13px; border-radius: 14px; word-break: break-word; line-height: 1.5; }
+  .ai-msg.user { align-self: flex-end; background: #1e3a78; border-bottom-right-radius: 4px; white-space: pre-wrap; }
+  .ai-msg.assistant { align-self: flex-start; background: #121c3d; border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+  .ai-msg.error { align-self: flex-start; background: #3a1620; color: #ffb3bc; border: 1px solid #ff6b7a44; }
+  .ai-msg.thinking { align-self: flex-start; color: var(--dim); font-style: italic; }
+  .ai-msg p { margin: 0 0 8px; } .ai-msg p:last-child { margin-bottom: 0; } .ai-msg ul, .ai-msg ol { margin: 4px 0 8px 20px; padding: 0; } .ai-msg h3, .ai-msg h4 { margin: 8px 0 4px; font-size: 15px; }
+  .ai-msg code { background: #ffffff14; padding: 1px 5px; border-radius: 5px; font-family: Consolas, monospace; font-size: 13px; } .ai-msg a { color: var(--accent); }
+  .code { margin: 8px 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #070d20; }
+  .code .bar2 { display: flex; justify-content: space-between; align-items: center; padding: 4px 10px; background: #ffffff0d; color: var(--dim); font-size: 12px; }
+  .code pre { margin: 0; padding: 10px 12px; overflow-x: auto; } .code pre code { background: transparent; padding: 0; }
+  .msgtools { margin-top: 6px; display: flex; gap: 6px; } .msgtools button { border: 0; background: transparent; color: var(--dim); cursor: pointer; font-size: 12px; padding: 2px 6px; border-radius: 6px; } .msgtools button:hover { color: var(--accent); background: #ffffff0d; }
   details.grp { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); margin-bottom: 10px; }
   details.grp > summary { list-style: none; cursor: pointer; padding: 12px 14px; display: flex; align-items: center; gap: 10px; }
   details.grp > summary::-webkit-details-marker { display: none; }
@@ -176,9 +198,23 @@
     </section>
 
     <section class="page" id="page-chat">
-      <h1>Диалог</h1>
-      <p class="lead">Всё, что вы говорили и писали, и ответы Jarvis.</p>
-      <div id="log"></div>
+      <div class="tabs"><button data-tab="ai" class="active">🤖 ИИ-чат</button><button data-tab="log">📜 Журнал команд</button></div>
+      <div id="tab-ai" class="aichat">
+        <aside class="convs">
+          <button class="btn primary" id="chat-new" type="button">＋ Новый диалог</button>
+          <div id="conv-list"></div>
+        </aside>
+        <div class="chatmain">
+          <div class="chathead"><b id="chat-title">Диалог</b><span class="grow"></span><button class="btn small" id="chat-clear" type="button">Очистить</button></div>
+          <div class="privacy" id="chat-privacy"></div>
+          <div class="banner" id="ai-setup" style="display:none"><span id="ai-setup-text"></span> <button class="btn small" id="ai-setup-btn" type="button">Открыть настройки</button></div>
+          <div id="ai-log"><div class="empty">Напишите вопрос в поле внизу и нажмите «Отправить». Ответит выбранная нейросеть.</div></div>
+        </div>
+      </div>
+      <div id="tab-log" style="display:none;flex:1;min-height:0;flex-direction:column">
+        <p class="lead">Что вы говорили и писали как команды, и ответы Jarvis.</p>
+        <div id="log"></div>
+      </div>
     </section>
 
 <section class="page" id="page-panel">
@@ -250,14 +286,18 @@
       <div class="card" style="margin-bottom:14px"><h3><span class="ei">✨</span>ИИ-провайдер</h3>
         <div class="setrow"><div class="l">Провайдер</div>
           <div class="r"><select id="ai-provider">
-            <option value="none">Не использовать</option><option value="anthropic">Anthropic (Claude)</option>
-            <option value="openai">OpenAI</option><option value="ollama">Ollama (на этом компьютере)</option><option value="custom">Другой (совместимый с OpenAI)</option></select></div></div>
-        <div class="setrow" id="ai-url-row"><div class="l">Адрес сервера<small>для Ollama и других</small></div><div class="r"><input type="text" id="ai-url" placeholder="http://127.0.0.1:11434"></div></div>
+            <option value="none">Не использовать</option>
+            <option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option>
+            <option value="gemini">Google Gemini (через OpenAI-совместимый адрес)</option><option value="anthropic">Anthropic (Claude)</option>
+            <option value="ollama">Ollama (на этом компьютере)</option><option value="custom">Другой сервер (совместимый с OpenAI)</option></select></div></div>
+        <div class="setrow" id="ai-url-row"><div class="l">Адрес сервера<small id="ai-url-hint">для Ollama и других серверов</small></div><div class="r"><input type="text" id="ai-url" placeholder="http://127.0.0.1:11434"></div></div>
         <div class="setrow"><div class="l">Модель</div><div class="r"><input type="text" id="ai-model" placeholder="например: claude-sonnet-5-5"></div></div>
         <div class="setrow" id="ai-key-row"><div class="l">Ключ API<small id="ai-key-hint">хранится только на этом компьютере</small></div><div class="r"><input type="password" id="ai-key" placeholder="вставьте ключ" autocomplete="off"></div></div>
         <div class="setrow"><div class="l"><span class="msgline" id="ai-msg"></span></div>
           <div class="r"><button class="btn" id="ai-save">Сохранить</button><button class="btn primary" id="ai-test">Проверить соединение</button></div></div>
-        <small class="dim">Сейчас Jarvis использует это только для проверки связи. Ответы нейросети в диалогах появятся в одной из следующих версий.</small>
+        <div class="setrow"><div class="l">Отвечать ИИ на фразы, которые не команды<small>по умолчанию выключено: тогда в сеть уходят только сообщения, которые вы отправили на странице «Диалог». Если включить, непонятные фразы (в том числе голосом) будут отправляться ИИ-провайдеру.</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="ai-fallback"><span></span></label></div></div>
+        <small class="dim">Ответы ИИ появляются на странице «Диалог». Ключ хранится только на этом компьютере в зашифрованном виде (шифрование Windows) и не показывается в окне. Сообщения уходят провайдеру только когда вы нажимаете «Отправить».</small>
       </div>
 
       <div class="card" style="margin-bottom:14px" id="remote-card"><h3><span class="ei">📱</span>Пульт для телефона</h3>
@@ -339,7 +379,7 @@ function show(name) {
   if (name === 'commands') loadCommands();
   if (name === 'panel') { refreshState(); loadModules(); }
   if (name === 'settings') { loadSettings(); refreshRemote(); }
-  if (name === 'chat') { const l = $('#log'); l.scrollTop = l.scrollHeight; }
+  if (name === 'chat') { chatTab === 'ai' ? aiOpen() : ($('#log').scrollTop = $('#log').scrollHeight); updatePlaceholder(); } else updatePlaceholder();
   if (name === 'home' || name === 'chat') $('#input').focus();
 }
 document.querySelectorAll('nav button[data-page]').forEach(b => b.onclick = () => show(b.dataset.page));
@@ -395,7 +435,21 @@ function sendCommand(text) {
   if (!connected) { add('err', 'Нет связи с Jarvis'); return; }
   ws.send(JSON.stringify({ action: 'text_command', text }));
 }
-$('#form').onsubmit = e => { e.preventDefault(); sendCommand($('#input').value); $('#input').value = ''; };
+$('#form').onsubmit = e => {
+  e.preventDefault();
+  const text = $('#input').value;
+  if (currentPage === 'chat' && chatTab === 'ai') {   // on the AI chat page the field talks to the AI, everywhere else it gives commands
+    if (aiBusy) { aiStop(); return; }
+    if (aiSend(text)) $('#input').value = '';
+    return;
+  }
+  sendCommand(text); $('#input').value = '';
+};
+function updatePlaceholder() {
+  const ai = currentPage === 'chat' && chatTab === 'ai';
+  $('#input').placeholder = ai ? 'Напишите вопрос ИИ…' : 'Напишите команду, например: таймер на 5 минут';
+  $('#send').textContent = ai && aiBusy ? 'Стоп' : (ai ? 'Спросить ИИ' : 'Отправить');
+}
 document.querySelectorAll('[data-cmd]').forEach(b => b.onclick = () => {
   sendCommand(b.dataset.cmd);
   if (b.dataset.cmd.includes('удалённое управление')) { setTimeout(refreshRemote, 700); setTimeout(refreshRemote, 1800); }
@@ -405,11 +459,11 @@ document.querySelectorAll('[data-cmd]').forEach(b => b.onclick = () => {
 // examples on the home screen: a click sends the command (or puts the start of it into the input)
 const EXAMPLES = [
   ['таймер на 5 минут'], ['сколько времени'], ['громкость 50 процентов'],
-  ['найди файл…', null, 'найди файл '], ['открой браузер'], ['включи удалённое управление'], ['что ты умеешь'],
+  ['найди файл…', null, 'найди файл '], ['спроси ИИ: …', null, null, true], ['открой браузер'], ['включи удалённое управление'], ['что ты умеешь'],
 ];
-for (const [label, cmd, fill] of EXAMPLES) {
+for (const [label, cmd, fill, ai] of EXAMPLES) {
   const b = document.createElement('button'); b.type = 'button'; b.className = 'ex'; b.textContent = '«' + label + '»';
-  b.onclick = () => { if (fill) { $('#input').value = fill; $('#input').focus(); } else sendCommand(cmd || label); };
+  b.onclick = () => { if (fill) { $('#input').value = fill; $('#input').focus(); } else if (ai) { show('chat'); } else sendCommand(cmd || label); };
   $('#examples').appendChild(b);
 }
 
@@ -548,6 +602,129 @@ setInterval(() => { if (currentPage === 'panel') renderTimers(); }, 1000);
 setInterval(() => { if (currentPage !== 'panel') refreshMicState(); }, 4000);
 async function refreshMicState() { try { const s = await (await fetch('/state')).json(); if (micMuted !== !!s.mic_muted) { micMuted = !!s.mic_muted; renderMic(); } applyVoice(s); } catch (e) {} }
 
+
+// ---------- AI chat ----------
+let chatTab = 'ai', aiActive = '', aiBusy = false, aiPoll = 0, aiConfigured = false;
+function esc(t) { return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+// a small safe Markdown: code blocks, `code`, **bold**, *italic*, lists, headings, http(s) links. Everything is escaped first.
+function md(src) {
+  const blocks = [];
+  src = String(src).replace(/```([\w+#-]*)[ \t]*\n([\s\S]*?)```/g, (m, lang, code) => { blocks.push({ lang, code: code.replace(/\n$/, '') }); return '\u0000' + (blocks.length - 1) + '\u0000'; });
+  const inline = t => esc(t).replace(/`([^`\n]+)`/g, '<code>$1</code>').replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
+    .replace(/(^|[^*\w])\*([^*\n]+)\*(?!\w)/g, '$1<i>$2</i>').replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  const out = []; let list = null, para = [];
+  const flushPara = () => { if (para.length) { out.push('<p>' + para.join('<br>') + '</p>'); para = []; } };
+  const flushList = () => { if (list) { out.push('</' + list + '>'); list = null; } };
+  for (const line of src.split('\n')) {
+    let m;
+    if (/^\u0000\d+\u0000$/.test(line.trim())) { flushPara(); flushList(); out.push(line.trim()); }
+    else if ((m = line.match(/^\s*[-*•]\s+(.*)/))) { flushPara(); if (list !== 'ul') { flushList(); out.push('<ul>'); list = 'ul'; } out.push('<li>' + inline(m[1]) + '</li>'); }
+    else if ((m = line.match(/^\s*\d+[.)]\s+(.*)/))) { flushPara(); if (list !== 'ol') { flushList(); out.push('<ol>'); list = 'ol'; } out.push('<li>' + inline(m[1]) + '</li>'); }
+    else if ((m = line.match(/^#{1,4}\s+(.*)/))) { flushPara(); flushList(); out.push('<h3>' + inline(m[1]) + '</h3>'); }
+    else if (!line.trim()) { flushPara(); flushList(); }
+    else { flushList(); para.push(inline(line)); }
+  }
+  flushPara(); flushList();
+  return out.join('').replace(/\u0000(\d+)\u0000/g, (m, i) => {
+    const b = blocks[+i]; if (!b) return '';
+    return '<div class="code"><div class="bar2"><span>' + esc(b.lang || 'код') + '</span><button class="btn small" data-copy-code="' + i + '">Копировать код</button></div><pre><code>' + esc(b.code) + '</code></pre></div>';
+  });
+}
+async function copyText(text, btn) {
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) { const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); } catch (e2) {} t.remove(); }
+  if (btn) { const old = btn.textContent; btn.textContent = 'Скопировано ✓'; setTimeout(() => btn.textContent = old, 1400); }
+}
+async function chatApi(body) { return (await fetch('/chat', { method: 'POST', headers: { 'X-Jarvis': '1' }, body: JSON.stringify(body) })).json(); }
+
+function renderMessages(chat) {
+  const log = $('#ai-log'); const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+  log.textContent = '';
+  if (!chat.messages.length && !chat.busy) log.innerHTML = '<div class="empty">Напишите вопрос в поле внизу и нажмите «Спросить ИИ». Ответит выбранная нейросеть. Это новый диалог: прошлые разговоры в него не попадают.</div>';
+  for (const m of chat.messages) {
+    const d = document.createElement('div'); d.className = 'ai-msg ' + m.role;
+    if (m.role === 'assistant') {
+      d.innerHTML = md(m.content);
+      d.querySelectorAll('[data-copy-code]').forEach(b => b.onclick = () => {
+        const code = d.querySelectorAll('pre code')[[...d.querySelectorAll('[data-copy-code]')].indexOf(b)]; copyText(code ? code.textContent : '', b); });
+      const tools = document.createElement('div'); tools.className = 'msgtools';
+      const cp = document.createElement('button'); cp.type = 'button'; cp.textContent = '⧉ Копировать ответ'; cp.onclick = () => copyText(m.content, cp); tools.appendChild(cp); d.appendChild(tools);
+    } else d.textContent = m.content;
+    log.appendChild(d);
+  }
+  if (chat.busy) { const t = document.createElement('div'); t.className = 'ai-msg thinking'; t.textContent = 'Думаю…'; log.appendChild(t); }
+  if (atBottom || chat.busy) log.scrollTop = log.scrollHeight;
+}
+function setBusy(b) { aiBusy = b; updatePlaceholder(); }
+async function aiLoadChat(id) {
+  const c = await (await fetch('/chat/' + encodeURIComponent(id))).json();
+  if (!c.ok) return null;
+  $('#chat-title').textContent = c.title; renderMessages(c); setBusy(c.busy); return c;
+}
+async function aiRefreshList() {
+  const d = await (await fetch('/chats')).json();
+  aiConfigured = d.configured; aiActive = aiActive || d.active;
+  $('#ai-setup').style.display = d.configured ? 'none' : 'block'; $('#ai-setup-text').textContent = d.problem || '';
+  $('#chat-privacy').textContent = d.configured ? 'Когда вы нажимаете «Спросить ИИ», этот диалог (до 30 последних сообщений) отправляется в ' + d.provider + ' (модель ' + d.model + '). Пока вы ничего не отправляете, данные никуда не передаются. Ключ не показывается и не сохраняется в истории.' : '';
+  const box = $('#conv-list'); box.textContent = '';
+  for (const c of d.chats) {
+    const row = document.createElement('div'); row.className = 'conv' + (c.id === aiActive ? ' active' : '');
+    row.innerHTML = '<span class="t"></span><button class="x" type="button" title="Удалить диалог">✕</button>'; row.querySelector('.t').textContent = c.title;
+    row.onclick = async e => { if (e.target.closest('.x')) return; aiActive = c.id; await chatApi({ op: 'select', id: c.id }); aiStopPolling(); aiRefreshList(); aiLoadChat(c.id).then(c2 => { if (c2 && c2.busy) aiStartPolling(); }); };
+    row.querySelector('.x').onclick = async () => {
+      if (!confirm('Удалить диалог «' + c.title + '»? Это нельзя отменить.')) return;
+      const r = await chatApi({ op: 'delete', id: c.id }); if (!r.ok) { alert('Дождитесь конца ответа и попробуйте снова.'); return; }
+      if (aiActive === c.id) aiActive = ''; await aiOpen();
+    };
+    box.appendChild(row);
+  }
+  return d;
+}
+async function aiOpen() {
+  const d = await aiRefreshList();
+  if (!aiActive || !d.chats.some(c => c.id === aiActive)) aiActive = d.active || (d.chats[0] && d.chats[0].id) || '';
+  if (aiActive) { const c = await aiLoadChat(aiActive); if (c && c.busy) aiStartPolling(); }
+  else { $('#chat-title').textContent = 'Диалог'; $('#ai-log').innerHTML = '<div class="empty">Нажмите «＋ Новый диалог» или просто задайте вопрос.</div>'; }
+  updatePlaceholder();
+}
+function aiStopPolling() { clearInterval(aiPoll); aiPoll = 0; }
+function aiStartPolling() {
+  aiStopPolling();
+  aiPoll = setInterval(async () => {
+    try { const c = await aiLoadChat(aiActive); if (!c || !c.busy) { aiStopPolling(); aiRefreshList(); } } catch (e) {}
+  }, 700);
+}
+function aiSend(text) {
+  text = text.trim();
+  if (!text) { return false; }
+  if (!aiConfigured) { $('#ai-setup').style.display = 'block'; return false; }
+  setBusy(true);
+  const log = $('#ai-log'); if (log.querySelector('.empty')) log.textContent = '';
+  const u = document.createElement('div'); u.className = 'ai-msg user'; u.textContent = text; log.appendChild(u);
+  const t = document.createElement('div'); t.className = 'ai-msg thinking'; t.textContent = 'Думаю…'; log.appendChild(t); log.scrollTop = log.scrollHeight;
+  chatApi({ op: 'send', id: aiActive, text }).then(async r => {
+    if (!r.ok) {   // refused before anything was sent (no key, empty, busy…): say why
+      setBusy(false); t.remove(); u.remove();
+      const e = document.createElement('div'); e.className = 'ai-msg error'; e.textContent = r.message; log.appendChild(e); $('#input').value = text; return;
+    }
+    aiActive = r.id; aiRefreshList(); aiStartPolling();
+  }).catch(() => { setBusy(false); t.textContent = 'Нет связи с Jarvis. Перезапустите программу.'; });
+  return true;
+}
+async function aiStop() { await chatApi({ op: 'stop', id: aiActive }); }
+$('#chat-new').onclick = async () => { const r = await chatApi({ op: 'new' }); aiActive = r.id; aiStopPolling(); await aiOpen(); $('#input').focus(); };
+$('#chat-clear').onclick = async () => {
+  if (!aiActive || !confirm('Очистить историю этого диалога? Сообщения будут удалены.')) return;
+  const r = await chatApi({ op: 'clear', id: aiActive }); if (!r.ok) { alert('Дождитесь конца ответа и попробуйте снова.'); return; } await aiOpen();
+};
+$('#ai-setup-btn').onclick = () => show('settings');
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  chatTab = b.dataset.tab;
+  document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('active', x === b));
+  $('#tab-ai').style.display = chatTab === 'ai' ? 'flex' : 'none'; $('#tab-log').style.display = chatTab === 'log' ? 'flex' : 'none';
+  if (chatTab === 'ai') aiOpen(); else $('#log').scrollTop = $('#log').scrollHeight; updatePlaceholder();
+});
+
 // ---------- settings center ----------
 let voicesLoaded = false;
 async function loadSettings() {
@@ -559,7 +736,7 @@ async function loadSettings() {
     sel.value = String(s.mic_selected ?? -1);
     $('#rate').value = s.voice_rate; $('#rate-v').textContent = (+s.voice_rate).toFixed(2).replace(/0$/, '') + '×';
     $('#tts-on').checked = !!s.tts_enabled;
-    $('#ai-provider').value = s.ai_provider || 'none'; $('#ai-model').value = s.ai_model || ''; $('#ai-url').value = s.ai_url || '';
+    $('#ai-fallback').checked = !!s.ai_fallback; $('#ai-provider').value = s.ai_provider || 'none'; $('#ai-model').value = s.ai_model || ''; $('#ai-url').value = s.ai_url || '';
     $('#ai-key').value = ''; $('#ai-key-hint').textContent = s.ai_key_saved ? 'ключ сохранён (оставьте поле пустым, чтобы не менять)' : 'хранится только на этом компьютере';
     updateAiRows();
     $('#voice-hint').textContent = s.piper ? 'Jarvis (Piper) — нейросетевой голос, работает без интернета' : 'Piper не установлен: говорит голос Windows (в большом установщике есть Piper)';
@@ -579,14 +756,15 @@ $('#tts-on').onchange = e => action('tts_toggle', { value: e.target.checked });
 $('#tts-test').onclick = async () => { await new Promise(r => setTimeout(r, 350)); await action('tts_test'); };
 function updateAiRows() {
   const p = $('#ai-provider').value;
-  $('#ai-url-row').style.display = (p === 'ollama' || p === 'custom') ? '' : 'none';
+  $('#ai-url-row').style.display = (p === 'ollama' || p === 'custom' || p === 'anthropic') ? '' : 'none';
   $('#ai-key-row').style.display = (p === 'none' || p === 'ollama') ? 'none' : '';
-  const ph = { anthropic: 'claude-sonnet-5-5', openai: 'gpt-4o-mini', ollama: 'llama3.1', custom: 'название модели' };
+  const ph = { anthropic: 'claude-sonnet-5-5', openai: 'gpt-4o-mini', openrouter: 'openai/gpt-4o-mini', gemini: 'gemini-2.0-flash', ollama: 'llama3.1', custom: 'название модели' };
+  $('#ai-url-hint').textContent = p === 'anthropic' ? 'необязательно (по умолчанию api.anthropic.com)' : p === 'custom' ? 'адрес API, например https://host/v1' : 'для Ollama: адрес сервера';
   $('#ai-model').placeholder = ph[p] ? 'например: ' + ph[p] : '';
 }
 $('#ai-provider').onchange = updateAiRows;
 async function saveAi() {
-  const patch = { ai_provider: $('#ai-provider').value, ai_model: $('#ai-model').value.trim(), ai_url: $('#ai-url').value.trim() };
+  const patch = { ai_provider: $('#ai-provider').value, ai_model: $('#ai-model').value.trim(), ai_url: $('#ai-url').value.trim(), ai_fallback: $('#ai-fallback').checked };
   const key = $('#ai-key').value.trim(); if (key) patch.ai_key = key;
   await api('/settings', patch); $('#ai-key').value = ''; if (key) $('#ai-key-hint').textContent = 'ключ сохранён (оставьте поле пустым, чтобы не менять)';
 }

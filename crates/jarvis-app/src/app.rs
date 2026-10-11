@@ -570,6 +570,22 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
         }
     } else {
         info!("No command found for: {}", text);
+        // not a command: with "answer phrases that are not commands" switched on, the AI answers (only then)
+        if jarvis_core::uistate::settings().ai_fallback && jarvis_core::ai::is_configured() {
+            match jarvis_core::ai::send(None, text, true) {
+                Ok(_) => {
+                    jarvis_core::uistate::log_action(text, "ИИ-чат", true);
+                    ipc::send(IpcEvent::Output { text: "Это не команда: спрашиваю ИИ. Ответ появится на странице «Диалог».".to_string() });
+                    ipc::send(IpcEvent::Idle);
+                    return false;
+                }
+                Err(e) => {
+                    ipc::send(IpcEvent::Output { text: e.user_text() });
+                    ipc::send(IpcEvent::Idle);
+                    return false;
+                }
+            }
+        }
         say(&format!("? command not found: {}", text));
         jarvis_core::uistate::log_action(text, "—", false);
         voices::play_not_found();

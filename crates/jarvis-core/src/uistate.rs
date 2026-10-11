@@ -47,15 +47,16 @@ pub fn recent_actions() -> Vec<LogEntry> {
 pub struct UiSettings {
     pub voice_rate: f32,     // 0.6 .. 1.6, 1.0 = normal
     pub voice_name: String,  // "" = automatic (Piper, else a female Windows voice)
-    pub ai_provider: String, // none | anthropic | openai | ollama | custom
+    pub ai_provider: String, // none | openai | openrouter | gemini | anthropic | ollama | custom
     pub ai_model: String,
     pub ai_key: String,
     pub ai_url: String,
+    pub ai_fallback: bool, // phrases that are not commands go to the AI (off by default: nothing leaves the PC unasked)
 }
 
 impl Default for UiSettings {
     fn default() -> Self {
-        Self { voice_rate: 1.0, voice_name: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_key: String::new(), ai_url: String::new() }
+        Self { voice_rate: 1.0, voice_name: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_key: String::new(), ai_url: String::new(), ai_fallback: false }
     }
 }
 
@@ -66,10 +67,28 @@ fn file(name: &str) -> Option<PathBuf> {
 }
 
 fn load_settings() -> UiSettings {
-    file("ui_settings.json")
+    let mut s: UiSettings = file("ui_settings.json")
         .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default();
+    // the key is stored encrypted (DPAPI); an old plain key is encrypted at the next save
+    let plain_on_disk = !s.ai_key.is_empty() && !s.ai_key.starts_with("dpapi:");
+    s.ai_key = crate::secret::open(&s.ai_key);
+    if plain_on_disk && cfg!(target_os = "windows") {
+        write_settings(&s);
+    }
+    s
+}
+
+// the settings file: the key is encrypted
+fn write_settings(s: &UiSettings) {
+    if let Some(p) = file("ui_settings.json") {
+        let mut v = serde_json::to_value(s).unwrap_or(Value::Null);
+        v["ai_key"] = Value::String(crate::secret::seal(&s.ai_key));
+        if let Ok(json) = serde_json::to_string_pretty(&v) {
+            let _ = std::fs::write(p, json);
+        }
+    }
 }
 
 pub fn settings() -> UiSettings {
@@ -93,11 +112,8 @@ pub fn update_settings(patch: &Value) {
     if let Some(v) = patch.get("ai_model").and_then(|v| v.as_str()) { s.ai_model = v.chars().take(100).collect(); }
     if let Some(v) = patch.get("ai_key").and_then(|v| v.as_str()) { s.ai_key = v.chars().take(300).collect(); }
     if let Some(v) = patch.get("ai_url").and_then(|v| v.as_str()) { s.ai_url = v.chars().take(300).collect(); }
-    if let Some(p) = file("ui_settings.json") {
-        if let Ok(json) = serde_json::to_string_pretty(&*s) {
-            let _ = std::fs::write(p, json);
-        }
-    }
+    if let Some(v) = patch.get("ai_fallback").and_then(|v| v.as_bool()) { s.ai_fallback = v; }
+    write_settings(&s);
 }
 
 // the settings page never gets the key back, only whether one is saved
@@ -107,6 +123,7 @@ pub fn settings_json() -> Value {
         "voice_rate": s.voice_rate, "voice_name": s.voice_name,
         "ai_provider": s.ai_provider, "ai_model": s.ai_model, "ai_url": s.ai_url,
         "ai_key_saved": !s.ai_key.is_empty(),
+        "ai_fallback": s.ai_fallback,
         "tts_enabled": crate::tts::is_enabled(),
         "piper": crate::tts::piper_available(),
     })

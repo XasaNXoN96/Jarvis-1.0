@@ -167,41 +167,72 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
 }
 
 // "check the connection": asks the provider for its model list with the saved key
-#[cfg(feature = "lua")]
 fn ai_test() -> serde_json::Value {
-    let s = crate::uistate::settings();
-    let (url, headers): (String, Vec<(&str, String)>) = match s.ai_provider.as_str() {
-        "anthropic" => ("https://api.anthropic.com/v1/models".to_string(), vec![("x-api-key", s.ai_key.clone()), ("anthropic-version", "2023-06-01".to_string())]),
-        "openai" => ("https://api.openai.com/v1/models".to_string(), vec![("Authorization", format!("Bearer {}", s.ai_key))]),
-        "ollama" => (format!("{}/api/tags", if s.ai_url.is_empty() { "http://127.0.0.1:11434" } else { s.ai_url.trim_end_matches('/') }), vec![]),
-        "custom" => (format!("{}/models", s.ai_url.trim_end_matches('/')), vec![("Authorization", format!("Bearer {}", s.ai_key))]),
-        _ => return json!({ "ok": false, "message": "Провайдер не выбран" }),
-    };
-    if s.ai_provider != "ollama" && s.ai_key.is_empty() {
-        return json!({ "ok": false, "message": "Введите ключ API" });
-    }
-    if s.ai_provider == "custom" && s.ai_url.is_empty() {
-        return json!({ "ok": false, "message": "Введите адрес сервера" });
-    }
-    let client = match reqwest::blocking::Client::builder().timeout(Duration::from_secs(8)).build() {
-        Ok(c) => c,
-        Err(e) => return json!({ "ok": false, "message": e.to_string() }),
-    };
-    let mut request = client.get(&url);
-    for (k, v) in headers {
-        request = request.header(k, v);
-    }
-    match request.send() {
-        Ok(r) if r.status().is_success() => json!({ "ok": true, "message": "Соединение работает" }),
-        Ok(r) if r.status().as_u16() == 401 || r.status().as_u16() == 403 => json!({ "ok": false, "message": "Ключ не принят (ошибка доступа)" }),
-        Ok(r) => json!({ "ok": false, "message": format!("Сервер ответил: {}", r.status()) }),
-        Err(e) => json!({ "ok": false, "message": format!("Нет соединения: {}", e.without_url()) }),
+    match crate::ai::conf_from_settings() {
+        Err(e) => json!({ "ok": false, "message": e.user_text() }),
+        Ok(conf) => match crate::ai::test_connection(&conf) {
+            Ok(()) => json!({ "ok": true, "message": format!("Соединение с {} работает", conf.name) }),
+            Err(e) => json!({ "ok": false, "message": e.user_text() }),
+        },
     }
 }
 
-#[cfg(not(feature = "lua"))]
-fn ai_test() -> serde_json::Value {
-    json!({ "ok": false, "message": "not available" })
+// ---- AI chat (the window talks to it over local HTTP; the key never leaves the backend) ----
+fn chat_json(id: &str) -> serde_json::Value {
+    match crate::ai::store().load(id) {
+        Some(c) => json!({ "ok": true, "id": c.id, "title": c.title, "messages": c.messages, "busy": crate::ai::is_busy(&c.id) }),
+        None => json!({ "ok": false, "message": "Диалог не найден" }),
+    }
+}
+
+fn chats_json() -> serde_json::Value {
+    let store = crate::ai::store();
+    let active = store.active().unwrap_or_default();
+    let conf = crate::ai::conf_from_settings();
+    let s = crate::uistate::settings();
+    json!({
+        "active": active,
+        "chats": store.list(),
+        "configured": conf.is_ok(),
+        "problem": conf.as_ref().err().map(|e| e.user_text()).unwrap_or_default(),
+        "provider": conf.as_ref().map(|c| c.name.clone()).unwrap_or_default(),
+        "model": s.ai_model,
+    })
+}
+
+fn chat_action(body: &serde_json::Value) -> serde_json::Value {
+    let store = crate::ai::store();
+    let op = body.get("op").and_then(|v| v.as_str()).unwrap_or("");
+    let id = body.get("id").and_then(|v| v.as_str()).unwrap_or("");
+    match op {
+        "new" => {
+            let c = store.create();
+            json!({ "ok": true, "id": c.id })
+        }
+        "select" => {
+            if store.load(id).is_some() {
+                store.set_active(id);
+                json!({ "ok": true, "id": id })
+            } else {
+                json!({ "ok": false, "message": "Диалог не найден" })
+            }
+        }
+        "send" => {
+            let text = body.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            let chat = if id.is_empty() { None } else { Some(id) };
+            match crate::ai::send(chat, text, true) {
+                Ok(chat_id) => json!({ "ok": true, "id": chat_id }),
+                Err(e) => json!({ "ok": false, "message": e.user_text() }),
+            }
+        }
+        "stop" => json!({ "ok": crate::ai::stop(id) }),
+        "clear" => json!({ "ok": !crate::ai::is_busy(id) && store.clear(id) }),
+        "delete" => {
+            let ok = !crate::ai::is_busy(id) && store.delete(id);
+            json!({ "ok": ok })
+        }
+        _ => json!({ "ok": false, "message": "unknown operation" }),
+    }
 }
 
 // QR code (SVG) of the phone-remote link
@@ -358,6 +389,16 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
             let result = if req.path == "/settings" { apply_settings(&body) } else { run_action(&body) };
             respond(&mut stream, "200 OK", "application/json", &result.to_string());
         }
+        ("GET", "/chats") => respond(&mut stream, "200 OK", "application/json", &chats_json().to_string()),
+        ("POST", "/chat") => {
+            if !req.custom_header {
+                respond(&mut stream, "403 Forbidden", "text/plain", "forbidden");
+                return Ok(());
+            }
+            let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap_or(json!({}));
+            respond(&mut stream, "200 OK", "application/json", &chat_action(&body).to_string());
+        }
+        ("GET", p) if p.starts_with("/chat/") => respond(&mut stream, "200 OK", "application/json", &chat_json(&p["/chat/".len()..]).to_string()),
         ("GET", "/commands") => respond(&mut stream, "200 OK", "application/json", &commands_json()),
         ("GET", "/avatar") => {
             match avatar_path().and_then(|p| std::fs::read(p).ok()) {

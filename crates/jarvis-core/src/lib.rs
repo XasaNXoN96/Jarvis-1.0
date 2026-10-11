@@ -51,6 +51,8 @@ pub mod remote;
 pub mod ui;
 pub mod uistate;
 pub mod session;
+pub mod secret;
+pub mod ai;
 pub mod filesearch;
 
 #[cfg(feature = "lua")]

@@ -35,6 +35,12 @@ pub fn push_text(text: &str) -> bool {
     }
 }
 
+#[cfg(test)]
+pub fn push_text_would_work_for_tests() -> bool {
+    // in the tests no command queue is connected: the AI answer has nowhere to go as a command
+    TX.get().is_some()
+}
+
 pub fn set_sender(tx: Sender<String>) {
     let _ = TX.set(Mutex::new(tx));
 }
