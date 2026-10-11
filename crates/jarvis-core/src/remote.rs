@@ -1,9 +1,12 @@
 // Remote control from a phone / another device on the same Wi-Fi.
 //
 // OFF by default. "включи удалённое управление" starts a tiny HTTP server on port 9713;
-// the phone opens http://<pc-ip>:9713/?t=<token> and sends text commands (same as typing
+// the phone opens https://<pc-ip>:9713/?t=<token> and sends text commands (same as typing
 // them in the console). Every request must carry the secret token, which is created once
 // and stored in the config dir (remote_token). Do not share the link.
+//
+// The same port speaks https (self-signed certificate made on this PC, the browser warns once) and
+// plain http. Browsers give the microphone only to https pages, so the phone page uses https for voice.
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream, UdpSocket};
@@ -59,7 +62,7 @@ fn local_ip() -> String {
 }
 
 pub fn url() -> String {
-    format!("http://{}:{}/?t={}", local_ip(), PORT, *TOKEN)
+    format!("https://{}:{}/?t={}", local_ip(), PORT, *TOKEN)
 }
 
 pub fn is_running() -> bool {
@@ -70,6 +73,13 @@ pub fn start() -> Result<String, String> {
     if is_running() {
         return Ok(url());
     }
+    let tls = match tls_config() {
+        Ok(c) => Some(c),
+        Err(e) => {
+            warn!("Remote control: https is not available ({}), plain http only", e);
+            None
+        }
+    };
     let listener = TcpListener::bind(("0.0.0.0", PORT))
         .map_err(|e| format!("cannot listen on port {}: {}", PORT, e))?;
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
@@ -80,8 +90,9 @@ pub fn start() -> Result<String, String> {
         while RUNNING.load(Ordering::SeqCst) {
             match listener.accept() {
                 Ok((stream, _)) => {
+                    let tls = tls.clone();
                     std::thread::spawn(move || {
-                        let _ = handle(stream);
+                        let _ = serve(stream, tls);
                     });
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -107,8 +118,7 @@ struct Request {
     body: String,
 }
 
-fn read_request(stream: &mut TcpStream) -> std::io::Result<Request> {
-    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+fn read_request<S: Read>(stream: &mut S) -> std::io::Result<Request> {
     let mut buf: Vec<u8> = Vec::new();
     let mut chunk = [0u8; 2048];
     let header_end = loop {
@@ -164,7 +174,7 @@ fn read_request(stream: &mut TcpStream) -> std::io::Result<Request> {
     })
 }
 
-fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &str) {
+fn respond<S: Write>(stream: &mut S, status: &str, content_type: &str, body: &str) {
     let _ = write!(
         stream,
         "HTTP/1.1 {}\r\nContent-Type: {}; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{}",
@@ -175,6 +185,72 @@ fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &str)
     );
 }
 
+// one port, two protocols: a TLS ClientHello starts with byte 0x16, plain http starts with a letter
+fn serve(stream: TcpStream, tls: Option<std::sync::Arc<rustls::ServerConfig>>) -> std::io::Result<()> {
+    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+    let mut first = [0u8; 1];
+    let n = stream.peek(&mut first)?;
+    if n == 1 && first[0] == 0x16 {
+        let config = tls.ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "no tls"))?;
+        let conn = rustls::ServerConnection::new(config).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let mut tls_stream = rustls::StreamOwned::new(conn, stream);
+        handle(&mut tls_stream)?;
+        tls_stream.conn.send_close_notify();
+        let _ = tls_stream.flush();
+        Ok(())
+    } else {
+        let mut stream = stream;
+        handle(&mut stream)
+    }
+}
+
+// self-signed certificate for this PC's address, kept in the config dir (renewed when the address changes)
+fn tls_config() -> Result<std::sync::Arc<rustls::ServerConfig>, String> {
+    use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+
+    let ip = local_ip();
+    let dir = APP_CONFIG_DIR.get().cloned();
+    let (cert_path, key_path, ip_path) = match &dir {
+        Some(d) => (Some(d.join("remote_cert.der")), Some(d.join("remote_key.der")), Some(d.join("remote_cert.ip"))),
+        None => (None, None, None),
+    };
+
+    let mut cert_der: Option<Vec<u8>> = None;
+    let mut key_der: Option<Vec<u8>> = None;
+    if let (Some(c), Some(k), Some(i)) = (&cert_path, &key_path, &ip_path) {
+        if std::fs::read_to_string(i).map(|v| v.trim() == ip).unwrap_or(false) {
+            cert_der = std::fs::read(c).ok();
+            key_der = std::fs::read(k).ok();
+        }
+    }
+    if cert_der.is_none() || key_der.is_none() {
+        let names = vec![ip.clone(), "localhost".to_string(), "127.0.0.1".to_string()];
+        let generated = rcgen::generate_simple_self_signed(names).map_err(|e| e.to_string())?;
+        let c = generated.cert.der().to_vec();
+        let k = generated.key_pair.serialize_der();
+        if let (Some(cp), Some(kp), Some(ip_p)) = (&cert_path, &key_path, &ip_path) {
+            let _ = std::fs::write(cp, &c);
+            let _ = std::fs::write(kp, &k);
+            let _ = std::fs::write(ip_p, &ip);
+        }
+        cert_der = Some(c);
+        key_der = Some(k);
+    }
+
+    let provider = std::sync::Arc::new(rustls::crypto::ring::default_provider());
+    let config = rustls::ServerConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .map_err(|e| e.to_string())?
+        .with_no_client_auth()
+        .with_single_cert(
+            vec![CertificateDer::from(cert_der.unwrap())],
+            PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key_der.unwrap())),
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(std::sync::Arc::new(config))
+}
+
 fn token_in_path(path: &str) -> Option<String> {
     let query = path.split_once('?')?.1;
     query
@@ -182,37 +258,37 @@ fn token_in_path(path: &str) -> Option<String> {
         .find_map(|kv| kv.strip_prefix("t=").map(|v| v.to_string()))
 }
 
-fn handle(mut stream: TcpStream) -> std::io::Result<()> {
-    let req = read_request(&mut stream)?;
+fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
+    let req = read_request(stream)?;
 
     if !is_running() {
-        respond(&mut stream, "503 Service Unavailable", "text/plain", "off");
+        respond(stream, "503 Service Unavailable", "text/plain", "off");
         return Ok(());
     }
 
     let supplied = req.token_header.clone().or_else(|| token_in_path(&req.path));
     if supplied.as_deref() != Some(TOKEN.as_str()) {
         warn!("Remote control: request with a wrong token rejected");
-        respond(&mut stream, "403 Forbidden", "text/plain", "forbidden");
+        respond(stream, "403 Forbidden", "text/plain", "forbidden");
         return Ok(());
     }
 
     let route = req.path.split('?').next().unwrap_or("/");
     match (req.method.as_str(), route) {
-        ("GET", "/") => respond(&mut stream, "200 OK", "text/html", PAGE),
+        ("GET", "/") => respond(stream, "200 OK", "text/html", PAGE),
         ("POST", "/cmd") => {
             let text = req.body.trim().to_string();
             if text.is_empty() || text.chars().count() > 300 {
-                respond(&mut stream, "400 Bad Request", "text/plain", "bad command");
+                respond(stream, "400 Bad Request", "text/plain", "bad command");
             } else if let Some(tx) = TX.get() {
                 info!("Remote control command: {}", text);
                 let _ = tx.lock().send(text);
-                respond(&mut stream, "200 OK", "text/plain", "ok");
+                respond(stream, "200 OK", "text/plain", "ok");
             } else {
-                respond(&mut stream, "503 Service Unavailable", "text/plain", "not ready");
+                respond(stream, "503 Service Unavailable", "text/plain", "not ready");
             }
         }
-        _ => respond(&mut stream, "404 Not Found", "text/plain", "not found"),
+        _ => respond(stream, "404 Not Found", "text/plain", "not found"),
     }
     Ok(())
 }
@@ -267,7 +343,7 @@ micBtn.onclick = () => {
   let final = '';
   rec.onresult = e => { let t = ''; for (const r of e.results) { t += r[0].transcript; if (r.isFinal) final = t; } heard.textContent = '«' + t + '»'; };
   rec.onerror = e => { heard.textContent = (e.error === 'not-allowed' || e.error === 'service-not-allowed')
-    ? 'Браузер не дал доступ к микрофону на http. Используйте микрофон на клавиатуре в поле ниже.' : 'Ошибка микрофона: ' + e.error; };
+    ? 'Нет доступа к микрофону. Откройте страницу по ссылке https (нажмите «Дополнительно → Продолжить»), разрешите микрофон. Или используйте микрофон на клавиатуре в поле ниже.' : 'Ошибка микрофона: ' + e.error; };
   rec.onend = () => { micBtn.classList.remove('on'); micBtn.textContent = '🎤 Сказать команду'; rec = null; if (final.trim()) send(final.trim()); };
   try { rec.start(); } catch (e) { rec = null; micBtn.classList.remove('on'); }
 };
@@ -275,3 +351,24 @@ document.getElementById('f').onsubmit = e => { e.preventDefault(); const i = doc
 for (const q of quick) { const b = document.createElement('button'); b.textContent = q; b.onclick = () => send(q); document.getElementById('quick').appendChild(b); }
 </script></body></html>
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // the same port answers https (self-signed) and plain http
+    #[test]
+    fn https_and_http_on_one_port() {
+        start().expect("start");
+        std::thread::sleep(Duration::from_millis(500));
+        for scheme in ["https", "http"] {
+            let out = std::process::Command::new("curl")
+                .args(["-sk", "--max-time", "5", &format!("{}://127.0.0.1:{}/?t={}", scheme, PORT, *TOKEN)])
+                .output()
+                .expect("curl");
+            let text = String::from_utf8_lossy(&out.stdout);
+            assert!(text.contains("Сказать команду"), "{} page: {}", scheme, text);
+        }
+        stop();
+    }
+}
