@@ -66,6 +66,7 @@ pub mod input;
 pub mod scenario;
 pub mod autostart;
 pub mod screen;
+pub mod sites;
 pub mod notify;
 #[cfg(target_os = "windows")]
 pub mod notify_win;

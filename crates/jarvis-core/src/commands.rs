@@ -113,6 +113,13 @@ pub fn fetch_dictation<'a>(phrase: &str, commands: &'a [JCommandsList]) -> Optio
     commands.iter().flat_map(|l| l.commands.iter().map(move |c| (&l.path, c))).find(|(_, c)| c.id == "assistant_office_dictate")
 }
 
+// "открой YouTube", "open github": a known website by name (sites.rs). Checked before the keyword triggers and the
+// intent model, so a site name is never taken for another command ("youtube" used to become "открой гугл").
+pub fn fetch_site<'a>(phrase: &str, commands: &'a [JCommandsList]) -> Option<(&'a PathBuf, &'a JCommand)> {
+    crate::sites::direct_open(phrase)?;
+    commands.iter().flat_map(|l| l.commands.iter().map(move |c| (&l.path, c))).find(|(_, c)| c.id == "assistant_website")
+}
+
 pub fn fetch_by_triggers<'a>(
     phrase: &str,
     commands: &'a [JCommandsList],

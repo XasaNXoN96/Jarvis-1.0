@@ -358,4 +358,24 @@ mod tests {
         assert_eq!(crate::uistate::settings().browser, "edge");
         crate::uistate::set_for_tests(crate::uistate::UiSettings::default());
     }
+
+    // the website command opens the site of the catalogue, a search stays a search (Linux: "open" only logs)
+    #[test]
+    fn the_website_command_uses_the_one_catalogue() {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../resources/commands/assistant");
+        let run = |phrase: &str| -> String {
+            crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow_mut().clear());
+            let ctx = CommandContext { phrase: phrase.into(), command_id: "assistant_website".into(), command_path: dir.clone(), language: "ru".into(), slots: None };
+            let r = execute(&dir.join("website.lua"), ctx, SandboxLevel::Full, Duration::from_secs(5));
+            assert!(r.is_ok(), "{}: {:?}", phrase, r.err().map(|e| e.to_string()));
+            crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow().join(" | "))
+        };
+        assert!(run("открой YouTube").contains("YouTube"), "not a Google search");
+        assert!(run("Открой ChatGPT").contains("ChatGPT"));
+        assert!(run("зайди на сайт гитхаб").contains("GitHub"));
+        assert!(run("открой сайт ютуб музыка").contains("YouTube Music"));
+        assert!(run("найди в гугле как установить python").contains("как установить python"));
+        assert!(run("открой сайт непонятныйсайт").contains("Не знаю такой сайт"), "an unknown name is said to be a search");
+        assert!(run("зайди на сайт example.com").contains("example.com"));
+    }
 }

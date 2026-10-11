@@ -33,6 +33,15 @@ else
   local ok = false
   if found.path then ok = pcall(open, found.path) end
   if not ok then ok = pcall(open, found.start) end
+  if not ok and found.web then
+    -- the program is not installed but it has a website (Discord, Telegram, Spotify): the website opens instead
+    if pcall(open, found.web) then
+      jarvis.app.forget(key)
+      say(T("Открываю сайт", "Opening the website"), found.name .. T(" (программа не установлена)", " (the program is not installed)"),
+          T(found.name .. " не установлен, открываю сайт", found.name .. " is not installed, opening the website"), "website")
+      return
+    end
+  end
   if ok then
     -- remember the document program: "пиши" then knows where to write
     if found.office then jarvis.state.set("office_app", found.office); jarvis.state.set("dict_last", "") end

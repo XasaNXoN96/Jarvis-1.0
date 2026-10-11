@@ -93,7 +93,7 @@ impl World {
         if crate::session::kind().is_some() {
             return Some("assistant_session".to_string());
         }
-        commands::fetch_program(text, &self.list).or_else(|| commands::fetch_dictation(text, &self.list)).or_else(|| commands::fetch_by_triggers(text, &self.list)).map(|(_, c)| c.id.clone())
+        commands::fetch_program(text, &self.list).or_else(|| commands::fetch_dictation(text, &self.list)).or_else(|| commands::fetch_site(text, &self.list)).or_else(|| commands::fetch_by_triggers(text, &self.list)).map(|(_, c)| c.id.clone())
     }
 
     // says a phrase; returns the id of the command that handled it
@@ -550,6 +550,24 @@ fn tasks_talk_mode_translation_speed_test_and_browser_commands_are_routed() {
         // the commands that were there before are not taken over
         ("переведи на английский привет", "assistant_translate"), ("переключи окно", "win_switch"), ("открой заметки", "assistant_note_open"),
         ("запиши идею купить молоко", "assistant_note_add"),
+    ] {
+        assert_eq!(w.route(phrase).as_deref(), Some(id), "{}", phrase);
+    }
+}
+
+#[test]
+fn sites_are_opened_by_name_searches_stay_searches_and_programs_stay_programs() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({}));
+    for (phrase, id) in [
+        ("открой ютуб", "assistant_website"), ("Открой YouTube", "assistant_website"), ("открой google", "assistant_website"),
+        ("Открой GitHub", "assistant_website"), ("открой инстаграм", "assistant_website"), ("Открой ChatGPT", "assistant_website"),
+        ("открой чат гпт", "assistant_website"), ("открой deepseek", "assistant_website"), ("открой яндекс карты", "assistant_website"),
+        ("найди в гугле как установить python", "assistant_website"),
+        // installed programs open as programs (their website is the fallback inside the program command)
+        ("открой дискорд", "assistant_program_open"), ("открой телеграм", "assistant_program_open"), ("открой блокнот", "assistant_program_open"),
+        // the talk mode keeps its own words
+        ("чат", "assistant_chat_start"), ("давай поговорим", "assistant_chat_start"),
     ] {
         assert_eq!(w.route(phrase).as_deref(), Some(id), "{}", phrase);
     }

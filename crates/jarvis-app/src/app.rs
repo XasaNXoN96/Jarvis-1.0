@@ -614,7 +614,10 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
 
     // a program by its spoken name ("открой ворт", "запусти тотал командер"): before the word triggers,
     // because the recognizer rarely writes the name the way the trigger list has it
-    let program_cmd = commands::fetch_program(text, commands_list).or_else(|| commands::fetch_dictation(text, commands_list));
+    // then a website by name ("открой YouTube" is YouTube, never a search)
+    let program_cmd = commands::fetch_program(text, commands_list)
+        .or_else(|| commands::fetch_dictation(text, commands_list))
+        .or_else(|| commands::fetch_site(text, commands_list));
 
     // a question for the AI ("что такое программа", "объясни, как работает Excel"): the commands do not run it
     if program_cmd.is_none() && jarvis_core::route::decide(text, jarvis_core::ai::is_configured()) == jarvis_core::route::Route::Ai {

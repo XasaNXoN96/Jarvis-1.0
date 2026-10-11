@@ -203,12 +203,21 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
                 t.set("process", m.app.process)?;
                 t.set("office", m.app.office)?;
                 t.set("path", crate::apps::locate(m.app))?;
+                // the website of the same program (Discord, Telegram, Spotify): opened when the program is not installed
+                t.set("web", crate::sites::by_id(m.app.id).map(|s| s.url))?;
                 Ok(mlua::Value::Table(t))
             }
             None => Ok(mlua::Value::Nil),
         }
     })?)?;
     jarvis.set("apps", apps)?;
+
+    // jarvis.sites.direct(phrase) -> url, name | nil: "открой YouTube" names a known site
+    // jarvis.sites.find(name) -> url, name | nil: the site called exactly so ("ютуб", "яндекс карты")
+    let sites = lua.create_table()?;
+    sites.set("direct", lua.create_function(|_, phrase: String| Ok(crate::sites::direct_open(&phrase).map(|s| (s.url, s.name)).unzip()))?)?;
+    sites.set("find", lua.create_function(|_, name: String| Ok(crate::sites::find(&crate::sites::words(&name)).map(|s| (s.url, s.name)).unzip()))?)?;
+    jarvis.set("sites", sites)?;
 
     // jarvis.ai.screen(question) -> answer | nil, reason: a question about the screen (only when allowed in the settings)
     let ai = lua.create_table()?;
