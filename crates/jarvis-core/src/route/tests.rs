@@ -63,3 +63,12 @@ fn the_text_is_shown_as_typed_without_the_wake_word() {
     // nothing to find: the matched text is used
     assert_eq!(original_without_wake("", "привет"), "привет");
 }
+
+#[test]
+fn a_question_about_a_program_is_a_question_not_a_launch() {
+    for t in ["Почему не запускается Word?", "почему не открывается эксель", "Почему тормозит total commander"] {
+        assert!(is_knowledge_question(t), "{}", t);
+        assert_eq!(decide(t, true), Route::Ai, "{}", t);
+        assert!(apps::parse_request(t).is_none(), "{}", t);
+    }
+}

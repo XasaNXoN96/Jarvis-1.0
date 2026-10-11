@@ -214,6 +214,9 @@ fn respond<S: Write>(stream: &mut S, status: &str, content_type: &str, body: &st
 
 // one port, two protocols: a TLS ClientHello starts with byte 0x16, plain http starts with a letter
 fn serve(stream: TcpStream, tls: Option<std::sync::Arc<rustls::ServerConfig>>) -> std::io::Result<()> {
+    if !is_running() {
+        return Ok(()); // switched off: the connection is dropped without an answer
+    }
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
     let mut first = [0u8; 1];

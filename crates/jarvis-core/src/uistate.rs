@@ -71,6 +71,7 @@ pub fn recent_actions() -> Vec<LogEntry> {
 pub struct UiSettings {
     pub voice_rate: f32,     // 0.6 .. 1.6, 1.0 = normal
     pub reaction_voice: String, // recorded reaction pack (jarvis-og / jarvis-remaster / jarvis-howdy), "" = app default
+    pub city: String,        // the city of the weather block ("" = not chosen: nothing is guessed)
     pub voice_name: String,  // "" = automatic (Piper, else a female Windows voice)
     pub ai_provider: String, // none | openai | openrouter | gemini | anthropic | ollama | custom
     pub ai_model: String,
@@ -81,7 +82,7 @@ pub struct UiSettings {
 
 impl Default for UiSettings {
     fn default() -> Self {
-        Self { voice_rate: 1.0, voice_name: String::new(), reaction_voice: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_key: String::new(), ai_url: String::new(), ai_fallback: false }
+        Self { voice_rate: 1.0, voice_name: String::new(), city: String::new(), reaction_voice: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_key: String::new(), ai_url: String::new(), ai_fallback: false }
     }
 }
 
@@ -136,6 +137,13 @@ pub fn update_settings(patch: &Value) {
         s.reaction_voice = v.chars().take(60).collect();
         if crate::voices::get_voice(&s.reaction_voice).is_some() { crate::voices::set_current_voice(&s.reaction_voice); }
     }
+    if let Some(v) = patch.get("city").and_then(|v| v.as_str()) {
+        let city: String = v.trim().chars().take(80).collect();
+        if city != s.city {
+            s.city = city;
+            crate::weather::city_changed();
+        }
+    }
     if let Some(v) = patch.get("voice_name").and_then(|v| v.as_str()) { s.voice_name = v.chars().take(120).collect(); }
     let before = (s.ai_provider.clone(), s.ai_model.clone(), s.ai_key.clone(), s.ai_url.clone());
     if let Some(v) = patch.get("ai_provider").and_then(|v| v.as_str()) { s.ai_provider = v.chars().take(30).collect(); }
@@ -153,13 +161,12 @@ pub fn update_settings(patch: &Value) {
 pub fn settings_json() -> Value {
     let s = settings();
     json!({
-        "voice_rate": s.voice_rate, "voice_name": s.voice_name, "reaction_voice": if s.reaction_voice.is_empty() { crate::voices::get_current_voice().map(|v| v.voice.id.clone()).unwrap_or_default() } else { s.reaction_voice.clone() },
+        "voice_rate": s.voice_rate, "voice_name": s.voice_name, "city": s.city, "reaction_voice": if s.reaction_voice.is_empty() { crate::voices::get_current_voice().map(|v| v.voice.id.clone()).unwrap_or_default() } else { s.reaction_voice.clone() },
         "ai_provider": s.ai_provider, "ai_model": s.ai_model, "ai_url": s.ai_url,
         "ai_key_saved": !s.ai_key.is_empty(),
         "ai_fallback": s.ai_fallback,
         "tts_enabled": crate::tts::is_enabled(),
         "piper": crate::tts::piper_available(),
-        "speech": json!({ "enabled": crate::tts::is_enabled(), "piper": crate::tts::piper_available(), "windows_voice": voice_name().starts_with("win:") }),
     })
 }
 
@@ -354,8 +361,10 @@ pub fn state_json() -> Value {
         "ai": crate::ai::status_json(),
         "active_chat": crate::ai::store().active().unwrap_or_default(),
         "piper": crate::tts::piper_available(),
+        "speech": json!({ "enabled": crate::tts::is_enabled(), "piper": crate::tts::piper_available(), "windows_voice": voice_name().starts_with("win:") }),
         "ai_busy": crate::ai::store().active().map(|id| crate::ai::is_busy(&id)).unwrap_or(false),
         "health": crate::health::json(),
+        "weather": crate::weather::json(),
         "events": recent_events(30),
         "last_output": crate::dialog::last_output(),
         "commands_count": crate::COMMANDS_COUNT.load(std::sync::atomic::Ordering::Relaxed),

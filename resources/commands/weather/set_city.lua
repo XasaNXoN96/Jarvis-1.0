@@ -9,4 +9,5 @@ if city == "" then
   return
 end
 jarvis.state.set("city", city)
+pcall(jarvis.app.set_city, city)   -- the weather block of the window uses the same city
 say(T("Город", "City"), city, T("Запомнил город " .. city, "City saved: " .. city))

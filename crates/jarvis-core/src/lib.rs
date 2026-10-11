@@ -54,6 +54,7 @@ pub mod route;
 pub mod apps;
 pub mod dialog;
 pub mod health;
+pub mod weather;
 pub mod session;
 pub mod secret;
 pub mod voice_install;

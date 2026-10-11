@@ -656,3 +656,61 @@ fn commands_and_their_replies_are_not_sent_to_the_model() {
     let texts: Vec<&str> = ctx.iter().map(|m| m.content.as_str()).collect();
     assert_eq!(texts, vec!["что такое питон", "Язык программирования", "а кто его создал"]);
 }
+
+// ---------- a stream that stays silent / a provider that does not know a parameter ----------
+#[test]
+fn a_silent_stream_is_asked_again_without_a_stream_and_remembered() {
+    FIRST_FRAGMENT_MS.store(500, Ordering::SeqCst);
+    std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+    let s2 = seen.clone();
+    std::thread::spawn(move || {
+        let mut held: Vec<std::net::TcpStream> = Vec::new();
+        while let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = vec![0u8; 16384];
+            let n = stream.read(&mut buf).unwrap_or(0);
+            let req = String::from_utf8_lossy(&buf[..n]).to_string();
+            s2.lock().push(req.clone());
+            if req.contains("\"stream\":true") {
+                held.push(stream); // the first request: accepted and never answered
+            } else {
+                let body = ok_body("Ответ без потока");
+                let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
+            }
+        }
+    });
+    let base = format!("http://127.0.0.1:{}", port);
+    let store = leaked_store();
+    let t = Instant::now();
+    let out = send_with(store, conf(&base), None, "вопрос", false).unwrap();
+    let id = out.chat_id.clone();
+    let timing = out.handle.join().unwrap();
+    assert!(t.elapsed() < Duration::from_secs(6), "the answer must not wait for the stalled stream: {:?}", t.elapsed());
+    assert_eq!(messages(store, &id).last().unwrap().content, "Ответ без потока");
+    assert!(timing.fallback && !timing.streamed, "{:?}", timing);
+    // the next question does not even try a stream for a while
+    let id2 = run(store, conf(&base), Some(&id), "второй").unwrap();
+    assert_eq!(messages(store, &id2).last().unwrap().content, "Ответ без потока");
+    let reqs = seen.lock().clone();
+    assert_eq!(reqs.iter().filter(|r| r.contains("\"stream\":true")).count(), 1, "one failed stream attempt only");
+    assert_eq!(reqs.iter().filter(|r| r.contains("\"stream\":false")).count(), 2);
+    FIRST_FRAGMENT_MS.store(15_000, Ordering::SeqCst);
+}
+
+#[test]
+fn gemini_is_asked_to_think_little_and_a_provider_that_refuses_the_parameter_is_asked_again_without_it() {
+    let store = leaked_store();
+    let m = mock(vec![(400, "{\"error\":{\"message\":\"Unknown field reasoning_effort\"}}".to_string(), 0), (200, ok_body("Готово"), 0)]);
+    let c = Ok(ProviderConf { kind: Kind::OpenAiCompatible, name: "Google Gemini".into(), base: m.base.clone(), model: "gemini-flash-latest".into(), key: KEY.into() });
+    let id = run(store, c, None, "вопрос").unwrap();
+    assert_eq!(messages(store, &id).last().unwrap().content, "Готово");
+    let reqs = m.requests.lock().clone();
+    assert_eq!(reqs.len(), 2);
+    assert!(reqs[0].contains("reasoning_effort"), "the first request carries the parameter");
+    assert!(!reqs[1].contains("reasoning_effort"), "the second one does not");
+    // other providers never get it
+    let o = ProviderConf { kind: Kind::OpenAiCompatible, name: "OpenAI".into(), base: "http://x".into(), model: "m".into(), key: "k".into() };
+    assert!(build_body_opts(&o, &[], "s", true).get("reasoning_effort").is_none());
+}

@@ -207,6 +207,17 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             json!({ "ok": true })
         }
         "ai_test" => ai_test(),
+        // the phone remote card of the home page: the same server as the voice command "включи удалённое управление"
+        "remote_on" => match crate::remote::start() {
+            Ok(url) => json!({ "ok": true, "enabled": true, "url": url }),
+            Err(e) => json!({ "ok": false, "enabled": crate::remote::is_running(), "message": format!("Не удалось включить пульт: {}", e) }),
+        },
+        "remote_off" => {
+            crate::remote::stop();
+            // the listener closes within a fraction of a second
+            std::thread::sleep(Duration::from_millis(250));
+            json!({ "ok": true, "enabled": crate::remote::is_running() })
+        }
         "voice_install" => match crate::voice_install::start() {
             Ok(()) => json!({ "ok": true }),
             Err(e) => json!({ "ok": false, "message": e }),

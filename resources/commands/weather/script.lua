@@ -11,7 +11,8 @@ end
 
 local city = strip_words(phrase, STOP)
 if city == "" then
-  city = jarvis.state.get("city") or "Tashkent"
+  local chosen = jarvis.app.city and jarvis.app.city() or ""
+  city = (chosen ~= "" and chosen) or jarvis.state.get("city") or "Tashkent"
 end
 
 local url = "https://wttr.in/" .. urlencode(city) .. "?format=3&lang=" .. (jarvis.context.language == "ua" and "uk" or jarvis.context.language)

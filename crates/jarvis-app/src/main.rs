@@ -77,7 +77,7 @@ fn main() -> Result<(), String> {
     if force_text {
         jarvis_core::VOICE_TEXT_ONLY.store(true, std::sync::atomic::Ordering::SeqCst);
         info!("Text mode forced by --text flag.");
-        *jarvis_core::VOICE_ERROR.lock() = "Jarvis запущен ярлыком «только текст» (ключ --text). Нажмите «Включить голос» или запустите обычный ярлык «Jarvis»".to_string();
+        *jarvis_core::VOICE_ERROR.lock() = "Джарвис запущен ярлыком «только текст» (ключ --text). Нажмите «Включить голос» или запустите обычный ярлык «Jarvis»".to_string();
     }
 
     // init recorder (no microphone -> text mode)

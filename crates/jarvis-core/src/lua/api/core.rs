@@ -139,6 +139,12 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
         let window = false;
         Ok(!window && !crate::tts::is_enabled())
     })?)?;
+    // jarvis.app.city() / jarvis.app.set_city(name): the one city of the program (the weather block and the weather command)
+    app.set("city", lua.create_function(|_, ()| Ok(crate::uistate::settings().city))?)?;
+    app.set("set_city", lua.create_function(|_, name: String| {
+        crate::uistate::update_settings(&serde_json::json!({ "city": name }));
+        Ok(())
+    })?)?;
     // jarvis.app.run_text(text): handle a phrase as an ordinary command (it goes to the queue of typed commands)
     app.set("run_text", lua.create_function(|_, text: String| Ok(crate::remote::push_text(&text)))?)?;
     // jarvis.app.show_page("commands"): switch the Jarvis window to a page

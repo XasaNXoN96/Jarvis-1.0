@@ -27,7 +27,33 @@ pub const MAX_CONTEXT_CHARS: usize = 8_000;
 pub const MAX_MESSAGE_CHARS: usize = 8_000;
 const MAX_STORED_MESSAGES: usize = 500;
 // how long the provider may stay silent (no answer started, or a stream that stopped) before the error is shown
-const STALL_LIMIT: Duration = Duration::from_secs(45);
+const STALL_LIMIT: Duration = Duration::from_secs(30);
+// no first fragment of a stream after this long: the same question is asked once more without a stream
+// a stream that did not work: the next questions are asked without it for a while
+// (per server address: a problem of one provider says nothing about another)
+static STREAM_BROKEN: Lazy<Mutex<HashMap<String, std::time::Instant>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+const STREAM_RETRY_AFTER: Duration = Duration::from_secs(10 * 60);
+// Gemini is asked to think little (a long hidden "thinking" is a common reason for a slow first word);
+// a provider that does not know the parameter is asked without it from then on
+static NO_REASONING_PARAM: Lazy<Mutex<std::collections::HashSet<String>>> = Lazy::new(|| Mutex::new(std::collections::HashSet::new()));
+// how long to wait for the first fragment of a stream (milliseconds; shortened in the tests)
+static FIRST_FRAGMENT_MS: AtomicU64 = AtomicU64::new(15_000);
+
+fn stream_allowed(conf: &ProviderConf) -> bool {
+    match STREAM_BROKEN.lock().get(&conf.base) {
+        Some(t) => t.elapsed() > STREAM_RETRY_AFTER,
+        None => true,
+    }
+}
+
+fn reasoning_param_ok(conf: &ProviderConf) -> bool {
+    !NO_REASONING_PARAM.lock().contains(&conf.base)
+}
+
+// the provider refused "reasoning_effort": true when this is the first time (the question is asked again without it)
+fn reasoning_refused(conf: &ProviderConf, status: u16, body: &str) -> bool {
+    (status == 400 || status == 422) && body.to_lowercase().contains("reasoning") && NO_REASONING_PARAM.lock().insert(conf.base.clone())
+}
 
 // ---------------------------------------------------------------------------------------------
 // provider
@@ -415,7 +441,11 @@ pub fn build_body_opts(conf: &ProviderConf, history: &[ChatMsg], system: &str, s
             for m in history {
                 msgs.push(json!({ "role": m.role, "content": m.content }));
             }
-            json!({ "model": conf.model, "messages": msgs, "stream": stream })
+            let mut body = json!({ "model": conf.model, "messages": msgs, "stream": stream });
+            if conf.name.contains("Gemini") && reasoning_param_ok(conf) {
+                body["reasoning_effort"] = json!("low");
+            }
+            body
         }
         Kind::Anthropic => {
             let msgs: Vec<Value> = alternate(history).iter().map(|m| json!({ "role": m.role, "content": m.content })).collect();
@@ -581,6 +611,9 @@ pub fn request_answer(conf: &ProviderConf, history: &[ChatMsg], system: &str) ->
     let resp = with_key(conf, client()?.post(endpoint(conf)).json(&body)).send().map_err(|e| net_error(conf, e))?;
     let status = resp.status().as_u16();
     let text = resp.text().map_err(|e| net_error(conf, e))?;
+    if reasoning_refused(conf, status, &text) {
+        return request_answer(conf, history, system);
+    }
     if !(200..300).contains(&status) {
         return Err(map_status(conf, status, &text));
     }
@@ -615,10 +648,14 @@ pub fn request_answer_stream(
     use std::io::BufRead;
     let body = build_body_opts(conf, history, system, true);
     probe.request_ms = Some(t0.elapsed().as_millis() as u64);
-    let resp = with_key(conf, client()?.post(endpoint(conf)).header("Accept", "text/event-stream").json(&body)).send().map_err(|e| net_error(conf, e))?;
+    // "identity": a compressed stream may be held back by the server or the client until a buffer is full
+    let resp = with_key(conf, client()?.post(endpoint(conf)).header("Accept", "text/event-stream").header("Accept-Encoding", "identity").json(&body)).send().map_err(|e| net_error(conf, e))?;
     let status = resp.status().as_u16();
     if !(200..300).contains(&status) {
         let text = resp.text().unwrap_or_default();
+        if reasoning_refused(conf, status, &text) {
+            return request_answer_stream(conf, history, system, cancel, t0, probe, on_delta);
+        }
         // a server that does not know "stream": ask once more the usual way
         if (status == 400 || status == 422) && text.to_lowercase().contains("stream") {
             let answer = request_answer(conf, history, system)?;
@@ -711,7 +748,13 @@ pub fn status_reset() {
     *STATUS.lock() = Status::unverified();
 }
 
+// when the provider last really answered (a request or a check that worked)
+static LAST_OK: AtomicU64 = AtomicU64::new(0);
+
 fn status_set(conn: Conn, detail: &str) {
+    if conn == Conn::Connected {
+        LAST_OK.store(now(), Ordering::SeqCst);
+    }
     *STATUS.lock() = Status { conn, detail: detail.to_string(), at: now() };
     crate::uistate::log_event("ai", &format!("{}{}", match conn { Conn::Connected => "ИИ: подключение подтверждено", Conn::Error => "ИИ: ошибка", Conn::Checking => "ИИ: проверка подключения", Conn::Unverified => "ИИ: подключение не проверено" }, if detail.is_empty() { String::new() } else { format!(" — {}", detail) }));
 }
@@ -739,7 +782,8 @@ pub fn status_json() -> Value {
                 Conn::Checking => ("CHECKING", "проверяю…".to_string()),
                 Conn::Unverified => ("DISCONNECTED", "ключ задан, подключение ещё не проверено".to_string()),
             };
-            json!({ "state": state, "configured": true, "provider": c.name, "model": c.model, "detail": detail, "at": s.at, "timing": timing })
+            let last_ok = LAST_OK.load(Ordering::SeqCst);
+            json!({ "state": state, "configured": true, "provider": c.name, "model": c.model, "detail": detail, "at": s.at, "last_ok": if last_ok == 0 { Value::Null } else { json!(last_ok) }, "timing": timing })
         }
     }
 }
@@ -758,6 +802,7 @@ pub struct Timing {
     pub total_ms: u64,                      // submit -> the whole answer
     pub first_speech_queued_ms: Option<u64>, // submit -> the first phrase is handed to the voice
     pub first_speech_started_ms: Option<u64>, // submit -> the voice starts working on it
+    pub fallback: bool,                     // the stream gave nothing and the answer was asked once more without it
 }
 
 static LAST_TIMING: Lazy<Mutex<Option<Timing>>> = Lazy::new(|| Mutex::new(None));
@@ -1001,21 +1046,37 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
     store.append_with(&id, "user", text, &rid, "ai");
     let t0 = std::time::Instant::now();
     let handle = std::thread::spawn(move || {
+        // the messages of the request thread carry its number: after a fallback only the new thread is listened to
         enum Msg {
-            Delta(String),
-            Done(Result<String, AiError>, Probe),
+            Delta(u8, String),
+            Done(u8, Result<String, AiError>, Probe),
         }
         let (tx, rx) = mpsc::channel::<Msg>();
-        let (conf2, history2) = (conf.clone(), history);
-        let cancel2 = cancel.clone();
-        std::thread::spawn(move || {
-            let mut probe = Probe::default();
-            let tx2 = tx.clone();
-            let r = request_answer_stream(&conf2, &history2, &system_prompt(), &cancel2, t0, &mut probe, &mut |d| {
-                let _ = tx2.send(Msg::Delta(d.to_string()));
+        let history = Arc::new(history);
+        let stream_cancel = Arc::new(AtomicBool::new(false));
+        let start_request = |generation: u8, streaming: bool, stream_cancel: Arc<AtomicBool>| {
+            let (tx, conf2, history2) = (tx.clone(), conf.clone(), history.clone());
+            std::thread::spawn(move || {
+                let mut probe = Probe::default();
+                let tx2 = tx.clone();
+                let r = if streaming {
+                    request_answer_stream(&conf2, &history2, &system_prompt(), &stream_cancel, t0, &mut probe, &mut |d| {
+                        let _ = tx2.send(Msg::Delta(generation, d.to_string()));
+                    })
+                } else {
+                    // without a stream the whole answer comes as one fragment
+                    probe.request_ms = Some(t0.elapsed().as_millis() as u64);
+                    let r = request_answer(&conf2, &history2, &system_prompt());
+                    if let Ok(a) = &r {
+                        let _ = tx2.send(Msg::Delta(generation, a.clone()));
+                    }
+                    r
+                };
+                let _ = tx.send(Msg::Done(generation, r, probe));
             });
-            let _ = tx.send(Msg::Done(r, probe));
-        });
+        };
+        let (mut generation, mut fell_back) = (1u8, false);
+        start_request(generation, stream_allowed(&conf), stream_cancel.clone());
 
         let mut speaker = SentenceSpeaker::new();
         let say_aloud = speak;
@@ -1036,15 +1097,29 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
         let mut last_activity = std::time::Instant::now();
         let result = loop {
             if cancel.load(Ordering::SeqCst) {
+                stream_cancel.store(true, Ordering::SeqCst);
                 break Err(AiError::Cancelled);
+            }
+            if first_chunk.is_none() && !fell_back && last_activity.elapsed() > Duration::from_millis(FIRST_FRAGMENT_MS.load(Ordering::SeqCst)) && stream_allowed(&conf) {
+                // a stream that says nothing: ask once more the usual way and remember it for a while
+                warn!("AI: no first fragment, asking again without a stream");
+                crate::uistate::log_event("ai", "Поток не ответил: повторяю запрос без потока");
+                stream_cancel.store(true, Ordering::SeqCst);
+                STREAM_BROKEN.lock().insert(conf.base.clone(), std::time::Instant::now());
+                fell_back = true;
+                generation += 1;
+                last_activity = std::time::Instant::now();
+                start_request(generation, false, Arc::new(AtomicBool::new(false)));
+                continue;
             }
             if last_activity.elapsed() > STALL_LIMIT {
                 // nothing arrives any more: stop waiting, the request thread is told to give up
-                cancel.store(true, Ordering::SeqCst);
+                stream_cancel.store(true, Ordering::SeqCst);
                 break Err(AiError::Timeout);
             }
             match rx.recv_timeout(Duration::from_millis(60)) {
-                Ok(Msg::Delta(d)) => {
+                Ok(Msg::Delta(g, _)) | Ok(Msg::Done(g, _, _)) if g != generation => continue,
+                Ok(Msg::Delta(_, d)) => {
                     last_activity = std::time::Instant::now();
                     chunks += 1;
                     if first_chunk.is_none() {
@@ -1055,7 +1130,7 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
                     let parts = speaker.push(&d);
                     speak_now(parts, &mut first_queued);
                 }
-                Ok(Msg::Done(r, p)) => {
+                Ok(Msg::Done(_, r, p)) => {
                     probe_out = p;
                     break r;
                 }
@@ -1105,6 +1180,7 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
             total_ms,
             first_speech_queued_ms: first_queued,
             first_speech_started_ms: first_started,
+            fallback: fell_back,
         };
         info!("AI timing: request out {} ms, first fragment {:?} ms, total {} ms, streamed={}, fragments={}, voice queued {:?} ms", timing.to_request_ms, timing.first_chunk_ms, timing.total_ms, timing.streamed, timing.chunks, timing.first_speech_queued_ms);
         *LAST_TIMING.lock() = Some(timing.clone());

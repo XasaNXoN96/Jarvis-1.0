@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Jarvis</title>
+<title>Джарвис</title>
 <link rel="icon" type="image/png" href="/icon.png">
 <style>
   :root {
@@ -58,16 +58,31 @@
   h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
   .lead { color: var(--dim); margin: 0 0 16px; }
 
-  /* home: JARVIS PRO. A big hologram sphere in the middle, the input under it, the cards on the right */
+  /* home: a big hologram sphere in the middle, the input under it, the cards on the right */
   #page-home { padding: 14px 18px 14px 12px; overflow: hidden; }
   #page-home::after { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0;
     background: repeating-linear-gradient(0deg, rgba(90,209,255,.04) 0 1px, transparent 1px 4px); animation: scan 7s linear infinite; }
   @keyframes scan { from { background-position-y: 0; } to { background-position-y: 80px; } }
   .hgrid { flex: 1; min-height: 0; display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) 282px; position: relative; z-index: 1; }
   .hcenter { display: flex; flex-direction: column; min-height: 0; min-width: 0; position: relative; }
-  .vchip.floating { position: absolute; top: 2px; right: 4px; z-index: 3; }
-  .hero { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 6px 8px; }
-  .orbwrap { width: min(100%, 380px, 46vh); text-align: center; flex-shrink: 0; transition: width .35s; }
+  .topright { display: flex; justify-content: flex-end; align-items: center; gap: 12px; flex-wrap: wrap; flex-shrink: 0; padding: 0 2px 6px; position: relative; z-index: 3; }
+  .clockbox { text-align: right; line-height: 1.15; } .clk { font-size: 22px; font-weight: 600; letter-spacing: .04em; color: var(--text); font-variant-numeric: tabular-nums; }
+  .clk-date { color: var(--dim); font-size: 12px; text-transform: capitalize; }
+  .wbox { display: flex; flex-direction: column; align-items: flex-start; border: 1px solid var(--line); background: #0d163099; color: var(--text); border-radius: 12px; padding: 4px 12px; font: inherit; cursor: pointer; text-align: left; line-height: 1.2; }
+  .wbox:hover { border-color: var(--accent); } .wbox .w-main { font-size: 15px; } .wbox small { color: var(--accent); font-size: 11px; letter-spacing: .08em; }
+  .wbox.muted .w-main { color: var(--dim); font-size: 13px; }
+  #toast { position: fixed; left: 50%; bottom: 84px; transform: translate(-50%, 20px); background: #0d2a4af2; border: 1px solid #5ad1ff77; color: var(--text); padding: 8px 18px; border-radius: 999px; font-size: 13px; opacity: 0; pointer-events: none; transition: .25s; z-index: 50; }
+  #toast.on { opacity: 1; transform: translate(-50%, 0); }
+  .rmrow { display: flex; align-items: center; gap: 12px; margin: 10px 0 8px; font-size: 14px; }
+  .rmoff { color: var(--dim); font-size: 13px; padding: 8px 0 4px; }
+  .qrbox { background: #fff; border-radius: 14px; padding: 8px; width: 176px; margin: 8px auto 8px; } .qrbox img { width: 160px; height: 160px; display: block; }
+  .rmlink { word-break: break-all; user-select: all; font-size: 12px; color: var(--accent); text-align: center; margin-bottom: 8px; }
+  #rm-on { text-align: center; }
+  .rmerr { color: #ff9aa6 !important; } .rmhelp { margin-top: 8px; display: block; color: var(--dim); font-size: 11.5px; line-height: 1.4; }
+  #card-timers .scroll { max-height: 150px; }
+  .hero { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 6px 8px; }
+  .hero > * { margin-top: auto; margin-bottom: auto; }
+  .orbwrap { width: min(100%, 380px, 38vh); text-align: center; flex-shrink: 0; transition: width .35s; }
   #orb { width: 100%; aspect-ratio: 1; cursor: pointer; display: block;
          filter: drop-shadow(0 0 6px rgba(90,209,255,.85)) drop-shadow(0 0 20px rgba(90,209,255,.35)); }
   #state { margin-top: 2px; font-size: 12px; letter-spacing: .2em; text-transform: uppercase; color: var(--accent); text-shadow: 0 0 12px #5ad1ff88; }
@@ -77,7 +92,7 @@
   .examples { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 14px; }
   .ex { border: 1px solid var(--line); background: #0d163099; color: var(--dim); padding: 5px 14px; border-radius: 999px; font: inherit; font-size: 13px; cursor: pointer; }
   .ex:hover { color: var(--accent); border-color: var(--accent); }
-  .banner { margin-top: 14px; padding: 10px 16px; border-radius: 12px; border: 1px solid #ffd16655; background: #3a2d0acc; color: #ffe3a3; font-size: 14px; text-align: left; }
+  .banner { margin-top: 10px; padding: 8px 14px; border-radius: 12px; border: 1px solid #ffd16655; background: #3a2d0acc; color: #ffe3a3; font-size: 14px; text-align: left; }
   .banner b { color: #fff1c9; }
   .hlog { display: none; flex: 1; min-height: 120px; overflow-y: auto; flex-direction: column; gap: 9px; padding: 8px 4px 8px 0; }
   .hlog::-webkit-scrollbar { width: 8px; } .hlog::-webkit-scrollbar-thumb { background: #5ad1ff33; border-radius: 8px; }
@@ -117,6 +132,7 @@
   .aicard small { color: var(--dim); display: block; font-size: 12.5px; overflow-wrap: anywhere; margin-top: 4px; }
   .aicard .acts { display: flex; gap: 8px; margin-top: 12px; flex-direction: column; align-items: flex-start; }
   body.on-home .topbar { display: none; }
+  @media (max-width: 760px) { details.grp > summary { padding: 12px; } .grp .gt b { font-size: 17px; } .chip { font-size: 15px; padding: 6px 12px; } .grp .gc { display: none; } }
   /* narrower window: the cards go under the conversation, the input stays at the bottom of the conversation */
   @media (max-width: 1000px) {
     #page-home { overflow-y: auto; }
@@ -222,7 +238,16 @@
   .grp .gt { flex: 1; min-width: 0; } .grp .gt b { font-size: 15px; } .grp .gt small { display: block; color: var(--dim); }
   .grp .gc { color: var(--dim); font-size: 12px; white-space: nowrap; }
   .grp .body { padding: 0 14px 12px; }
-  .cmdrow { padding: 8px 0; border-top: 1px solid var(--line); }
+  #page-commands h1 { font-size: 26px; } #page-commands .lead { font-size: 16px; }
+  #page-commands #cmd-search { font-size: 17px; padding: 12px 14px; }
+  #page-commands .btn { font-size: 15px; padding: 9px 15px; }
+  .quick { margin-bottom: 14px; } .quick button { font-size: 16px; padding: 12px 14px; } .quick small { font-size: 13px; }
+  details.grp { border-radius: 14px; margin-bottom: 12px; }
+  details.grp > summary { padding: 16px 18px; gap: 14px; }
+  .grp .gt b { font-size: 19px; } .grp .gt small { font-size: 14.5px; margin-top: 2px; } .grp .gc { font-size: 15px; }
+  .grp .body { padding: 0 18px 16px; }
+  .chip { margin: 6px 8px 0 0; padding: 7px 15px; font-size: 16px; border-radius: 999px; line-height: 1.3; }
+  .cmdrow { padding: 10px 0; border-top: 1px solid var(--line); }
   .cmdrow:first-child { border-top: 0; }
   .cmdrow .id { color: var(--dim); font-size: 11px; margin-left: 6px; }
 
@@ -248,10 +273,9 @@
 <body>
 <div class="shell">
   <nav>
-    <div class="brand"><span class="dot" id="dot"></span><div><b>JARVIS</b><small>PRO</small></div></div>
+    <div class="brand"><span class="dot" id="dot"></span><b>Джарвис</b></div>
     <button data-page="home" class="active"><span class="ei">◉</span><span>Главная</span></button>
     <button data-page="chat"><span class="ei">💬</span><span>Диалог</span></button>
-    <button data-page="panel"><span class="ei">📊</span><span>Панель</span></button>
     <button data-page="commands"><span class="ei">☰</span><span>Команды</span></button>
     <button data-page="settings"><span class="ei">⚙</span><span>Настройки</span></button>
     <div class="grow"></div>
@@ -268,9 +292,13 @@
     <section class="page active" id="page-home">
       <div class="hgrid">
         <div class="hcenter">
-          <span class="vchip floating" id="voice-chip-h" data-state="ERROR" title="Состояние голоса"><i></i><span class="vl">VOICE</span><b>…</b></span>
+          <div class="topright">
+            <div class="clockbox" title="Время и дата берутся с этого компьютера"><div class="clk" id="clk-time">--:--</div><div class="clk-date" id="clk-date"></div></div>
+            <button type="button" class="wbox" id="wbox" title="Погода: выберите город в настройках"><span class="w-main" id="w-main">Погода…</span><small id="w-city"></small></button>
+            <span class="vchip" id="voice-chip-h" data-state="ERROR" title="Состояние голоса"><i></i><span class="vl">VOICE</span><b>…</b></span>
+          </div>
           <div class="hero">
-            <div class="orbwrap"><canvas id="orb" width="760" height="760" title="Нажмите: Jarvis начнёт слушать"></canvas><div id="state">готов</div></div>
+            <div class="orbwrap"><canvas id="orb" width="760" height="760" title="Нажмите: Джарвис начнёт слушать"></canvas><div id="state">готов</div></div>
             <div class="herotext">
               <div id="status">Здравствуйте! Чем могу помочь?</div>
               <div class="howto" id="howto">Нажмите на шар или скажите «Джарвис», затем команду. Или напишите её внизу.</div>
@@ -282,7 +310,7 @@
           <div class="hlog" id="h-log"></div>
           <form class="composer" id="h-form" autocomplete="off">
             <input id="h-input" placeholder="Напишите сообщение или команду…" autofocus>
-            <button type="button" class="ib" id="h-listen" title="Говорить: Jarvis послушает одну фразу">🎙</button>
+            <button type="button" class="ib" id="h-listen" title="Говорить: Джарвис послушает одну фразу">🎙</button>
             <button type="button" class="ib" id="h-mic" title="Микрофон">🎤</button>
             <button type="submit" class="sb" id="h-send">Отправить</button>
           </form>
@@ -303,9 +331,24 @@
             <div class="hrow"><span>MODEL</span><b id="ai-mod">—</b></div>
             <div class="hrow" style="margin-top:10px"><span>STATE</span><b><span class="pill" id="ai-pill">—</span></b></div>
             <small id="ai-detail"></small>
+            <small id="ai-last"></small>
             <small id="ai-timing"></small>
             <div class="acts"><button class="btn small" id="ai-check" type="button">Проверить подключение</button><button class="btn small" id="ai-settings" type="button">Настройки ИИ</button></div>
           </div>
+          <div class="card pro remotecard" id="card-remote">
+            <h3>Пульт телефона</h3>
+            <div class="hrow"><span>СТАТУС</span><b><span class="pill" id="rm-pill">—</span></b></div>
+            <div class="rmrow"><label class="sw"><input type="checkbox" id="rm-switch"><span></span></label><span id="rm-label">Выключен</span></div>
+            <div id="rm-off" class="rmoff">Включите пульт, чтобы получить QR-код и ссылку.</div>
+            <div id="rm-on" style="display:none">
+              <div class="qrbox"><img id="rm-qr" alt="QR-код пульта"></div>
+              <div class="rmlink" id="rm-url"></div>
+              <button class="btn small" id="rm-copy" type="button">Копировать ссылку</button>
+            </div>
+            <small class="rmerr" id="rm-err"></small>
+            <small class="rmhelp">Телефон и компьютер должны быть в одной Wi-Fi сети. Наведите камеру телефона на QR-код или откройте ссылку. Пульт работает в локальной сети, не через интернет. Ссылка секретная.</small>
+          </div>
+          <div class="card pro" id="card-timers"><h3>Таймеры и задачи</h3><div class="scroll" id="timers"><div class="empty">Нет активных. Скажите «таймер на 5 минут» или «напомни через 10 минут позвонить маме».</div></div></div>
           <div class="card pro evcard"><h3>Command Output</h3><div class="scroll" id="events"><div class="empty">Событий пока нет.</div></div></div>
           <div class="card pro hubcard"><h3>Intelligence Hub</h3><div class="scroll" id="hub"></div></div>
         </aside>
@@ -327,49 +370,23 @@
         </div>
       </div>
       <div id="tab-log" style="display:none;flex:1;min-height:0;flex-direction:column">
-        <p class="lead">Что вы говорили и писали как команды, и ответы Jarvis.</p>
+        <p class="lead">Что вы говорили и писали как команды, и ответы Джарвиса.</p>
         <div id="log"></div>
       </div>
     </section>
 
-<section class="page" id="page-panel">
-      <h1>Панель управления</h1>
-      <p class="lead">Задачи, напоминания, журнал действий и состояние компьютера.</p>
-      <div class="grid4">
-        <div class="card stat"><div class="k"><span class="ei">⏱</span>Таймеры</div><div class="v" id="s-timers">0</div><div class="s" id="s-timers2">активных</div></div>
-        <div class="card stat"><div class="k"><span class="ei">🧠</span>Процессор</div><div class="v" id="s-cpu">—</div><div class="s">загрузка</div></div>
-        <div class="card stat"><div class="k"><span class="ei">💾</span>Память</div><div class="v" id="s-ram">—</div><div class="s" id="s-ram2"></div></div>
-        <div class="card stat"><div class="k"><span class="ei">🛡</span>Jarvis</div><div class="v" id="s-jarvis" style="color:var(--ok)">Онлайн</div><div class="s" id="s-jarvis2"></div></div>
-      </div>
-      <div class="grid2">
-        <div class="card"><h3><span class="ei">⏱</span>Задачи и напоминания</h3><div id="timers"><div class="empty">Нет активных. Скажите «таймер на 5 минут» или «напомни через 10 минут позвонить маме».</div></div></div>
-        <div class="card"><h3><span class="ei">📈</span>Журнал действий</h3><div id="actions"><div class="empty">Пока пусто.</div></div></div>
-      </div>
-      <div class="grid2">
-        <div class="card"><h3><span class="ei">📈</span>Состояние компьютера</h3>
-          <div class="lab"><span>Процессор</span><span id="b-cpu-t">—</span></div><div class="bar" id="b-cpu"><i style="width:0"></i></div>
-          <div class="lab"><span>Память</span><span id="b-ram-t">—</span></div><div class="bar" id="b-ram"><i style="width:0"></i></div>
-          <div class="lab"><span>Диск C:</span><span id="b-disk-t">—</span></div><div class="bar" id="b-disk"><i style="width:0"></i></div>
-        </div>
-        <div class="card"><h3><span class="ei">✨</span>Быстрые действия</h3>
-          <div class="qa">
-            <button data-cmd="таймер на 5 минут">Таймер 5 минут<small>запустить сразу</small></button>
-            <button data-cmd="диагностика">Диагностика<small>проверить всё</small></button>
-            <button data-cmd="заблокируй компьютер">Блокировка<small>заблокировать ПК</small></button>
-            <button data-cmd="что ты умеешь">Все команды<small>список с примерами</small></button>
-          </div>
-        </div>
-      </div>
-      <div class="card"><h3><span class="ei">🧩</span>Разделы команд</h3><div id="modules"><div class="empty">Загрузка…</div></div>
-        <small class="dim">Выключенный раздел перестаёт отвечать на свои команды (например, выключите «Файлы и папки», и «найди файл» не сработает). Включить обратно можно здесь или на странице «Команды».</small></div>
-    </section>
-
-    <section class="page" id="page-commands">
+<section class="page" id="page-commands">
       <h1>Команды по разделам</h1>
       <p class="lead">Нажмите на раздел, чтобы раскрыть его. Нажмите на фразу — она вставится в поле ввода. Переключатель справа включает или выключает весь раздел.</p>
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
         <input type="text" id="cmd-search" placeholder="Найти команду, например: таймер" style="flex:1;min-width:220px">
         <button class="btn" id="cmd-expand">Раскрыть все</button><button class="btn" id="cmd-collapse">Свернуть все</button>
+      </div>
+      <div class="qa quick" id="quick">
+        <button data-cmd="таймер на 5 минут">Таймер 5 минут<small>запустить сразу</small></button>
+        <button data-cmd="диагностика">Диагностика<small>проверить всё</small></button>
+        <button data-cmd="заблокируй компьютер">Блокировка<small>заблокировать ПК</small></button>
+        <button data-cmd="что ты умеешь">Все команды<small>список с примерами</small></button>
       </div>
       <div id="commands">Загрузка…</div>
     </section>
@@ -379,7 +396,7 @@
       <p class="lead">Микрофон, голос, ИИ-провайдер и внешний вид. Изменения сохраняются сами.</p>
 
       <div class="card" style="margin-bottom:14px"><h3><span class="ei">🎤</span>Микрофон и звук</h3>
-        <div class="setrow"><div class="l">Микрофон<small>применится после перезапуска Jarvis</small></div>
+        <div class="setrow"><div class="l">Микрофон<small>применится после перезапуска Джарвиса</small></div>
           <div class="r"><select id="mic-select"><option value="-1">Системный по умолчанию</option></select></div></div>
         <div class="setrow"><div class="l">Режим<small>выключите микрофон, чтобы управлять только текстом</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="mic-on"><span></span></label></div></div>
@@ -390,11 +407,11 @@
       </div>
 
       <div class="card" style="margin-bottom:14px"><h3><span class="ei">🔊</span>Голос</h3>
-        <div class="setrow"><div class="l">Голос реплик Jarvis<small>записанные фразы («Да, сэр», «Слушаю»): Jarvis OG, Remaster, Howdy</small></div>
+        <div class="setrow"><div class="l">Голос реплик Джарвиса<small>записанные фразы («Да, сэр», «Слушаю»): Jarvis OG, Remaster, Howdy</small></div>
           <div class="r"><select id="rv-select"></select> <button class="btn" id="rv-test">Послушать</button></div></div>
-        <div class="setrow" id="vi-row"><div class="l">Голос Jarvis<small id="vi-hint">Свой женский голос Jarvis (≈80 МБ), чтобы не говорил голос Windows</small></div>
-          <div class="r"><button class="btn" id="vi-btn">Установить голос Jarvis</button></div></div>
-        <div class="setrow"><div class="l">Голос<small id="voice-hint">Jarvis (Piper) — нейросетевой голос, работает без интернета</small></div>
+        <div class="setrow" id="vi-row"><div class="l">Голос Джарвиса<small id="vi-hint">Свой женский голос Джарвиса (≈80 МБ), чтобы не говорил голос Windows</small></div>
+          <div class="r"><button class="btn" id="vi-btn">Установить голос Джарвиса</button></div></div>
+        <div class="setrow"><div class="l">Голос<small id="voice-hint">Джарвис (Piper) — нейросетевой голос, работает без интернета</small></div>
           <div class="r"><select id="voice-select"><option value="">Автоматически</option></select></div></div>
         <div class="setrow"><div class="l">Скорость речи</div>
           <div class="r"><input type="range" id="rate" min="0.6" max="1.6" step="0.05" value="1"><b id="rate-v" style="min-width:42px;text-align:right">1.0×</b></div></div>
@@ -419,6 +436,11 @@
         <small class="dim">Ответы ИИ появляются на странице «Диалог». Ключ хранится только на этом компьютере в зашифрованном виде (шифрование Windows) и не показывается в окне. Сообщения уходят провайдеру, когда вы нажимаете «Отправить» или задаёте вопрос; команды компьютера («открой ворд», «поставь таймер») в ИИ не отправляются.</small>
       </div>
 
+      <div class="card" style="margin-bottom:14px" id="city-card"><h3><span class="ei">🌤</span>Погода и город</h3>
+        <div class="setrow"><div class="l">Город<small>нужен только для блока погоды на главной. Местоположение компьютера не определяется. В интернет уходит только название города (open-meteo.com), и только для погоды.</small></div>
+          <div class="r"><input type="text" id="city-input" placeholder="например: Ташкент" maxlength="80"><button class="btn primary" id="city-save" type="button">Сохранить</button></div></div>
+        <div class="msgline" id="city-msg"></div>
+      </div>
       <div class="card" style="margin-bottom:14px" id="remote-card"><h3><span class="ei">📱</span>Пульт для телефона</h3>
         <div class="setrow"><div class="l">Управление с телефона<small>телефон и компьютер в одной Wi-Fi сети; наведите камеру на QR-код</small></div>
           <div class="r"><button class="btn" data-cmd="включи удалённое управление" data-stay="1">Включить</button><button class="btn" data-cmd="выключи удалённое управление" data-stay="1">Выключить</button></div></div>
@@ -458,6 +480,7 @@
   </div>
 </div>
 
+<div id="toast" role="status"></div>
 <script>
 const $ = s => document.querySelector(s);
 const WS_URL = 'ws://127.0.0.1:9712';
@@ -489,8 +512,8 @@ function ico(name) { return '<svg viewBox="0 0 24 24" fill="none" stroke="curren
 document.querySelectorAll('[data-ico]').forEach(el => { el.innerHTML = ico(el.dataset.ico); });
 
 // ---------- navigation ----------
-const PAGES = ['home', 'chat', 'panel', 'commands', 'settings'];
-const TITLES = { home: ['Главная', 'Neural Interface'], chat: ['Диалог', 'Conversation'], panel: ['Панель', 'Control Panel'], commands: ['Команды', 'Command Library'], settings: ['Настройки', 'Settings'] };
+const PAGES = ['home', 'chat', 'commands', 'settings'];
+const TITLES = { home: ['Главная', 'Neural Interface'], chat: ['Диалог', 'Conversation'], commands: ['Команды', 'Command Library'], settings: ['Настройки', 'Settings'] };
 let currentPage = 'home';
 const curInput = () => currentPage === 'home' ? $('#h-input') : $('#input');
 function show(name) {
@@ -502,7 +525,6 @@ function show(name) {
   document.querySelectorAll('nav button[data-page]').forEach(b => b.classList.toggle('active', b.dataset.page === name));
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + name));
   if (name === 'commands') loadCommands();
-  if (name === 'panel') { pollNow(); loadModules(); }
   if (name === 'settings') { loadSettings(); refreshRemote(); }
   if (name === 'chat') { chatTab === 'ai' ? aiOpen() : ($('#log').scrollTop = $('#log').scrollHeight); }
   renderChatViews();
@@ -545,13 +567,13 @@ function connect() {
       case 'wake_word_detected': setState('wake', 1500); setStatus('Слушаю…'); autoBig(); break;
       case 'listening': setState('listening'); setStatus('Слушаю…'); autoBig(); break;
       case 'speech_recognized': add('me', m.text); setStatus('«' + m.text + '»'); setState('busy', 2500); break;
-      case 'command_executed': if (!m.success) add('err', 'Не получилось выполнить: ' + m.id); if (currentPage === 'panel') setTimeout(refreshState, 400); break;
+      case 'command_executed': if (!m.success) add('err', 'Не получилось выполнить: ' + m.id); setTimeout(pollNow, 400); break;
       case 'output': add('bot', m.text); setStatus(m.text); setState('speaking', 2500); break;
       case 'speaking': setState('speaking', 3500); break;
       case 'error': add('err', m.message); setStatus(m.message); setState('error', 2500); break;
       case 'idle': if (state !== 'speaking') setState('idle'); scheduleAutoSmall(); break;
       case 'show_page': show(m.page); break;
-      case 'stopping': add('note', 'Jarvis завершает работу'); setState('off'); break;
+      case 'stopping': add('note', 'Джарвис завершает работу'); setState('off'); break;
     }
   };
 }
@@ -567,7 +589,7 @@ async function ask(text) {
   try {
     const r = await chatApi({ op: 'ask', text });
     if (!r.ok) { setStatus(r.message || 'Не удалось отправить'); add('err', r.message || 'Не удалось отправить'); return false; }
-  } catch (e) { setStatus('Нет связи с Jarvis. Перезапустите программу.'); return false; }
+  } catch (e) { setStatus('Нет связи с Джарвисом. Перезапустите программу.'); return false; }
   pollNow();
   return true;
 }
@@ -608,7 +630,7 @@ function scheduleAutoSmall() { clearTimeout(smallTimer); if (bigAuto) smallTimer
 $('#orb').onclick = async () => {
   if (home().classList.contains('big')) { setBig(false); return; }
   setBig(true, false);
-  if (!connected) { setStatus('Нет связи с Jarvis'); return; }
+  if (!connected) { setStatus('Нет связи с Джарвисом'); return; }
   try { const s = await (await fetch('/state')).json(); applyVoice(s);
     if (s.voice_active) { ws.send(JSON.stringify({ action: 'listen' })); setState('listening'); setStatus('Слушаю… скажите команду'); }
     else setStatus('Голос не запущен: ' + (s.voice_error || 'микрофон недоступен') + '. Можно писать команду внизу.');
@@ -667,6 +689,59 @@ $('#micbtn').onclick = $('#h-mic').onclick = async () => { micMuted = !micMuted;
 $('#h-listen').onclick = () => $('#orb').click();
 $('#mic-on').onchange = async e => { micMuted = !e.target.checked; renderMic(); await action('mic_muted', { value: micMuted }); };
 
+// ---------- time and date (from this computer), weather (a real service, the city chosen in the settings) ----------
+function clockTick() {
+  const d = new Date();
+  $('#clk-time').textContent = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  $('#clk-date').textContent = d.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' });
+}
+clockTick(); setInterval(clockTick, 1000);
+function weatherBox(w) {
+  if (!w) return;
+  const box = $('#wbox'), main = $('#w-main'), city = $('#w-city');
+  box.classList.remove('muted');
+  if (w.status === 'OK') {
+    const x = w.weather, t = Math.round(x.temperature);
+    main.textContent = x.icon + ' ' + (t > 0 ? '+' : '') + t + '° ' + x.text; city.textContent = x.place;
+    box.title = 'Обновлено в ' + fmtTime(x.updated) + (x.wind != null ? ' · ветер ' + x.wind.toFixed(0) + ' м/с' : '') + ' · данные open-meteo.com';
+  } else if (w.status === 'NO_CITY') {
+    box.classList.add('muted'); main.textContent = 'Погода: выберите город'; city.textContent = 'в настройках'; box.title = 'Город не задан: он нужен только для погоды';
+  } else if (w.status === 'LOADING') {
+    box.classList.add('muted'); main.textContent = 'Погода…'; city.textContent = w.city; box.title = 'Загружаю';
+  } else {
+    box.classList.add('muted'); main.textContent = 'Погода недоступна'; city.textContent = w.city; box.title = w.message || '';
+  }
+}
+$('#wbox').onclick = () => { show('settings'); setTimeout(() => { const el = $('#city-input'); if (el) { el.scrollIntoView({ block: 'center' }); el.focus(); } }, 150); };
+
+// ---------- phone remote card: the same server as the voice command ----------
+let remoteBusy = false, remoteLink = '';
+async function remoteCard(s) {
+  const on = !!s.remote, sw = $('#rm-switch');
+  if (!remoteBusy) { sw.checked = on; sw.disabled = false; }
+  $('#rm-pill').textContent = on ? 'ВКЛЮЧЁН' : 'ВЫКЛЮЧЕН'; $('#rm-pill').className = 'pill ' + (on ? 'ok' : '');
+  $('#rm-label').textContent = on ? 'Пульт включён' : 'Пульт выключен';
+  $('#rm-off').style.display = on ? 'none' : 'block'; $('#rm-on').style.display = on ? 'block' : 'none';
+  if (!on) { remoteLink = ''; return; }
+  if (!remoteLink) {
+    try {
+      const r = await (await fetch('/remote')).json();
+      if (r.enabled && r.url) { remoteLink = r.url; $('#rm-url').textContent = r.url; $('#rm-qr').src = '/remote-qr?' + Date.now(); $('#rm-err').textContent = ''; }
+      else { $('#rm-err').textContent = 'Адрес пульта недоступен'; }
+    } catch (e) { $('#rm-err').textContent = 'Адрес пульта недоступен'; }
+  }
+}
+$('#rm-switch').onchange = async e => {
+  if (remoteBusy) return;
+  remoteBusy = true; const sw = e.target, want = sw.checked; sw.disabled = true; $('#rm-err').textContent = '';
+  try {
+    const r = await action(want ? 'remote_on' : 'remote_off');
+    if (!r.ok) { $('#rm-err').textContent = r.message || 'Не удалось выполнить'; $('#rm-pill').textContent = 'ОШИБКА'; $('#rm-pill').className = 'pill bad'; }
+  } catch (err) { $('#rm-err').textContent = 'Нет связи с Джарвисом'; }
+  remoteBusy = false; remoteLink = ''; await pollNow();
+};
+$('#rm-copy').onclick = () => { if (remoteLink) copyText(remoteLink, $('#rm-copy')); };
+
 // ---------- the cards of the home page: only what the program really knows ----------
 const fmtTime = ts => { const d = new Date(ts * 1000); return [d.getHours(), d.getMinutes(), d.getSeconds()].map(x => String(x).padStart(2, '0')).join(':'); };
 function hBar(id, pct) { const el = $('#hb-' + id); el.firstElementChild.style.width = Math.max(0, Math.min(100, pct)) + '%'; el.classList.toggle('warn', pct >= 70 && pct < 90); el.classList.toggle('hot', pct >= 90); }
@@ -687,6 +762,7 @@ function aiCard(a) {
   $('#ai-detail').textContent = a.detail || '';
   const tm = a.timing;
   $('#ai-timing').textContent = tm ? 'Последний ответ: первый фрагмент ' + (tm.first_chunk_ms == null ? '—' : tm.first_chunk_ms + ' мс') + ', целиком ' + tm.total_ms + ' мс' + (tm.streamed ? ' (поток)' : ' (одним куском)') : '';
+  $('#ai-last').textContent = a.last_ok ? 'Последний успешный запрос: ' + fmtTime(a.last_ok) : (a.configured ? 'Успешных запросов ещё не было' : '');
   $('#ai-check').disabled = !a.configured || a.state === 'CHECKING';
   aiConfigured = !!a.configured;
 }
@@ -708,7 +784,7 @@ function hubCard(s) {
   const a = s.ai || {}, v = s.voice_state || {};
   const rows = [
     ['AI Chat', a.configured ? (a.provider + ' · ' + a.model) : 'провайдер не настроен', a.state, AI_PILL[a.state] || ''],
-    ['Voice', (v.tts ? (s.piper ? 'голос Jarvis (Piper)' : 'голос Windows') : 'озвучка выключена') + (v.detail ? ' · ' + v.detail : ''), v.state, v.state === 'READY' || v.state === 'SPEAKING' || v.state === 'LISTENING' ? 'ok' : (v.state === 'ERROR' ? 'bad' : '')],
+    ['Voice', (v.tts ? (s.piper ? 'голос Джарвиса (Piper)' : 'голос Windows') : 'озвучка выключена') + (v.detail ? ' · ' + v.detail : ''), v.state, v.state === 'READY' || v.state === 'SPEAKING' || v.state === 'LISTENING' ? 'ok' : (v.state === 'ERROR' ? 'bad' : '')],
     ['Commands', (s.commands_count || 0) + ' ' + cmdWord(s.commands_count || 0) + ' в 12 разделах', 'доступно', 'info'],
     ['Documents', 'Word · Excel · Блокнот, режим «Работа с объектом»', 'доступно', 'info'],
     ['Files', 'поиск файлов и папок, запуск, копирование', 'доступно', 'info'],
@@ -733,8 +809,8 @@ function voiceChip(v) {
 function applySpeech(s) {
   const sp = s.speech || {}, b = $('#speech-banner');
   let html = '';
-  if (!sp.enabled) html = '<b>Озвучка выключена:</b> Jarvis отвечает только текстом. <button class="btn small" data-speech="on" type="button">Включить голос Jarvis</button>';
-  else if (!sp.piper && !sp.windows_voice) html = '<b>Голос Jarvis не установлен</b>, поэтому ответы пока не звучат (чужой голос Windows не подставляется). <button class="btn small" data-speech="install" type="button">Установить голос Jarvis</button> <span id="speech-prog"></span>';
+  if (!sp.enabled) html = '<b>Озвучка выключена:</b> Джарвис отвечает только текстом. <button class="btn small" data-speech="on" type="button">Включить голос Джарвиса</button>';
+  else if (!sp.piper && !sp.windows_voice) html = '<b>Голос Джарвиса не установлен</b>, поэтому ответы пока не звучат (чужой голос Windows не подставляется). <button class="btn small" data-speech="install" type="button">Установить голос Джарвиса</button> <span id="speech-prog"></span>';
   if (b.dataset.html === html) return;
   b.dataset.html = html; b.innerHTML = html; b.style.display = html ? 'block' : 'none';
   const on = b.querySelector('[data-speech=on]'); if (on) on.onclick = async () => { await action('tts_toggle', { value: true }); pollNow(); };
@@ -756,7 +832,8 @@ function applyState(s) {
   applySession(s); applySpeech(s);
   if (micMuted !== !!s.mic_muted) { micMuted = !!s.mic_muted; renderMic(); }
   applyVoice(s); voiceChip(s.voice_state); healthCard(s.health); aiCard(s.ai); eventsCard(s.events); hubCard(s);
-  if (currentPage === 'panel') renderPanel(s);
+  timers = s.timers || []; timersAt = performance.now(); renderTimers();
+  weatherBox(s.weather); remoteCard(s);
 }
 
 // ---------- panel: computer state, timers, log, modules ----------
@@ -764,36 +841,9 @@ let timers = [], timersAt = 0;
 const fmtDur = s => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
   return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
 const fmtAgo = s => s < 10 ? 'только что' : s < 60 ? s + ' с назад' : s < 3600 ? Math.floor(s / 60) + ' мин назад' : Math.floor(s / 3600) + ' ч назад';
-function setBar(id, pct, text) {
-  const el = $('#b-' + id); el.firstElementChild.style.width = Math.max(0, Math.min(100, pct)) + '%';
-  el.classList.toggle('warn', pct >= 70 && pct < 90); el.classList.toggle('hot', pct >= 90);
-  $('#b-' + id + '-t').textContent = text;
-}
 const refreshState = () => pollNow();
-function renderPanel(s) {
-  try {
-    $('#tts-on').checked = !!s.tts_enabled;
-    $('#s-cpu').textContent = Math.round(s.cpu) + '%';
-    $('#s-ram').textContent = s.mem_used.toFixed(1) + ' ГБ'; $('#s-ram2').textContent = 'из ' + s.mem_total.toFixed(0) + ' ГБ';
-    setBar('cpu', s.cpu, Math.round(s.cpu) + '%');
-    const rp = s.mem_total ? s.mem_used / s.mem_total * 100 : 0; setBar('ram', rp, Math.round(rp) + '%  ·  ' + s.mem_used.toFixed(1) + ' / ' + s.mem_total.toFixed(0) + ' ГБ');
-    if (s.disk_total) { const used = s.disk_total - s.disk_free; setBar('disk', used / s.disk_total * 100, 'свободно ' + s.disk_free.toFixed(0) + ' из ' + s.disk_total.toFixed(0) + ' ГБ'); }
-    else { setBar('disk', 0, 'нет данных'); }
-    $('#s-jarvis2').textContent = (s.mic_muted ? 'режим текста' : 'голос включён') + (s.remote ? ' · пульт включён' : '');
-    timers = s.timers || []; timersAt = performance.now(); renderTimers();
-    const box = $('#actions'); box.textContent = '';
-    if (!s.actions.length) { box.innerHTML = '<div class="empty">Пока пусто.</div>'; }
-    for (const a of s.actions) {
-      const d = document.createElement('div'); d.className = 'item';
-      d.innerHTML = '<span class="st ' + (a.ok ? '' : 'bad') + '"></span><div class="grow"><div class="t"></div><div class="m"></div></div>';
-      d.querySelector('.t').textContent = a.text; d.querySelector('.m').textContent = a.command + ' · ' + fmtAgo(a.ago);
-      box.appendChild(d);
-    }
-  } catch (e) {}
-}
 function renderTimers() {
   const box = $('#timers'); const el = (performance.now() - timersAt) / 1000;
-  $('#s-timers').textContent = timers.length; $('#s-timers2').textContent = timers.length ? 'ближайший через ' + fmtDur(timers[0].remaining - el) : 'активных нет';
   if (!timers.length) { box.innerHTML = '<div class="empty">Нет активных. Скажите «таймер на 5 минут» или «напомни через 10 минут позвонить маме».</div>'; return; }
   if (box.children.length === timers.length && box.dataset.ids === timers.map(t => t.id).join()) {
     timers.forEach((t, i) => { box.children[i].querySelector('.m').textContent = 'осталось ' + fmtDur(t.remaining - el); });
@@ -808,23 +858,8 @@ function renderTimers() {
     box.appendChild(d);
   }
 }
-async function loadModules() {
-  try {
-    const list = await (await fetch('/modules')).json();
-    const box = $('#modules'); box.textContent = '';
-    for (const g of list) {
-      const d = document.createElement('div'); d.className = 'item';
-      d.innerHTML = '<span class="ei"></span><div class="grow"><div class="t"></div><div class="m"></div></div><label class="sw"><input type="checkbox"><span></span></label>';
-      d.querySelector('.ei').textContent = g.emoji; d.querySelector('.t').textContent = g.title;
-      d.querySelector('.m').textContent = g.commands + ' ' + cmdWord(g.commands) + ' · ' + g.about;
-      const cb = d.querySelector('input'); cb.checked = !g.disabled; if (g.locked) cb.disabled = true;
-      cb.onchange = async () => { await action('group', { key: g.key, disabled: !cb.checked }); commandsLoaded = false; loadModules(); };
-      box.appendChild(d);
-    }
-  } catch (e) { $('#modules').textContent = 'Не удалось загрузить разделы'; }
-}
 const cmdWord = n => { const m = n % 10, h = n % 100; return (h >= 11 && h <= 14) ? 'команд' : m === 1 ? 'команда' : (m >= 2 && m <= 4) ? 'команды' : 'команд'; };
-setInterval(() => { if (currentPage === 'panel') renderTimers(); }, 1000);
+setInterval(() => { if (currentPage === 'home') renderTimers(); }, 1000);
 const refreshMicState = () => pollNow();
 
 
@@ -856,15 +891,18 @@ function md(src) {
     return '<div class="code"><div class="bar2"><span>' + esc(b.lang || 'код') + '</span><button class="btn small" data-copy-code="' + i + '">Копировать код</button></div><pre><code>' + esc(b.code) + '</code></pre></div>';
   });
 }
+let toastTimer = 0;
+function showToast(text) { const el = $('#toast'); el.textContent = text; el.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('on'), 1600); }
 async function copyText(text, btn) {
   try { await navigator.clipboard.writeText(text); }
   catch (e) { const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); } catch (e2) {} t.remove(); }
+  showToast('Скопировано в буфер обмена');
   if (btn) { const old = btn.textContent; btn.textContent = 'Скопировано ✓'; setTimeout(() => btn.textContent = old, 1400); }
 }
 async function chatApi(body) { return (await fetch('/chat', { method: 'POST', headers: { 'X-Jarvis': '1' }, body: JSON.stringify(body) })).json(); }
 
 
-const SRC_LABEL = { command: 'Jarvis', local: 'Jarvis', search: 'поиск в интернете' };
+const SRC_LABEL = { command: 'Джарвис', local: 'Джарвис', search: 'поиск в интернете' };
 function msgEl(m) {
   const d = document.createElement('div'); d.className = 'ai-msg ' + m.role + (m.streaming ? ' streaming' : '');
   if (m.role === 'assistant') {
@@ -995,10 +1033,11 @@ async function loadSettings() {
     sel.value = String(s.mic_selected ?? -1);
     $('#rate').value = s.voice_rate; $('#rate-v').textContent = (+s.voice_rate).toFixed(2).replace(/0$/, '') + '×';
     $('#tts-on').checked = !!s.tts_enabled;
+    if (document.activeElement !== $('#city-input')) $('#city-input').value = s.city || '';
     $('#ai-fallback').checked = !!s.ai_fallback; $('#ai-provider').value = s.ai_provider || 'none'; $('#ai-model').value = s.ai_model || ''; $('#ai-url').value = s.ai_url || '';
     $('#ai-key').value = ''; $('#ai-key-hint').textContent = s.ai_key_saved ? 'ключ сохранён (оставьте поле пустым, чтобы не менять)' : 'хранится только на этом компьютере';
     updateAiRows();
-    $('#voice-hint').textContent = s.piper ? 'Jarvis (Piper) — нейросетевой голос, работает без интернета' : 'Piper не установлен: говорит голос Windows (в большом установщике есть Piper)';
+    $('#voice-hint').textContent = s.piper ? 'Джарвис (Piper) — нейросетевой голос, работает без интернета' : 'Piper не установлен: говорит голос Windows (в большом установщике есть Piper)';
     if (!$('#rv-select').options.length) {
       try { (await (await fetch('/reaction-voices')).json()).forEach(v => $('#rv-select').add(new Option(v.name, v.id))); } catch (e) {}
     }
@@ -1012,7 +1051,7 @@ async function loadSettings() {
     } else { $('#voice-select').value = s.voice_name || ''; }
   } catch (e) {}
 }
-$('#mic-select').onchange = e => { saveSettings({ mic_device: +e.target.value }); $('#mic-msg').className = 'msgline ok'; $('#mic-msg').textContent = 'Сохранено. Перезапустите Jarvis, чтобы микрофон сменился.'; };
+$('#mic-select').onchange = e => { saveSettings({ mic_device: +e.target.value }); $('#mic-msg').className = 'msgline ok'; $('#mic-msg').textContent = 'Сохранено. Перезапустите Джарвиса, чтобы микрофон сменился.'; };
 $('#vi-btn').onclick = async () => {
   try { await action('voice_install'); } catch (e) {}
   const h = $('#vi-hint'), b = $('#vi-btn'); b.disabled = true;
@@ -1023,13 +1062,19 @@ $('#vi-btn').onclick = async () => {
     if (st.error) { h.textContent = 'Ошибка: ' + st.error; b.disabled = false; return; }
     break;
   }
-  h.textContent = 'Голос Jarvis установлен'; b.disabled = false;
+  h.textContent = 'Голос Джарвиса установлен'; b.disabled = false;
   voicesLoaded = false; await saveSettings({ voice_name: 'piper' }); setTimeout(loadSettings, 600);
 };
 $('#rv-select').onchange = e => saveSettings({ reaction_voice: e.target.value });
 $('#rv-test').onclick = async () => { await new Promise(r => setTimeout(r, 350)); await action('reaction_preview'); };
 $('#voice-select').onchange = e => saveSettings({ voice_name: e.target.value });
 $('#rate').oninput = e => { $('#rate-v').textContent = (+e.target.value).toFixed(2).replace(/0$/, '') + '×'; saveSettings({ voice_rate: +e.target.value }); };
+$('#city-save').onclick = async () => {
+  const city = $('#city-input').value.trim(), m = $('#city-msg'); m.className = 'msgline'; m.textContent = 'Сохраняю…';
+  try { await api('/settings', { city }); } catch (e) { m.className = 'msgline bad'; m.textContent = 'Не удалось сохранить'; return; }
+  m.className = 'msgline ok'; m.textContent = city ? 'Город сохранён. Проверяю погоду…' : 'Город убран: блок погоды покажет подсказку.';
+  setTimeout(pollNow, 800); setTimeout(() => { const w = lastState && lastState.weather; if (w) { m.className = 'msgline ' + (w.status === 'OK' ? 'ok' : (w.status === 'ERROR' ? 'bad' : '')); m.textContent = w.status === 'OK' ? 'Найден: ' + w.weather.place : (w.message || ''); } }, 3500);
+};
 $('#tts-on').onchange = e => action('tts_toggle', { value: e.target.checked });
 $('#tts-test').onclick = async () => { await new Promise(r => setTimeout(r, 350)); await action('tts_test'); };
 function updateAiRows() {
