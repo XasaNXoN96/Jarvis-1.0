@@ -273,13 +273,13 @@
           <div class="r"><button class="btn" data-cmd="включи удалённое управление" data-stay="1">Включить</button><button class="btn" data-cmd="выключи удалённое управление" data-stay="1">Выключить</button></div></div>
         <div id="remote-box" style="display:none;text-align:center;padding-top:10px">
           <div style="background:#fff;border-radius:16px;padding:10px;display:inline-block"><img id="remote-qr" alt="QR" style="width:220px;height:220px;display:block"></div>
-          <div><small class="dim">Ссылка секретная: не показывайте её другим. Если браузер пишет о небезопасном соединении, нажмите «Дополнительно / Подробнее → Всё равно перейти» (сертификат создан на вашем компьютере). Не получается — откройте ссылку без предупреждения ниже.</small></div>
+          <div><small class="dim">Ссылка секретная: не показывайте её другим. Эта ссылка открывается в любом браузере. Текстовые команды и кнопки работают; голос — через значок микрофона на клавиатуре телефона (или защищённая ссылка ниже).</small></div>
           <div><small class="dim" id="remote-url" style="word-break:break-all;user-select:all"></small></div>
           <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
-            <button class="btn small" id="remote-alt-btn">Не открывается? Ссылка без предупреждения</button>
+            <button class="btn small" id="remote-alt-btn">Нужен голос с телефона? Защищённая ссылка</button>
             <div id="remote-alt" style="display:none;padding-top:10px">
               <div style="background:#fff;border-radius:16px;padding:10px;display:inline-block"><img id="remote-qr2" alt="QR" style="width:200px;height:200px;display:block"></div>
-              <div><small class="dim">Эта ссылка открывается в любом браузере (в том числе в Яндексе) без предупреждения. Кнопки и текст работают; голос — через значок микрофона на клавиатуре телефона.</small></div>
+              <div><small class="dim">Только по этой ссылке работает кнопка «🎤» на странице. Браузер предупредит о небезопасном соединении (сертификат создан на вашем компьютере): нажмите «Дополнительно → Перейти». Лучше открывать в Chrome; Яндекс.Браузер может не пустить. Без этого голос — через значок микрофона на клавиатуре телефона.</small></div>
               <div><small class="dim" id="remote-url2" style="word-break:break-all;user-select:all"></small></div>
             </div>
           </div>
@@ -590,7 +590,7 @@ async function refreshRemote() {
     const r = await (await fetch('/remote')).json();
     const box = $('#remote-box');
     if (r.enabled) {
-      if (remoteShown !== r.url) { $('#remote-qr').src = '/remote-qr?' + Date.now(); $('#remote-url').textContent = r.url; $('#remote-qr2').src = '/remote-qr-http?' + Date.now(); $('#remote-url2').textContent = r.url_http; remoteShown = r.url; }
+      if (remoteShown !== r.url) { $('#remote-qr').src = '/remote-qr?' + Date.now(); $('#remote-url').textContent = r.url; $('#remote-qr2').src = '/remote-qr-https?' + Date.now(); $('#remote-url2').textContent = r.url_https; remoteShown = r.url; }
       box.style.display = 'block';
     } else { box.style.display = 'none'; remoteShown = ''; }
   } catch (e) {}

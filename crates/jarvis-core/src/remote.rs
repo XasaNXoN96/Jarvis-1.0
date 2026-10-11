@@ -61,13 +61,14 @@ fn local_ip() -> String {
         .unwrap_or_else(|_| "localhost".to_string())
 }
 
+// main link: plain http opens in every browser without a warning
 pub fn url() -> String {
-    format!("https://{}:{}/?t={}", local_ip(), PORT, *TOKEN)
+    format!("http://{}:{}/?t={}", local_ip(), PORT, *TOKEN)
 }
 
-// same page without encryption: opens in any browser without a warning (no microphone button there)
-pub fn url_http() -> String {
-    format!("http://{}:{}/?t={}", local_ip(), PORT, *TOKEN)
+// https link (own certificate): browsers warn once, but only here the phone microphone is allowed
+pub fn url_https() -> String {
+    format!("https://{}:{}/?t={}", local_ip(), PORT, *TOKEN)
 }
 
 pub fn is_running() -> bool {
