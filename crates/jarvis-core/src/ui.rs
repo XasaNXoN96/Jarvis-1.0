@@ -127,6 +127,11 @@ fn apply_settings(patch: &serde_json::Value) -> serde_json::Value {
 fn run_action(body: &serde_json::Value) -> serde_json::Value {
     let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("");
     match name {
+        "reaction_preview" => {
+            let id = crate::uistate::settings_json()["reaction_voice"].as_str().unwrap_or("").to_string();
+            crate::voices::play_preview(&id);
+            json!({ "ok": true })
+        }
         "tts_test" => {
             crate::tts::set_enabled(true);
             let text = if i18n::get_language() == "en" { "Hello. This is my voice. How do I sound?" } else { "Здравствуйте. Это мой голос. Как я звучу?" };
@@ -402,6 +407,10 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
         ("GET", "/settings") => respond(&mut stream, "200 OK", "application/json", &settings_page_json().to_string()),
         ("GET", "/voices") => {
             let list: Vec<_> = crate::tts::list_voices().into_iter().map(|(id, name)| json!({ "id": id, "name": name })).collect();
+            respond(&mut stream, "200 OK", "application/json", &json!(list).to_string());
+        }
+        ("GET", "/reaction-voices") => {
+            let list: Vec<_> = crate::voices::list_voices().iter().map(|v| json!({ "id": v.voice.id, "name": v.voice.name })).collect();
             respond(&mut stream, "200 OK", "application/json", &json!(list).to_string());
         }
         ("GET", "/modules") => respond(&mut stream, "200 OK", "application/json", &modules_json().to_string()),

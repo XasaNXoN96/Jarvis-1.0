@@ -46,6 +46,7 @@ pub fn recent_actions() -> Vec<LogEntry> {
 #[serde(default)]
 pub struct UiSettings {
     pub voice_rate: f32,     // 0.6 .. 1.6, 1.0 = normal
+    pub reaction_voice: String, // recorded reaction pack (jarvis-og / jarvis-remaster / jarvis-howdy), "" = app default
     pub voice_name: String,  // "" = automatic (Piper, else a female Windows voice)
     pub ai_provider: String, // none | openai | openrouter | gemini | anthropic | ollama | custom
     pub ai_model: String,
@@ -56,7 +57,7 @@ pub struct UiSettings {
 
 impl Default for UiSettings {
     fn default() -> Self {
-        Self { voice_rate: 1.0, voice_name: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_key: String::new(), ai_url: String::new(), ai_fallback: false }
+        Self { voice_rate: 1.0, voice_name: String::new(), reaction_voice: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_key: String::new(), ai_url: String::new(), ai_fallback: false }
     }
 }
 
@@ -107,6 +108,10 @@ pub fn voice_name() -> String {
 pub fn update_settings(patch: &Value) {
     let mut s = SETTINGS.lock();
     if let Some(v) = patch.get("voice_rate").and_then(|v| v.as_f64()) { s.voice_rate = (v as f32).clamp(0.5, 2.0); }
+    if let Some(v) = patch.get("reaction_voice").and_then(|v| v.as_str()) {
+        s.reaction_voice = v.chars().take(60).collect();
+        if crate::voices::get_voice(&s.reaction_voice).is_some() { crate::voices::set_current_voice(&s.reaction_voice); }
+    }
     if let Some(v) = patch.get("voice_name").and_then(|v| v.as_str()) { s.voice_name = v.chars().take(120).collect(); }
     if let Some(v) = patch.get("ai_provider").and_then(|v| v.as_str()) { s.ai_provider = v.chars().take(30).collect(); }
     if let Some(v) = patch.get("ai_model").and_then(|v| v.as_str()) { s.ai_model = v.chars().take(100).collect(); }
@@ -120,7 +125,7 @@ pub fn update_settings(patch: &Value) {
 pub fn settings_json() -> Value {
     let s = settings();
     json!({
-        "voice_rate": s.voice_rate, "voice_name": s.voice_name,
+        "voice_rate": s.voice_rate, "voice_name": s.voice_name, "reaction_voice": if s.reaction_voice.is_empty() { crate::voices::get_current_voice().map(|v| v.voice.id.clone()).unwrap_or_default() } else { s.reaction_voice.clone() },
         "ai_provider": s.ai_provider, "ai_model": s.ai_model, "ai_url": s.ai_url,
         "ai_key_saved": !s.ai_key.is_empty(),
         "ai_fallback": s.ai_fallback,

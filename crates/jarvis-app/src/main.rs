@@ -63,6 +63,10 @@ fn main() -> Result<(), String> {
     if let Err(e) = voices::init(&voice_id, &language) {
         warn!("Failed to init voices: {}", e);
     }
+    {
+        let rv = jarvis_core::uistate::settings().reaction_voice;
+        if !rv.is_empty() { voices::set_current_voice(&rv); }
+    }
 
     // init i18n
     i18n::init(&settings.lock().language);

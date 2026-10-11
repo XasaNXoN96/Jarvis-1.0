@@ -275,6 +275,8 @@
       </div>
 
       <div class="card" style="margin-bottom:14px"><h3><span class="ei">🔊</span>Голос</h3>
+        <div class="setrow"><div class="l">Голос реплик Jarvis<small>записанные фразы («Да, сэр», «Слушаю»): Jarvis OG, Remaster, Howdy</small></div>
+          <div class="r"><select id="rv-select"></select> <button class="btn" id="rv-test">Послушать</button></div></div>
         <div class="setrow" id="vi-row"><div class="l">Голос Jarvis<small id="vi-hint">Свой женский голос Jarvis (≈80 МБ), чтобы не говорил голос Windows</small></div>
           <div class="r"><button class="btn" id="vi-btn">Установить голос Jarvis</button></div></div>
         <div class="setrow"><div class="l">Голос<small id="voice-hint">Jarvis (Piper) — нейросетевой голос, работает без интернета</small></div>
@@ -747,6 +749,10 @@ async function loadSettings() {
     $('#ai-key').value = ''; $('#ai-key-hint').textContent = s.ai_key_saved ? 'ключ сохранён (оставьте поле пустым, чтобы не менять)' : 'хранится только на этом компьютере';
     updateAiRows();
     $('#voice-hint').textContent = s.piper ? 'Jarvis (Piper) — нейросетевой голос, работает без интернета' : 'Piper не установлен: говорит голос Windows (в большом установщике есть Piper)';
+    if (!$('#rv-select').options.length) {
+      try { (await (await fetch('/reaction-voices')).json()).forEach(v => $('#rv-select').add(new Option(v.name, v.id))); } catch (e) {}
+    }
+    $('#rv-select').value = s.reaction_voice || '';
     if (!voicesLoaded) {
       voicesLoaded = true;
       const vs = await (await fetch('/voices')).json();
@@ -770,6 +776,8 @@ $('#vi-btn').onclick = async () => {
   h.textContent = 'Голос Jarvis установлен'; b.disabled = false;
   voicesLoaded = false; await saveSettings({ voice_name: 'piper' }); setTimeout(loadSettings, 600);
 };
+$('#rv-select').onchange = e => saveSettings({ reaction_voice: e.target.value });
+$('#rv-test').onclick = async () => { await new Promise(r => setTimeout(r, 350)); await action('reaction_preview'); };
 $('#voice-select').onchange = e => saveSettings({ voice_name: e.target.value });
 $('#rate').oninput = e => { $('#rate-v').textContent = (+e.target.value).toFixed(2).replace(/0$/, '') + '×'; saveSettings({ voice_rate: +e.target.value }); };
 $('#tts-on').onchange = e => action('tts_toggle', { value: e.target.checked });
