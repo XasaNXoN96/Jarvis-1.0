@@ -63,6 +63,7 @@ pub mod filesearch;
 pub mod guard;
 pub mod instance;
 pub mod input;
+pub mod scenario;
 pub mod notify;
 #[cfg(target_os = "windows")]
 pub mod notify_win;

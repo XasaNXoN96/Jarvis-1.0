@@ -571,6 +571,30 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
         }
     }
 
+    // a scenario of the "Конструктор": its activation phrase runs its chain of steps (before the usual commands:
+    // the user chose this phrase on purpose)
+    if let Some(sc) = jarvis_core::scenario::find(text) {
+        if !jarvis_core::guard::first(&format!("scenario:{}", sc.id), jarvis_core::guard::ACTION_WINDOW) {
+            ipc::send(IpcEvent::Idle);
+            return false;
+        }
+        info!("Scenario: {}", sc.name);
+        open_request(text, "command");
+        let r = jarvis_core::scenario::run(&sc);
+        if r.ok {
+            jarvis_core::dialog::reply(&r.message, "command");
+        } else {
+            jarvis_core::dialog::fail(&r.message, "command");
+        }
+        jarvis_core::dialog::end(r.ok);
+        jarvis_core::uistate::log_action(text, &format!("сценарий «{}»", sc.name), r.ok);
+        if jarvis_core::tts::is_enabled() {
+            jarvis_core::tts::speak(if r.ok { "Сценарий выполнен." } else { "Сценарий остановлен, подробности в окне." });
+        }
+        ipc::send(IpcEvent::Idle);
+        return false;
+    }
+
     // a program by its spoken name ("открой ворт", "запусти тотал командер"): before the word triggers,
     // because the recognizer rarely writes the name the way the trigger list has it
     let program_cmd = commands::fetch_program(text, commands_list).or_else(|| commands::fetch_dictation(text, commands_list));

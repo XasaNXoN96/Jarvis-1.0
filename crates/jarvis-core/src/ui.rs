@@ -295,6 +295,62 @@ fn ai_test() -> serde_json::Value {
     }
 }
 
+// ---- scenarios of the "Конструктор" ----
+fn scenarios_json() -> serde_json::Value {
+    json!({ "scenarios": crate::scenario::list(), "kinds": crate::scenario::kinds_json(), "templates": crate::scenario::templates() })
+}
+
+fn scenario_action(body: &serde_json::Value) -> serde_json::Value {
+    let op = body.get("op").and_then(|v| v.as_str()).unwrap_or("");
+    let id = body.get("id").and_then(|v| v.as_str()).unwrap_or("");
+    match op {
+        "save" => {
+            let sc: crate::scenario::Scenario = match body.get("scenario").cloned().map(serde_json::from_value) {
+                Some(Ok(s)) => s,
+                _ => return json!({ "ok": false, "message": "Сценарий не прочитан" }),
+            };
+            match crate::scenario::upsert(sc) {
+                Ok(s) => {
+                    // a phrase that is also a command: the scenario wins, the user is told
+                    let note = crate::COMMANDS_LIST
+                        .get()
+                        .and_then(|list| crate::commands::fetch_by_triggers(&s.phrase, list))
+                        .map(|(_, c)| format!("Фраза похожа на команду «{}»: теперь её выполнит сценарий.", c.id))
+                        .unwrap_or_default();
+                    json!({ "ok": true, "scenario": s, "note": note })
+                }
+                Err(e) => json!({ "ok": false, "message": e }),
+            }
+        }
+        "delete" => json!({ "ok": crate::scenario::delete(id) }),
+        "enable" => json!({ "ok": crate::scenario::set_enabled(id, body.get("value").and_then(|v| v.as_bool()).unwrap_or(true)) }),
+        // a test run of the saved scenario, or of one step that is being edited
+        "test" => match crate::scenario::get(id) {
+            Some(s) => json!({ "ok": true, "result": crate::scenario::run(&s) }),
+            None => json!({ "ok": false, "message": "Сначала сохраните сценарий" }),
+        },
+        "test_step" => {
+            let st: crate::scenario::Step = match body.get("step").cloned().map(serde_json::from_value) {
+                Some(Ok(s)) => s,
+                _ => return json!({ "ok": false, "message": "Шаг не прочитан" }),
+            };
+            match crate::scenario::run_step(&st) {
+                Ok(()) => json!({ "ok": true, "message": "Шаг выполнен" }),
+                Err(e) => json!({ "ok": false, "message": e }),
+            }
+        }
+        "export" => json!({ "ok": true, "doc": crate::scenario::export_json() }),
+        "import" => {
+            let replace = body.get("replace").and_then(|v| v.as_bool()).unwrap_or(false);
+            match crate::scenario::import_json(body.get("doc").unwrap_or(&json!({})), replace) {
+                Ok((added, skipped)) => json!({ "ok": true, "added": added, "skipped": skipped }),
+                Err(e) => json!({ "ok": false, "message": e }),
+            }
+        }
+        _ => json!({ "ok": false, "message": "unknown operation" }),
+    }
+}
+
 // ---- AI chat (the window talks to it over local HTTP; the key never leaves the backend) ----
 fn chat_json(id: &str) -> serde_json::Value {
     match crate::ai::store().load_with_live(id) {
@@ -550,6 +606,15 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
         }
         ("GET", "/voice-install") => respond(&mut stream, "200 OK", "application/json", &crate::voice_install::status_json().to_string()),
         ("GET", "/chats") => respond(&mut stream, "200 OK", "application/json", &chats_json().to_string()),
+        ("GET", "/scenarios") => respond(&mut stream, "200 OK", "application/json", &scenarios_json().to_string()),
+        ("POST", "/scenario") => {
+            if !req.custom_header {
+                respond(&mut stream, "403 Forbidden", "text/plain", "forbidden");
+                return Ok(());
+            }
+            let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap_or(json!({}));
+            respond(&mut stream, "200 OK", "application/json", &scenario_action(&body).to_string());
+        }
         ("POST", "/chat") => {
             if !req.custom_header {
                 respond(&mut stream, "403 Forbidden", "text/plain", "forbidden");

@@ -146,6 +146,27 @@
     .tb-title span { display: none; } .topbar { padding: 10px 14px; } #page-home { padding: 10px; } .composer .sb { padding: 0 12px; }
   }
 
+  /* scenario builder */
+  .b-io { display: flex; gap: 6px; flex-wrap: wrap; }
+  .b-grid { display: grid; grid-template-columns: 240px minmax(0, 1fr) 270px; gap: 14px; align-items: start; }
+  .b-side, .b-main, .b-edit { display: flex; flex-direction: column; gap: 8px; }
+  .b-sidehead { display: flex; justify-content: space-between; align-items: center; }
+  .b-item { padding: 8px 10px; border-radius: 9px; cursor: pointer; border: 1px solid transparent; } .b-item:hover { background: #ffffff0d; } .b-item.active { border-color: #5ad1ff66; background: #5ad1ff14; }
+  .b-item small { display: block; color: var(--dim); } .b-item.off { opacity: .55; } .b-item .st { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--dim); } .b-item .st.ok { background: var(--ok); } .b-item .st.bad { background: var(--err); }
+  .b-tpl { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; } .b-tpl button { display: block; width: 100%; text-align: left; background: transparent; border: 0; color: var(--text); padding: 6px 4px; font: inherit; cursor: pointer; border-radius: 7px; } .b-tpl button:hover { background: #ffffff0d; color: var(--accent); }
+  .b-label { font-size: 11px; letter-spacing: .14em; color: var(--dim); margin-top: 4px; }
+  .b-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; } .b-row input { width: 100%; }
+  .b-chainhead { display: flex; justify-content: space-between; align-items: baseline; margin-top: 6px; }
+  .b-kinds { display: flex; flex-wrap: wrap; gap: 6px; } .b-kinds button { border: 1px solid var(--line); background: #ffffff08; color: var(--text); border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer; } .b-kinds button:hover { border-color: var(--accent); }
+  .b-steps { min-height: 160px; border: 1px dashed var(--line); border-radius: 12px; padding: 10px; display: flex; flex-wrap: wrap; gap: 10px; align-content: flex-start; background-image: radial-gradient(#ffffff10 1px, transparent 1px); background-size: 16px 16px; }
+  .b-step { position: relative; border: 1px solid var(--line); background: #0b1330; border-radius: 10px; padding: 8px 12px 8px 30px; min-width: 150px; max-width: 240px; cursor: pointer; }
+  .b-step i { position: absolute; left: 10px; top: 9px; font-style: normal; color: var(--dim); font-size: 12px; } .b-step b { display: block; font-size: 14px; } .b-step small { display: block; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .b-step.active { border-color: var(--accent); box-shadow: 0 0 0 2px #5ad1ff33; } .b-step.bad { border-color: #ff6b7a88; }
+  .b-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; } .b-en { display: flex; align-items: center; gap: 6px; color: var(--dim); }
+  .b-last { color: var(--dim); font-size: 13px; } .b-edit input, .b-edit select { width: 100%; } .b-stepbtns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  @media (max-width: 1100px) { .b-grid { grid-template-columns: 220px minmax(0, 1fr); } .b-edit { grid-column: 1 / -1; } }
+  @media (max-width: 760px) { .b-grid { grid-template-columns: 1fr; } .b-row { grid-template-columns: 1fr; } }
+
   /* diagnostics */
   .diag-acts { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
   .diag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
@@ -305,6 +326,7 @@
     <button data-page="home" class="active"><span class="ei">◉</span><span>Главная</span></button>
     <button data-page="chat"><span class="ei">💬</span><span>Диалог</span></button>
     <button data-page="commands"><span class="ei">☰</span><span>Команды</span></button>
+    <button data-page="builder"><span class="ei">🧩</span><span>Конструктор</span></button>
     <button data-page="diag"><span class="ei">🩺</span><span>Диагностика</span></button>
     <button data-page="settings"><span class="ei">⚙</span><span>Настройки</span></button>
     <div class="grow"></div>
@@ -421,6 +443,39 @@
           <div class="card" id="timers-card" style="margin-top:14px"><h3><span class="ei">⏱</span>Активные таймеры и напоминания</h3><div class="scroll" id="timers"><div class="empty">Нет активных. Скажите «таймер на 5 минут» или «напомни через 10 минут позвонить маме».</div></div></div>
           <div class="card" style="margin-top:14px"><h3><span class="ei">🕘</span>Последние действия</h3><div id="cmd-actions"><div class="empty">Пока ничего не выполнялось.</div></div></div>
         </div>
+      </div>
+    </section>
+
+    <section class="page" id="page-builder">
+      <div class="cat-head"><div><h1>Конструктор сценариев</h1><p class="lead" style="margin:0">Скажите «Джарвис» и фразу активации — Джарвис выполнит цепочку шагов по порядку. Если шаг не получился, цепочка остановится и Джарвис скажет, какой шаг и почему.</p></div>
+        <div class="b-io"><button class="btn small" id="b-export" type="button">Экспорт</button><button class="btn small" id="b-import" type="button">Импорт</button><button class="btn small" id="b-replace" type="button">Заменить</button><input type="file" id="b-file" accept="application/json,.json" style="display:none"></div></div>
+      <div class="b-grid">
+        <aside class="b-side card">
+          <div class="b-sidehead"><b>Мои сценарии</b><button class="btn small primary" id="b-new" type="button">Новый</button></div>
+          <input type="text" id="b-search" placeholder="Поиск…">
+          <div id="b-list"></div>
+          <div class="b-tpl"><small class="dim">ЗАГОТОВКИ</small><div id="b-templates"></div></div>
+        </aside>
+        <div class="b-main card">
+          <div class="b-label">ТРИГГЕР</div>
+          <div class="seg"><button class="active" type="button">Голос</button><button type="button" disabled title="Недоступно: нет распознавания жестов">Жест — недоступно</button></div>
+          <div class="b-row"><div><div class="b-label">НАЗВАНИЕ</div><input type="text" id="b-name" placeholder="например: Режим работы" maxlength="80"></div>
+            <div><div class="b-label">ФРАЗА АКТИВАЦИИ</div><input type="text" id="b-phrase" placeholder="например: начать рабочий день" maxlength="120"></div></div>
+          <div class="b-chainhead"><div class="b-label">ЦЕПОЧКА <b id="b-count">0</b></div><small class="dim">добавить шаг:</small></div>
+          <div class="b-kinds" id="b-kinds"></div>
+          <div class="b-steps" id="b-steps"><div class="empty">Добавьте первый шаг кнопкой выше.</div></div>
+          <div class="b-actions"><button class="btn primary" id="b-save" type="button">Сохранить</button><button class="btn" id="b-test" type="button">Тест сценария</button><label class="b-en"><label class="sw"><input type="checkbox" id="b-enabled" checked><span></span></label> включён</label><span class="grow"></span><button class="btn" id="b-delete" type="button">Удалить сценарий</button></div>
+          <div class="msgline" id="b-msg"></div>
+          <div class="b-last" id="b-last"></div>
+        </div>
+        <aside class="b-edit card" id="b-edit">
+          <div class="b-label">ШАГ <b id="e-num">—</b></div>
+          <div class="b-label">ТИП</div><select id="e-kind"></select>
+          <div class="b-label">ПАРАМЕТР</div><input type="text" id="e-param"><small class="dim" id="e-hint"></small>
+          <div id="e-winwrap"><div class="b-label">ОКНО</div><div class="seg" id="e-win"><button type="button" data-w="">Как есть</button><button type="button" data-w="max">На весь экран</button></div></div>
+          <div class="b-stepbtns"><button class="btn small" id="e-up" type="button" title="Выше">↑</button><button class="btn small" id="e-down" type="button" title="Ниже">↓</button><button class="btn small" id="e-test" type="button">Тест шага</button><button class="btn small" id="e-del" type="button">Удалить</button></div>
+          <div class="msgline" id="e-msg"></div>
+        </aside>
       </div>
     </section>
 
@@ -603,8 +658,8 @@ function ico(name) { return '<svg viewBox="0 0 24 24" fill="none" stroke="curren
 document.querySelectorAll('[data-ico]').forEach(el => { el.innerHTML = ico(el.dataset.ico); });
 
 // ---------- navigation ----------
-const PAGES = ['home', 'chat', 'commands', 'diag', 'settings'];
-const TITLES = { home: ['Главная', 'Neural Interface'], chat: ['Диалог', 'Conversation'], commands: ['Команды', 'Command Library'], diag: ['Диагностика', 'Diagnostics'], settings: ['Настройки', 'Settings'] };
+const PAGES = ['home', 'chat', 'commands', 'builder', 'diag', 'settings'];
+const TITLES = { home: ['Главная', 'Neural Interface'], chat: ['Диалог', 'Conversation'], commands: ['Команды', 'Command Library'], diag: ['Диагностика', 'Diagnostics'], builder: ['Конструктор', 'Scenario Builder'], settings: ['Настройки', 'Settings'] };
 let currentPage = 'home';
 const curInput = () => currentPage === 'home' ? $('#h-input') : $('#input');
 function show(name) {
@@ -617,6 +672,7 @@ function show(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + name));
   if (name === 'commands') { loadCommands(); renderTimers(); if (lastState) commandActions(lastState.actions); }
   if (name === 'diag') diagLoad();
+  if (name === 'builder') builderLoad();
   if (name === 'settings') { loadSettings(); refreshRemote(); }
   if (name === 'chat') { chatTab === 'ai' ? aiOpen() : ($('#log').scrollTop = $('#log').scrollHeight); }
   renderChatViews();
@@ -1262,6 +1318,109 @@ function notesList(list) {
     r.append(tm, sp); box.appendChild(r);
   }
 }
+
+// ---------- scenario builder ----------
+let bData = { scenarios: [], kinds: [], templates: [] }, bCur = null, bStep = -1;
+const scApi = body => api('/scenario', body);
+const blank = () => ({ id: '', name: '', phrase: '', enabled: true, steps: [] });
+function kindTitle(k) { const x = bData.kinds.find(z => z.kind === k); return x ? x.title : k; }
+async function builderLoad(keepId) {
+  try { bData = await (await fetch('/scenarios')).json(); } catch (e) { return; }
+  const kinds = $('#b-kinds'); kinds.textContent = '';
+  for (const k of bData.kinds) { const b = document.createElement('button'); b.type = 'button'; b.textContent = k.title; b.title = k.hint; b.onclick = () => addStep(k.kind); kinds.appendChild(b); }
+  const sel = $('#e-kind'); if (!sel.options.length) for (const k of bData.kinds) sel.add(new Option(k.title, k.kind));
+  const tp = $('#b-templates'); tp.textContent = '';
+  for (const t of bData.templates) { const b = document.createElement('button'); b.type = 'button'; b.textContent = t.name; b.onclick = () => { bCur = Object.assign(blank(), JSON.parse(JSON.stringify(t))); bStep = 0; bMsg(true, 'Заготовка открыта: проверьте шаги и нажмите «Сохранить».'); renderBuilder(); }; tp.appendChild(b); }
+  const id = keepId !== undefined ? keepId : (bCur && bCur.id);
+  const found = id && bData.scenarios.find(x => x.id === id);
+  if (found) bCur = JSON.parse(JSON.stringify(found)); else if (!bCur) bCur = blank();
+  renderBuilder();
+}
+function bMsg(ok, text) { const m = $('#b-msg'); m.className = 'msgline ' + (ok ? 'ok' : 'bad'); m.textContent = text || ''; }
+function renderBuilder() {
+  const q = $('#b-search').value.trim().toLowerCase();
+  const list = $('#b-list'); list.textContent = '';
+  const shown = bData.scenarios.filter(x => !q || (x.name + ' ' + x.phrase).toLowerCase().includes(q));
+  if (!shown.length) list.innerHTML = '<div class="empty">' + (bData.scenarios.length ? 'Ничего не найдено' : 'Пока пусто') + '</div>';
+  for (const x of shown) {
+    const d = document.createElement('div'); d.className = 'b-item' + (bCur && x.id === bCur.id ? ' active' : '') + (x.enabled ? '' : ' off');
+    const st = x.last_run ? (x.last_run.ok ? 'ok' : 'bad') : '';
+    d.innerHTML = '<b><span class="st ' + st + '"></span></b><small></small>'; d.querySelector('b').append(x.name); d.querySelector('small').textContent = '«' + x.phrase + '» · шагов: ' + x.steps.length;
+    d.onclick = () => { bCur = JSON.parse(JSON.stringify(x)); bStep = x.steps.length ? 0 : -1; bMsg(true, ''); renderBuilder(); };
+    list.appendChild(d);
+  }
+  if (document.activeElement !== $('#b-name')) $('#b-name').value = bCur.name;
+  if (document.activeElement !== $('#b-phrase')) $('#b-phrase').value = bCur.phrase;
+  $('#b-enabled').checked = bCur.enabled !== false;
+  $('#b-count').textContent = bCur.steps.length;
+  $('#b-delete').disabled = !bCur.id; $('#b-test').disabled = !bCur.id;
+  const box = $('#b-steps'); box.textContent = '';
+  if (!bCur.steps.length) box.innerHTML = '<div class="empty">Добавьте первый шаг кнопкой выше.</div>';
+  bCur.steps.forEach((st, i) => {
+    const d = document.createElement('div'); d.className = 'b-step' + (i === bStep ? ' active' : '');
+    d.innerHTML = '<i></i><b></b><small></small>'; d.querySelector('i').textContent = i + 1; d.querySelector('b').textContent = kindTitle(st.kind);
+    d.querySelector('small').textContent = (st.param || 'настроить') + (st.window === 'max' ? ' · на весь экран' : '');
+    d.onclick = () => { bStep = i; renderBuilder(); }; box.appendChild(d);
+  });
+  const lr = bCur.last_run; $('#b-last').textContent = lr ? 'Последний запуск ' + fmtTime(lr.at) + ': ' + lr.message : '';
+  renderStepEditor();
+}
+function renderStepEditor() {
+  const st = bCur.steps[bStep], ed = $('#b-edit');
+  ed.style.opacity = st ? 1 : .5; ed.querySelectorAll('input,select,button').forEach(el => el.disabled = !st);
+  $('#e-num').textContent = st ? bStep + 1 : '—';
+  if (!st) { $('#e-param').value = ''; $('#e-hint').textContent = 'Выберите шаг в цепочке'; return; }
+  $('#e-kind').value = st.kind; if (document.activeElement !== $('#e-param')) $('#e-param').value = st.param;
+  const k = bData.kinds.find(z => z.kind === st.kind); $('#e-hint').textContent = k ? k.hint : '';
+  $('#e-winwrap').style.display = ['link', 'app', 'file'].includes(st.kind) ? '' : 'none';
+  document.querySelectorAll('#e-win button').forEach(b => b.classList.toggle('active', (st.window || '') === b.dataset.w));
+  $('#e-up').disabled = bStep === 0; $('#e-down').disabled = bStep === bCur.steps.length - 1;
+}
+function addStep(kind) { if (bCur.steps.length >= 30) { bMsg(false, 'Не больше 30 шагов'); return; } bCur.steps.push({ kind, param: '', window: '' }); bStep = bCur.steps.length - 1; renderBuilder(); setTimeout(() => $('#e-param').focus(), 50); }
+$('#b-search').oninput = renderBuilder;
+$('#b-new').onclick = () => { bCur = blank(); bStep = -1; bMsg(true, ''); renderBuilder(); $('#b-name').focus(); };
+$('#b-name').oninput = e => { bCur.name = e.target.value; };
+$('#b-phrase').oninput = e => { bCur.phrase = e.target.value; };
+$('#b-enabled').onchange = async e => { bCur.enabled = e.target.checked; if (bCur.id) { await scApi({ op: 'enable', id: bCur.id, value: e.target.checked }); builderLoad(bCur.id); } };
+$('#e-kind').onchange = e => { bCur.steps[bStep].kind = e.target.value; renderBuilder(); };
+$('#e-param').oninput = e => { bCur.steps[bStep].param = e.target.value; const small = $('#b-steps').children[bStep]; if (small && small.querySelector('small')) small.querySelector('small').textContent = e.target.value || 'настроить'; };
+document.querySelectorAll('#e-win button').forEach(b => b.onclick = () => { bCur.steps[bStep].window = b.dataset.w; renderBuilder(); });
+$('#e-up').onclick = () => { const s = bCur.steps; [s[bStep - 1], s[bStep]] = [s[bStep], s[bStep - 1]]; bStep--; renderBuilder(); };
+$('#e-down').onclick = () => { const s = bCur.steps; [s[bStep + 1], s[bStep]] = [s[bStep], s[bStep + 1]]; bStep++; renderBuilder(); };
+$('#e-del').onclick = () => { bCur.steps.splice(bStep, 1); bStep = Math.min(bStep, bCur.steps.length - 1); renderBuilder(); };
+$('#e-test').onclick = async () => {
+  const m = $('#e-msg'); m.className = 'msgline'; m.textContent = 'Выполняю шаг…';
+  const r = await scApi({ op: 'test_step', step: bCur.steps[bStep] }); m.className = 'msgline ' + (r.ok ? 'ok' : 'bad'); m.textContent = (r.ok ? '✓ ' : '✗ ') + r.message;
+};
+$('#b-save').onclick = async () => {
+  const r = await scApi({ op: 'save', scenario: bCur });
+  if (!r.ok) { bMsg(false, r.message); return; }
+  bMsg(true, 'Сохранено. Скажите «Джарвис, ' + r.scenario.phrase + '».' + (r.note ? ' ' + r.note : '')); builderLoad(r.scenario.id);
+};
+$('#b-test').onclick = async () => {
+  bMsg(true, 'Выполняю сценарий…');
+  const r = await scApi({ op: 'test', id: bCur.id });
+  if (!r.ok) { bMsg(false, r.message); return; }
+  bMsg(r.result.ok, r.result.message); builderLoad(bCur.id);
+};
+$('#b-delete').onclick = async () => {
+  if (!bCur.id || !confirm('Удалить сценарий «' + bCur.name + '»?')) return;
+  await scApi({ op: 'delete', id: bCur.id }); bCur = blank(); bStep = -1; bMsg(true, 'Удалено'); builderLoad('');
+};
+$('#b-export').onclick = async () => {
+  const r = await scApi({ op: 'export' }); if (!r.ok) return;
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(r.doc, null, 2)], { type: 'application/json' })); a.download = 'jarvis-scenarios.json'; a.click();
+  bMsg(true, 'Сценарии сохранены в файл jarvis-scenarios.json');
+};
+let bImportReplace = false;
+$('#b-import').onclick = () => { bImportReplace = false; $('#b-file').click(); };
+$('#b-replace').onclick = () => { if (confirm('Заменить ВСЕ сценарии сценариями из файла?')) { bImportReplace = true; $('#b-file').click(); } };
+$('#b-file').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  let doc; try { doc = JSON.parse(await f.text()); } catch (err) { bMsg(false, 'Это не файл сценариев'); return; }
+  const r = await scApi({ op: 'import', doc, replace: bImportReplace });
+  bMsg(r.ok, r.ok ? 'Добавлено: ' + r.added + (r.skipped.length ? '. Пропущено: ' + r.skipped.join('; ') : '') : r.message); builderLoad();
+};
 
 // ---------- diagnostics ----------
 const DST = { ok: ['Работает', 'ok'], warn: ['Предупреждение', 'warn'], error: ['Ошибка', 'bad'], unchecked: ['Не проверено', ''] };
