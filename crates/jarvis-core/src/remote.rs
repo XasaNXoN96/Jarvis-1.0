@@ -320,6 +320,16 @@ const PAGE: &str = r#"<!doctype html>
 <h1>Jarvis</h1>
 <button id="mic" type="button">🎤 Сказать команду</button>
 <div id="heard"></div>
+<div id="help" style="display:none;background:#161b22;border:1px solid #30363d;border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:14px;line-height:1.5">
+  <b>Как включить голос на этом телефоне (один раз)</b><br>
+  <span id="yandex" style="display:none;color:#ffb347">Яндекс.Браузер для этого не подходит. Откройте эту ссылку в <b>Chrome</b>.<br></span>
+  1. В Chrome откройте в адресной строке: <b>chrome://flags/#unsafely-treat-insecure-origin-as-secure</b><br>
+  2. В поле впишите адрес: <b id="origin" style="user-select:all;word-break:break-all"></b><br>
+  3. Справа выберите <b>Enabled</b> и нажмите <b>Relaunch</b>.<br>
+  4. Откройте ссылку пульта снова, нажмите 🎤 и разрешите микрофон.<br>
+  <span style="color:#8b949e">Не хотите настраивать? Нажмите на значок микрофона на клавиатуре телефона в поле ниже: он диктует голосом и работает без настроек.</span>
+</div>
+<button id="howto" type="button" style="width:100%;margin-bottom:14px;background:#21262d;border:1px solid #30363d">Не работает голос? Как включить</button>
 <form id="f"><input id="t" placeholder="Команда, например: таймер на 5 минут" autocomplete="off"><button>Отправить</button></form>
 <div class="grid" id="quick"></div>
 <div id="status"></div>
@@ -341,7 +351,13 @@ async function send(text) {
 const micBtn = document.getElementById('mic'), heard = document.getElementById('heard');
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null;
+const helpBox = document.getElementById('help');
+document.getElementById('origin').textContent = location.origin;
+if (/YaBrowser/i.test(navigator.userAgent)) document.getElementById('yandex').style.display = 'inline';
+document.getElementById('howto').onclick = () => { helpBox.style.display = helpBox.style.display === 'none' ? 'block' : 'none'; };
+if (!window.isSecureContext) { heard.textContent = 'Голос: нужна одна настройка браузера (кнопка ниже). Текстом всё работает.'; }
 micBtn.onclick = () => {
+  if (!window.isSecureContext) { helpBox.style.display = 'block'; heard.textContent = 'Браузер не разрешает микрофон на этой странице. Сделайте настройку ниже.'; return; }
   if (!SR) { heard.textContent = 'Браузер не умеет слушать. Нажмите значок микрофона на клавиатуре в поле ниже.'; return; }
   if (rec) { rec.stop(); return; }
   rec = new SR(); rec.lang = 'ru-RU'; rec.interimResults = true; rec.continuous = false;
@@ -349,7 +365,7 @@ micBtn.onclick = () => {
   let final = '';
   rec.onresult = e => { let t = ''; for (const r of e.results) { t += r[0].transcript; if (r.isFinal) final = t; } heard.textContent = '«' + t + '»'; };
   rec.onerror = e => { heard.textContent = (e.error === 'not-allowed' || e.error === 'service-not-allowed')
-    ? 'Нет доступа к микрофону. Откройте страницу по ссылке https (нажмите «Дополнительно → Продолжить»), разрешите микрофон. Или используйте микрофон на клавиатуре в поле ниже.' : 'Ошибка микрофона: ' + e.error; };
+    ? 'Нет доступа к микрофону. Разрешите микрофон для этой страницы в настройках сайта или сделайте настройку из подсказки ниже.' : 'Ошибка микрофона: ' + e.error; };
   rec.onend = () => { micBtn.classList.remove('on'); micBtn.textContent = '🎤 Сказать команду'; rec = null; if (final.trim()) send(final.trim()); };
   try { rec.start(); } catch (e) { rec = null; micBtn.classList.remove('on'); }
 };
