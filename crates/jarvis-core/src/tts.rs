@@ -20,6 +20,12 @@ use crate::{i18n, APP_CONFIG_DIR, APP_DIR};
 static CURRENT: Lazy<Mutex<Option<Child>>> = Lazy::new(|| Mutex::new(None));
 static GENERATION: AtomicU64 = AtomicU64::new(0);
 static ENABLED: AtomicBool = AtomicBool::new(true);
+// number of speak() jobs that have not finished yet (the microphone must not listen to Jarvis' own voice)
+static BUSY: AtomicU64 = AtomicU64::new(0);
+
+pub fn is_speaking() -> bool {
+    BUSY.load(Ordering::SeqCst) > 0
+}
 
 const MAX_CHARS: usize = 30_000;
 
@@ -449,7 +455,15 @@ pub fn speak(text: &str) {
     let generation = GENERATION.load(Ordering::SeqCst);
     let lang = tts_lang();
 
+    BUSY.fetch_add(1, Ordering::SeqCst);
     std::thread::spawn(move || {
+        struct Done;
+        impl Drop for Done {
+            fn drop(&mut self) {
+                BUSY.fetch_sub(1, Ordering::SeqCst);
+            }
+        }
+        let _done = Done;
         // voice choice from the settings: "" = automatic, "piper", "win:<name>"
         let choice = crate::uistate::voice_name();
         if !choice.starts_with("win:") {

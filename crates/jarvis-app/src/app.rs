@@ -135,6 +135,12 @@ fn main_loop(text_cmd_rx: &Receiver<String>, rt: &tokio::runtime::Runtime) -> Re
             continue 'wake_word;
         }
 
+        // a session is open (dictation, a question about a file): keep listening without the wake word,
+        // but never while Jarvis itself is speaking
+        if jarvis_core::session::kind().is_some() && !jarvis_core::tts::is_speaking() {
+            jarvis_core::LISTEN_NOW.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+
         // click on the orb: listen for a command right away, no wake word needed
         if jarvis_core::LISTEN_NOW.swap(false, std::sync::atomic::Ordering::SeqCst) {
             info!("Listening on request (orb click)");
@@ -352,11 +358,14 @@ fn recognize_command(
                     // for tbr in config::ASSISTANT_PHRASES_TBR {
                     //     recognized_voice = recognized_voice.replace(tbr, "");
                     // }
-                    recognized_voice = remove_phrases(&recognized_voice, config::get_phrases_to_remove(&i18n::get_language()));
+                    let in_session = jarvis_core::session::kind().is_some();
+                    if !in_session {
+                        recognized_voice = remove_phrases(&recognized_voice, config::get_phrases_to_remove(&i18n::get_language()));
+                    }
 
                     recognized_voice = recognized_voice.trim().to_string();
                     
-                    if recognized_voice.len() < 5 {
+                    if recognized_voice.len() < 5 && !in_session {
                         debug!("Ignoring too short recognition: '{}'", recognized_voice);
                         continue;
                     }
@@ -437,7 +446,9 @@ fn process_text_command(text: &str, rt: &tokio::runtime::Runtime) {
     // for tbr in config::ASSISTANT_PHRASES_TBR {
     //     filtered = filtered.replace(tbr, "");
     // }
-    filtered = remove_phrases(&filtered, config::get_phrases_to_remove(&i18n::get_language()));
+    if jarvis_core::session::kind().is_none() {
+        filtered = remove_phrases(&filtered, config::get_phrases_to_remove(&i18n::get_language()));
+    }
 
     let filtered = filtered.trim();
     
@@ -462,6 +473,36 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
         }
     };
     
+    // an open session (dictation, "what to do with the file?") takes every phrase before the command search
+    if let Some(kind) = jarvis_core::session::kind() {
+        // a new file search while the question about the previous file is still open: leave the question
+        if kind == "file" {
+            if let Some((_, c)) = commands::fetch_by_triggers(text, commands_list) {
+                if c.id == "assistant_file_search" {
+                    jarvis_core::session::end();
+                }
+            }
+        }
+    }
+    if let Some(kind) = jarvis_core::session::kind() {
+        let session_cmd = commands_list.iter().flat_map(|l| l.commands.iter().map(move |c| (&l.path, c))).find(|(_, c)| c.id == "assistant_session");
+        if let Some((path, cfg)) = session_cmd {
+            info!("Session '{}' input: {}", kind, text);
+            jarvis_core::session::touch();
+            let ok = match commands::execute_command(path, cfg, Some(text), None) {
+                Ok(_) => true,
+                Err(msg) => {
+                    error!("Session script failed: {}", msg);
+                    ipc::send(IpcEvent::Error { message: msg });
+                    false
+                }
+            };
+            jarvis_core::uistate::log_action(text, &format!("диалог: {}", kind), ok);
+            ipc::send(IpcEvent::Idle);
+            return jarvis_core::session::kind().is_some(); // keep listening while the session is open
+        }
+    }
+
     let cmd_result = if let Some(found) = commands::fetch_by_triggers(text, commands_list) {
         info!("Keyword trigger matched: {}", found.1.id);
         Some(found)

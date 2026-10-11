@@ -108,6 +108,8 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
         }
         Ok(out)
     })?)?;
+    // jarvis.app.run_text(text): handle a phrase as an ordinary command (it goes to the queue of typed commands)
+    app.set("run_text", lua.create_function(|_, text: String| Ok(crate::remote::push_text(&text)))?)?;
     // jarvis.app.show_page("commands"): switch the Jarvis window to a page
     app.set("show_page", lua.create_function(|_, page: String| {
         #[cfg(feature = "jarvis_app")]
@@ -117,6 +119,16 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
         Ok(())
     })?)?;
     jarvis.set("app", app)?;
+
+    // jarvis.session: a conversation without the wake word (see session.rs)
+    let session = lua.create_table()?;
+    session.set("start", lua.create_function(|_, (kind, secs): (String, Option<u64>)| { crate::session::start(&kind, secs.unwrap_or(60)); Ok(()) })?)?;
+    session.set("finish", lua.create_function(|_, ()| { crate::session::end(); Ok(()) })?)?;
+    session.set("kind", lua.create_function(|_, ()| Ok(crate::session::kind()))?)?;
+    session.set("touch", lua.create_function(|_, ()| { crate::session::touch(); Ok(()) })?)?;
+    session.set("data", lua.create_function(|_, ()| Ok(crate::session::data()))?)?;
+    session.set("set_data", lua.create_function(|_, v: String| { crate::session::set_data(&v); Ok(()) })?)?;
+    jarvis.set("session", session)?;
 
     // jarvis.files.search(query): background search on this computer, the answer arrives by itself
     // jarvis.files.results() -> { {path=, name=, dir=, is_dir=}, ... } (last finished search)

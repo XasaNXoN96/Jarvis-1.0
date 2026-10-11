@@ -209,6 +209,29 @@ pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Resul
     })?;
     system.set("notify", notify_fn)?;
 
+    // jarvis.system.type_text(text, window_class?) -> true | nil, error
+    system.set("type_text", lua.create_function(|_, (text, class): (String, Option<String>)| {
+        match type_text(&text, class.as_deref()) {
+            Ok(()) => Ok((true, None::<String>)),
+            Err(e) => Ok((false, Some(e))),
+        }
+    })?)?;
+
+    // jarvis.system.window_exists(class) -> true when a top-level window of this class is open (Windows)
+    system.set("window_exists", lua.create_function(|_, class: String| {
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::ffi::OsStrExt;
+            let wide: Vec<u16> = std::ffi::OsStr::new(&class).encode_wide().chain(std::iter::once(0)).collect();
+            return Ok(unsafe { !winapi::um::winuser::FindWindowW(wide.as_ptr(), std::ptr::null()).is_null() });
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = class;
+            Ok(true)
+        }
+    })?)?;
+
     // jarvis.system.exists(path) -> true when the file / folder / drive exists
     system.set("exists", lua.create_function(|_, path: String| Ok(std::path::Path::new(&path).exists()))?)?;
 
@@ -548,4 +571,70 @@ pub fn set_clipboard_text(text: &str) -> Result<(), String> {
         CloseClipboard();
         if ok { Ok(()) } else { Err("SetClipboardData failed".to_string()) }
     }
+}
+
+// Types text into a window with the keyboard (Unicode, any language). `class`: window class to bring to the front
+// first (for example "Notepad"); None = the window that has the focus now (not the Jarvis window).
+#[cfg(target_os = "windows")]
+pub fn type_text(text: &str, class: Option<&str>) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    use winapi::um::processthreadsapi::GetCurrentThreadId;
+    use winapi::um::winuser::{
+        AttachThreadInput, FindWindowW, GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId, IsIconic, SendInput,
+        SetForegroundWindow, ShowWindow, INPUT, INPUT_KEYBOARD, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, SW_RESTORE, VK_RETURN,
+    };
+
+    unsafe {
+        let mut hwnd = GetForegroundWindow();
+        if let Some(class) = class {
+            let wide: Vec<u16> = std::ffi::OsStr::new(class).encode_wide().chain(std::iter::once(0)).collect();
+            let found = FindWindowW(wide.as_ptr(), std::ptr::null());
+            if found.is_null() {
+                return Err(format!("window {} not found", class));
+            }
+            hwnd = found;
+            if IsIconic(hwnd) != 0 {
+                ShowWindow(hwnd, SW_RESTORE);
+            }
+            // Windows only lets the foreground program take the focus: borrow its input queue for a moment
+            let fg = GetForegroundWindow();
+            let (cur, fg_thread) = (GetCurrentThreadId(), GetWindowThreadProcessId(fg, std::ptr::null_mut()));
+            AttachThreadInput(cur, fg_thread, 1);
+            SetForegroundWindow(hwnd);
+            AttachThreadInput(cur, fg_thread, 0);
+            std::thread::sleep(std::time::Duration::from_millis(150));
+        } else {
+            let mut buf = [0u16; 256];
+            let n = GetWindowTextW(hwnd, buf.as_mut_ptr(), 256);
+            if String::from_utf16_lossy(&buf[..n.max(0) as usize]).to_lowercase().contains("jarvis") {
+                return Err("the Jarvis window has the focus".to_string());
+            }
+        }
+
+        let key = |vk: u16, scan: u16, flags: u32| -> INPUT {
+            let mut input: INPUT = std::mem::zeroed();
+            input.type_ = INPUT_KEYBOARD;
+            let ki = input.u.ki_mut();
+            ki.wVk = vk;
+            ki.wScan = scan;
+            ki.dwFlags = flags;
+            input
+        };
+        for unit in text.encode_utf16() {
+            let mut inputs = if unit == 10 {
+                vec![key(VK_RETURN as u16, 0, 0), key(VK_RETURN as u16, 0, KEYEVENTF_KEYUP)]
+            } else {
+                vec![key(0, unit, KEYEVENTF_UNICODE), key(0, unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP)]
+            };
+            SendInput(inputs.len() as u32, inputs.as_mut_ptr(), std::mem::size_of::<INPUT>() as i32);
+            std::thread::sleep(std::time::Duration::from_millis(4));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn type_text(text: &str, class: Option<&str>) -> Result<(), String> {
+    log::info!("[not windows, skipped] type into {:?}: {}", class, text);
+    Ok(())
 }

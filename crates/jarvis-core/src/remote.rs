@@ -27,6 +27,14 @@ static RUNNING: AtomicBool = AtomicBool::new(false);
 static TOKEN: Lazy<String> = Lazy::new(load_or_create_token);
 
 // the app gives us the channel that feeds typed commands into the main loop
+// puts a phrase into the queue of typed commands (used by scripts: "run this as a normal command")
+pub fn push_text(text: &str) -> bool {
+    match TX.get() {
+        Some(tx) => tx.lock().send(text.to_string()).is_ok(),
+        None => false,
+    }
+}
+
 pub fn set_sender(tx: Sender<String>) {
     let _ = TX.set(Mutex::new(tx));
 }

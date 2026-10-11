@@ -62,6 +62,9 @@ if closing then
 else
   local ok = pcall(open, found.start)
   if ok then
+    -- remember the document program: "пиши" then knows where to write
+    local OFFICE = { ["Word"] = "word", ["Excel"] = "excel", ["Блокнот"] = "notepad" }
+    if OFFICE[found.name] then jarvis.state.set("office_app", OFFICE[found.name]); jarvis.state.set("dict_last", "") end
     say(T("Открываю", "Opening"), found.name, T("Открываю " .. found.name, "Opening " .. found.name), "program")
   else
     say(T("Программа", "Program"), T("Не удалось запустить ", "Could not start ") .. found.name .. T(" (возможно, не установлена)", " (maybe it is not installed)"))

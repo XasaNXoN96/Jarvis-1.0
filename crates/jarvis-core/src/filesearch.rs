@@ -250,15 +250,19 @@ fn announce(query: &str, items: &[FoundItem]) {
     let first_dir = first.path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
     let spoken = if ru {
         format!(
-            "Нашёл {}. Первый: {}, в папке {}. Скажите «открой первый результат».",
+            "Нашёл {}. Первый: {}, в папке {}. Что сделать: запустить, показать папку, скопировать или удалить?",
             items.len(),
             first_name,
             first_dir
         )
     } else {
-        format!("Found {}. The first one: {}, in the folder {}. Say \"open the first result\".", items.len(), first_name, first_dir)
+        format!("Found {}. The first one: {}, in the folder {}. What should I do: open, show the folder, copy or delete?", items.len(), first_name, first_dir)
     };
+    say(&spoken);
     crate::tts::speak(&spoken);
+    // the answer ("запускай", "удали", "второй") is taken without the wake word
+    crate::session::start("file", 45);
+    crate::session::set_data("1");
 }
 
 // Starts a background search. A new search cancels the previous one.

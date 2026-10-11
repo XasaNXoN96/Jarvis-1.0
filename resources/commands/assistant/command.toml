@@ -752,3 +752,50 @@ triggers.ru = ["разблокир", "сними блокиров", "снять 
 triggers.en = ["unlock", "unlock computer", "unlock pc"]
 phrases.ru = ["разблокируй компьютер", "разблокируй"]
 phrases.en = ["unlock the computer"]
+
+[[commands]]
+id = "assistant_office_dictate"
+type = "lua"
+script = "office.lua"
+sandbox = "full"
+timeout = 20000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["пиши", "пишите", "диктуй", "диктуйте", "печатай", "диктовк", "начни писать", "начни диктовать", "буду диктовать", "давай писать", "режим диктовки"]
+triggers.en = ["dictate", "start dictation", "start typing", "type for me"]
+phrases.ru = ["пиши текст", "диктуй", "пиши в ворде", "начни диктовку в блокноте", "пиши в экселе"]
+phrases.en = ["start dictation"]
+
+[[commands]]
+id = "assistant_office_cell"
+type = "lua"
+script = "office.lua"
+sandbox = "full"
+timeout = 20000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["ячейк", "ячейк пиши", "ячейк запиши", "ячейк введи", "ячейк впиши", "ячейк напиши", "ячейк поставь", "ячейк сделай", "ячейк посчитай", "ячейк формул", "ячейк равно", "ячейк сумм", "ячейк плюс", "ячейк умнож"]
+triggers.en = ["cell"]
+phrases.ru = ["ячейка а1 пиши 5", "ячейка б2 пиши привет", "ячейка c1 сделай а плюс б"]
+phrases.en = ["cell a1 write 5"]
+
+[[commands]]
+id = "assistant_office_new"
+type = "lua"
+script = "office.lua"
+sandbox = "full"
+timeout = 20000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["нов документ", "созда документ", "нов таблиц", "созда таблиц", "нов книг", "созда книг", "нов текстов документ"]
+triggers.en = ["new document", "create document", "new spreadsheet", "new workbook"]
+phrases.ru = ["новый документ", "создай таблицу"]
+phrases.en = ["new document"]
+
+# used internally: every phrase while a session (dictation, "what to do with the file?") is open; never matched by words
+[[commands]]
+id = "assistant_session"
+type = "lua"
+script = "office.lua"
+sandbox = "full"
+timeout = 25000

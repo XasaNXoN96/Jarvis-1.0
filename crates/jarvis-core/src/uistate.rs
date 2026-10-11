@@ -122,7 +122,7 @@ pub const GROUPS: &[(&str, &str, &str, &str)] = &[
     ("timers", "⏱", "Таймеры и напоминания", "таймер, напоминание, будильник, «остановись через…»"),
     ("apps", "🌐", "Программы и сайты", "открыть сайт, браузер, блокнот, калькулятор, закрыть программу"),
     ("files", "📁", "Файлы и папки", "найти файл, открыть папку, диск, настройки Windows"),
-    ("text", "📝", "Заметки", "записать мысль, прочитать и открыть заметки"),
+    ("text", "📝", "Тексты и документы", "диктовка в Word и блокнот, таблицы Excel, новый документ, заметки"),
     ("voice", "🎤", "Голос и озвучка", "микрофон, озвучка, чтение выделенного текста, проверка голоса"),
     ("system", "🖥", "Компьютер и питание", "выключить, перезагрузить, заблокировать, свернуть окна, скриншот"),
     ("info", "📊", "Информация", "время, дата, батарея, память, процессор, диск, IP"),
@@ -139,7 +139,7 @@ pub fn group_key(pack: &str, id: &str) -> &'static str {
     if starts("volume") || starts("brightness") || starts("media") { return "sound"; }
     if starts("timer") || id == "reminder" { return "timers"; }
     if starts("file") || id == "place_open" || id == "disk_open" { return "files"; }
-    if starts("note") { return "text"; }
+    if starts("note") || starts("office") || id == "session" { return "text"; }
     if starts("tts") || starts("read_") || starts("mic_") { return "voice"; }
     if starts("power") || id == "unlock" || pack == "windows" { return "system"; }
     if starts("info") || starts("sys_") { return "info"; }
@@ -261,6 +261,8 @@ pub fn state_json() -> Value {
         "cpu": st.cpu, "mem_used": st.mem_used_gb, "mem_total": st.mem_total_gb,
         "disk_free": st.disk_free_gb, "disk_total": st.disk_total_gb,
         "timers": timers, "actions": actions,
+        "session": crate::session::kind().unwrap_or_default(),
+        "session_data": crate::session::data(),
         "mic_muted": crate::MIC_MUTED.load(std::sync::atomic::Ordering::SeqCst),
         "voice_active": crate::VOICE_ACTIVE.load(std::sync::atomic::Ordering::SeqCst),
         "voice_error": crate::VOICE_ERROR.lock().clone(),

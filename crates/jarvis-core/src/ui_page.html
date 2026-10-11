@@ -147,6 +147,9 @@
   #send { padding: 0 20px; border: 0; border-radius: 12px; background: var(--accent); color: #04101f; cursor: pointer; font: inherit; font-weight: 600; }
   #send:hover { filter: brightness(1.1); }
   #hint { margin-top: 6px; font-size: 12px; color: var(--dim); }
+  #session-bar { display: none; align-items: center; gap: 12px; margin-bottom: 10px; padding: 9px 14px; border-radius: 12px; border: 1px solid #5ad1ff55; background: #0d2a4acc; }
+  #session-bar.on { display: flex; } #session-bar .sdot { width: 10px; height: 10px; border-radius: 50%; background: var(--err); animation: blink 1.2s infinite; flex-shrink: 0; }
+  #session-bar .st2 { flex: 1; } @keyframes blink { 50% { opacity: .3; } }
 </style>
 </head>
 <body>
@@ -285,6 +288,7 @@
 </div>
 
 <div class="bottom">
+  <div id="session-bar"><span class="sdot"></span><div class="st2" id="session-text"></div><button class="btn small" id="session-end" type="button">Закончить</button></div>
   <form id="form" autocomplete="off">
     <input id="input" placeholder="Напишите команду, например: таймер на 5 минут" autofocus>
     <button type="button" id="micbtn" title="Микрофон">🎤</button>
@@ -417,7 +421,7 @@ function setBig(on, auto) {
 }
 function autoBig() { if (currentPage === 'home' && !home().classList.contains('big')) setBig(true, true); clearTimeout(smallTimer); }
 // the sphere that opened by itself (wake word) folds back a few seconds after the work is done
-function scheduleAutoSmall() { clearTimeout(smallTimer); if (bigAuto) smallTimer = setTimeout(() => { if (bigAuto && state !== 'speaking') setBig(false); }, 7000); }
+function scheduleAutoSmall() { clearTimeout(smallTimer); if (bigAuto) smallTimer = setTimeout(() => { if (bigAuto && state !== 'speaking' && !sessionKind) setBig(false); else if (bigAuto && sessionKind) scheduleAutoSmall(); }, 7000); }
 $('#orb').onclick = async () => {
   if (home().classList.contains('big')) { setBig(false); return; }
   setBig(true, false);
@@ -440,6 +444,20 @@ function saveSettings(patch) { clearTimeout(saveTimer); saveTimer = setTimeout((
 
 // ---------- microphone button (voice <-> text mode) ----------
 let micMuted = false;
+let sessionKind = '';
+// an open session: dictation into Word / Notepad / Excel, or the question "what to do with the file?"
+function applySession(s) {
+  const kind = s.session || ''; sessionKind = kind;
+  const bar = $('#session-bar'); bar.classList.toggle('on', !!kind);
+  if (!kind) return;
+  const app = { word: 'Word', excel: 'Excel', notepad: 'Блокнот' }[s.session_data] || '';
+  $('#session-text').innerHTML = kind === 'file'
+    ? '<b>Что сделать с файлом?</b> Скажите или напишите: запустить, показать папку, скопировать, удалить (или «второй», «отмена»).'
+    : '<b>Диктовка' + (app ? ' в ' + app : '') + '.</b> ' + (s.session_data === 'excel' ? 'Говорите: «ячейка А1 пиши 5», «ячейка C1 сделай А плюс Б». ' : 'Говорите текст, «точка», «запятая», «новая строка». ') + 'Закончить: скажите «заканчивай».';
+  $('#session-end').textContent = kind === 'file' ? 'Отмена' : 'Закончить';
+}
+$('#session-end').onclick = () => sendCommand(sessionKind === 'file' ? 'отмена' : 'заканчивай');
+setInterval(async () => { try { applySession(await (await fetch('/state')).json()); } catch (e) {} }, 1500);
 let voiceActive = false;
 function hintText() { return (micMuted ? 'Микрофон выключен — режим текста.' : (voiceActive ? 'Голос и текст работают.' : 'Голос не запущен — только текст.')) + '  Enter — отправить.'; }
 function applyVoice(s) {
