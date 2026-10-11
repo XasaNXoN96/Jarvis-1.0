@@ -32,15 +32,24 @@ local old
 local text = ""
 
 if id == "assistant_read_selection" then
-  -- copy the selected text with Ctrl+C, remember what was in the clipboard before
+  -- copy the selected text with Ctrl+C (sent to the program that has the focus), keep the old clipboard
   local ok_get, got = pcall(jarvis.system.clipboard.get)
   old = (ok_get and type(got) == "string") and got or nil
-  powershell("Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Clipboard]::Clear(); [System.Windows.Forms.SendKeys]::SendWait('^c')")
-  jarvis.sleep(250)
-  ok_get, got = pcall(jarvis.system.clipboard.get)
-  text = (ok_get and type(got) == "string") and got or ""
-  -- put the previous clipboard text back
-  if old and old ~= "" then pcall(jarvis.system.clipboard.set, old) end
+  local sent = jarvis.system.copy_selection()
+  if sent then
+    jarvis.sleep(350)
+    ok_get, got = pcall(jarvis.system.clipboard.get)
+    text = (ok_get and type(got) == "string") and got or ""
+  end
+  if text == "" or text == old then
+    -- nothing new was copied: the Jarvis window had the focus (typed command) or nothing is selected
+    text = old or ""
+    if text ~= "" then
+      jarvis.out(T("Выделение не получено, читаю текст из буфера обмена (Ctrl+C).", "No selection received, reading the clipboard text (Ctrl+C)."))
+    end
+  elseif old and old ~= "" then
+    pcall(jarvis.system.clipboard.set, old)
+  end
 else
   local ok_get, got = pcall(jarvis.system.clipboard.get)
   text = (ok_get and type(got) == "string") and got or ""
@@ -49,7 +58,7 @@ end
 text = text:gsub("^%s+", ""):gsub("%s+$", "")
 if text == "" then
   say(T("Озвучка", "Speech"),
-      T("Нет текста. Выделите текст мышкой и повторите.", "No text. Select some text with the mouse and try again."),
+      T("Нет текста. Выделите текст, скопируйте (Ctrl+C) и скажите «прочитай буфер». Голосом «озвучь» работает прямо с выделенным.", "No text. Select text, copy it (Ctrl+C) and say \"read clipboard\". By voice, \"read this\" works with the selection directly."),
       T("Не вижу выделенного текста", "I don't see any selected text"))
   return
 end

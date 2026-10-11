@@ -18,7 +18,7 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-use crate::lua::api::system::show_notification;
+use crate::lua::api::system::{show_notification, show_popup};
 use crate::{tts, voices, APP_CONFIG_DIR};
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -73,6 +73,7 @@ fn fire(entry: &TimerEntry, late: bool) {
     #[cfg(feature = "jarvis_app")]
     crate::ipc::send(crate::ipc::IpcEvent::Output { text: format!("{}: {}", entry.title, message) });
     show_notification(&entry.title, &message);
+    show_popup(&entry.title, &message);
     tts::speak(&message);
 
     // make sure the user notices: sound a few times

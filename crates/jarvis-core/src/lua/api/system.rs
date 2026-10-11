@@ -210,6 +210,27 @@ pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Resul
     })?;
     system.set("notify", notify_fn)?;
 
+    let popup_fn = lua.create_function(|_, (title, message): (String, String)| {
+        show_popup(&title, &message);
+        Ok(true)
+    })?;
+    system.set("popup", popup_fn)?;
+
+    // jarvis.system.volume(action, value?) -> level 0..100 | nil, error
+    let volume_fn = lua.create_function(|_, (action, value): (String, Option<i32>)| {
+        match volume_control(&action, value.unwrap_or(0)) {
+            Ok(v) => Ok((Some(v), None::<String>)),
+            Err(e) => {
+                log::warn!("[Lua] volume {} failed: {}", action, e);
+                Ok((None, Some(e)))
+            }
+        }
+    })?;
+    system.set("volume", volume_fn)?;
+
+    // jarvis.system.copy_selection() -> true when Ctrl+C was sent to another program
+    system.set("copy_selection", lua.create_function(|_, ()| Ok(send_copy()))?)?;
+
     // jarvis.system.clipboard - subtable
     let clipboard = lua.create_table()?;
     
@@ -332,3 +353,135 @@ pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Resul
     
     Ok(())
 }
+// ---------------------------------------------------------------------------------------------
+// Native helpers (no PowerShell): master volume, popup window, copy the selection
+// ---------------------------------------------------------------------------------------------
+
+// Master volume of the default playback device (Core Audio). Returns the new level 0..100.
+#[cfg(target_os = "windows")]
+pub fn volume_control(action: &str, value: i32) -> Result<i32, String> {
+    use std::ptr::null_mut;
+    use winapi::shared::guiddef::GUID;
+    use winapi::um::combaseapi::CLSCTX_ALL;
+    use winapi::um::combaseapi::{CoCreateInstance, CoInitializeEx, CoUninitialize};
+    use winapi::um::endpointvolume::IAudioEndpointVolume;
+    use winapi::um::mmdeviceapi::{eConsole, eRender, CLSID_MMDeviceEnumerator, IMMDevice, IMMDeviceEnumerator};
+    use winapi::Interface;
+
+    unsafe {
+        // may return S_FALSE / RPC_E_CHANGED_MODE when COM is already set up on this thread: that is fine
+        let init = CoInitializeEx(null_mut(), 0x2); // COINIT_APARTMENTTHREADED
+        let init_ok = init >= 0;
+
+        let result = (|| -> Result<i32, String> {
+            let mut enumerator: *mut IMMDeviceEnumerator = null_mut();
+            let hr = CoCreateInstance(
+                &CLSID_MMDeviceEnumerator,
+                null_mut(),
+                CLSCTX_ALL,
+                &IMMDeviceEnumerator::uuidof() as *const GUID,
+                &mut enumerator as *mut _ as *mut _,
+            );
+            if hr < 0 || enumerator.is_null() {
+                return Err(format!("no audio enumerator (0x{:08x})", hr as u32));
+            }
+            let mut device: *mut IMMDevice = null_mut();
+            let hr = (*enumerator).GetDefaultAudioEndpoint(eRender, eConsole, &mut device);
+            (*enumerator).Release();
+            if hr < 0 || device.is_null() {
+                return Err(format!("no playback device (0x{:08x})", hr as u32));
+            }
+            let mut endpoint: *mut IAudioEndpointVolume = null_mut();
+            let hr = (*device).Activate(
+                &IAudioEndpointVolume::uuidof() as *const GUID,
+                CLSCTX_ALL,
+                null_mut(),
+                &mut endpoint as *mut _ as *mut _,
+            );
+            (*device).Release();
+            if hr < 0 || endpoint.is_null() {
+                return Err(format!("no volume control (0x{:08x})", hr as u32));
+            }
+
+            let null_ctx: *const GUID = std::ptr::null();
+            let mut level: f32 = 0.0;
+            (*endpoint).GetMasterVolumeLevelScalar(&mut level);
+            let current = (level * 100.0).round() as i32;
+            let clamp = |v: i32| -> f32 { v.max(0).min(100) as f32 / 100.0 };
+
+            let mut hr = 0;
+            match action {
+                "set" => {
+                    (*endpoint).SetMute(0, null_ctx);
+                    hr = (*endpoint).SetMasterVolumeLevelScalar(clamp(value), null_ctx);
+                }
+                "up" => {
+                    (*endpoint).SetMute(0, null_ctx);
+                    hr = (*endpoint).SetMasterVolumeLevelScalar(clamp(current + value), null_ctx);
+                }
+                "down" => hr = (*endpoint).SetMasterVolumeLevelScalar(clamp(current - value), null_ctx),
+                "mute" => hr = (*endpoint).SetMute(1, null_ctx),
+                "unmute" => hr = (*endpoint).SetMute(0, null_ctx),
+                _ => {}
+            }
+            if hr < 0 {
+                (*endpoint).Release();
+                return Err(format!("volume change refused (0x{:08x})", hr as u32));
+            }
+            (*endpoint).GetMasterVolumeLevelScalar(&mut level);
+            (*endpoint).Release();
+            Ok((level * 100.0).round() as i32)
+        })();
+
+        if init_ok {
+            CoUninitialize();
+        }
+        result
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn volume_control(action: &str, value: i32) -> Result<i32, String> {
+    log::info!("[not windows] volume {} {}", action, value);
+    Ok(value)
+}
+
+// A window that stays on top until it is closed (a toast can be hidden by Focus assist / notification settings).
+// Does not block the caller.
+pub fn show_popup(title: &str, message: &str) {
+    log::info!("[Lua] POPUP: {} - {}", title, message);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use winapi::um::winuser::{MessageBoxW, MB_ICONINFORMATION, MB_OK, MB_SETFOREGROUND, MB_TOPMOST};
+        let wide = |s: &str| -> Vec<u16> { std::ffi::OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect() };
+        let (t, m) = (wide(title), wide(message));
+        std::thread::spawn(move || unsafe {
+            MessageBoxW(std::ptr::null_mut(), m.as_ptr(), t.as_ptr(), MB_OK | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND);
+        });
+    }
+}
+
+// Ctrl+C in whatever window has the focus. Returns false when Jarvis' own window is in front
+// (it cannot have a selection from another program then).
+#[cfg(target_os = "windows")]
+pub fn send_copy() -> bool {
+    use winapi::um::winuser::{keybd_event, GetForegroundWindow, GetWindowTextW, KEYEVENTF_KEYUP};
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        let mut buf = [0u16; 256];
+        let n = GetWindowTextW(hwnd, buf.as_mut_ptr(), 256);
+        let title = String::from_utf16_lossy(&buf[..n.max(0) as usize]).to_lowercase();
+        if title.contains("jarvis") {
+            return false;
+        }
+        keybd_event(0x11, 0, 0, 0); // Ctrl
+        keybd_event(0x43, 0, 0, 0); // C
+        keybd_event(0x43, 0, KEYEVENTF_KEYUP, 0);
+        keybd_event(0x11, 0, KEYEVENTF_KEYUP, 0);
+        true
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn send_copy() -> bool { false }

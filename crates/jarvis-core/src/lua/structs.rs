@@ -30,6 +30,8 @@ pub struct CommandResult {
 
 impl Default for CommandResult {
     fn default() -> Self {
-        Self { chain: true }
+        // no chaining by default: after a command Jarvis stops listening, otherwise the microphone
+        // hears Jarvis' own voice and runs random commands ("да, сэр" from nowhere)
+        Self { chain: false }
     }
 }
