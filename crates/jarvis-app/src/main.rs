@@ -220,6 +220,8 @@ fn main() -> Result<(), String> {
     // `--background`: no window at start (tray menu "Open window"), `--no-ui`: no window at all,
     // `--console`: keep the console window open
     jarvis_core::ui::start();
+    // the list of installed programs ("открой Photoshop"): read from its file, rebuilt in the background when old
+    jarvis_core::appindex::ensure_loaded();
     {
         let args: Vec<String> = std::env::args().collect();
         let has = |flag: &str| args.iter().any(|a| a == flag);

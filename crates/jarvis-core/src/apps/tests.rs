@@ -123,3 +123,23 @@ fn env_expansion_and_install_lookup_do_not_invent_paths() {
     let tc = APPS.iter().find(|a| a.id == "totalcmd").unwrap();
     assert_eq!(locate(tc), None);
 }
+
+#[test]
+fn new_programs_vs_code_snipping_tool_and_the_kind_word_before_a_name() {
+    let cases = [
+        ("открой vs code", "vscode"), ("Открой VS Code", "vscode"), ("запусти visual studio code", "vscode"), ("открой вижуал студио код", "vscode"),
+        ("запусти Visual Studio Code", "vscode"), ("открой visual studio", "visualstudio"),
+        ("открой ножницы", "snipping"), ("открой фотошоп", "photoshop"), ("запусти Photoshop", "photoshop"),
+        ("запусти браузер firefox", "firefox"), ("Запусти браузер Firefox", "firefox"), ("открой яндекс браузер", "yandex"),
+        ("открой телеграм", "telegram"), ("запусти дискорд", "discord"), ("открой стим", "steam"), ("открой Total Commander", "totalcmd"),
+        ("открой командную строку", "cmd"), ("открой powershell", "powershell"), ("открой панель управления", "control"),
+        ("открой параметры windows", "settings"), ("открой блокнот", "notepad"), ("открой калькулятор", "calc"), ("открой paint", "paint"),
+    ];
+    for (t, id) in cases {
+        assert_eq!(id_of(t), Some(id), "{}", t);
+    }
+    // "командер" alone is not a name of the fixed list: the index of installed programs decides (and asks when several fit)
+    assert_eq!(id_of("открой commander"), None);
+    assert_eq!(split_request("запусти браузер Firefox").unwrap().1, ["firefox"]);
+    assert_eq!(split_request("открой программу Total Commander").unwrap().1, ["total", "commander"]);
+}

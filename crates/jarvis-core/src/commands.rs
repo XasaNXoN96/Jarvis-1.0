@@ -120,6 +120,25 @@ pub fn fetch_site<'a>(phrase: &str, commands: &'a [JCommandsList]) -> Option<(&'
     commands.iter().flat_map(|l| l.commands.iter().map(move |c| (&l.path, c))).find(|(_, c)| c.id == "assistant_website")
 }
 
+// "открой Photoshop", "запусти командер": a program that is not in the fixed list but is installed (appindex.rs).
+// Only when no keyword command claims the phrase ("открой загрузки" stays the folder) and only for a short
+// "verb + name" phrase; an ambiguous name also comes here, the program command then asks which one.
+pub fn fetch_indexed_program<'a>(phrase: &str, commands: &'a [JCommandsList]) -> Option<(&'a PathBuf, &'a JCommand)> {
+    let (action, words) = crate::apps::split_request(phrase)?;
+    if action != crate::apps::Action::Open || words.len() > 4 {
+        return None;
+    }
+    if let Some((_, c)) = fetch_by_triggers(phrase, commands) {
+        if c.id != "assistant_program_open" {
+            return None;
+        }
+    }
+    if crate::appindex::find(&words) == crate::appindex::Found::Nothing {
+        return None;
+    }
+    commands.iter().flat_map(|l| l.commands.iter().map(move |c| (&l.path, c))).find(|(_, c)| c.id == "assistant_program_open")
+}
+
 pub fn fetch_by_triggers<'a>(
     phrase: &str,
     commands: &'a [JCommandsList],

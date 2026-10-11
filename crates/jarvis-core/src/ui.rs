@@ -272,6 +272,38 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             std::thread::sleep(Duration::from_millis(250));
             json!({ "ok": true, "enabled": crate::remote::is_running() })
         }
+        // the "Программы" page: rebuild the index, start a program of the index (never a path from the page itself)
+        "apps_rescan" => {
+            let started = crate::appindex::rescan_background();
+            json!({ "ok": true, "started": started })
+        }
+        "app_launch" => {
+            let launch = body.get("launch").and_then(|v| v.as_str()).unwrap_or("");
+            match crate::appindex::apps().into_iter().find(|a| a.launch == launch) {
+                Some(a) => match crate::appindex::launch(&a) {
+                    Ok(()) => { crate::filesearch::note_launch(&a.name, true); json!({ "ok": true, "message": format!("Запускаю {}", a.name) }) }
+                    Err(e) => { crate::filesearch::note_launch(&a.name, false); json!({ "ok": false, "message": e }) }
+                },
+                None => json!({ "ok": false, "message": "Этой программы нет в списке. Обновите список программ." }),
+            }
+        }
+        // the "Файлы" page
+        "file_search" => {
+            let f = |k: &str| body.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let q = crate::filesearch::query_from_form(&f("query"), &f("kind"), &f("scope"), &f("when"), &f("content"));
+            match crate::filesearch::start_query(q) {
+                Ok(d) => json!({ "ok": true, "message": format!("Ищу: {}", d) }),
+                Err(e) => json!({ "ok": false, "message": e }),
+            }
+        }
+        "file_cancel" => json!({ "ok": true, "stopped": crate::filesearch::cancel() }),
+        "file_open" | "file_reveal" => {
+            let n = body.get("n").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+            match crate::filesearch::open_result(n, name == "file_reveal") {
+                Ok(f) => json!({ "ok": true, "message": format!("{}: {}", if name == "file_reveal" { "Показываю в папке" } else { "Открываю" }, f) }),
+                Err(e) => json!({ "ok": false, "message": e }),
+            }
+        }
         // phone remote: what the PC can send to the phone page (find the phone, a link, a text)
         "phone_send" => {
             let kind = body.get("kind").and_then(|v| v.as_str()).unwrap_or("");
@@ -581,6 +613,22 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
     match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/") => respond(&mut stream, "200 OK", "text/html", PAGE),
         ("GET", "/icon.png") | ("GET", "/favicon.ico") => respond_bytes(&mut stream, "200 OK", "image/png", ICON),
+        ("GET", "/apps") => {
+            let list: Vec<serde_json::Value> = crate::appindex::apps()
+                .iter()
+                .map(|a| json!({ "name": a.name, "launch": a.launch, "source": crate::appindex::source_title(&a.source), "ok": crate::appindex::launchable(a) }))
+                .collect();
+            let body = json!({
+                "apps": list,
+                "scanned_at": crate::appindex::scanned_at(),
+                "scanning": crate::appindex::is_scanning(),
+                "error": crate::appindex::last_error(),
+            });
+            respond(&mut stream, "200 OK", "application/json", &body.to_string());
+        }
+        ("GET", "/files") => {
+            respond(&mut stream, "200 OK", "application/json", &crate::filesearch::state_json().to_string());
+        }
         ("GET", "/remote") => {
             // phone remote state for the Settings page (the secret link is shown only to this window)
             let body = serde_json::json!({

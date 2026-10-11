@@ -437,4 +437,108 @@ mod tests {
         assert!(crate::remote::queued_for_tests().is_empty());
         crate::remote::phone_for_tests(false, false);
     }
+
+    // installed programs from the index: one fitting program starts, several are listed and the answer chooses
+    // not on Windows: the scripts would really open the test files there
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn installed_programs_start_and_an_ambiguous_name_asks_which_one() {
+        let _s = crate::session::TEST_LOCK.lock();
+        let _a = crate::appindex::TEST_LOCK.lock();
+        let base = std::env::temp_dir().join(format!("jarvis_prog_{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let mk = |name: &str| {
+            let p = base.join(format!("{}.lnk", name));
+            std::fs::write(&p, b"x").unwrap();
+            crate::appindex::IndexedApp { name: name.into(), launch: p.to_string_lossy().to_string(), source: "start_menu".into(), exe: String::new() }
+        };
+        crate::appindex::set_for_tests(vec![mk("Total Commander 64-bit"), mk("Double Commander"), mk("Krita")]);
+        // the scripts keep their state next to them ("открой блокнот" remembers the document program): use a copy
+        let src = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../resources/commands/assistant");
+        let dir = base.join("assistant");
+        std::fs::create_dir_all(&dir).unwrap();
+        for f in ["program.lua", "office.lua"] { std::fs::copy(src.join(f), dir.join(f)).unwrap(); }
+        std::fs::copy(src.join("../_prelude.lua"), base.join("_prelude.lua")).unwrap();
+        let run = |id: &str, script: &str, phrase: &str| -> String {
+            crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow_mut().clear());
+            let ctx = CommandContext { phrase: phrase.into(), command_id: id.into(), command_path: dir.clone(), language: "ru".into(), slots: None };
+            let r = execute(&dir.join(script), ctx, SandboxLevel::Full, Duration::from_secs(5));
+            assert!(r.is_ok(), "{} {}: {:?}", id, phrase, r.err().map(|e| e.to_string()));
+            crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow().join(" | "))
+        };
+        let r = run("assistant_program_open", "program.lua", "открой krita");
+        assert!(r.contains("Открываю") && r.contains("Krita"), "{}", r);
+        let r = run("assistant_program_open", "program.lua", "открой командер");
+        assert!(r.contains("1. ") && r.contains("2. ") && r.contains("Total Commander") && r.contains("Double Commander"), "{}", r);
+        assert!(!r.contains("Открываю"), "nothing is started before the answer: {}", r);
+        assert_eq!(crate::session::kind().as_deref(), Some("app_choice"));
+        let second = crate::appindex::pending()[1].name.clone();
+        let r = run("assistant_session", "office.lua", "второй");
+        assert!(r.contains(&second), "{}", r);
+        assert_eq!(crate::session::kind(), None);
+        // a removed program is reported honestly
+        let r = run("assistant_program_open", "program.lua", "открой несуществующуюпрограмму");
+        assert!(r.contains("Не нашёл"), "{}", r);
+        // the fixed list still works first
+        let r = run("assistant_program_open", "program.lua", "открой блокнот");
+        assert!(r.contains("Блокнот"), "{}", r);
+        crate::session::end();
+        crate::appindex::set_for_tests(Vec::new());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    // found files: several results are never opened at random; a number, "следующий" and "ещё" choose
+    // not on Windows: the scripts would really open the test files there
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn found_files_are_opened_only_when_the_user_says_which_one() {
+        let _s = crate::session::TEST_LOCK.lock();
+        let _f = crate::filesearch::TEST_LOCK.lock();
+        let tmp = tempdir().unwrap();
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../resources/commands/assistant");
+        // the scripts keep their state next to them: work on a copy so the repository stays clean
+        let cmd_dir = tmp.path().join("assistant");
+        std::fs::create_dir_all(&cmd_dir).unwrap();
+        for f in ["files.lua", "office.lua"] { std::fs::copy(dir.join(f), cmd_dir.join(f)).unwrap(); }
+        std::fs::copy(dir.join("../_prelude.lua"), tmp.path().join("_prelude.lua")).unwrap();
+        let paths: Vec<PathBuf> = (1..=10).map(|i| { let p = tmp.path().join(format!("отчёт {}.txt", i)); std::fs::write(&p, b"x").unwrap(); p }).collect();
+        crate::filesearch::set_results_for_tests(paths.clone());
+        let run = |id: &str, script: &str, phrase: &str| -> String {
+            crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow_mut().clear());
+            let ctx = CommandContext { phrase: phrase.into(), command_id: id.into(), command_path: cmd_dir.clone(), language: "ru".into(), slots: None };
+            let r = execute(&cmd_dir.join(script), ctx, SandboxLevel::Full, Duration::from_secs(5));
+            assert!(r.is_ok(), "{} {}: {:?}", id, phrase, r.err().map(|e| e.to_string()));
+            crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow().join(" | "))
+        };
+        let r = run("assistant_file_open", "files.lua", "открой найденный файл");
+        assert!(r.contains("Какой открыть") && !r.contains("Открываю"), "{}", r);
+        assert_eq!(crate::session::kind().as_deref(), Some("file"));
+        let r = run("assistant_session", "office.lua", "открой");
+        assert!(r.contains("номер") && !r.contains("Открываю"), "still asks: {}", r);
+        let r = run("assistant_session", "office.lua", "второй");
+        assert!(r.contains("отчёт 2.txt"), "{}", r);
+        let r = run("assistant_session", "office.lua", "открой");
+        assert!(r.contains("Открываю") && r.contains("отчёт 2.txt"), "{}", r);
+        let r = run("assistant_file_next", "files.lua", "найди следующий файл");
+        assert!(r.contains("3. отчёт 3.txt"), "{}", r);
+        let r = run("assistant_file_folder", "files.lua", "покажи где находится этот файл");
+        assert!(r.contains(&tmp.path().display().to_string()), "the folder of the chosen one: {}", r);
+        let r = run("assistant_file_open", "files.lua", "открой пятый файл");
+        assert!(r.contains("отчёт 5.txt"), "{}", r);
+        let r = run("assistant_file_more", "files.lua", "покажи ещё результаты");
+        assert!(r.contains("Результаты 9–10 из 10"), "{}", r);
+        // one result: opened without a question
+        crate::filesearch::set_results_for_tests(vec![paths[0].clone()]);
+        run("assistant_file_search", "files.lua", "найди файл отчёт 1"); // a new search forgets the old choice
+        crate::filesearch::cancel();
+        crate::filesearch::set_results_for_tests(vec![paths[0].clone()]);
+        let r = run("assistant_file_open", "files.lua", "открой найденный файл");
+        assert!(r.contains("Открываю") && r.contains("отчёт 1.txt"), "{}", r);
+        let r = run("assistant_file_search", "files.lua", "найди файл");
+        assert!(r.contains("Что искать"), "{}", r);
+        let r = run("assistant_file_cancel", "files.lua", "останови поиск");
+        assert!(r.contains("ничего не ищу") || r.contains("остановлен"), "{}", r);
+        crate::session::end();
+        crate::filesearch::set_results_for_tests(Vec::new());
+    }
 }

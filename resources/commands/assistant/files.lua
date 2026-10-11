@@ -1,11 +1,16 @@
--- find files on this computer: "найди на моём компьютере файл 123", "открой первый результат"
+-- find files on this computer: "найди файл report", "найди все PDF", "найди фотографии за октябрь",
+-- "найди файл, содержащий текст ICTERA", "открой найденный файл", "покажи, где он лежит", "ещё", "ищи везде".
+-- The phrase is understood in crates/jarvis-core/src/filesearch.rs (name, kind, place, dates, text inside).
+-- Nothing is opened by itself: with several results the user says which one.
 
 local id = jarvis.context.command_id
+local TITLE = T("Поиск файла", "File search")
 
 local ORDINALS = { ["перв"] = 1, ["втор"] = 2, ["трет"] = 3, ["четв"] = 4, ["пят"] = 5, ["шест"] = 6, ["седьм"] = 7, ["восьм"] = 8,
                    ["девят"] = 9, ["десят"] = 10, ["first"] = 1, ["second"] = 2, ["third"] = 3, ["fourth"] = 4, ["fifth"] = 5 }
 
-local function wanted_index()
+-- the number said in the phrase ("второй", "номер 3"), or nil
+local function said_index()
   for _, w in ipairs(words()) do
     for stem, n in pairs(ORDINALS) do
       if w:sub(1, #stem) == stem then return n end
@@ -13,66 +18,96 @@ local function wanted_index()
   end
   local n = jarvis.parse.number(phrase)
   if n and n >= 1 then return math.floor(n) end
-  return 1
+  return nil
 end
 
 if id == "assistant_file_search" then
-  local STOP = {
-    "найди", "найти", "найдите", "поищи", "поиск", "искать", "ищи", "файл", "файлы", "файла", "папку", "папка", "папки", "документ",
-    "на", "моем", "моём", "мой", "моя", "моих", "компьютере", "компьютер", "компе", "комп", "пк", "диске", "дисках",
-    "названием", "названии", "именем", "имя", "называется", "называемый", "под", "с", "по", "который", "которая", "пожалуйста", "мне", "там", "где", "у", "меня",
-    "find", "search", "for", "file", "files", "folder", "named", "called", "on", "my", "computer", "pc", "the", "a", "please", "me",
-  }
-  local query = strip_words(phrase, STOP)
-  if query == "" then
-    say(T("Поиск файла", "File search"), T("Что искать? Например: найди файл отчёт", "What to look for? e.g. find file report"))
+  jarvis.state.set("file_sel", "")
+  local what, err = jarvis.files.search(jarvis.context.phrase or phrase)
+  if not what then
+    say(TITLE, err)
     return
   end
+  say(TITLE, T("Ищу: ", "Searching: ") .. what .. "…", T("Ищу", "Searching"))
+  return
+end
 
-  -- a name made only of numbers: "один два три" / "1 2 3" -> 123, "сто двадцать три" -> 123
-  local tokens, all_numbers, all_single = {}, true, true
-  for w in query:gmatch("%S+") do
-    local n = jarvis.parse.number(w)
-    tokens[#tokens + 1] = n
-    if n == nil then all_numbers = false
-    elseif n ~= math.floor(n) or n < 0 or n > 9 then all_single = false end
+if id == "assistant_file_cancel" then
+  if jarvis.files.cancel() then
+    if jarvis.session.kind() == "file" then jarvis.session.finish() end
+    say(TITLE, T("Поиск остановлен", "Search stopped"))
+  else
+    say(TITLE, T("Сейчас ничего не ищу", "No search is running"))
   end
-  if all_numbers and #tokens > 0 then
-    if all_single then
-      local digits = {}
-      for _, n in ipairs(tokens) do digits[#digits + 1] = tostring(math.floor(n)) end
-      query = table.concat(digits)
-    else
-      local n = jarvis.parse.number(query)
-      if n then query = tostring(math.floor(n)) end
-    end
-  end
+  return
+end
 
-  jarvis.files.search(query)
-  say(T("Поиск файла", "File search"), T("Ищу «" .. query .. "»…", "Searching for \"" .. query .. "\"…"),
-      T("Ищу файл", "Searching for the file"))
+if id == "assistant_file_widen" then
+  local what, err = jarvis.files.widen()
+  if not what then say(TITLE, err) return end
+  if jarvis.session.kind() == "file" then jarvis.session.finish() end
+  say(TITLE, T("Ищу на всём компьютере: ", "Searching the whole computer: ") .. what .. T(". Это может занять до двух минут.", ". It can take up to two minutes."),
+      T("Ищу на всём компьютере", "Searching the whole computer"))
   return
 end
 
 local list = jarvis.files.results()
 if #list == 0 then
-  say(T("Поиск файла", "File search"), T("Сначала найдите файл: «найди файл ...»", "Search first: \"find file ...\""),
+  say(TITLE, T("Сначала найдите файл: «найди файл ...»", "Search first: \"find file ...\""),
       T("Сначала скажите, какой файл найти", "Tell me which file to find first"))
   return
 end
 
-local n = wanted_index()
-local item = list[n]
-if not item then
-  say(T("Поиск файла", "File search"), T("Результата номер " .. n .. " нет (найдено " .. #list .. ")", "No result number " .. n .. " (found " .. #list .. ")"))
+if id == "assistant_file_more" then
+  say(TITLE, jarvis.files.more(), false)
+  jarvis.session.start("file", 60)
   return
 end
+
+-- the chosen result: said now, or chosen earlier in this conversation ("второй", "следующий")
+local selected = tonumber(jarvis.state.get("file_sel") or "")
+
+if id == "assistant_file_next" then
+  local n = (selected or 0) + 1
+  local item = list[n]
+  if not item then
+    say(TITLE, T("Это был последний результат (всего " .. #list .. ")", "That was the last result (" .. #list .. " in total)"))
+    return
+  end
+  jarvis.state.set("file_sel", tostring(n))
+  jarvis.session.start("file", 60)
+  jarvis.session.set_data(tostring(n))
+  say(TITLE, n .. ". " .. item.name .. " — " .. item.dir .. T(". Открыть или показать папку?", ". Open it or show the folder?"),
+      T("Номер " .. n .. ". Открыть?", "Number " .. n .. ". Open it?"))
+  return
+end
+
+local n = said_index() or selected or (#list == 1 and 1 or nil)
+if not n then
+  -- several results and none chosen: never a random one
+  jarvis.session.start("file", 60)
+  jarvis.session.set_data("")
+  say(TITLE, T("Найдено " .. #list .. ". Какой открыть? Скажите номер, например «второй».", "Found " .. #list .. ". Which one? Say the number."),
+      T("Какой номер?", "Which number?"))
+  return
+end
+local item = list[n]
+if not item then
+  say(TITLE, T("Результата номер " .. n .. " нет (найдено " .. #list .. ")", "No result number " .. n .. " (found " .. #list .. ")"))
+  return
+end
+jarvis.state.set("file_sel", tostring(n))
 
 if id == "assistant_file_folder" then
   -- show the file in Explorer (selected)
   launch("explorer.exe", { "/select," .. item.path:gsub("/", "\\") })
   say(T("Папка", "Folder"), item.dir, T("Показываю папку", "Showing the folder"))
 else
-  open(item.path)
-  say(T("Открываю", "Opening"), item.name, T("Запускаю", "Opening"))
+  if WIN and not jarvis.system.exists(item.path) then
+    say(TITLE, T("Файла больше нет на месте: ", "The file is gone: ") .. item.name)
+    return
+  end
+  local ok = pcall(open, item.path)
+  if ok then say(T("Открываю", "Opening"), item.name, T("Открываю", "Opening"))
+  else say(TITLE, T("Не удалось открыть ", "Could not open ") .. item.name .. T(" (нет программы для этого типа или нет доступа)", " (no program for this type or no access)")) end
 end

@@ -52,6 +52,7 @@ pub mod ui;
 pub mod uistate;
 pub mod route;
 pub mod apps;
+pub mod appindex;
 pub mod dialog;
 pub mod health;
 pub mod weather;

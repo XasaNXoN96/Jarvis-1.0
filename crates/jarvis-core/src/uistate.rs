@@ -475,7 +475,7 @@ pub fn group_key(pack: &str, id: &str) -> &'static str {
     if starts("game") || pack == "steam" { return "games"; }
     if starts("remote") || starts("phone_") { return "remote"; }
     if pack == "stop" || pack == "terminate" { return "control"; }
-    if starts("program") || pack == "calculator" { return "apps"; }
+    if starts("program") || starts("apps_") || pack == "calculator" { return "apps"; }
     "talk"
 }
 

@@ -209,9 +209,45 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
                 t.set("web", crate::sites::by_id(m.app.id).map(|s| s.url))?;
                 Ok(mlua::Value::Table(t))
             }
-            None => Ok(mlua::Value::Nil),
+            None => {
+                // not in the fixed list: the programs installed on this computer (appindex.rs)
+                let Some((_, words)) = crate::apps::split_request(&phrase) else { return Ok(mlua::Value::Nil) };
+                match crate::appindex::find(&words) {
+                    crate::appindex::Found::One(a) => {
+                        let t = lua.create_table()?;
+                        t.set("name", a.name.clone())?;
+                        t.set("indexed", true)?;
+                        t.set("launch", a.launch.clone())?;
+                        t.set("source", crate::appindex::source_title(&a.source))?;
+                        crate::appindex::set_pending(vec![a]);
+                        Ok(mlua::Value::Table(t))
+                    }
+                    crate::appindex::Found::Many(list) => {
+                        let t = lua.create_table()?;
+                        let names = lua.create_table()?;
+                        for (i, a) in list.iter().enumerate() {
+                            names.set(i + 1, a.name.clone())?;
+                        }
+                        t.set("ambiguous", names)?;
+                        crate::appindex::set_pending(list);
+                        Ok(mlua::Value::Table(t))
+                    }
+                    crate::appindex::Found::Nothing => Ok(mlua::Value::Nil),
+                }
+            }
         }
     })?)?;
+    // jarvis.apps.launch_pending(answer) -> name | nil, error: start the program chosen from the last list
+    // ("первый", "2", "тотал"); only programs of that list can be started
+    apps.set("launch_pending", lua.create_function(|_, answer: String| {
+        let Some(a) = crate::appindex::choose(&answer) else { return Ok((None, Some("не понял, какую программу выбрать".to_string()))) };
+        Ok(match crate::appindex::launch(&a) {
+            Ok(()) => (Some(a.name), None),
+            Err(e) => (None, Some(e)),
+        })
+    })?)?;
+    // jarvis.apps.rescan() -> number of programs found (the index of installed programs is rebuilt)
+    apps.set("rescan", lua.create_function(|_, ()| Ok(crate::appindex::rescan_now()))?)?;
     jarvis.set("apps", apps)?;
 
     // jarvis.sites.direct(phrase) -> url, name | nil: "открой YouTube" names a known site
@@ -251,10 +287,24 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
     // jarvis.files.search(query): background search on this computer, the answer arrives by itself
     // jarvis.files.results() -> { {path=, name=, dir=, is_dir=}, ... } (last finished search)
     let files = lua.create_table()?;
-    files.set("search", lua.create_function(|_, query: String| {
-        crate::filesearch::start(&query);
-        Ok(())
+    // jarvis.files.search(phrase) -> what is searched | nil, why not (the phrase is parsed: name, kind, place, dates, text)
+    files.set("search", lua.create_function(|_, phrase: String| {
+        Ok(match crate::filesearch::start(&phrase) {
+            Ok(d) => (Some(d), None),
+            Err(e) => (None, Some(e)),
+        })
     })?)?;
+    // jarvis.files.more() -> the next page of the results; widen() -> the last search on the whole computer;
+    // cancel() -> true when a running search was stopped
+    files.set("more", lua.create_function(|_, ()| Ok(crate::filesearch::more()))?)?;
+    files.set("widen", lua.create_function(|_, ()| {
+        Ok(match crate::filesearch::widen() {
+            Ok(d) => (Some(d), None),
+            Err(e) => (None, Some(e)),
+        })
+    })?)?;
+    files.set("cancel", lua.create_function(|_, ()| Ok(crate::filesearch::cancel()))?)?;
+    files.set("busy", lua.create_function(|_, ()| Ok(crate::filesearch::is_busy()))?)?;
     files.set("results", lua.create_function(|lua, ()| {
         let out = lua.create_table()?;
         for (i, item) in crate::filesearch::results().iter().enumerate() {
@@ -263,6 +313,8 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
             row.set("name", item.path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default())?;
             row.set("dir", item.path.parent().map(|p| p.display().to_string()).unwrap_or_default())?;
             row.set("is_dir", item.is_dir)?;
+            row.set("size", crate::filesearch::human_size(item.size))?;
+            row.set("modified", crate::filesearch::human_date(item.modified))?;
             out.set(i + 1, row)?;
         }
         Ok(out)

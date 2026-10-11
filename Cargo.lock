@@ -3298,6 +3298,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "fastembed",
+ "flate2",
  "fluent",
  "fluent-bundle",
  "futures-util",

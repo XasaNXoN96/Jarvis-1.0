@@ -387,9 +387,16 @@ local function file_session(text)
   end
   local list = jarvis.files.results()
   local data = jarvis.session.data()
-  local n = tonumber(data:match("(%d+)")) or 1
-  for _, w in ipairs(tokens) do if ORDINALS[w] then n = ORDINALS[w] end end
-  local item = list[n]
+  -- the chosen result: said now ("второй"), chosen before, or the only one; never a random one of several
+  local n = tonumber(data:match("(%d+)"))
+  local said = false
+  for _, w in ipairs(tokens) do if ORDINALS[w] then n = ORDINALS[w]; said = true end end
+  if not said then
+    for _, w in ipairs(tokens) do local d = tonumber(w); if d and d >= 1 and d <= #list then n = math.floor(d); said = true end end
+  end
+  if not n and #list == 1 then n = 1 end
+  local item = n and list[n] or nil
+  if n then jarvis.state.set("file_sel", tostring(n)) end
 
   -- waiting for "да" / "нет" after "удалить?"
   if data:find("^confirm_delete") then
@@ -415,8 +422,32 @@ local function file_session(text)
     say(T("Файл", "File"), T("Хорошо", "Okay"), T("Хорошо", "Okay"))
     return
   end
-  if not item then
+  -- "ещё": the next page; "следующий": the next result
+  if has("ещ") or has("больше") or has("остальн") or has("дальше") then
+    say(T("Файл", "File"), jarvis.files.more(), false)
+    return
+  end
+  if has("следующ") then
+    local m = (n or 0) + 1
+    if not list[m] then say(T("Файл", "File"), T("Это был последний результат", "That was the last result")); return end
+    jarvis.session.set_data(tostring(m))
+    jarvis.state.set("file_sel", tostring(m))
+    say(T("Файл", "File"), m .. ". " .. list[m].name .. " — " .. list[m].dir .. T(". Открыть или показать папку?", ". Open it or show the folder?"), T("Номер " .. m .. ". Открыть?", "Number " .. m .. ". Open it?"))
+    return
+  end
+  local wants_action = has("запуск") or has("запуст") or has("открой") or has("открыв") or has("открыть") or has("папк") or has("копир") or has("удал") or has("сотр") or has("покаж")
+  if not n and wants_action then
+    say(T("Файл", "File"), T("Найдено " .. #list .. ". Скажите номер, например «второй».", "Found " .. #list .. ". Say the number."), T("Какой номер?", "Which number?"))
+    return
+  end
+  if n and not item then
     say(T("Файл", "File"), T("Результата номер " .. n .. " нет (найдено " .. #list .. ")", "No result number " .. n))
+    return
+  end
+  if not item then
+    -- not an answer about the files: leave the question, the phrase is an ordinary command
+    jarvis.session.finish()
+    jarvis.app.run_text(text)
     return
   end
 
@@ -425,7 +456,7 @@ local function file_session(text)
     local ok = pcall(open, item.path)
     if ok then say(T("Открываю", "Opening"), item.name, T("Запускаю", "Opening"))
     else say(T("Файл", "File"), T("Не удалось открыть ", "Could not open ") .. item.name, T("Не удалось открыть файл", "Could not open the file")) end
-  elseif has("папк") then
+  elseif has("папк") or has("где") or has("располож") then
     jarvis.session.finish()
     launch("explorer.exe", { "/select," .. item.path:gsub("/", "\\") })
     say(T("Папка", "Folder"), item.dir, T("Показываю папку", "Showing the folder"))
@@ -444,7 +475,7 @@ local function file_session(text)
     jarvis.session.set_data(tostring(n) == "" and "confirm_delete" or ("confirm_delete:" .. n))
     say(T("Файл", "File"), T("Удалить «" .. item.name .. "» в корзину? Скажите да или нет.", "Delete '" .. item.name .. "' to the recycle bin? Say yes or no."),
         T("Удалить найденный файл в корзину? Скажите да или нет", "Delete the found file to the recycle bin? Say yes or no"))
-  elseif #tokens == 1 and ORDINALS[tokens[1]] then
+  elseif said and #tokens <= 2 then
     jarvis.session.set_data(tostring(n))
     say(T("Файл", "File"), T("Выбран " .. n .. ": " .. item.name .. ". Что сделать?", "Selected " .. n .. ": " .. item.name .. ". What to do?"),
         T("Выбрал номер " .. n .. ". Что сделать?", "Selected number " .. n .. ". What to do?"))
@@ -1041,6 +1072,26 @@ else -- assistant_session: every phrase while a session is open
     file_session(phrase)
   elseif kind == "confirm" then
     confirm_session(phrase)
+  elseif kind == "app_choice" then
+    -- the answer to "какую программу открыть: 1. … 2. …"
+    local low = jarvis.text.lower(phrase)
+    if low:find("отмен") or low:find("ничего") or low:find("не над") or low:find("cancel") then
+      jarvis.session.finish()
+      say(T("Программа", "Program"), T("Хорошо, ничего не открываю", "Okay, nothing is opened"))
+      return
+    end
+    local name, err = jarvis.apps.launch_pending(phrase)
+    if name then
+      jarvis.session.finish()
+      say(T("Открываю", "Opening"), name, T("Открываю " .. name, "Opening " .. name), "program")
+    elseif err == "не понял, какую программу выбрать" then
+      -- not an answer: leave the question, the phrase is an ordinary command
+      jarvis.session.finish()
+      jarvis.app.run_text(phrase)
+    else
+      jarvis.session.finish()
+      say(T("Программа", "Program"), T("Не удалось запустить: ", "Could not start: ") .. tostring(err))
+    end
   elseif kind == "object" then
     local nm = jarvis.state.get("obj_name")
     local app = jarvis.state.get("obj_app")

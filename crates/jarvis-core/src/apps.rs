@@ -43,6 +43,30 @@ pub const APPS: &[AppDef] = &[
     AppDef { id: "spotify", name: "Spotify", aliases: &["спотифай", "spotify", "спотифи", "спотик"], start: "spotify:", process: Some("Spotify.exe"), paths: &[], office: None },
     AppDef { id: "steam", name: "Steam", aliases: &["стим", "steam", "стимм"], start: "steam://open/main", process: Some("steam.exe"), paths: &[], office: None },
     AppDef { id: "obs", name: "OBS", aliases: &["обс", "obs", "обэес", "о би эс"], start: "obs64.exe", process: Some("obs64.exe"), paths: &[], office: None },
+    AppDef { id: "snipping", name: "Ножницы", aliases: &["ножницы", "snipping tool", "снипинг тул", "снипин тул", "инструмент ножницы", "ножницы виндовс"], start: "snippingtool.exe", process: Some("SnippingTool.exe"), paths: &["%WINDIR%\\System32\\SnippingTool.exe"], office: None },
+    AppDef { id: "wterminal", name: "Терминал Windows", aliases: &["windows terminal", "виндовс терминал", "терминал виндовс", "терминал windows"], start: "wt.exe", process: Some("WindowsTerminal.exe"), paths: &["%LOCALAPPDATA%\\Microsoft\\WindowsApps\\wt.exe"], office: None },
+    AppDef { id: "vscode", name: "Visual Studio Code", aliases: &["vs code", "vscode", "visual studio code", "вижуал студио код", "визуал студио код", "вижуал студия код", "вс код", "ви эс код", "вэ эс код", "вскод"], start: "code.exe", process: Some("Code.exe"), paths: &["%LOCALAPPDATA%\\Programs\\Microsoft VS Code\\Code.exe", "%ProgramFiles%\\Microsoft VS Code\\Code.exe", "%ProgramFiles(x86)%\\Microsoft VS Code\\Code.exe"], office: None },
+    AppDef { id: "visualstudio", name: "Visual Studio", aliases: &["visual studio", "вижуал студио", "визуал студио", "вижуал студия", "визуал студия"], start: "devenv.exe", process: Some("devenv.exe"), paths: &[], office: None },
+    AppDef { id: "photoshop", name: "Photoshop", aliases: &["фотошоп", "photoshop", "adobe photoshop", "адоб фотошоп", "фотошоп адоб"], start: "photoshop.exe", process: Some("Photoshop.exe"), paths: &[], office: None },
+    AppDef { id: "notepadpp", name: "Notepad++", aliases: &["нотпад плюс плюс", "ноутпад плюс плюс", "notepad plus plus", "блокнот плюс плюс"], start: "notepad++.exe", process: Some("notepad++.exe"), paths: &["%ProgramFiles%\\Notepad++\\notepad++.exe", "%ProgramFiles(x86)%\\Notepad++\\notepad++.exe"], office: None },
+    AppDef { id: "whatsapp", name: "WhatsApp", aliases: &["ватсап", "вотсап", "вацап", "whatsapp", "whats app"], start: "whatsapp:", process: Some("WhatsApp.exe"), paths: &[], office: None },
+    AppDef { id: "zoom", name: "Zoom", aliases: &["зум", "zoom", "зуум"], start: "zoommtg:", process: Some("Zoom.exe"), paths: &["%APPDATA%\\Zoom\\bin\\Zoom.exe"], office: None },
+    AppDef { id: "skype", name: "Skype", aliases: &["скайп", "skype"], start: "skype:", process: Some("Skype.exe"), paths: &[], office: None },
+    AppDef { id: "viber", name: "Viber", aliases: &["вайбер", "viber"], start: "viber:", process: Some("Viber.exe"), paths: &["%LOCALAPPDATA%\\Viber\\Viber.exe"], office: None },
+    AppDef { id: "teams", name: "Microsoft Teams", aliases: &["тимс", "teams", "microsoft teams", "майкрософт тимс"], start: "msteams:", process: Some("ms-teams.exe"), paths: &[], office: None },
+    AppDef { id: "winrar", name: "WinRAR", aliases: &["винрар", "winrar", "вин рар", "архиватор рар"], start: "winrar.exe", process: Some("WinRAR.exe"), paths: &["%ProgramFiles%\\WinRAR\\WinRAR.exe", "%ProgramFiles(x86)%\\WinRAR\\WinRAR.exe"], office: None },
+    AppDef { id: "7zip", name: "7-Zip", aliases: &["7 zip", "7zip", "севен зип", "семь зип", "7 зип"], start: "7zfm.exe", process: Some("7zFM.exe"), paths: &["%ProgramFiles%\\7-Zip\\7zFM.exe", "%ProgramFiles(x86)%\\7-Zip\\7zFM.exe"], office: None },
+    AppDef { id: "anydesk", name: "AnyDesk", aliases: &["энидеск", "anydesk", "эни деск", "ани деск"], start: "anydesk.exe", process: Some("AnyDesk.exe"), paths: &["%ProgramFiles(x86)%\\AnyDesk\\AnyDesk.exe", "%ProgramFiles%\\AnyDesk\\AnyDesk.exe"], office: None },
+    AppDef { id: "teamviewer", name: "TeamViewer", aliases: &["тимвьюер", "teamviewer", "тим вьюер", "тимвивер"], start: "teamviewer.exe", process: Some("TeamViewer.exe"), paths: &["%ProgramFiles%\\TeamViewer\\TeamViewer.exe", "%ProgramFiles(x86)%\\TeamViewer\\TeamViewer.exe"], office: None },
+    AppDef { id: "blender", name: "Blender", aliases: &["блендер", "blender"], start: "blender.exe", process: Some("blender.exe"), paths: &[], office: None },
+    AppDef { id: "pycharm", name: "PyCharm", aliases: &["пайчарм", "pycharm", "пай чарм"], start: "pycharm64.exe", process: Some("pycharm64.exe"), paths: &[], office: None },
+    AppDef { id: "figma", name: "Figma", aliases: &["фигма", "figma"], start: "figma.exe", process: Some("Figma.exe"), paths: &["%LOCALAPPDATA%\\Figma\\Figma.exe"], office: None },
+    AppDef { id: "obsidian", name: "Obsidian", aliases: &["обсидиан", "obsidian"], start: "obsidian:", process: Some("Obsidian.exe"), paths: &["%LOCALAPPDATA%\\Programs\\obsidian\\Obsidian.exe"], office: None },
+    AppDef { id: "notion", name: "Notion", aliases: &["ноушен", "notion", "ноушн"], start: "notion:", process: Some("Notion.exe"), paths: &["%LOCALAPPDATA%\\Programs\\Notion\\Notion.exe"], office: None },
+    AppDef { id: "gimp", name: "GIMP", aliases: &["гимп", "gimp"], start: "gimp.exe", process: None, paths: &[], office: None },
+    AppDef { id: "audacity", name: "Audacity", aliases: &["аудасити", "audacity", "одасити"], start: "audacity.exe", process: Some("Audacity.exe"), paths: &["%ProgramFiles%\\Audacity\\Audacity.exe"], office: None },
+    AppDef { id: "qbittorrent", name: "qBittorrent", aliases: &["кубиторрент", "qbittorrent", "кью биторрент", "торрент клиент"], start: "qbittorrent.exe", process: Some("qbittorrent.exe"), paths: &["%ProgramFiles%\\qBittorrent\\qbittorrent.exe"], office: None },
+    AppDef { id: "epic", name: "Epic Games Launcher", aliases: &["эпик геймс", "epic games", "epic games launcher", "эпик лаунчер"], start: "com.epicgames.launcher://", process: Some("EpicGamesLauncher.exe"), paths: &[], office: None },
     AppDef { id: "vlc", name: "VLC", aliases: &["влс", "vlc", "вэлэсэ", "вл си", "ви эл си"], start: "vlc.exe", process: Some("vlc.exe"), paths: &["%ProgramFiles%\\VideoLAN\\VLC\\vlc.exe", "%ProgramFiles(x86)%\\VideoLAN\\VLC\\vlc.exe"], office: None },
 ];
 
@@ -92,7 +116,7 @@ fn devoice(c: char) -> char {
 }
 
 // one word -> phonetic key
-fn word_key(w: &str) -> String {
+pub(crate) fn word_key(w: &str) -> String {
     let w = w.to_lowercase().replace('ё', "е");
     let w: String = if w.chars().any(|c| c.is_ascii_alphabetic()) { latin_to_ru(&w) } else { w };
     let mut chars: Vec<char> = Vec::new();
@@ -122,11 +146,11 @@ pub fn tokens(text: &str) -> Vec<String> {
         .collect()
 }
 
-fn phrase_key(words: &[String]) -> String {
+pub(crate) fn phrase_key(words: &[String]) -> String {
     words.iter().map(|w| word_key(w)).collect::<Vec<_>>().join("")
 }
 
-fn edit_distance(a: &[char], b: &[char]) -> usize {
+pub(crate) fn edit_distance(a: &[char], b: &[char]) -> usize {
     let mut prev: Vec<usize> = (0..=b.len()).collect();
     for i in 1..=a.len() {
         let mut cur = vec![i];
@@ -144,7 +168,7 @@ fn edit_distance(a: &[char], b: &[char]) -> usize {
 }
 
 // how many wrong letters are allowed for a name of this key length (short names must match exactly)
-fn allowed_edits(len: usize) -> usize {
+pub(crate) fn allowed_edits(len: usize) -> usize {
     match len {
         0..=4 => 0,
         5..=7 => 1,
@@ -260,6 +284,18 @@ const FILLERS: &[&str] = &["пожалуйста", "мне", "программу
 // "открой тотал командер" -> Open Total Commander. Only a short phrase that is nothing but a verb and a program
 // name counts: "открой сайт ворд", "открой файл word.docx" or a whole sentence are left to the normal commands.
 pub fn parse_request(text: &str) -> Option<Request> {
+    let (action, rest) = split_words(text, false)?;
+    // "яндекс браузер" is a name; in "запусти браузер Firefox" the word "браузер" is only the kind of program
+    let m = resolve_name(&rest).or_else(|| split_words(text, true).and_then(|(_, r)| resolve_name(&r)))?;
+    Some(Request { action, app: m.app, exact: m.distance == 0 })
+}
+
+// "запусти браузер Firefox" -> (Open, ["firefox"]): the verb and the filler words removed, the name left
+pub fn split_request(text: &str) -> Option<(Action, Vec<String>)> {
+    split_words(text, true)
+}
+
+fn split_words(text: &str, drop_kind: bool) -> Option<(Action, Vec<String>)> {
     let words = tokens(text);
     let first = words.first()?;
     let action = if OPEN_STEMS.iter().any(|s| first.starts_with(s)) {
@@ -269,10 +305,15 @@ pub fn parse_request(text: &str) -> Option<Request> {
     } else {
         return None;
     };
-    let rest: Vec<String> = words[1..].iter().filter(|w| !FILLERS.contains(&w.as_str())).cloned().collect();
-    let m = resolve_name(&rest)?;
-    Some(Request { action, app: m.app, exact: m.distance == 0 })
+    let rest: Vec<String> = words[1..].iter().filter(|w| !FILLERS.contains(&w.as_str()) && !(drop_kind && KIND_WORDS.contains(&w.as_str()))).cloned().collect();
+    if rest.is_empty() {
+        return None;
+    }
+    Some((action, rest))
 }
+
+// "браузер Firefox", "мессенджер Telegram": the kind of program said before its name
+const KIND_WORDS: &[&str] = &["браузер", "мессенджер", "редактор", "игру", "игра", "browser", "app"];
 
 // ---------------------------------------------------------------------------------------------
 // where a program is installed
@@ -338,7 +379,8 @@ pub fn locate(app: &AppDef) -> Option<String> {
             }
         }
     }
-    None
+    // installed somewhere else: the index of the installed programs (Start menu, registered apps)
+    crate::appindex::locate_known(app)
 }
 
 #[cfg(test)]

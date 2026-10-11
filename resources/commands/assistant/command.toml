@@ -402,6 +402,17 @@ phrases.ru = ["выключи удалённое управление", "вык�
 phrases.en = ["disable remote control"]
 
 [[commands]]
+id = "assistant_apps_rescan"
+type = "lua"
+script = "program.lua"
+sandbox = "full"
+timeout = 60000
+triggers.ru = ["обнов список программ", "обнов программ", "пересканир программ", "найд установлен программ", "обнов список приложен", "просканир программ"]
+triggers.en = ["update the list of programs", "rescan programs", "refresh programs", "scan installed programs"]
+phrases.ru = ["обнови список программ"]
+phrases.en = ["rescan programs"]
+
+[[commands]]
 id = "assistant_phone_find"
 type = "lua"
 script = "phone.lua"
@@ -588,7 +599,7 @@ sandbox = "full"
 timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3"]
 sounds.en = ["ok1", "ok2", "ok3"]
-triggers.ru = ["найд файл", "найт файл", "найд на компьютер", "найд на комп", "найд на пк", "найд на моем", "найд папк", "найд документ", "поищ файл", "поищ на компьютер", "поищ папк", "наход файл", "найд мне файл", "ищи файл"]
+triggers.ru = ["найд файл", "найт файл", "найд на компьютер", "найд на комп", "найд на пк", "найд на моем", "найд папк", "найд документ", "поищ файл", "поищ на компьютер", "поищ папк", "наход файл", "найд мне файл", "ищи файл", "найд фотограф", "найд фото", "найд презентац", "найд таблиц", "найд архив", "найд картинк", "найд скриншот", "найд недавн", "найд pdf", "найд пдф", "найд все pdf", "поищ документ", "поищ фото", "найд на рабоч стол", "найд в загрузк", "найд на диск", "найд в документ", "найд скача"]
 triggers.en = ["find file", "search file", "find a file", "find on my computer", "search my computer"]
 phrases.ru = ["найди файл отчёт", "найди на моём компьютере файл 123", "поищи папку фото"]
 phrases.en = ["find file report", "find the file 123 on my computer"]
@@ -601,7 +612,7 @@ sandbox = "full"
 timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3"]
 sounds.en = ["ok1", "ok2", "ok3"]
-triggers.ru = ["откр результат", "запуст результат", "откр найденн", "откр перв результат", "откр втор результат", "откр треть результат", "откр перв файл", "откр втор файл", "откр треть файл", "откр файл номер", "откр результат номер"]
+triggers.ru = ["откр результат", "запуст результат", "откр найденн", "откр перв результат", "откр втор результат", "откр треть результат", "откр перв файл", "откр втор файл", "откр треть файл", "откр файл номер", "откр результат номер", "откр этот файл", "откр его"]
 triggers.en = ["open result", "open the result", "open first result", "open the first file", "open found file"]
 phrases.ru = ["открой первый результат", "открой второй файл", "открой найденный файл"]
 phrases.en = ["open the first result"]
@@ -614,10 +625,54 @@ sandbox = "full"
 timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3"]
 sounds.en = ["ok1", "ok2", "ok3"]
-triggers.ru = ["покаж в папк", "откр папк с файл", "откр папк результат", "покаж папк результат", "папк результат", "покаж файл в папк", "где лежит", "где этот файл", "в папк", "папк результат", "папк файл", "где файл"]
+triggers.ru = ["покаж в папк", "откр папк с файл", "откр папк результат", "покаж папк результат", "папк результат", "покаж файл в папк", "где лежит", "где этот файл", "в папк", "папк результат", "папк файл", "где файл", "покаж где наход", "где наход этот файл", "откр папк с этим документ", "откр папк с документ", "откр располож"]
 triggers.en = ["show in folder", "open folder of", "where is the file", "show the folder", "in folder"]
 phrases.ru = ["покажи в папке", "открой папку с файлом", "где лежит файл"]
 phrases.en = ["show in folder"]
+
+[[commands]]
+id = "assistant_file_more"
+type = "lua"
+script = "files.lua"
+sandbox = "full"
+timeout = 10000
+triggers.ru = ["покаж ещ результат", "ещ результат", "больш результат", "покаж ещ файл", "покаж остальн", "следующ результат", "ещ файл"]
+triggers.en = ["more results", "show more results", "show more files", "next results"]
+phrases.ru = ["покажи ещё результаты"]
+phrases.en = ["more results"]
+
+[[commands]]
+id = "assistant_file_next"
+type = "lua"
+script = "files.lua"
+sandbox = "full"
+timeout = 10000
+triggers.ru = ["найд следующ файл", "следующ файл", "следующ найден", "дальш файл"]
+triggers.en = ["next file", "find the next file", "next found file"]
+phrases.ru = ["найди следующий файл"]
+phrases.en = ["next file"]
+
+[[commands]]
+id = "assistant_file_widen"
+type = "lua"
+script = "files.lua"
+sandbox = "full"
+timeout = 10000
+triggers.ru = ["ищи везде", "искать везде", "поищ везде", "ищи по всему компьютер", "поищ по всему компьютер", "ищи на всех диск", "поищ на всех диск", "расшир поиск"]
+triggers.en = ["search everywhere", "search the whole computer", "search all drives", "widen the search"]
+phrases.ru = ["ищи везде", "поищи по всему компьютеру"]
+phrases.en = ["search everywhere"]
+
+[[commands]]
+id = "assistant_file_cancel"
+type = "lua"
+script = "files.lua"
+sandbox = "full"
+timeout = 10000
+triggers.ru = ["останов поиск", "отмен поиск", "прекрат поиск", "хват искать", "стоп поиск"]
+triggers.en = ["stop the search", "cancel the search", "stop searching"]
+phrases.ru = ["останови поиск"]
+phrases.en = ["stop the search"]
 
 [[commands]]
 id = "assistant_place_open"

@@ -10,7 +10,7 @@ local PLACES = {
   { ru = { "видео" }, en = { "videos folder" }, kind = "folder", target = "shell:My Video", name_ru = "Видео", name_en = "Videos" },
   { ru = { "корзин" }, en = { "recycle bin" }, kind = "folder", target = "shell:RecycleBinFolder", name_ru = "Корзина", name_en = "Recycle Bin" },
   { ru = { "этот компьютер", "мой компьютер" }, en = { "this pc", "my computer" }, kind = "folder", target = "shell:MyComputerFolder", name_ru = "Этот компьютер", name_en = "This PC" },
-  { ru = { "проводник" }, en = { "file explorer", "explorer" }, kind = "folder", target = "shell:Personal", name_ru = "Проводник", name_en = "Explorer" },
+  { ru = { "проводник", "файлов менеджер" }, en = { "file explorer", "explorer" }, kind = "open", target = "explorer.exe", name_ru = "Проводник", name_en = "Explorer" },
   { ru = { "звук настройк", "настройк звук" }, en = { "sound settings" }, kind = "open", target = "ms-settings:sound", name_ru = "Настройки звука", name_en = "Sound settings" },
   { ru = { "настройк экран", "настройк дисплей", "разрешен экран" }, en = { "display settings", "screen settings" }, kind = "open", target = "ms-settings:display", name_ru = "Настройки экрана", name_en = "Display settings" },
   { ru = { "настройк сет", "настройк интернет", "настройк wifi", "настройк вай" }, en = { "network settings", "wifi settings", "internet settings" }, kind = "open", target = "ms-settings:network", name_ru = "Настройки сети", name_en = "Network settings" },

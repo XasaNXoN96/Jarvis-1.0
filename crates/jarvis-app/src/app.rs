@@ -567,7 +567,7 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
             jarvis_core::session::touch();
             // the questions and answers of a dialog (what to do with the file, save / delete / continue) are part of the
             // conversation; the dictated text itself is not (it goes into the document)
-            let record = kind == "file" || kind == "confirm" || (kind == "object" && (jarvis_core::session::data() != "typing" || text.contains("объект")));
+            let record = kind == "file" || kind == "confirm" || kind == "app_choice" || (kind == "object" && (jarvis_core::session::data() != "typing" || text.contains("объект")));
             if record {
                 open_request(text, "command");
             }
@@ -617,7 +617,8 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
     // then a website by name ("открой YouTube" is YouTube, never a search)
     let program_cmd = commands::fetch_program(text, commands_list)
         .or_else(|| commands::fetch_dictation(text, commands_list))
-        .or_else(|| commands::fetch_site(text, commands_list));
+        .or_else(|| commands::fetch_site(text, commands_list))
+        .or_else(|| commands::fetch_indexed_program(text, commands_list));
 
     // a question for the AI ("что такое программа", "объясни, как работает Excel"): the commands do not run it
     if program_cmd.is_none() && jarvis_core::route::decide(text, jarvis_core::ai::is_configured()) == jarvis_core::route::Route::Ai {

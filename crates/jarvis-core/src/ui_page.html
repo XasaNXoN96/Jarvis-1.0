@@ -272,6 +272,18 @@
   .cat-side button .n { flex: 1; min-width: 0; } .cat-side button small { color: var(--dim); font-variant-numeric: tabular-nums; } .cat-side button.off .n { text-decoration: line-through; } .cat-side button.na { opacity: .55; }
   .cat-title { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; } .cat-title b { font-size: 17px; } .cat-title small { display: block; color: var(--dim); }
   .cmd-list { display: flex; flex-direction: column; gap: 8px; }
+  .ap-tools, .fs-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  .ap-tools input, .fs-form input { flex: 1 1 220px; min-width: 0; }
+  .fs-form select { flex: 0 1 auto; max-width: 100%; }
+  .ap-list, .fs-list { display: flex; flex-direction: column; gap: 6px; }
+  .ap-row, .fs-row { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 9px 12px; border: 1px solid var(--line); border-radius: 11px; background: #ffffff05; }
+  .ap-row b, .fs-row b { display: block; overflow-wrap: anywhere; }
+  .ap-row small, .fs-row small { color: var(--dim); display: block; overflow-wrap: anywhere; }
+  .ap-row > div:first-child, .fs-row > div:first-child { min-width: 0; flex: 1; }
+  .fs-row .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .ap-row.off { opacity: .55; }
+  .hist-row { display: flex; gap: 10px; font-size: 13px; padding: 5px 0; border-bottom: 1px solid var(--line); } .hist-row span:first-child { color: var(--dim); min-width: 44px; }
+  @media (max-width: 640px) { .ap-row, .fs-row { flex-direction: column; align-items: stretch; } .fs-row .acts { justify-content: flex-start; } }
   .ccard { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 10px 14px; display: flex; gap: 10px; align-items: flex-start; }
   .ccard .cb { flex: 1; min-width: 0; } .ccard .cb > b { font-size: 15px; cursor: pointer; } .ccard .cb > b:hover { color: var(--accent); } .ccard .cd { color: var(--dim); font-size: 12.5px; margin-top: 2px; }
   .ccard.off { opacity: .55; } .ccard .chip { font-size: 12px; }
@@ -307,12 +319,13 @@
   /* input bar */
   .bottom { padding: 12px 16px 10px; border-top: 1px solid var(--line); background: #060a18d9; }
   form { display: flex; gap: 8px; }
-  #input { flex: 1; padding: 13px 16px; border-radius: 12px; border: 1px solid var(--line); background: #0d1630; color: var(--text); font: inherit; outline: none; }
+  #input { flex: 1; min-width: 0; padding: 13px 16px; border-radius: 12px; border: 1px solid var(--line); background: #0d1630; color: var(--text); font: inherit; outline: none; }
   #input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px #5ad1ff22; }
   #micbtn { width: 48px; border: 1px solid var(--line); border-radius: 12px; background: #0d1630; color: var(--text); cursor: pointer; font-size: 18px; }
   #micbtn:hover { border-color: var(--accent); } #micbtn.off { color: #ff9aa6; border-color: #ff6b7a77; }
   #send { padding: 0 20px; border: 0; border-radius: 12px; background: var(--accent); color: #04101f; cursor: pointer; font: inherit; font-weight: 600; }
   #send:hover { filter: brightness(1.1); }
+  #micbtn, #send { flex-shrink: 0; } @media (max-width: 480px) { #send { padding: 0 12px; } }
   #hint { margin-top: 6px; font-size: 12px; color: var(--dim); }
   #session-bar { display: none; align-items: center; gap: 12px; margin-bottom: 10px; padding: 9px 14px; border-radius: 12px; border: 1px solid #5ad1ff55; background: #0d2a4acc; }
   #session-bar.on { display: flex; } #session-bar .sdot { width: 10px; height: 10px; border-radius: 50%; background: var(--err); animation: blink 1.2s infinite; flex-shrink: 0; }
@@ -327,6 +340,8 @@
     <button data-page="chat"><span class="ei">💬</span><span>Диалог</span></button>
     <button data-page="commands"><span class="ei">☰</span><span>Команды</span></button>
     <button data-page="builder"><span class="ei">🧩</span><span>Конструктор</span></button>
+    <button data-page="apps"><span class="ei">🖥</span><span>Программы</span></button>
+    <button data-page="files"><span class="ei">📁</span><span>Файлы</span></button>
     <button data-page="diag"><span class="ei">🩺</span><span>Диагностика</span></button>
     <button data-page="settings"><span class="ei">⚙</span><span>Настройки</span></button>
     <div class="grow"></div>
@@ -488,6 +503,30 @@
           <div class="msgline" id="e-msg"></div>
         </aside>
       </div>
+    </section>
+
+    <section class="page" id="page-apps">
+      <h1>Программы</h1>
+      <p class="lead">Программы, найденные на этом компьютере: меню «Пуск», рабочий стол, приложения Windows и реестр. Скажите «Джарвис, открой …» или нажмите «Запустить». Если название подходит к нескольким программам, Джарвис спросит, какую открыть.</p>
+      <div class="ap-tools"><input type="text" id="ap-search" placeholder="Поиск программы, например: commander"><button class="btn" id="ap-rescan" type="button">Обновить список</button></div>
+      <div class="msgline" id="ap-status"></div>
+      <div class="ap-list" id="ap-list"><div class="empty">Загрузка…</div></div>
+    </section>
+
+    <section class="page" id="page-files">
+      <h1>Файлы</h1>
+      <p class="lead">Поиск по вашим папкам (Рабочий стол, Документы, Загрузки, Изображения, Видео, Музыка). Весь компьютер или диск — только если выбрать их. Джарвис ничего не открывает, не перемещает и не удаляет сам.</p>
+      <form class="fs-form" id="fs-form">
+        <input type="text" id="fs-q" placeholder="Имя или часть имени файла">
+        <select id="fs-kind" title="Тип"><option value="">Любой тип</option><option value="документ">Документы</option><option value="презентац">Презентации</option><option value="таблиц">Таблицы</option><option value="фото">Фото</option><option value="видео">Видео</option><option value="музык">Музыка</option><option value="архив">Архивы</option><option value=".pdf">PDF</option><option value=".docx">DOCX</option><option value=".py">PY</option><option value=".txt">TXT</option><option value="folder">Только папки</option></select>
+        <select id="fs-scope" title="Где искать"><option value="">Мои папки</option><option value="desktop">Рабочий стол</option><option value="documents">Документы</option><option value="downloads">Загрузки</option><option value="pictures">Изображения</option><option value="videos">Видео</option><option value="music">Музыка</option><option value="c">Диск C</option><option value="d">Диск D</option><option value="e">Диск E</option><option value="everywhere">Весь компьютер</option></select>
+        <select id="fs-when" title="Когда изменён"><option value="">За всё время</option><option value="сегодня">Сегодня</option><option value="вчера">Вчера</option><option value="за неделю">За неделю</option><option value="за месяц">За месяц</option><option value="недавно">Недавние</option></select>
+        <input type="text" id="fs-content" placeholder="Текст внутри (txt, код, docx, xlsx, pptx)">
+        <button class="btn primary" type="submit">Найти</button><button class="btn" id="fs-stop" type="button">Остановить</button>
+      </form>
+      <div class="msgline" id="fs-status"></div>
+      <div class="fs-list" id="fs-list"></div>
+      <div class="card" style="margin-top:14px"><h3><span class="ei">🕘</span>История поиска и запусков</h3><div id="fs-history"><div class="empty">Пока пусто.</div></div><small class="dim">Хранится только до закрытия Джарвиса.</small></div>
     </section>
 
     <section class="page" id="page-diag">
@@ -686,8 +725,8 @@ function ico(name) { return '<svg viewBox="0 0 24 24" fill="none" stroke="curren
 document.querySelectorAll('[data-ico]').forEach(el => { el.innerHTML = ico(el.dataset.ico); });
 
 // ---------- navigation ----------
-const PAGES = ['home', 'chat', 'commands', 'builder', 'diag', 'settings'];
-const TITLES = { home: ['Главная', 'Neural Interface'], chat: ['Диалог', 'Conversation'], commands: ['Команды', 'Command Library'], diag: ['Диагностика', 'Diagnostics'], builder: ['Конструктор', 'Scenario Builder'], settings: ['Настройки', 'Settings'] };
+const PAGES = ['home', 'chat', 'commands', 'builder', 'apps', 'files', 'diag', 'settings'];
+const TITLES = { home: ['Главная', 'Neural Interface'], chat: ['Диалог', 'Conversation'], commands: ['Команды', 'Command Library'], diag: ['Диагностика', 'Diagnostics'], builder: ['Конструктор', 'Scenario Builder'], apps: ['Программы', 'Applications'], files: ['Файлы', 'File Search'], settings: ['Настройки', 'Settings'] };
 let currentPage = 'home';
 const curInput = () => currentPage === 'home' ? $('#h-input') : $('#input');
 function show(name) {
@@ -701,6 +740,8 @@ function show(name) {
   if (name === 'commands') { loadCommands(); renderTimers(); if (lastState) commandActions(lastState.actions); }
   if (name === 'diag') diagLoad();
   if (name === 'builder') builderLoad();
+  if (name === 'apps') appsLoad();
+  if (name === 'files') filesLoad();
   if (name === 'settings') { loadSettings(); refreshRemote(); }
   if (name === 'chat') { chatTab === 'ai' ? aiOpen() : ($('#log').scrollTop = $('#log').scrollHeight); }
   renderChatViews();
@@ -838,7 +879,7 @@ function applySession(s) {
   $('#session-text').innerHTML = kind === 'confirm'
     ? (s.session_data === 'trash' ? '<b>Очистить корзину?</b> Файлы удалятся навсегда.' : '<b>' + (String(s.session_data).startsWith('power:/r') ? 'Перезагрузить' : 'Выключить') + ' компьютер?</b>') + ' Скажите или напишите «да» или «нет».'
     : kind === 'file'
-    ? '<b>Что сделать с файлом?</b> Скажите или напишите: запустить, показать папку, скопировать, удалить (или «второй», «отмена»).'
+    ? '<b>Что сделать с найденным?</b> Скажите или напишите номер («второй»), «открой», «покажи папку», «ещё», «следующий», «ищи везде» или «отмена». Удаление — только после «да».'
     : '<b>Диктовка' + (app ? ' в ' + app : '') + '.</b> ' + (s.session_data === 'excel' ? 'Говорите: «ячейка А1 пиши 5», «ячейка C1 сделай А плюс Б». ' : 'Говорите текст, «точка», «запятая», «новая строка». ') + 'Закончить: скажите «заканчивай».';
   $('#session-end').textContent = kind === 'confirm' ? 'Нет' : kind === 'file' ? 'Отмена' : 'Закончить';
 }
@@ -895,6 +936,63 @@ function weatherBox(w) {
   }
 }
 $('#wbox').onclick = () => { show('settings'); setTimeout(() => { const el = $('#city-input'); if (el) { el.scrollIntoView({ block: 'center' }); el.focus(); } }, 150); };
+
+// ---------- "Программы": the index of installed programs ----------
+let appsList = [], appsTimer = null;
+async function appsLoad() {
+  clearTimeout(appsTimer);
+  try {
+    const r = await (await fetch('/apps')).json();
+    appsList = r.apps || [];
+    const when = r.scanned_at ? new Date(r.scanned_at * 1000).toLocaleString('ru-RU') : 'ещё не составлялся';
+    $('#ap-status').textContent = (r.scanning ? 'Ищу установленные программы… ' : '') + 'Программ: ' + appsList.length + ' · список составлен: ' + when + (r.error ? ' · ' + r.error : '');
+    appsRender();
+    if (r.scanning && currentPage === 'apps') appsTimer = setTimeout(appsLoad, 1500);
+  } catch (e) { $('#ap-status').textContent = 'Нет связи с Джарвисом'; }
+}
+function appsRender() {
+  const q = $('#ap-search').value.trim().toLowerCase();
+  const list = appsList.filter(a => !q || a.name.toLowerCase().includes(q)).slice(0, 300);
+  const box = $('#ap-list');
+  if (!list.length) { box.innerHTML = '<div class="empty">' + (appsList.length ? 'Ничего не найдено. Если программа установлена недавно, нажмите «Обновить список».' : 'Список пуст. Нажмите «Обновить список».') + '</div>'; return; }
+  box.innerHTML = list.map((a, i) => '<div class="ap-row' + (a.ok ? '' : ' off') + '"><div><b>' + esc(a.name) + '</b><small>' + esc(a.source) + (a.ok ? '' : ' · файл запуска не найден') + '</small></div>' +
+    '<button class="btn small" type="button" data-i="' + i + '"' + (a.ok ? '' : ' disabled') + '>Запустить</button></div>').join('');
+  box.querySelectorAll('button[data-i]').forEach(b => b.onclick = async () => {
+    const a = list[+b.dataset.i]; b.disabled = true;
+    try { const r = await action('app_launch', { launch: a.launch }); $('#ap-status').textContent = r.message || ''; } catch (e) { $('#ap-status').textContent = 'Нет связи с Джарвисом'; }
+    setTimeout(() => { b.disabled = false; }, 4000);
+  });
+}
+$('#ap-search').oninput = appsRender;
+$('#ap-rescan').onclick = async () => { await action('apps_rescan'); $('#ap-status').textContent = 'Ищу установленные программы…'; setTimeout(appsLoad, 600); };
+
+// ---------- "Файлы": search with filters, results, open / show in folder ----------
+let filesTimer = null;
+async function filesLoad() {
+  clearTimeout(filesTimer);
+  try {
+    const r = await (await fetch('/files')).json();
+    $('#fs-status').textContent = r.busy ? 'Ищу: ' + r.label + '…' : (r.message ? r.message.split('\n')[0] : '');
+    $('#fs-list').innerHTML = (r.results || []).map((f, i) => '<div class="fs-row"><div><b>' + (f.is_dir ? '📁 ' : '') + esc(f.name) + '</b><small>' +
+      (f.is_dir ? 'папка' : esc((f.ext || 'файл').toUpperCase()) + ' · ' + esc(f.size)) + ' · изменён ' + esc(f.modified) + '</small><small>' + esc(f.dir) + '</small></div>' +
+      '<div class="acts"><button class="btn small" type="button" data-open="' + (i + 1) + '">Открыть</button><button class="btn small" type="button" data-rev="' + (i + 1) + '">Показать в папке</button></div></div>').join('') ||
+      (r.busy ? '' : '<div class="empty">' + (r.message ? esc(r.message).replace(/\n/g, '<br>') : 'Введите имя, выберите тип или папку и нажмите «Найти».') + '</div>');
+    $('#fs-list').querySelectorAll('button[data-open],button[data-rev]').forEach(b => b.onclick = async () => {
+      const rev = !!b.dataset.rev, n = +(b.dataset.rev || b.dataset.open);
+      try { const x = await action(rev ? 'file_reveal' : 'file_open', { n }); $('#fs-status').textContent = x.message || ''; } catch (e) { $('#fs-status').textContent = 'Нет связи с Джарвисом'; }
+    });
+    const kinds = { search: '🔍', launch: '🖥', open: '📄' };
+    $('#fs-history').innerHTML = (r.history || []).map(h => '<div class="hist-row"><span>' + new Date(h.time * 1000).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) + '</span><span>' + (kinds[h.kind] || '') + ' ' + esc(h.text) + ' — ' + esc(h.result) + '</span></div>').join('') || '<div class="empty">Пока пусто.</div>';
+    if (r.busy && currentPage === 'files') filesTimer = setTimeout(filesLoad, 1200);
+  } catch (e) { $('#fs-status').textContent = 'Нет связи с Джарвисом'; }
+}
+$('#fs-form').onsubmit = async e => {
+  e.preventDefault();
+  const body = { query: $('#fs-q').value, kind: $('#fs-kind').value, scope: $('#fs-scope').value, when: $('#fs-when').value, content: $('#fs-content').value };
+  try { const r = await action('file_search', body); $('#fs-status').textContent = r.message || ''; } catch (err) { $('#fs-status').textContent = 'Нет связи с Джарвисом'; }
+  setTimeout(filesLoad, 300);
+};
+$('#fs-stop').onclick = async () => { await action('file_cancel'); filesLoad(); };
 
 // ---------- phone remote card: the same server as the voice command ----------
 let remoteBusy = false, remoteLink = '';

@@ -93,7 +93,7 @@ impl World {
         if crate::session::kind().is_some() {
             return Some("assistant_session".to_string());
         }
-        commands::fetch_program(text, &self.list).or_else(|| commands::fetch_dictation(text, &self.list)).or_else(|| commands::fetch_site(text, &self.list)).or_else(|| commands::fetch_by_triggers(text, &self.list)).map(|(_, c)| c.id.clone())
+        commands::fetch_program(text, &self.list).or_else(|| commands::fetch_dictation(text, &self.list)).or_else(|| commands::fetch_site(text, &self.list)).or_else(|| commands::fetch_indexed_program(text, &self.list)).or_else(|| commands::fetch_by_triggers(text, &self.list)).map(|(_, c)| c.id.clone())
     }
 
     // says a phrase; returns the id of the command that handled it
@@ -572,3 +572,25 @@ fn sites_are_opened_by_name_searches_stay_searches_and_programs_stay_programs() 
         assert_eq!(w.route(phrase).as_deref(), Some(id), "{}", phrase);
     }
 }
+
+// installed programs that are not in the fixed list are routed to the program command; a keyword command keeps its
+// phrase even when a shortcut has the same name ("открой загрузки" stays the folder)
+#[test]
+fn installed_programs_are_routed_without_taking_the_phrases_of_other_commands() {
+    let _g = LOCK.lock();
+    let _a = crate::appindex::TEST_LOCK.lock();
+    let w = World::new(json!({}));
+    let app = |n: &str| crate::appindex::IndexedApp { name: n.into(), launch: format!("C:\\SM\\{}.lnk", n), source: "start_menu".into(), exe: String::new() };
+    crate::appindex::set_for_tests(vec![app("Total Commander"), app("Double Commander"), app("Krita"), app("Загрузки"), app("Таймер")]);
+    for (phrase, id) in [
+        ("открой commander", Some("assistant_program_open")), ("открой командер", Some("assistant_program_open")), ("открой krita", Some("assistant_program_open")),
+        ("открой загрузки", Some("assistant_place_open")), ("открой блокнот", Some("assistant_program_open")), ("открой ютуб", Some("assistant_website")),
+        ("поставь таймер на 5 минут", Some("assistant_timer_set")),
+    ] {
+        assert_eq!(w.route(phrase).as_deref(), id, "{}", phrase);
+    }
+    assert_eq!(commands::fetch_indexed_program("открой непонятноеслово", &w.list).map(|(_, c)| c.id.clone()), None);
+    assert_eq!(commands::fetch_indexed_program("закрой krita", &w.list).map(|(_, c)| c.id.clone()), None, "closing needs the fixed list");
+    crate::appindex::set_for_tests(Vec::new());
+}
+

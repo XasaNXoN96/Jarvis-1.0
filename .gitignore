@@ -53,3 +53,6 @@ tree.txt
 
 # Ignore AI models
 /resources/models/*
+
+# runtime state of command scripts (written while Jarvis or the tests run)
+.state.json
