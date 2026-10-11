@@ -62,7 +62,7 @@ timeout = 5000
 description = "Нажимает Alt+← в активном окне"
 phrases.ru = ["назад", "вернись на страницу назад"]
 phrases.en = ["go back"]
-triggers.ru = ["назад"]
+triggers.ru = ["назад", "страниц назад"]
 
 [[commands]]
 id = "web_forward"
@@ -95,7 +95,7 @@ timeout = 5000
 description = "Нажимает Ctrl+H в активном окне"
 phrases.ru = ["открой историю браузера", "открой историю"]
 phrases.en = ["open history"]
-triggers.ru = ["истори браузер", "откр истори"]
+triggers.ru = ["истори браузер", "откр истори", "откр истори браузер"]
 
 [[commands]]
 id = "web_downloads"
@@ -249,7 +249,7 @@ timeout = 5000
 description = "Нажимает Ctrl+End в активном окне"
 phrases.ru = ["в конец страницы", "вниз страницы"]
 phrases.en = ["end of the page"]
-triggers.ru = ["конец страниц", "конц страниц"]
+triggers.ru = ["конец страниц", "конц страниц", "вниз страниц"]
 
 [[commands]]
 id = "key_print"
@@ -315,7 +315,7 @@ timeout = 5000
 description = "Левый клик там, где стоит курсор"
 phrases.ru = ["клик", "кликни", "нажми мышкой"]
 phrases.en = ["click"]
-triggers.ru = ["клик", "кликн"]
+triggers.ru = ["клик", "кликн", "нажм мышк"]
 
 [[commands]]
 id = "mouse_double"

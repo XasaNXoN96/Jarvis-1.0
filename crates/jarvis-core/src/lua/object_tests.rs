@@ -513,6 +513,8 @@ fn browser_keyboard_mouse_and_window_commands_reach_their_own_handlers() {
         ("открой буфер обмена", "key_clipboard"), ("двойной клик", "mouse_double"), ("правый клик", "mouse_right"),
         ("клик", "mouse_click"), ("курсор вниз", "mouse_down"), ("прокрути вниз", "mouse_scroll_down"),
         ("переключи окно", "win_switch"), ("разверни окно", "win_maximize"), ("сверни окно", "win_minimize"),
+        ("вернись на страницу назад", "web_back"), ("открой историю браузера", "web_history"), ("вниз страницы", "key_page_end"),
+        ("нажми мышкой", "mouse_click"),
     ] {
         assert_eq!(w.route(phrase).as_deref(), Some(id), "{}", phrase);
     }

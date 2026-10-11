@@ -818,7 +818,9 @@ mod settings_tests {
         let before = store.stats();
         set_for_tests(UiSettings { dnd: true, ..UiSettings::default() });
         reset_settings();
-        assert_eq!(store.stats(), before, "the conversations are untouched by a reset");
+        // other tests may add messages meanwhile: nothing may disappear
+        assert!(store.stats()["chats"].as_u64() >= before["chats"].as_u64(), "the conversations are untouched by a reset");
+        assert!(store.stats()["messages"].as_u64() >= before["messages"].as_u64());
         assert_eq!(store.load(&chat.id).unwrap().messages[0].content, "вопрос, который должен остаться");
         assert!(!settings().dnd);
         set_for_tests(UiSettings::default());

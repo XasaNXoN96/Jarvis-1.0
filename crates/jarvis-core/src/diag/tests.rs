@@ -101,7 +101,11 @@ fn the_report_has_no_secrets_no_conversations_and_copying_it_changes_nothing() {
     let before_ai = crate::ai::status_json()["state"].clone();
     let report = report();
     let json_text = json().to_string();
-    assert_eq!(crate::ai::store().stats(), before_stats, "copying the report never changes the history");
+    // (other tests may add messages meanwhile) nothing disappears and the report itself is not stored anywhere
+    let after = crate::ai::store().stats();
+    assert!(after["chats"].as_u64() >= before_stats["chats"].as_u64() && after["messages"].as_u64() >= before_stats["messages"].as_u64(), "copying the report never deletes history");
+    let active = crate::ai::store().active_or_new();
+    assert!(crate::ai::store().load(&active.id).unwrap().messages.iter().all(|m| !m.content.contains("Диагностический отчёт")), "the report is not written into the conversation");
     assert_eq!(crate::ai::status_json()["state"], before_ai, "and never sends a request to the AI");
     for text in [&report, &json_text] {
         assert!(!text.contains(&key), "the key leaked");
