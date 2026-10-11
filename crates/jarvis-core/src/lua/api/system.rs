@@ -238,14 +238,10 @@ pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Resul
     let clipboard_get_fn = lua.create_function(|_, ()| {
         #[cfg(target_os = "windows")]
         {
-            let output = Command::new("powershell")
-                .args(["-Command", "Get-Clipboard"])
-                .output()
-                .map_err(|e| mlua::Error::runtime(e.to_string()))?;
-            
-            Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+            // native read of the Unicode text: PowerShell output arrives in the OEM code page (garbled Russian)
+            Ok(clipboard_text().unwrap_or_default())
         }
-        
+
         #[cfg(target_os = "linux")]
         {
             let output = Command::new("xclip")
@@ -282,11 +278,7 @@ pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Resul
         let clipboard_set_fn = lua.create_function(|_, text: String| {
             #[cfg(target_os = "windows")]
             {
-                let script = format!("Set-Clipboard -Value '{}'", text.replace("'", "''"));
-                Command::new("powershell")
-                    .args(["-Command", &script])
-                    .output()
-                    .map_err(|e| mlua::Error::runtime(e.to_string()))?;
+                set_clipboard_text(&text).map_err(|e| mlua::Error::runtime(e))?;
             }
             
             #[cfg(target_os = "linux")]
@@ -485,3 +477,73 @@ pub fn send_copy() -> bool {
 
 #[cfg(not(target_os = "windows"))]
 pub fn send_copy() -> bool { false }
+
+// ---------------------------------------------------------------------------------------------
+// Clipboard text through the Win32 API (UTF-16, no code page problems)
+// ---------------------------------------------------------------------------------------------
+#[cfg(target_os = "windows")]
+pub fn clipboard_text() -> Option<String> {
+    use winapi::um::winbase::{GlobalLock, GlobalUnlock};
+    use winapi::um::winuser::{CloseClipboard, GetClipboardData, OpenClipboard};
+    unsafe {
+        // another program may hold the clipboard for a moment
+        let mut opened = false;
+        for _ in 0..10 {
+            if OpenClipboard(std::ptr::null_mut()) != 0 {
+                opened = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
+        if !opened {
+            return None;
+        }
+        let mut result = None;
+        let handle = GetClipboardData(13); // CF_UNICODETEXT
+        if !handle.is_null() {
+            let ptr = GlobalLock(handle) as *const u16;
+            if !ptr.is_null() {
+                let mut len = 0usize;
+                while *ptr.add(len) != 0 && len < 2_000_000 {
+                    len += 1;
+                }
+                result = Some(String::from_utf16_lossy(std::slice::from_raw_parts(ptr, len)));
+                GlobalUnlock(handle);
+            }
+        }
+        CloseClipboard();
+        result
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub fn set_clipboard_text(text: &str) -> Result<(), String> {
+    use winapi::um::winbase::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+    use winapi::um::winuser::{CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData};
+    let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        let mut opened = false;
+        for _ in 0..10 {
+            if OpenClipboard(std::ptr::null_mut()) != 0 {
+                opened = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
+        if !opened {
+            return Err("clipboard is busy".to_string());
+        }
+        EmptyClipboard();
+        let mem = GlobalAlloc(GMEM_MOVEABLE, wide.len() * 2);
+        if mem.is_null() {
+            CloseClipboard();
+            return Err("out of memory".to_string());
+        }
+        let ptr = GlobalLock(mem) as *mut u16;
+        std::ptr::copy_nonoverlapping(wide.as_ptr(), ptr, wide.len());
+        GlobalUnlock(mem);
+        let ok = !SetClipboardData(13, mem).is_null();
+        CloseClipboard();
+        if ok { Ok(()) } else { Err("SetClipboardData failed".to_string()) }
+    }
+}
