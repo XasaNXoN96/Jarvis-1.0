@@ -83,9 +83,10 @@ end
 --   spoken: text to say aloud (default: msg), or false to stay silent
 --   kind:   occasionally adds a joke of this kind to the spoken answer
 local function say(title, msg, spoken, kind)
-  jarvis.out(title .. ": " .. msg)
+  -- the reply goes to the conversation (window + history), then the voice says it once.
+  -- A Windows notification is only a last resort: when no Jarvis window is open and the voice is off.
+  jarvis.reply(msg, title)
   if spoken ~= false then
-    -- the voice comes first and a failing notification can never swallow it
     local text = spoken or msg
     local joke = kind and quip(kind) or nil
     if joke then
@@ -93,18 +94,10 @@ local function say(title, msg, spoken, kind)
       text = text .. ". " .. joke
     end
     pcall(jarvis.speak, text)
+  end
+  if jarvis.app and jarvis.app.needs_toast and jarvis.app.needs_toast() then
     pcall(jarvis.system.notify, title, msg)
-    return
   end
-  pcall(jarvis.system.notify, title, msg)
-  if spoken == false then return end
-  local text = spoken or msg
-  local joke = kind and quip(kind) or nil
-  if joke then
-    jarvis.out("  " .. joke)
-    text = text .. ". " .. joke
-  end
-  jarvis.speak(text)
 end
 
 local function words()

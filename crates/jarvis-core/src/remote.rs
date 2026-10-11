@@ -28,6 +28,13 @@ static TOKEN: Lazy<String> = Lazy::new(load_or_create_token);
 
 // the app gives us the channel that feeds typed commands into the main loop
 // puts a phrase into the queue of typed commands (used by scripts: "run this as a normal command")
+// a phrase that is a follow-up of the previous request, not a new question of the user
+pub const INTERNAL_MARK: &str = "\u{1}";
+
+pub fn push_internal(text: &str) -> bool {
+    push_text(&format!("{}{}", INTERNAL_MARK, text))
+}
+
 pub fn push_text(text: &str) -> bool {
     match TX.get() {
         Some(tx) => tx.lock().send(text.to_string()).is_ok(),

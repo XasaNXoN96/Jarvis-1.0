@@ -52,3 +52,14 @@ fn search_query_drops_the_question_words() {
     assert_eq!(search_query("расскажи про Ташкент"), "ташкент");
     assert_eq!(search_query("кто такой Эйнштейн"), "эйнштейн");
 }
+
+#[test]
+fn the_text_is_shown_as_typed_without_the_wake_word() {
+    assert_eq!(original_without_wake("Сколько будет 2 + 2?", "сколько будет 2 + 2?"), "Сколько будет 2 + 2?");
+    assert_eq!(original_without_wake("Джарвис, Что такое Python?", "что такое python?"), "Что такое Python?");
+    assert_eq!(original_without_wake("Открой Word", "открой word"), "Открой Word");
+    // the matcher removed the question mark: the user's one is kept
+    assert_eq!(original_without_wake("Что такое Python?", "что такое python"), "Что такое Python?");
+    // nothing to find: the matched text is used
+    assert_eq!(original_without_wake("", "привет"), "привет");
+}

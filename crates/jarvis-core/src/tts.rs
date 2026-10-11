@@ -80,8 +80,66 @@ pub fn set_enabled(on: bool) {
 
 pub fn stop() {
     GENERATION.fetch_add(1, Ordering::SeqCst);
+    // what was waiting in the queue is dropped too
+    EPOCH.fetch_add(1, Ordering::SeqCst);
+    let dropped = QUEUE.lock().drain(..).count() as u64;
+    if dropped > 0 {
+        BUSY.fetch_sub(dropped, Ordering::SeqCst);
+    }
     if let Some(mut child) = CURRENT.lock().take() {
         let _ = child.kill();
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// queue: the parts of one long answer are spoken one after another, none interrupts the other
+// ---------------------------------------------------------------------------------------------
+static QUEUE: Lazy<Mutex<std::collections::VecDeque<(u64, String)>>> = Lazy::new(|| Mutex::new(std::collections::VecDeque::new()));
+static EPOCH: AtomicU64 = AtomicU64::new(0);
+static WORKER: AtomicBool = AtomicBool::new(false);
+// when the voice began to work on the latest phrase (for the timing report)
+static SPEECH_STARTED: Lazy<Mutex<Option<std::time::Instant>>> = Lazy::new(|| Mutex::new(None));
+
+pub fn last_speech_started() -> Option<std::time::Instant> {
+    *SPEECH_STARTED.lock()
+}
+
+// Queues a phrase after the ones that are being said. stop() (or a plain speak()) silences the whole queue.
+pub fn speak_queued(text: &str) {
+    let text: String = text.chars().take(MAX_CHARS).collect();
+    let text = text.trim().to_string();
+    if text.is_empty() || !is_enabled() {
+        return;
+    }
+    info!("TTS (queued): {}", text.chars().take(120).collect::<String>());
+    BUSY.fetch_add(1, Ordering::SeqCst);
+    QUEUE.lock().push_back((EPOCH.load(Ordering::SeqCst), text));
+    if !WORKER.swap(true, Ordering::SeqCst) {
+        std::thread::spawn(queue_worker);
+    }
+}
+
+fn queue_worker() {
+    loop {
+        let item = QUEUE.lock().pop_front();
+        match item {
+            None => {
+                WORKER.store(false, Ordering::SeqCst);
+                // a phrase may have arrived between the check and the flag
+                if QUEUE.lock().is_empty() || WORKER.swap(true, Ordering::SeqCst) {
+                    break;
+                }
+            }
+            Some((epoch, text)) => {
+                if epoch == EPOCH.load(Ordering::SeqCst) && is_enabled() {
+                    #[cfg(feature = "jarvis_app")]
+                    crate::ipc::send(crate::ipc::IpcEvent::Speaking);
+                    let generation = GENERATION.load(Ordering::SeqCst);
+                    speak_blocking(&text, &tts_lang(), generation);
+                }
+                BUSY.fetch_sub(1, Ordering::SeqCst);
+            }
+        }
     }
 }
 
@@ -464,30 +522,38 @@ pub fn speak(text: &str) {
             }
         }
         let _done = Done;
-        // voice choice from the settings: "" = automatic, "piper", "win:<name>"
-        let choice = crate::uistate::voice_name();
-        if choice == "piper" {
-            // the user chose the Jarvis voice: never the Windows voice instead
-            match piper_voice(&lang) {
-                Some((exe, model)) => {
-                    if !speak_piper(&exe, &model, &text, generation) {
-                        tell_once("Голос Jarvis (Piper) не смог произнести фразу. Windows-голос не используется, потому что выбран голос Jarvis. Скажите «проверь голос».");
-                    }
-                }
-                None => tell_once("Голос Jarvis (Piper) не установлен на этом компьютере. Откройте Настройки → Голос и нажмите «Установить голос Jarvis». Пока выбран только голос Jarvis, Windows-голос не используется."),
-            }
-            return;
-        }
-        if !choice.starts_with("win:") {
-            if let Some((exe, model)) = piper_voice(&lang) {
-                if speak_piper(&exe, &model, &text, generation) {
-                    return;
-                }
-                warn!("TTS: Piper produced no sound, falling back to the Windows voice");
-            }
-        }
-        speak_sapi(&text, &lang, generation);
+        speak_blocking(&text, &lang, generation);
     });
+}
+
+// says the phrase and returns when it is finished (or interrupted)
+fn speak_blocking(text: &str, lang: &str, generation: u64) {
+    *SPEECH_STARTED.lock() = Some(std::time::Instant::now());
+    let text = text.to_string();
+    let lang = lang.to_string();
+    // voice choice from the settings: "" = automatic, "piper", "win:<name>"
+    let choice = crate::uistate::voice_name();
+    if choice == "piper" {
+        // the user chose the Jarvis voice: never the Windows voice instead
+        match piper_voice(&lang) {
+            Some((exe, model)) => {
+                if !speak_piper(&exe, &model, &text, generation) {
+                    tell_once("Голос Jarvis (Piper) не смог произнести фразу. Windows-голос не используется, потому что выбран голос Jarvis. Скажите «проверь голос».");
+                }
+            }
+            None => tell_once("Голос Jarvis (Piper) не установлен на этом компьютере. Откройте Настройки → Голос и нажмите «Установить голос Jarvis». Пока выбран только голос Jarvis, Windows-голос не используется."),
+        }
+        return;
+    }
+    if !choice.starts_with("win:") {
+        if let Some((exe, model)) = piper_voice(&lang) {
+            if speak_piper(&exe, &model, &text, generation) {
+                return;
+            }
+            warn!("TTS: Piper produced no sound, falling back to the Windows voice");
+        }
+    }
+    speak_sapi(&text, &lang, generation);
 }
 
 pub fn piper_available() -> bool {
@@ -521,6 +587,55 @@ pub fn list_voices() -> Vec<(String, String)> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    // the queue and the "busy" counter are global: one test at a time
+    static LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn queued_phrases_are_taken_one_by_one_and_the_counter_returns_to_zero() {
+        let _g = LOCK.lock();
+        stop();
+        ENABLED.store(true, Ordering::SeqCst);
+        // nothing here can really be spoken (no voices in the test), the point is the bookkeeping
+        speak_queued("Первая фраза.");
+        speak_queued("Вторая фраза.");
+        speak_queued("   ");
+        assert!(BUSY.load(Ordering::SeqCst) >= 1 || QUEUE.lock().is_empty(), "queued phrases count as speaking");
+        let t = std::time::Instant::now();
+        while is_speaking() && t.elapsed() < std::time::Duration::from_secs(20) {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(!is_speaking(), "the voice is free again after the queue is done");
+        assert!(QUEUE.lock().is_empty());
+    }
+
+    #[test]
+    fn stop_drops_everything_that_is_waiting() {
+        let _g = LOCK.lock();
+        stop();
+        ENABLED.store(true, Ordering::SeqCst);
+        // put phrases into the queue without a worker to take them
+        for i in 0..3 {
+            BUSY.fetch_add(1, Ordering::SeqCst);
+            QUEUE.lock().push_back((EPOCH.load(Ordering::SeqCst), format!("фраза {}", i)));
+        }
+        stop();
+        assert!(QUEUE.lock().is_empty(), "stop() empties the queue");
+        assert_eq!(BUSY.load(Ordering::SeqCst), 0, "and the counter does not stay behind");
+    }
+
+    #[test]
+    fn nothing_is_queued_when_the_voice_is_off() {
+        let _g = LOCK.lock();
+        stop();
+        ENABLED.store(false, Ordering::SeqCst);
+        speak_queued("Это не должно прозвучать.");
+        assert!(QUEUE.lock().is_empty());
+        assert!(!is_speaking());
+        ENABLED.store(true, Ordering::SeqCst);
+    }
+
     use super::split_chunks;
 
     #[test]

@@ -42,12 +42,35 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
     let out_fn = lua.create_function(|_, text: String| {
         use std::io::Write;
         let _ = writeln!(std::io::stdout(), "{}", text);
+        crate::dialog::collect(&text);
         // also show it in the Jarvis window
         #[cfg(feature = "jarvis_app")]
         crate::ipc::send(crate::ipc::IpcEvent::Output { text });
         Ok(())
     })?;
     jarvis.set("out", out_fn)?;
+
+    // @ jarvis.reply(text, title?)
+    // the reply of a command to the user: it is shown in the window, kept in the one conversation (next to the question
+    // that caused it) and shown on the console. The voice is a separate call, so a reply is never said twice.
+    let reply_fn = lua.create_function(|_, (text, title): (String, Option<String>)| {
+        use std::io::Write;
+        let line = match &title {
+            Some(t) if !t.is_empty() => format!("{}: {}", t, text),
+            _ => text.clone(),
+        };
+        let _ = writeln!(std::io::stdout(), "{}", line);
+        #[cfg(feature = "jarvis_app")]
+        crate::ipc::send(crate::ipc::IpcEvent::Output { text: line });
+        // in the conversation the title stays with the message ("Ищу: нейросеть"), unless the message already names it
+        let shown = match &title {
+            Some(t) if !t.is_empty() && !matches!(t.as_str(), "Джарвис" | "Jarvis") && !text.to_lowercase().contains(&t.to_lowercase()) => format!("{}: {}", t, text),
+            _ => text.clone(),
+        };
+        crate::dialog::reply(&shown, "command");
+        Ok(())
+    })?;
+    jarvis.set("reply", reply_fn)?;
 
     // @ jarvis.speak(text)
     // @TODO: update when TTS will be implemented
@@ -107,6 +130,14 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
             }
         }
         Ok(out)
+    })?)?;
+    // jarvis.app.needs_toast(): true when nobody would see or hear the reply (no window open, the voice is off)
+    app.set("needs_toast", lua.create_function(|_, ()| {
+        #[cfg(feature = "jarvis_app")]
+        let window = crate::ipc::has_clients();
+        #[cfg(not(feature = "jarvis_app"))]
+        let window = false;
+        Ok(!window && !crate::tts::is_enabled())
     })?)?;
     // jarvis.app.run_text(text): handle a phrase as an ordinary command (it goes to the queue of typed commands)
     app.set("run_text", lua.create_function(|_, text: String| Ok(crate::remote::push_text(&text)))?)?;

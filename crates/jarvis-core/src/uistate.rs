@@ -35,6 +35,30 @@ pub fn log_action(text: &str, command: &str, ok: bool) {
     log.truncate(60);
 }
 
+// ---------------------------------------------------------------------------------------------
+// events of the program (the "Command Output" card): what really happened, newest first. No secrets are ever put here.
+// ---------------------------------------------------------------------------------------------
+#[derive(Clone, Serialize)]
+pub struct Event {
+    pub id: u64,
+    pub time: u64,
+    pub kind: String, // start | command | ai | voice | error | info
+    pub text: String,
+}
+
+static EVENTS: Lazy<Mutex<VecDeque<Event>>> = Lazy::new(|| Mutex::new(VecDeque::new()));
+static EVENT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+pub fn log_event(kind: &str, text: &str) {
+    let mut ev = EVENTS.lock();
+    ev.push_front(Event { id: EVENT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst), time: now(), kind: kind.to_string(), text: text.chars().take(200).collect() });
+    ev.truncate(80);
+}
+
+pub fn recent_events(n: usize) -> Vec<Event> {
+    EVENTS.lock().iter().take(n).cloned().collect()
+}
+
 pub fn recent_actions() -> Vec<LogEntry> {
     LOG.lock().iter().cloned().collect()
 }
@@ -113,10 +137,14 @@ pub fn update_settings(patch: &Value) {
         if crate::voices::get_voice(&s.reaction_voice).is_some() { crate::voices::set_current_voice(&s.reaction_voice); }
     }
     if let Some(v) = patch.get("voice_name").and_then(|v| v.as_str()) { s.voice_name = v.chars().take(120).collect(); }
+    let before = (s.ai_provider.clone(), s.ai_model.clone(), s.ai_key.clone(), s.ai_url.clone());
     if let Some(v) = patch.get("ai_provider").and_then(|v| v.as_str()) { s.ai_provider = v.chars().take(30).collect(); }
     if let Some(v) = patch.get("ai_model").and_then(|v| v.as_str()) { s.ai_model = v.chars().take(100).collect(); }
     if let Some(v) = patch.get("ai_key").and_then(|v| v.as_str()) { s.ai_key = v.chars().take(300).collect(); }
     if let Some(v) = patch.get("ai_url").and_then(|v| v.as_str()) { s.ai_url = v.chars().take(300).collect(); }
+    if before != (s.ai_provider.clone(), s.ai_model.clone(), s.ai_key.clone(), s.ai_url.clone()) {
+        crate::ai::status_reset();
+    }
     if let Some(v) = patch.get("ai_fallback").and_then(|v| v.as_bool()) { s.ai_fallback = v; }
     write_settings(&s);
 }
@@ -265,7 +293,36 @@ pub fn stats() -> Stats {
         }
     }
     let gb = |kb: f32| kb / 1024.0 / 1024.0;
-    Stats { cpu: 0.0, mem_used_gb: gb(total - avail), mem_total_gb: gb(total), disk_free_gb: 0.0, disk_total_gb: 0.0 }
+    // processor load from /proc/stat between two calls
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static PREV_IDLE: AtomicU64 = AtomicU64::new(0);
+    static PREV_TOTAL: AtomicU64 = AtomicU64::new(0);
+    let mut cpu = 0.0f32;
+    if let Ok(s) = std::fs::read_to_string("/proc/stat") {
+        if let Some(line) = s.lines().next() {
+            let n: Vec<u64> = line.split_whitespace().skip(1).filter_map(|v| v.parse().ok()).collect();
+            if n.len() >= 5 {
+                let idle = n[3] + n[4];
+                let total: u64 = n.iter().sum();
+                let (pi, pt) = (PREV_IDLE.swap(idle, Ordering::SeqCst), PREV_TOTAL.swap(total, Ordering::SeqCst));
+                if pt > 0 && total > pt {
+                    cpu = (1.0 - (idle - pi) as f32 / (total - pt) as f32) * 100.0;
+                }
+            }
+        }
+    }
+    // the system disk (df)
+    let (mut free, mut size) = (0f32, 0f32);
+    if let Ok(out) = std::process::Command::new("df").args(["-Pk", "/"]).output() {
+        if let Some(line) = String::from_utf8_lossy(&out.stdout).lines().nth(1) {
+            let f: Vec<&str> = line.split_whitespace().collect();
+            if f.len() >= 4 {
+                size = f[1].parse().unwrap_or(0.0);
+                free = f[3].parse().unwrap_or(0.0);
+            }
+        }
+    }
+    Stats { cpu: cpu.clamp(0.0, 100.0), mem_used_gb: gb(total - avail), mem_total_gb: gb(total), disk_free_gb: gb(free), disk_total_gb: gb(size) }
 }
 
 pub fn state_json() -> Value {
@@ -291,5 +348,87 @@ pub fn state_json() -> Value {
         "mic_level": crate::MIC_LEVEL.load(std::sync::atomic::Ordering::Relaxed),
         "tts_enabled": crate::tts::is_enabled(),
         "remote": crate::remote::is_running(),
+        "voice_state": voice_state(),
+        "rev": crate::ai::rev(),
+        "ai": crate::ai::status_json(),
+        "active_chat": crate::ai::store().active().unwrap_or_default(),
+        "piper": crate::tts::piper_available(),
+        "ai_busy": crate::ai::store().active().map(|id| crate::ai::is_busy(&id)).unwrap_or(false),
+        "health": crate::health::json(),
+        "events": recent_events(30),
+        "last_output": crate::dialog::last_output(),
+        "commands_count": crate::COMMANDS_COUNT.load(std::sync::atomic::Ordering::Relaxed),
     })
+}
+
+// The state of the voice as the window shows it. READY only when the microphone really delivers audio.
+pub fn voice_state() -> Value {
+    use std::sync::atomic::Ordering::SeqCst;
+    let err = crate::VOICE_ERROR.lock().clone();
+    let (state, detail): (&str, String) = if crate::tts::is_speaking() {
+        ("SPEAKING", "Jarvis говорит".into())
+    } else if crate::VOICE_LISTENING.load(SeqCst) {
+        ("LISTENING", "слушаю команду".into())
+    } else if crate::VOICE_TEXT_ONLY.load(SeqCst) {
+        ("DISABLED", "включён режим «только текст»".into())
+    } else if !crate::VOICE_ACTIVE.load(SeqCst) {
+        ("ERROR", if err.is_empty() { "голос не запущен".to_string() } else { err })
+    } else if crate::MIC_MUTED.load(SeqCst) {
+        ("DISABLED", "микрофон выключен".into())
+    } else {
+        match crate::recorder::last_frame_age_ms() {
+            Some(age) if age < 3000 => ("READY", "микрофон работает".into()),
+            Some(_) => ("ERROR", if err.is_empty() { "микрофон перестал отдавать звук".to_string() } else { err }),
+            None => ("ERROR", "микрофон не отдаёт звук".into()),
+        }
+    };
+    json!({ "state": state, "detail": detail, "tts": crate::tts::is_enabled() })
+}
+
+
+#[cfg(test)]
+mod voice_tests {
+    use super::*;
+    use std::sync::atomic::Ordering::SeqCst;
+
+    // the flags are global: one test at a time
+    static LOCK: Mutex<()> = Mutex::new(());
+
+    fn reset() {
+        crate::VOICE_ACTIVE.store(false, SeqCst);
+        crate::VOICE_LISTENING.store(false, SeqCst);
+        crate::VOICE_TEXT_ONLY.store(false, SeqCst);
+        crate::MIC_MUTED.store(false, SeqCst);
+        crate::VOICE_ERROR.lock().clear();
+    }
+    fn st() -> String {
+        voice_state()["state"].as_str().unwrap().to_string()
+    }
+
+    #[test]
+    fn the_voice_indicator_shows_the_real_state() {
+        let _g = LOCK.lock();
+        reset();
+        // not started and nothing explains it: ERROR, with the reason
+        assert_eq!(st(), "ERROR");
+        *crate::VOICE_ERROR.lock() = "микрофон не найден".into();
+        assert!(voice_state()["detail"].as_str().unwrap().contains("микрофон не найден"));
+        // started on purpose without the microphone: DISABLED, not an error
+        crate::VOICE_TEXT_ONLY.store(true, SeqCst);
+        assert_eq!(st(), "DISABLED");
+        crate::VOICE_TEXT_ONLY.store(false, SeqCst);
+        // the voice runs, but the microphone has delivered no audio: never READY
+        crate::VOICE_ACTIVE.store(true, SeqCst);
+        crate::VOICE_ERROR.lock().clear();
+        assert_ne!(st(), "READY", "READY needs real audio frames");
+        assert_eq!(st(), "ERROR");
+        // muted by the user
+        crate::MIC_MUTED.store(true, SeqCst);
+        assert_eq!(st(), "DISABLED");
+        crate::MIC_MUTED.store(false, SeqCst);
+        // listening for a command
+        crate::VOICE_LISTENING.store(true, SeqCst);
+        assert_eq!(st(), "LISTENING");
+        reset();
+    }
 }

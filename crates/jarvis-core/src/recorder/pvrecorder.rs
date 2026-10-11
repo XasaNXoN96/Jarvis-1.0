@@ -15,6 +15,19 @@ static ACTIVE_INDEX: AtomicI32 = AtomicI32::new(-1);
 static READ_ERRORS: AtomicU32 = AtomicU32::new(0);
 // frames delivered since start: lets the "Check" button prove that audio really arrives
 pub static FRAMES: AtomicU64 = AtomicU64::new(0);
+// milliseconds since the program start at the moment of the last audio frame (0 = none yet)
+static LAST_FRAME_MS: AtomicU64 = AtomicU64::new(0);
+static BASE: once_cell::sync::Lazy<std::time::Instant> = once_cell::sync::Lazy::new(std::time::Instant::now);
+
+fn mark_frame() {
+    LAST_FRAME_MS.store(BASE.elapsed().as_millis() as u64 + 1, Ordering::Relaxed);
+}
+
+// how long ago the microphone delivered audio (None: never)
+pub fn last_frame_age_ms() -> Option<u64> {
+    let last = LAST_FRAME_MS.load(Ordering::Relaxed);
+    if last == 0 { None } else { Some((BASE.elapsed().as_millis() as u64 + 1).saturating_sub(last)) }
+}
 
 // how long we wait for the first audio frame from a freshly opened device
 const FIRST_FRAME_TIMEOUT: Duration = Duration::from_millis(1500);
@@ -206,6 +219,7 @@ pub fn read_microphone(frame_buffer: &mut [i16]) {
         Ok(f) if f.len() == frame_buffer.len() => {
             frame_buffer.copy_from_slice(f.as_slice());
             FRAMES.fetch_add(1, Ordering::Relaxed);
+            mark_frame();
             READ_ERRORS.store(0, Ordering::Relaxed);
         }
         Ok(_) => std::thread::sleep(Duration::from_millis(20)),

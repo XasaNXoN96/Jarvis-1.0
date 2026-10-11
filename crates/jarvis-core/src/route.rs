@@ -100,5 +100,22 @@ pub fn search_query(text: &str) -> String {
     if rest.is_empty() { words.join(" ") } else { rest.join(" ") }
 }
 
+// The words of the user for the conversation and for the AI: the text as it was typed or said (capitals, punctuation),
+// without the wake word in front. `matched` is the lower-cased text the commands were searched with.
+pub fn original_without_wake(original: &str, matched: &str) -> String {
+    let low = original.to_lowercase();
+    if let Some(pos) = low.find(matched) {
+        let skip = low[..pos].chars().count();
+        let take = matched.chars().count();
+        let cut: String = original.chars().skip(skip).take(take).collect();
+        if !cut.trim().is_empty() {
+            // the closing punctuation the user typed ("?" and so on) stays
+            let tail: String = original.chars().skip(skip + take).take_while(|c| matches!(c, '?' | '!' | '.' | '…')).collect();
+            return format!("{}{}", cut.trim(), tail);
+        }
+    }
+    matched.to_string()
+}
+
 #[cfg(test)]
 mod tests;

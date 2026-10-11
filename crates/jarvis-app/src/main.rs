@@ -75,6 +75,7 @@ fn main() -> Result<(), String> {
     let force_text = std::env::args().any(|a| a == "--text");
     let mut voice_mode = !force_text;
     if force_text {
+        jarvis_core::VOICE_TEXT_ONLY.store(true, std::sync::atomic::Ordering::SeqCst);
         info!("Text mode forced by --text flag.");
         *jarvis_core::VOICE_ERROR.lock() = "Jarvis запущен ярлыком «только текст» (ключ --text). Нажмите «Включить голос» или запустите обычный ярлык «Jarvis»".to_string();
     }
@@ -111,6 +112,7 @@ fn main() -> Result<(), String> {
         }
     };
     info!("Commands initialized. Count: {}, List: {:?}", cmds.len(), commands::list_paths(&cmds));
+    jarvis_core::COMMANDS_COUNT.store(cmds.iter().map(|l| l.commands.iter().filter(|c| c.id != "assistant_session").count()).sum(), std::sync::atomic::Ordering::Relaxed);
     COMMANDS_LIST.set(cmds).unwrap();
 
     // init audio (sounds are optional, continue without them)
@@ -221,6 +223,13 @@ fn main() -> Result<(), String> {
     // start the app (in the background thread)
     let app_rt = Arc::clone(&rt);
     std::thread::spawn(move || {
+        jarvis_core::uistate::log_event("start", &format!("Jarvis {} запущен", config::APP_VERSION.unwrap_or("")));
+        if voice_mode {
+            jarvis_core::uistate::log_event("voice", "Голосовой режим: запускаю микрофон");
+        } else {
+            let why = jarvis_core::VOICE_ERROR.lock().clone();
+            jarvis_core::uistate::log_event(if jarvis_core::VOICE_TEXT_ONLY.load(std::sync::atomic::Ordering::SeqCst) { "info" } else { "error" }, &format!("Голос выключен: {}", why.chars().take(140).collect::<String>()));
+        }
         let _ = app::start(voice_mode, text_cmd_rx, &app_rt);
     });
 

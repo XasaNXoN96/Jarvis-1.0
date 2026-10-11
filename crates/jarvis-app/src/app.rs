@@ -246,6 +246,20 @@ fn main_loop(text_cmd_rx: &Receiver<String>, rt: &tokio::runtime::Runtime) -> Re
 
 
 // Voice recognition for command after wake word
+// "Jarvis is listening for a command" for the whole time of recognize_command
+struct ListeningGuard;
+impl ListeningGuard {
+    fn new() -> Self {
+        jarvis_core::VOICE_LISTENING.store(true, std::sync::atomic::Ordering::SeqCst);
+        ListeningGuard
+    }
+}
+impl Drop for ListeningGuard {
+    fn drop(&mut self) {
+        jarvis_core::VOICE_LISTENING.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 fn recognize_command(
     frame_buffer: &mut [i16],
     rt: &tokio::runtime::Runtime,
@@ -253,6 +267,7 @@ fn recognize_command(
     sample_rate: usize,
     prefed_audio: bool
 ) {
+    let _listening = ListeningGuard::new();
     let mut audio_buffer = AudioRingBuffer::new(2.0, frame_length, sample_rate);
     let mut vad_state = if prefed_audio {
         VadState::VoiceActive
@@ -375,7 +390,10 @@ fn recognize_command(
                     }
                     
                     // execute command and check if we should chain
+                    VOICE_INPUT.store(true, std::sync::atomic::Ordering::SeqCst);
+                    *ORIGINAL.lock() = recognized_voice.clone();
                     let should_chain = execute_command(&recognized_voice, rt);
+                    VOICE_INPUT.store(false, std::sync::atomic::Ordering::SeqCst);
                     
                     if should_chain {
                         // chain: reset and continue listening
@@ -438,9 +456,22 @@ fn remove_phrases(text: &str, phrases: &[&str]) -> String {
 }
 
 fn process_text_command(text: &str, rt: &tokio::runtime::Runtime) {
+    // an internal follow-up of the previous request (the search after an AI failure): no new question is stored,
+    // its replies join the request it belongs to
+    let (internal, text) = match text.strip_prefix(jarvis_core::remote::INTERNAL_MARK) {
+        Some(rest) => (true, rest),
+        None => (false, text),
+    };
     info!("Processing text command: {}", text);
     
-    ipc::send(IpcEvent::SpeechRecognized { text: text.to_string() });
+    if internal {
+        jarvis_core::dialog::continue_last();
+    } else {
+        ipc::send(IpcEvent::SpeechRecognized { text: text.to_string() });
+    }
+    INTERNAL.store(internal, std::sync::atomic::Ordering::SeqCst);
+    VOICE_INPUT.store(false, std::sync::atomic::Ordering::SeqCst);
+    *ORIGINAL.lock() = text.trim().to_string();
     
     let mut filtered = text.to_lowercase();
     // for tbr in config::ASSISTANT_PHRASES_TBR {
@@ -459,8 +490,31 @@ fn process_text_command(text: &str, rt: &tokio::runtime::Runtime) {
     
     // text commands never chain
     execute_command(filtered, rt);
+    INTERNAL.store(false, std::sync::atomic::Ordering::SeqCst);
 }
 
+
+// the phrase being handled is an internal follow-up (its question is already in the conversation)
+static INTERNAL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+// the phrase came from the microphone (not from the keyboard)
+static VOICE_INPUT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+// what the user actually said or typed (capitals, punctuation); `text` of execute_command is lower-cased and without
+// the wake word, which is right for matching and wrong for showing and for the AI
+static ORIGINAL: once_cell::sync::Lazy<parking_lot::Mutex<String>> = once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(String::new()));
+
+// the user's words for the conversation and for the AI: the original text without the wake word in front of it
+fn shown_text(matched: &str) -> String {
+    jarvis_core::route::original_without_wake(&ORIGINAL.lock(), matched)
+}
+
+// the question of the user goes into the one conversation (unless it is an internal follow-up)
+fn open_request(text: &str, src: &str) {
+    if INTERNAL.load(std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    jarvis_core::dialog::begin(&shown_text(text), src);
+}
 
 // Execute command, returns true if chaining should continue
 fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
@@ -489,6 +543,12 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
         if let Some((path, cfg)) = session_cmd {
             info!("Session '{}' input: {}", kind, text);
             jarvis_core::session::touch();
+            // the questions and answers of a dialog (what to do with the file, save / delete / continue) are part of the
+            // conversation; the dictated text itself is not (it goes into the document)
+            let record = kind == "file" || (kind == "object" && (jarvis_core::session::data() != "typing" || text.contains("объект")));
+            if record {
+                open_request(text, "command");
+            }
             let ok = match commands::execute_command(path, cfg, Some(text), None) {
                 Ok(_) => true,
                 Err(msg) => {
@@ -498,6 +558,9 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
                 }
             };
             jarvis_core::uistate::log_action(text, &format!("диалог: {}", kind), ok);
+            if record {
+                jarvis_core::dialog::end(ok);
+            }
             ipc::send(IpcEvent::Idle);
             return jarvis_core::session::kind().is_some(); // keep listening while the session is open
         }
@@ -527,7 +590,14 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
         intent::get_command_by_intent(commands_list, &intent_id)
     } else {
         info!("Intent not recognized, trying levenshtein fallback...");
-        commands::fetch_command(text, commands_list)
+        let sentence = text.split_whitespace().count() >= 3;
+        if sentence && jarvis_core::ai::is_configured() && !VOICE_INPUT.load(std::sync::atomic::Ordering::SeqCst) {
+            // a typed sentence that matches no command by words: only a near-exact command phrase beats the AI,
+            // a merely similar-looking command is not guessed
+            commands::fetch_command_min(text, commands_list, config::CMD_RATIO_THRESHOLD.max(88.0))
+        } else {
+            commands::fetch_command(text, commands_list)
+        }
     };
     
     if let Some((cmd_path, cmd_config)) = cmd_result {
@@ -540,7 +610,10 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
         if jarvis_core::uistate::is_group_disabled(group) {
             let msg = format!("Раздел «{}» отключён (включить: окно Jarvis → Команды)", jarvis_core::uistate::group_title(group));
             say(&msg);
-            ipc::send(IpcEvent::Output { text: msg });
+            ipc::send(IpcEvent::Output { text: msg.clone() });
+            open_request(text, "command");
+            jarvis_core::dialog::reply(&msg, "local");
+            jarvis_core::dialog::end(false);
             jarvis_core::uistate::log_action(text, &cmd_config.id, false);
             ipc::send(IpcEvent::Idle);
             return false;
@@ -557,7 +630,18 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
             None
         };
 
-        match commands::execute_command(&cmd_path, &cmd_config, Some(&text), extracted_slots.as_ref()) {
+        open_request(text, "command");
+        jarvis_core::uistate::log_event("command", &format!("Команда «{}» ({}): выполняется", text, cmd_config.id));
+        let outcome = commands::execute_command(&cmd_path, &cmd_config, Some(&text), extracted_slots.as_ref());
+        match &outcome {
+            Ok(_) => jarvis_core::uistate::log_event("command", &format!("Команда {}: выполнена", cmd_config.id)),
+            Err(msg) => {
+                jarvis_core::uistate::log_event("error", &format!("Команда {}: ошибка — {}", cmd_config.id, msg.chars().take(120).collect::<String>()));
+                jarvis_core::dialog::fail(&format!("Не получилось выполнить команду: {}", msg.chars().take(200).collect::<String>()), "command");
+            }
+        }
+        jarvis_core::dialog::end(outcome.is_ok());
+        match outcome {
             Ok(chain) => {
                 info!("Command executed successfully");
                 jarvis_core::uistate::log_action(text, &cmd_config.id, true);
@@ -587,21 +671,39 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
         // not a command: with "answer phrases that are not commands" switched on, the AI answers (only then)
         let ai_ready = jarvis_core::ai::is_configured();
         let question = jarvis_core::route::is_open_question(text);
-        if ai_ready && (jarvis_core::uistate::settings().ai_fallback || question) {
+        // typed messages that are not commands are a talk with the AI; spoken ones only when the switch is on
+        // (a misheard word in the room should not travel to the Internet)
+        let typed = !VOICE_INPUT.load(std::sync::atomic::Ordering::SeqCst);
+        if ai_ready && (typed || jarvis_core::uistate::settings().ai_fallback || question) {
             ask_ai(text);
             return false;
         }
         if question {
-            // no AI is connected: say so and look it up on the Internet instead of staying silent
-            let msg = "ИИ не подключён (Настройки → ИИ-провайдер), поэтому ищу ответ в интернете.".to_string();
+            // no AI is connected: say so and look it up on the Internet instead of staying silent.
+            // The note says plainly that this is a search, not an answer of the AI.
+            let msg = "ИИ не подключён (Настройки → ИИ-провайдер), поэтому ищу ответ в интернете. Это результат поиска, а не ответ нейросети.".to_string();
             say(&msg);
-            ipc::send(IpcEvent::Output { text: msg });
+            ipc::send(IpcEvent::Output { text: msg.clone() });
+            open_request(text, "local");
+            jarvis_core::dialog::reply(&msg, "search");
+            jarvis_core::dialog::end(true);
+            if jarvis_core::tts::is_enabled() {
+                jarvis_core::tts::speak("ИИ не подключён. Ищу ответ в интернете.");
+            }
+            jarvis_core::uistate::log_event("info", "ИИ не настроен: поиск в интернете");
             jarvis_core::uistate::log_action(text, "поиск в интернете", true);
-            jarvis_core::remote::push_text(&format!("найди в интернете {}", jarvis_core::route::search_query(text)));
+            jarvis_core::remote::push_internal(&format!("найди в интернете {}", jarvis_core::route::search_query(text)));
             ipc::send(IpcEvent::Idle);
             return false;
         }
         say(&format!("? command not found: {}", text));
+        let unknown = format!("Не знаю такой команды: «{}». Скажите «что ты умеешь» или задайте вопрос.", text);
+        open_request(text, "local");
+        jarvis_core::dialog::reply(&unknown, "local");
+        jarvis_core::dialog::end(false);
+        if jarvis_core::tts::is_enabled() {
+            jarvis_core::tts::speak("Не знаю такой команды.");
+        }
         jarvis_core::uistate::log_action(text, "—", false);
         voices::play_not_found();
         ipc::send(IpcEvent::Error { 
@@ -618,25 +720,40 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
 // cannot answer (no internet, limit, server error) the reason is said and, where it makes sense, the Internet is searched.
 fn ask_ai(text: &str) {
     let query = text.to_string();
+    let shown = shown_text(text);
+    let text = shown.as_str();
     let hook: jarvis_core::ai::ErrorHook = Box::new(move |e| {
+        // the error itself is already stored in the conversation by the AI module (never hidden)
         let msg = e.user_text();
         ipc::send(IpcEvent::Output { text: msg.clone() });
+        jarvis_core::uistate::log_event("error", &format!("ИИ: {}", msg.split(". ").next().unwrap_or(&msg)));
         if jarvis_core::tts::is_enabled() {
             jarvis_core::tts::speak(msg.split(". ").next().unwrap_or(&msg));
         }
         if e.allows_web_search() {
-            let note = "Ищу ответ в интернете.".to_string();
-            ipc::send(IpcEvent::Output { text: note });
-            jarvis_core::remote::push_text(&format!("найди в интернете {}", jarvis_core::route::search_query(&query)));
+            // plan B, clearly named as a search; the next question goes to the provider again
+            jarvis_core::dialog::adopt_ai_request();
+            jarvis_core::dialog::reply("ИИ сейчас недоступен, поэтому ищу в интернете. Это результат поиска, а не ответ нейросети.", "search");
+            jarvis_core::uistate::log_event("info", "ИИ недоступен: поиск в интернете");
+            jarvis_core::remote::push_internal(&format!("найди в интернете {}", jarvis_core::route::search_query(&query)));
         }
     });
+    if INTERNAL.load(std::sync::atomic::Ordering::SeqCst) {
+        // the follow-up of a request is never asked again
+        ipc::send(IpcEvent::Idle);
+        return;
+    }
     match jarvis_core::ai::send_question(text, hook) {
         Ok(_) => {
             jarvis_core::uistate::log_action(text, "ИИ-чат", true);
-            ipc::send(IpcEvent::Output { text: "Спрашиваю ИИ. Ответ появится на странице «Диалог».".to_string() });
+            jarvis_core::uistate::log_event("ai", &format!("Вопрос отправлен: {}", jarvis_core::ai::status_json()["provider"].as_str().unwrap_or("ИИ")));
         }
         Err(e) => {
+            // refused before anything was sent (busy, empty, not configured): the question and the reason stay together
             jarvis_core::uistate::log_action(text, "ИИ-чат", false);
+            jarvis_core::dialog::begin(text, "ai");
+            jarvis_core::dialog::fail(&e.user_text(), "ai");
+            jarvis_core::dialog::end(false);
             ipc::send(IpcEvent::Output { text: e.user_text() });
             if jarvis_core::tts::is_enabled() {
                 let m = e.user_text();

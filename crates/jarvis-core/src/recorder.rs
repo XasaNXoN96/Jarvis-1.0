@@ -146,6 +146,11 @@ pub fn is_open() -> bool {
     pvrecorder::is_open()
 }
 
+// milliseconds since the last audio frame (None: no audio yet)
+pub fn last_frame_age_ms() -> Option<u64> {
+    pvrecorder::last_frame_age_ms()
+}
+
 // number of audio frames delivered so far
 pub fn frames_received() -> u64 {
     pvrecorder::FRAMES.load(std::sync::atomic::Ordering::Relaxed)

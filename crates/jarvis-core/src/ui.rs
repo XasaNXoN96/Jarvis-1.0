@@ -250,8 +250,8 @@ fn ai_test() -> serde_json::Value {
 
 // ---- AI chat (the window talks to it over local HTTP; the key never leaves the backend) ----
 fn chat_json(id: &str) -> serde_json::Value {
-    match crate::ai::store().load(id) {
-        Some(c) => json!({ "ok": true, "id": c.id, "title": c.title, "messages": c.messages, "busy": crate::ai::is_busy(&c.id) }),
+    match crate::ai::store().load_with_live(id) {
+        Some(c) => json!({ "ok": true, "id": c.id, "title": c.title, "messages": c.messages, "busy": crate::ai::is_busy(&c.id), "rev": crate::ai::rev() }),
         None => json!({ "ok": false, "message": "Диалог не найден" }),
     }
 }
@@ -264,6 +264,7 @@ fn chats_json() -> serde_json::Value {
     json!({
         "active": active,
         "chats": store.list(),
+        "rev": crate::ai::rev(),
         "configured": conf.is_ok(),
         "problem": conf.as_ref().err().map(|e| e.user_text()).unwrap_or_default(),
         "provider": conf.as_ref().map(|c| c.name.clone()).unwrap_or_default(),
@@ -296,7 +297,26 @@ fn chat_action(body: &serde_json::Value) -> serde_json::Value {
                 Err(e) => json!({ "ok": false, "message": e.user_text() }),
             }
         }
-        "stop" => json!({ "ok": crate::ai::stop(id) }),
+        // ONE entry for everything typed in the window: the same router as voice (commands first, then the AI)
+        "ask" => {
+            let text = body.get("text").and_then(|v| v.as_str()).unwrap_or("").trim();
+            if text.is_empty() {
+                return json!({ "ok": false, "message": "Сообщение пустое. Напишите вопрос или команду." });
+            }
+            if text.chars().count() > crate::ai::MAX_MESSAGE_CHARS {
+                return json!({ "ok": false, "message": format!("Сообщение слишком длинное (больше {} символов).", crate::ai::MAX_MESSAGE_CHARS) });
+            }
+            if crate::remote::push_text(text) {
+                json!({ "ok": true, "id": store.active().unwrap_or_default() })
+            } else {
+                json!({ "ok": false, "message": "Jarvis ещё запускается: повторите через секунду." })
+            }
+        }
+        // stop the generation AND the voice
+        "stop" => {
+            crate::tts::stop();
+            json!({ "ok": crate::ai::stop(id) })
+        }
         "clear" => json!({ "ok": !crate::ai::is_busy(id) && store.clear(id) }),
         "delete" => {
             let ok = !crate::ai::is_busy(id) && store.delete(id);

@@ -100,9 +100,9 @@ fn settings_to_provider() {
 #[test]
 fn request_bodies_have_no_key_and_right_shape() {
     let msgs = vec![
-        ChatMsg { role: "user".into(), content: "привет".into(), ts: 0 },
-        ChatMsg { role: "assistant".into(), content: "здравствуйте".into(), ts: 0 },
-        ChatMsg { role: "user".into(), content: "как дела".into(), ts: 0 },
+        ChatMsg { role: "user".into(), content: "привет".into(), ts: 0, ..Default::default() },
+        ChatMsg { role: "assistant".into(), content: "здравствуйте".into(), ts: 0, ..Default::default() },
+        ChatMsg { role: "user".into(), content: "как дела".into(), ts: 0, ..Default::default() },
     ];
     let c = conf("http://x").unwrap();
     let body = build_body(&c, &msgs, "SYS");
@@ -124,18 +124,18 @@ fn request_bodies_have_no_key_and_right_shape() {
 fn context_is_limited_and_clean() {
     let mut msgs = Vec::new();
     for i in 0..100 {
-        msgs.push(ChatMsg { role: if i % 2 == 0 { "user" } else { "assistant" }.into(), content: format!("сообщение {}", i), ts: 0 });
+        msgs.push(ChatMsg { role: if i % 2 == 0 { "user" } else { "assistant" }.into(), content: format!("сообщение {}", i), ts: 0, ..Default::default() });
     }
-    msgs.push(ChatMsg { role: "error".into(), content: "ошибка".into(), ts: 0 });
+    msgs.push(ChatMsg { role: "error".into(), content: "ошибка".into(), ts: 0, ..Default::default() });
     let ctx = context_for_model(&msgs);
     assert!(ctx.len() <= MAX_CONTEXT_MESSAGES);
     assert_eq!(ctx.first().unwrap().role, "user");
     assert!(ctx.iter().all(|m| m.role == "user" || m.role == "assistant"));
     // a budget in characters
     let big = vec![
-        ChatMsg { role: "user".into(), content: "a".repeat(8000), ts: 0 },
-        ChatMsg { role: "assistant".into(), content: "b".repeat(8000), ts: 0 },
-        ChatMsg { role: "user".into(), content: "вопрос".into(), ts: 0 },
+        ChatMsg { role: "user".into(), content: "a".repeat(8000), ts: 0, ..Default::default() },
+        ChatMsg { role: "assistant".into(), content: "b".repeat(8000), ts: 0, ..Default::default() },
+        ChatMsg { role: "user".into(), content: "вопрос".into(), ts: 0, ..Default::default() },
     ];
     let ctx = context_for_model(&big);
     assert_eq!(ctx.last().unwrap().content, "вопрос");
@@ -364,4 +364,295 @@ fn a_successful_answer_does_not_call_the_error_hook() {
     let out = send_with_hook(store, conf(&m.base), None, "вопрос", false, Some(Box::new(move |e| { let _ = tx.send(e.clone()); }))).unwrap();
     out.handle.join().unwrap();
     assert!(rx.try_recv().is_err());
+}
+
+// =============================================================================================
+// streaming, voice by sentences, timing, state of the connection
+// =============================================================================================
+use std::time::Instant;
+
+fn sse_chunk(text: &str) -> String {
+    format!("data: {}\n\n", json!({ "choices": [{ "delta": { "content": text } }] }))
+}
+
+// a server that streams: (delay before the part in ms, the part); the connection closes after the last one
+fn sse_mock(parts: Vec<(u64, String)>) -> Mock {
+    std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+    std::env::set_var("no_proxy", "127.0.0.1,localhost");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let seen = requests.clone();
+    std::thread::spawn(move || {
+        let Ok((mut stream, _)) = listener.accept() else { return };
+        let mut buf = Vec::new();
+        let mut chunk = [0u8; 4096];
+        let (mut header_end, mut want) = (None, 0usize);
+        loop {
+            let n = stream.read(&mut chunk).unwrap_or(0);
+            if n == 0 {
+                break;
+            }
+            buf.extend_from_slice(&chunk[..n]);
+            if header_end.is_none() {
+                if let Some(p) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                    header_end = Some(p + 4);
+                    let head = String::from_utf8_lossy(&buf[..p]).to_lowercase();
+                    want = head.lines().find_map(|l| l.strip_prefix("content-length:").map(|v| v.trim().parse::<usize>().unwrap_or(0))).unwrap_or(0);
+                }
+            }
+            if let Some(h) = header_end {
+                if buf.len() >= h + want {
+                    break;
+                }
+            }
+        }
+        seen.lock().push(String::from_utf8_lossy(&buf).to_string());
+        let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n");
+        let _ = stream.flush();
+        for (delay, part) in parts {
+            std::thread::sleep(Duration::from_millis(delay));
+            if stream.write_all(part.as_bytes()).is_err() {
+                return;
+            }
+            let _ = stream.flush();
+        }
+    });
+    Mock { base: format!("http://127.0.0.1:{}", port), requests }
+}
+
+#[test]
+fn sse_lines_of_both_api_styles_are_parsed() {
+    let oa = Kind::OpenAiCompatible;
+    assert_eq!(parse_sse_line(&oa, &sse_chunk("Привет").trim_end()), Sse::Delta("Привет".into()));
+    assert_eq!(parse_sse_line(&oa, "data: [DONE]"), Sse::Done);
+    assert_eq!(parse_sse_line(&oa, ": keep-alive"), Sse::Skip);
+    assert_eq!(parse_sse_line(&oa, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}"), Sse::Skip);
+    assert_eq!(parse_sse_line(&oa, "data: {\"error\":{\"message\":\"quota\"}}"), Sse::Error("quota".into()));
+    assert_eq!(parse_sse_line(&oa, "data: not json"), Sse::Skip);
+    let an = Kind::Anthropic;
+    assert_eq!(parse_sse_line(&an, "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"Hi\"}}"), Sse::Delta("Hi".into()));
+    assert_eq!(parse_sse_line(&an, "data: {\"type\":\"message_stop\"}"), Sse::Done);
+    assert_eq!(parse_sse_line(&an, "data: {\"type\":\"ping\"}"), Sse::Skip);
+    assert_eq!(parse_sse_line(&an, "event: content_block_delta"), Sse::Skip);
+}
+
+#[test]
+fn the_stream_body_asks_for_a_stream_and_the_normal_one_does_not() {
+    let c = conf("http://x").unwrap();
+    let h = vec![ChatMsg { role: "user".into(), content: "вопрос".into(), ..Default::default() }];
+    assert_eq!(build_body(&c, &h, "s")["stream"], json!(false));
+    assert_eq!(build_body_opts(&c, &h, "s", true)["stream"], json!(true));
+    let a = ProviderConf { kind: Kind::Anthropic, name: "A".into(), base: "http://x".into(), model: "m".into(), key: "k".into() };
+    assert!(build_body(&a, &h, "s").get("stream").is_none());
+    assert_eq!(build_body_opts(&a, &h, "s", true)["stream"], json!(true));
+}
+
+#[test]
+fn sentences_are_spoken_whole_without_code_and_marks() {
+    let mut s = SentenceSpeaker::new();
+    let mut spoken: Vec<String> = Vec::new();
+    for d in ["Python — это язык", " программирования, который ", "очень популярен. Он простой! ", "А вот код:\n```py", "thon\nprint('привет')\n```\n", "Запустите **его** так: `python a.py`. Готово"] {
+        spoken.extend(s.push(d));
+    }
+    spoken.extend(s.finish());
+    let all = spoken.join(" | ");
+    assert!(all.contains("Python — это язык программирования, который очень популярен."), "{}", all);
+    assert!(!all.contains("print"), "code is not read: {}", all);
+    assert!(all.contains("Код показан в окне"), "{}", all);
+    assert!(!all.contains('*') && !all.contains('`'), "{}", all);
+    assert!(all.contains("Готово"), "the tail is spoken at the end: {}", all);
+    // nothing is said twice
+    let joined = spoken.join(" ");
+    assert_eq!(joined.matches("Он простой").count(), 1, "{}", joined);
+}
+
+#[test]
+fn a_very_long_answer_is_not_read_to_the_end() {
+    let mut s = SentenceSpeaker::new();
+    let mut total = 0usize;
+    for _ in 0..80 {
+        for p in s.push("Это довольно длинное предложение для проверки предела озвучивания. ") {
+            total += p.chars().count();
+        }
+    }
+    for p in s.finish() {
+        total += p.chars().count();
+    }
+    assert!(total > 200 && total < 1500, "{}", total);
+}
+
+#[test]
+fn status_changes_only_after_a_real_result() {
+    let s = Status::unverified();
+    assert_eq!(s.conn, Conn::Unverified, "a saved key alone is not a connection");
+    let ok = s.after_ok();
+    assert_eq!(ok.conn, Conn::Connected);
+    let bad = ok.after_error(&AiError::Auth("Gemini".into()));
+    assert_eq!(bad.conn, Conn::Error);
+    assert!(bad.detail.contains("не принял ключ"), "{}", bad.detail);
+    // a stop is not a failure of the connection
+    assert_eq!(ok.after_error(&AiError::Cancelled).conn, Conn::Connected);
+    assert!(!bad.detail.contains(KEY));
+}
+
+fn wait_for<F: Fn() -> bool>(what: &str, secs: u64, f: F) {
+    let t = Instant::now();
+    while t.elapsed() < Duration::from_secs(secs) {
+        if f() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(15));
+    }
+    panic!("timeout: {}", what);
+}
+
+#[test]
+fn the_answer_appears_fragment_by_fragment_and_is_stored_once() {
+    let store = leaked_store();
+    let parts: Vec<(u64, String)> = vec![(50, sse_chunk("Машинное ")), (250, sse_chunk("обучение — это ")), (250, sse_chunk("раздел ИИ.")), (50, "data: [DONE]\n\n".to_string())];
+    let m = sse_mock(parts);
+    let out = send_with(store, conf(&m.base), None, "Что такое машинное обучение?", false).unwrap();
+    let id = out.chat_id.clone();
+    // the first fragment is visible while the answer is still being generated
+    wait_for("the first fragment", 5, || store.load_with_live(&id).map(|c| c.messages.last().map(|m| m.streaming && m.content.contains("Машинное")).unwrap_or(false)).unwrap_or(false));
+    let mid = store.load_with_live(&id).unwrap();
+    assert!(mid.messages.last().unwrap().streaming);
+    assert!(!mid.messages.last().unwrap().content.contains("раздел ИИ"), "the end has not arrived yet");
+    // the stored history has the question only, the live part is not stored
+    assert_eq!(store.load(&id).unwrap().messages.len(), 1);
+    let timing = out.handle.join().unwrap();
+    let msgs = messages(store, &id);
+    assert_eq!(msgs.len(), 2, "one question, one answer");
+    assert_eq!(msgs[1].content, "Машинное обучение — это раздел ИИ.");
+    assert_eq!((msgs[0].role.as_str(), msgs[1].role.as_str()), ("user", "assistant"));
+    assert_eq!(msgs[0].rid, msgs[1].rid, "the question and the answer share the request id");
+    assert!(!msgs[1].rid.is_empty());
+    assert!(store.load_with_live(&id).unwrap().messages.iter().all(|m| !m.streaming), "nothing is live any more");
+    // exactly one request went out and it asked for a stream
+    assert_eq!(m.requests.lock().len(), 1);
+    assert!(m.requests.lock()[0].contains("\"stream\":true"));
+    assert!(timing.streamed && timing.chunks == 3, "{:?}", timing);
+}
+
+#[test]
+fn stopping_a_stream_keeps_what_arrived_and_ends_the_generation() {
+    let store = leaked_store();
+    let mut parts: Vec<(u64, String)> = vec![(20, sse_chunk("Начало ответа. "))];
+    for _ in 0..60 {
+        parts.push((100, sse_chunk("ещё текст ")));
+    }
+    let m = sse_mock(parts);
+    let out = send_with(store, conf(&m.base), None, "длинный вопрос", false).unwrap();
+    let id = out.chat_id.clone();
+    wait_for("a fragment", 5, || store.load_with_live(&id).map(|c| c.messages.last().map(|m| m.streaming).unwrap_or(false)).unwrap_or(false));
+    let t = Instant::now();
+    assert!(stop(&id));
+    out.handle.join().unwrap();
+    assert!(t.elapsed() < Duration::from_secs(2), "the generation must end quickly after Stop: {:?}", t.elapsed());
+    let msgs = messages(store, &id);
+    assert_eq!(msgs[1].role, "assistant");
+    assert!(msgs[1].content.contains("Начало ответа"));
+    assert_eq!(msgs.last().unwrap().role, "error");
+    assert!(msgs.last().unwrap().content.contains("Остановлено"));
+    let count = msgs.len();
+    std::thread::sleep(Duration::from_millis(400));
+    assert_eq!(messages(store, &id).len(), count, "nothing is added after Stop");
+    assert!(!is_busy(&id));
+}
+
+#[test]
+fn a_broken_stream_keeps_the_partial_answer_and_shows_the_error() {
+    let store = leaked_store();
+    let parts = vec![(20, sse_chunk("Часть ответа. ")), (20, "data: {\"error\":{\"message\":\"internal failure\"}}\n\n".to_string())];
+    let m = sse_mock(parts);
+    let id = run(store, conf(&m.base), None, "вопрос").unwrap();
+    let msgs = messages(store, &id);
+    assert!(msgs.iter().any(|m| m.role == "assistant" && m.content.contains("Часть ответа")), "{:?}", msgs);
+    let last = msgs.last().unwrap();
+    assert_eq!(last.role, "error");
+    assert!(last.content.contains("internal failure"), "the error of the provider is not hidden: {}", last.content);
+}
+
+#[test]
+fn streaming_shows_the_first_words_long_before_the_whole_answer() {
+    // The same 12-fragment answer (100 ms per fragment), once as a stream and once as one JSON at the end.
+    let words: Vec<String> = (1..=12).map(|i| format!("слово{} ", i)).collect();
+    let store = leaked_store();
+    let mut parts: Vec<(u64, String)> = words.iter().map(|w| (100, sse_chunk(w))).collect();
+    parts.push((0, "data: [DONE]\n\n".to_string()));
+    let m = sse_mock(parts);
+    let out = send_with(store, conf(&m.base), None, "вопрос", false).unwrap();
+    let id = out.chat_id.clone();
+    let streamed = out.handle.join().unwrap();
+    assert_eq!(messages(store, &id).last().unwrap().content, words.concat().trim());
+
+    let store2 = leaked_store();
+    let m2 = mock(vec![(200, ok_body(words.concat().trim()), 1200)]);
+    let out2 = send_with(store2, conf(&m2.base), None, "вопрос", false).unwrap();
+    let id2 = out2.chat_id.clone();
+    let plain = out2.handle.join().unwrap();
+    assert_eq!(messages(store2, &id2).last().unwrap().content, words.concat().trim());
+
+    eprintln!("TIMING stream : first fragment {:?} ms, total {} ms, fragments {}", streamed.first_chunk_ms, streamed.total_ms, streamed.chunks);
+    eprintln!("TIMING plain  : first fragment {:?} ms, total {} ms, fragments {}", plain.first_chunk_ms, plain.total_ms, plain.chunks);
+    assert!(streamed.streamed && !plain.streamed);
+    assert!(streamed.first_chunk_ms.unwrap() < 400, "{:?}", streamed);
+    assert!(plain.first_chunk_ms.unwrap() >= 1100, "{:?}", plain);
+    assert!(streamed.first_chunk_ms.unwrap() * 3 < plain.first_chunk_ms.unwrap());
+}
+
+#[test]
+fn the_connection_is_reused_between_questions() {
+    // one HTTP client for the program: two questions to the same server use one connection (no new handshake)
+    let store = leaked_store();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+    let accepted = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let acc = accepted.clone();
+    std::thread::spawn(move || {
+        while let Ok((mut stream, _)) = listener.accept() {
+            acc.fetch_add(1, Ordering::SeqCst);
+            std::thread::spawn(move || {
+                // keep-alive: answer every request that comes on this connection
+                let mut buf = Vec::new();
+                let mut chunk = [0u8; 4096];
+                loop {
+                    let n = match stream.read(&mut chunk) { Ok(0) | Err(_) => return, Ok(n) => n };
+                    buf.extend_from_slice(&chunk[..n]);
+                    if let Some(p) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let head = String::from_utf8_lossy(&buf[..p]).to_lowercase();
+                        let want = head.lines().find_map(|l| l.strip_prefix("content-length:").map(|v| v.trim().parse::<usize>().unwrap_or(0))).unwrap_or(0);
+                        if buf.len() >= p + 4 + want {
+                            buf.clear();
+                            let body = ok_body("ответ");
+                            let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n{}", body.len(), body);
+                        }
+                    }
+                }
+            });
+        }
+    });
+    let base = format!("http://127.0.0.1:{}", port);
+    let id = run(store, conf(&base), None, "первый").unwrap();
+    run(store, conf(&base), Some(&id), "второй").unwrap();
+    assert_eq!(messages(store, &id).len(), 4);
+    assert_eq!(accepted.load(Ordering::SeqCst), 1, "the second question must reuse the first connection");
+}
+
+#[test]
+fn commands_and_their_replies_are_not_sent_to_the_model() {
+    let msgs = vec![
+        ChatMsg { role: "user".into(), content: "открой ворд".into(), src: "command".into(), ..Default::default() },
+        ChatMsg { role: "assistant".into(), content: "Открываю Word".into(), src: "command".into(), ..Default::default() },
+        ChatMsg { role: "user".into(), content: "привет, как дела?".into(), src: "local".into(), ..Default::default() },
+        ChatMsg { role: "assistant".into(), content: "Отлично, сэр".into(), src: "local".into(), ..Default::default() },
+        ChatMsg { role: "user".into(), content: "что такое питон".into(), src: "ai".into(), ..Default::default() },
+        ChatMsg { role: "assistant".into(), content: "Язык программирования".into(), src: "ai".into(), ..Default::default() },
+        ChatMsg { role: "user".into(), content: "а кто его создал".into(), src: "ai".into(), ..Default::default() },
+    ];
+    let ctx = context_for_model(&msgs);
+    let texts: Vec<&str> = ctx.iter().map(|m| m.content.as_str()).collect();
+    assert_eq!(texts, vec!["что такое питон", "Язык программирования", "а кто его создал"]);
 }

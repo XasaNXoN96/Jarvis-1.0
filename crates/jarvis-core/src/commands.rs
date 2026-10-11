@@ -166,6 +166,15 @@ pub fn fetch_command<'a>(
     phrase: &str,
     commands: &'a [JCommandsList],
 ) -> Option<(&'a PathBuf, &'a JCommand)> {
+    fetch_command_min(phrase, commands, config::CMD_RATIO_THRESHOLD)
+}
+
+// the same with a higher bar: used when an AI can answer the phrase, so only a near-exact command phrase wins over it
+pub fn fetch_command_min<'a>(
+    phrase: &str,
+    commands: &'a [JCommandsList],
+    min_score: f64,
+) -> Option<(&'a PathBuf, &'a JCommand)> {
     let lang = i18n::get_language();
 
     let phrase = phrase.trim().to_lowercase();
@@ -177,7 +186,7 @@ pub fn fetch_command<'a>(
     let phrase_words: Vec<&str> = phrase.split_whitespace().collect();
 
     let mut result: Option<(&PathBuf, &JCommand)> = None;
-    let mut best_score = config::CMD_RATIO_THRESHOLD;
+    let mut best_score = min_score;
 
     for cmd_list in commands {
         for cmd in &cmd_list.commands {

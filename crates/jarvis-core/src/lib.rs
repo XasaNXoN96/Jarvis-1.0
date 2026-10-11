@@ -52,6 +52,8 @@ pub mod ui;
 pub mod uistate;
 pub mod route;
 pub mod apps;
+pub mod dialog;
+pub mod health;
 pub mod session;
 pub mod secret;
 pub mod voice_install;
@@ -80,6 +82,12 @@ pub static MIC_MUTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicB
 pub static VOICE_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 pub static VOICE_ERROR: Lazy<parking_lot::Mutex<String>> = Lazy::new(|| parking_lot::Mutex::new(String::new()));
 // peak of the last microphone frame, 0..32767 (live level meter in the settings)
+// Jarvis is listening for a command right now (after the wake word / a click on the sphere)
+pub static VOICE_LISTENING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+// started with the "text only" key on purpose: the voice is switched off, that is not an error
+pub static VOICE_TEXT_ONLY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+// how many commands are loaded (for the "Intelligence hub" card)
+pub static COMMANDS_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 pub static MIC_LEVEL: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 // click on the orb: listen for a command at once (consumed by the voice loop)
 pub static LISTEN_NOW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
