@@ -3,7 +3,7 @@ name: Build Windows installer
 on:
   workflow_dispatch:
   push:
-    # main: installers + release "build-latest"; dev/*: the same build as a check, without a release
+    # main: tests + installers + release "build-latest"; dev/*: the same tests and build as a check, without a release
     branches: [main, "dev/**"]
     paths-ignore:
       - "README.md"
@@ -12,7 +12,7 @@ permissions:
   contents: write
 
 jobs:
-  # automated tests of jarvis-core on Windows; a failure is shown in red but does not stop the installers
+  # automated tests of jarvis-core on Windows; the installers are built meanwhile, but a failure stops the publication
   test:
     runs-on: windows-latest
     steps:
@@ -170,14 +170,68 @@ jobs:
           name: dist
           path: dist/
 
+      # the program alone, for the release (the publish job runs on another machine)
+      - name: Upload jarvis-app.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-app
+          path: build/Jarvis/jarvis-app.exe
+
+  # The release "build-latest": only from main and only when BOTH the tests and the build passed.
+  # dev/* branches stop before this job (the check of a branch is never published).
+  publish:
+    needs: [test, build]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # one publication at a time; a newer run waits for the one in progress
+    concurrency:
+      group: publish-build-latest
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: jarvis-app
+          path: build/Jarvis
+
+      # main moved on while this run was building: the newer commit is published by its own run,
+      # an older build never replaces a newer one
+      - name: Is this still the latest commit of main?
+        id: fresh
+        shell: bash
+        run: |
+          git fetch --depth=1 origin main
+          if [ "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA" ]; then
+            echo "latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "latest=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::main is already at $(git rev-parse --short FETCH_HEAD), this build of ${GITHUB_SHA::7} is not published"
+          fi
+
+      # the tag points at the commit the files are built from (the "Source code" of the release matches them)
+      - name: Move tag build-latest to this commit
+        if: steps.fresh.outputs.latest == 'true'
+        shell: bash
+        run: |
+          git tag -f build-latest "$GITHUB_SHA"
+          git push -f origin refs/tags/build-latest
+
       - name: Publish to release "build-latest"
-        if: github.ref == 'refs/heads/main'
+        if: steps.fresh.outputs.latest == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-latest
           name: Latest build (installer)
           body: |
             Automatic Windows build of the latest commit. Jarvis-Setup.exe (with the Piper neural voice) or Jarvis-Setup-Lite.exe (smaller, Windows voices only). jarvis-app.exe alone (about 30 MB) replaces the program in an already installed Jarvis (no need to download the installer again). commands-update.zip (tiny) - unpack into the resources folder of an installed Jarvis to get new commands.
+
+            Commit: ${{ github.sha }} (tests and build passed, run ${{ github.run_id }})
           files: |
             dist/Jarvis-Setup.exe
             dist/Jarvis-Setup-Lite.exe
