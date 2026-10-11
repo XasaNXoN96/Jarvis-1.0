@@ -265,7 +265,7 @@ mod tests {
     #[test]
     fn tasks_are_added_read_done_and_cleared_only_after_yes() {
         // the session is global: one test at a time with the other tests that use it
-        let _s = crate::lua::object_tests::LOCK.lock();
+        let _s = crate::session::TEST_LOCK.lock();
         let _g = CLIPBOARD_LOCK.lock();
         let home = tempdir().unwrap();
         std::fs::create_dir_all(home.path().join("Documents")).unwrap();
@@ -326,7 +326,7 @@ mod tests {
 
     #[test]
     fn the_talk_mode_needs_the_ai_and_the_browser_can_be_chosen_by_voice() {
-        let _s = crate::lua::object_tests::LOCK.lock();
+        let _s = crate::session::TEST_LOCK.lock();
         let _u = crate::uistate::TEST_LOCK.lock();
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../resources/commands/assistant");
         let run = |script: &str, id: &str, phrase: &str| -> String {

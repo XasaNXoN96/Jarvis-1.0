@@ -12,7 +12,7 @@ use crate::commands::{self, JCommandsList};
 use crate::lua::{execute, CommandContext, SandboxLevel};
 
 // the session, the script state and the environment are global: one scenario at a time
-pub(crate) static LOCK: Mutex<()> = Mutex::new(());
+use crate::session::TEST_LOCK as LOCK;
 
 struct World {
     _dir: tempfile::TempDir,

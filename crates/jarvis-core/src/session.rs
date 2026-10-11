@@ -56,3 +56,7 @@ pub fn set_data(value: &str) {
         s.data = value.to_string();
     }
 }
+
+// tests that open or end the (global) session run one at a time
+#[cfg(test)]
+pub static TEST_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
