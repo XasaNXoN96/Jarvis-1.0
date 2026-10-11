@@ -37,6 +37,18 @@ const WRITE_OBJECTS: &[&str] = &[
     "план", "резюме", "доклад", "презентаци", "текст про", "текст о", "текст на тему", "обзор", "описание", "пост",
 ];
 
+// "закончи чат", "выйди из разговора", "хватит", "стоп": the end of the talk mode (pure, tested)
+pub fn ends_chat(text: &str) -> bool {
+    let t = norm(text);
+    let words: Vec<&str> = t.split_whitespace().collect();
+    if matches!(t.as_str(), "стоп" | "хватит" | "всё" | "все" | "выход" | "stop" | "exit") {
+        return true;
+    }
+    let verb = words.iter().any(|w| ["законч", "выйд", "выйт", "выключ", "хватит", "стоп", "конец", "заверш", "end", "stop", "exit"].iter().any(|v| w.starts_with(v)));
+    let what = words.iter().any(|w| ["чат", "разговор", "chat", "talk"].iter().any(|v| w.starts_with(v)));
+    verb && what
+}
+
 fn norm(text: &str) -> String {
     let words: Vec<String> = apps::tokens(text);
     words.join(" ")

@@ -12,7 +12,7 @@ use crate::commands::{self, JCommandsList};
 use crate::lua::{execute, CommandContext, SandboxLevel};
 
 // the session, the script state and the environment are global: one scenario at a time
-static LOCK: Mutex<()> = Mutex::new(());
+pub(crate) static LOCK: Mutex<()> = Mutex::new(());
 
 struct World {
     _dir: tempfile::TempDir,
@@ -536,4 +536,22 @@ fn the_screen_question_is_a_command_not_a_chat_message() {
         assert_eq!(w.route(p).as_deref(), Some("assistant_screen"), "{}", p);
     }
     assert_eq!(crate::route::decide("что на экране", true), crate::route::Route::Command);
+}
+
+#[test]
+fn tasks_talk_mode_translation_speed_test_and_browser_commands_are_routed() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({}));
+    for (phrase, id) in [
+        ("добавь задачу купить хлеб", "assistant_task_add"), ("озвучь задачи", "assistant_task_read"), ("какие у меня задачи", "assistant_task_read"),
+        ("открой задачи", "assistant_task_open"), ("выполнил задачу 2", "assistant_task_done"), ("стереть все задачи", "assistant_task_clear"),
+        ("чат", "assistant_chat_start"), ("давай поговорим", "assistant_chat_start"), ("закончи чат", "assistant_chat_end"),
+        ("переведи выделенное", "assistant_translate_clip"), ("переведи буфер обмена", "assistant_translate_clip"),
+        ("проверь скорость интернета", "assistant_speedtest"), ("переключи на оперу", "assistant_browser_set"), ("переключи на эдж", "assistant_browser_set"),
+        // the commands that were there before are not taken over
+        ("переведи на английский привет", "assistant_translate"), ("переключи окно", "win_switch"), ("открой заметки", "assistant_note_open"),
+        ("запиши идею купить молоко", "assistant_note_add"),
+    ] {
+        assert_eq!(w.route(phrase).as_deref(), Some(id), "{}", phrase);
+    }
 }

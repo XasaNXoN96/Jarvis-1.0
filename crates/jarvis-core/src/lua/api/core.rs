@@ -153,6 +153,11 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
         let window = false;
         Ok(!window && !crate::tts::is_enabled())
     })?)?;
+    // jarvis.app.set_browser("opera" | "edge" | "chrome" | "firefox" | "brave" | "yandex" | ""): the browser for sites
+    app.set("set_browser", lua.create_function(|_, key: String| {
+        crate::uistate::update_settings(&serde_json::json!({ "browser": key }));
+        Ok(crate::uistate::settings().browser == key)
+    })?)?;
     // jarvis.app.city() / jarvis.app.set_city(name): the one city of the program (the weather block and the weather command)
     app.set("city", lua.create_function(|_, ()| Ok(crate::uistate::settings().city))?)?;
     app.set("set_city", lua.create_function(|_, name: String| {
@@ -211,6 +216,13 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
         Ok(match crate::ai::ask_about_screen(&question) {
             Ok(a) => (Some(a), None),
             Err(e) => (None, Some(e.user_text())),
+        })
+    })?)?;
+    // jarvis.ai.ready() -> true | false, reason: the AI is switched on and a provider is set up (nothing is sent)
+    ai.set("ready", lua.create_function(|_, ()| {
+        Ok(match crate::ai::conf_from_settings() {
+            Ok(_) => (true, None),
+            Err(e) => (false, Some(e.user_text())),
         })
     })?)?;
     jarvis.set("ai", ai)?;

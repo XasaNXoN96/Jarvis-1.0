@@ -543,6 +543,23 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
             }
         }
     }
+    // the talk mode ("чат"): every phrase goes to the AI without the wake word, until "закончи чат"
+    if jarvis_core::session::kind().as_deref() == Some("chat") {
+        if jarvis_core::route::ends_chat(text) {
+            jarvis_core::session::end();
+            open_request(text, "command");
+            jarvis_core::dialog::reply("Режим разговора выключен.", "local");
+            jarvis_core::dialog::end(true);
+            if jarvis_core::tts::is_enabled() {
+                jarvis_core::tts::speak("Режим разговора выключен.");
+            }
+            ipc::send(IpcEvent::Idle);
+            return false;
+        }
+        jarvis_core::session::touch();
+        ask_ai(text);
+        return jarvis_core::session::kind().is_some();
+    }
     if let Some(kind) = jarvis_core::session::kind() {
         let session_cmd = commands_list.iter().flat_map(|l| l.commands.iter().map(move |c| (&l.path, c))).find(|(_, c)| c.id == "assistant_session");
         if let Some((path, cfg)) = session_cmd {

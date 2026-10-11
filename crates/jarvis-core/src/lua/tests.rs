@@ -259,4 +259,103 @@ mod tests {
             assert_eq!(last, reply, "{}", id);
         }
     }
+
+    // the task list from start to end in a temporary home folder (not on Windows: USERPROFILE is the real one there)
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn tasks_are_added_read_done_and_cleared_only_after_yes() {
+        // the session is global: one test at a time with the other tests that use it
+        let _s = crate::lua::object_tests::LOCK.lock();
+        let _g = CLIPBOARD_LOCK.lock();
+        let home = tempdir().unwrap();
+        std::fs::create_dir_all(home.path().join("Documents")).unwrap();
+        std::env::set_var("HOME", home.path());
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../resources/commands/assistant");
+        let run = |id: &str, phrase: &str| -> String {
+            crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow_mut().clear());
+            let script = dir.join(if id == "assistant_session" { "office.lua" } else { "tasks.lua" });
+            let ctx = CommandContext { phrase: phrase.into(), command_id: id.into(), command_path: dir.clone(), language: "ru".into(), slots: None };
+            let r = execute(&script, ctx, SandboxLevel::Full, Duration::from_secs(5));
+            assert!(r.is_ok(), "{} {}: {:?}", id, phrase, r.err().map(|e| e.to_string()));
+            crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow().join(" | "))
+        };
+        let file = home.path().join("Documents/Jarvis-tasks.txt");
+        assert!(run("assistant_task_add", "добавь задачу купить хлеб").contains("купить хлеб"));
+        run("assistant_task_add", "новая задача позвонить врачу 😀");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "купить хлеб\nпозвонить врачу 😀\n");
+        let read = run("assistant_task_read", "озвучь задачи");
+        assert!(read.contains("1. купить хлеб") && read.contains("2. позвонить врачу"), "{}", read);
+        assert!(run("assistant_task_done", "выполнил задачу 1").contains("купить хлеб"));
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "позвонить врачу 😀\n");
+        assert!(run("assistant_task_done", "выполнил задачу 7").contains("номер"), "a wrong number removes nothing");
+        // "стереть все задачи": asks first; "нет" keeps them, "да" deletes them
+        assert!(run("assistant_task_clear", "стереть все задачи").contains("да"));
+        assert_eq!(crate::session::kind().as_deref(), Some("confirm"));
+        run("assistant_session", "нет");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "позвонить врачу 😀\n", "kept after no");
+        run("assistant_task_clear", "стереть все задачи");
+        assert!(run("assistant_session", "да").contains("стёрты"));
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
+        crate::session::end();
+    }
+
+    // every script of every command compiles in the Lua of Jarvis (5.5: e.g. a loop variable cannot be assigned)
+    #[test]
+    fn every_command_script_compiles() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../resources/commands");
+        let prelude = fs::read_to_string(root.join("_prelude.lua")).unwrap();
+        let lua = mlua::Lua::new();
+        let mut checked = 0;
+        let mut errors = Vec::new();
+        for pack in fs::read_dir(&root).unwrap().flatten() {
+            if !pack.path().is_dir() { continue; }
+            for f in fs::read_dir(pack.path()).unwrap().flatten() {
+                let p = f.path();
+                if p.extension().map(|e| e == "lua").unwrap_or(false) {
+                    let src = format!("{}\n{}", prelude, fs::read_to_string(&p).unwrap());
+                    if let Err(e) = lua.load(&src).set_name(p.display().to_string()).into_function() {
+                        errors.push(format!("{}: {}", p.display(), e));
+                    }
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 20, "scripts found: {}", checked);
+        assert!(errors.is_empty(), "{}", errors.join("\n"));
+    }
+
+    #[test]
+    fn the_talk_mode_needs_the_ai_and_the_browser_can_be_chosen_by_voice() {
+        let _s = crate::lua::object_tests::LOCK.lock();
+        let _u = crate::uistate::TEST_LOCK.lock();
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../resources/commands/assistant");
+        let run = |script: &str, id: &str, phrase: &str| -> String {
+            crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow_mut().clear());
+            let ctx = CommandContext { phrase: phrase.into(), command_id: id.into(), command_path: dir.clone(), language: "ru".into(), slots: None };
+            let r = execute(&dir.join(script), ctx, SandboxLevel::Full, Duration::from_secs(5));
+            assert!(r.is_ok(), "{}: {:?}", id, r.err().map(|e| e.to_string()));
+            crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow().join(" | "))
+        };
+        crate::session::end();
+        // no AI set up / AI switched off: the talk mode does not start and says why
+        crate::uistate::set_for_tests(crate::uistate::UiSettings::default());
+        let r = run("chat.lua", "assistant_chat_start", "чат");
+        assert!(r.contains("ИИ-провайдер не выбран"), "{}", r);
+        assert!(crate::session::kind().is_none());
+        crate::uistate::set_for_tests(crate::uistate::UiSettings { ai_enabled: false, ai_provider: "gemini".into(), ai_key: "k".into(), ..Default::default() });
+        assert!(run("chat.lua", "assistant_chat_start", "чат").contains("выключены"));
+        assert!(crate::session::kind().is_none());
+        // set up: the session starts, "закончи чат" ends it
+        crate::uistate::set_for_tests(crate::uistate::UiSettings { ai_provider: "gemini".into(), ai_key: "k".into(), ..Default::default() });
+        assert!(run("chat.lua", "assistant_chat_start", "чат").contains("Режим разговора включён"));
+        assert_eq!(crate::session::kind().as_deref(), Some("chat"));
+        run("chat.lua", "assistant_chat_end", "закончи чат");
+        assert!(crate::session::kind().is_none());
+        // the browser by voice: the same setting as the window
+        assert!(run("extra.lua", "assistant_browser_set", "переключи на оперу").contains("Opera"));
+        assert_eq!(crate::uistate::settings().browser, "opera");
+        run("extra.lua", "assistant_browser_set", "переключи на эдж");
+        assert_eq!(crate::uistate::settings().browser, "edge");
+        crate::uistate::set_for_tests(crate::uistate::UiSettings::default());
+    }
 }

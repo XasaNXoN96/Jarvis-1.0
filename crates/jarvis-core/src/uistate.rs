@@ -460,7 +460,7 @@ pub const UNAVAILABLE_GROUPS: &[(&str, &str, &str, &str)] = &[
 pub fn group_key(pack: &str, id: &str) -> &'static str {
     let id = id.strip_prefix("assistant_").unwrap_or(id);
     let starts = |p: &str| id.starts_with(p);
-    if starts("web_") || pack == "browser" || id == "website" || id == "wiki" || id == "translate" || id == "maps" || id == "music_search" { return "browser"; }
+    if starts("web_") || pack == "browser" || id == "website" || id == "translate_clip" || id == "browser_set" || id == "speedtest" || id == "wiki" || id == "translate" || id == "maps" || id == "music_search" { return "browser"; }
     if starts("key_") || starts("mouse_") { return "input"; }
     if starts("media") || id == "windows_4" { return "media"; }
     if starts("volume") || starts("brightness") { return "sound"; }
@@ -468,8 +468,8 @@ pub fn group_key(pack: &str, id: &str) -> &'static str {
     if starts("win_") || id == "windows_1" || id == "windows_8" { return "windows"; }
     if starts("power") || id == "unlock" || id == "windows_5" || id == "windows_6" { return "power"; }
     if starts("file") || id == "place_open" || id == "disk_open" { return "files"; }
-    if starts("note") || starts("office") || starts("object") || id == "session" { return "text"; }
-    if starts("tts") || starts("read_") || starts("mic_") || id == "screen" { return "voice"; }
+    if starts("note") || starts("task") || starts("office") || starts("object") || id == "session" { return "text"; }
+    if starts("tts") || starts("read_") || starts("mic_") || starts("chat") || id == "screen" { return "voice"; }
     if pack == "windows" { return "system"; }
     if starts("info") || starts("sys_") || pack == "weather" { return "info"; }
     if starts("game") || pack == "steam" { return "games"; }

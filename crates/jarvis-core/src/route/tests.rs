@@ -82,3 +82,13 @@ fn local_commands_never_go_to_the_ai_or_a_web_search() {
     assert_eq!(decide("что такое python", true), Route::Ai);
     assert_eq!(decide("что такое python", false), Route::Command, "without the AI (switched off) nothing is sent");
 }
+
+#[test]
+fn the_talk_mode_ends_only_on_its_own_words() {
+    for t in ["закончи чат", "выйди из чата", "закончи разговор", "хватит", "стоп", "Стоп!", "end chat"] {
+        assert!(ends_chat(t), "{}", t);
+    }
+    for t in ["расскажи про чат-боты", "что такое разговорный стиль", "как дела", "продолжим"] {
+        assert!(!ends_chat(t), "{} is a question, not the end", t);
+    }
+}

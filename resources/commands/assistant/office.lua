@@ -341,6 +341,7 @@ local function confirm_session(text)
   local title = flag and T("Компьютер", "Computer") or "Windows"
   if not positive then
     if flag then say(title, flag == "/r" and T("Перезагрузка отменена", "Restart cancelled") or T("Выключение отменено", "Shutdown cancelled"))
+    elseif data == "tasks_clear" then say(T("Задачи", "Tasks"), T("Задачи оставлены", "Tasks kept"))
     else say(title, T("Корзину не очищаю", "Not emptying the recycle bin")) end
     -- something else was said instead of an answer: it is handled as an ordinary command
     if not negative then jarvis.app.run_text(text) end
@@ -365,6 +366,11 @@ local function confirm_session(text)
   elseif data == "trash" then
     powershell("Clear-RecycleBin -Force -ErrorAction SilentlyContinue")
     say(title, T("Корзина очищена", "Recycle bin emptied"))
+  elseif data == "tasks_clear" then
+    local home = jarvis.system.env("USERPROFILE") or jarvis.system.env("HOME") or "."
+    local f = io.open(home .. "/Documents/Jarvis-tasks.txt", "w")
+    if f then f:close(); say(T("Задачи", "Tasks"), T("Все задачи стёрты", "All tasks deleted"))
+    else say(T("Задачи", "Tasks"), T("Не удалось стереть задачи", "Could not delete the tasks")) end
   end
 end
 

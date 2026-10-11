@@ -824,3 +824,103 @@ triggers.ru = ["что на экран", "опиши экран", "что вид
 triggers.en = ["what is on the screen", "describe the screen", "look at the screen"]
 phrases.ru = ["что на экране", "опиши экран", "что ты видишь на экране", "посмотри на экран"]
 phrases.en = ["what is on the screen", "describe the screen", "look at the screen"]
+
+[[commands]]
+id = "assistant_task_add"
+type = "lua"
+script = "tasks.lua"
+sandbox = "full"
+description = "Добавляет задачу в список (Документы\\Jarvis-tasks.txt)"
+triggers.ru = ["добав задач", "нов задач"]
+phrases.ru = ["добавь задачу купить хлеб", "новая задача позвонить врачу"]
+phrases.en = ["add task buy bread"]
+
+[[commands]]
+id = "assistant_task_read"
+type = "lua"
+script = "tasks.lua"
+sandbox = "full"
+description = "Показывает и читает вслух список задач"
+triggers.ru = ["озвуч задач", "прочита задач", "как задач", "мои задач", "список задач"]
+phrases.ru = ["озвучь задачи", "какие у меня задачи", "список задач"]
+phrases.en = ["read my tasks"]
+
+[[commands]]
+id = "assistant_task_open"
+type = "lua"
+script = "tasks.lua"
+sandbox = "full"
+description = "Открывает файл задач"
+triggers.ru = ["откр задач", "покаж задач"]
+phrases.ru = ["открой задачи", "покажи задачи"]
+phrases.en = ["open tasks"]
+
+[[commands]]
+id = "assistant_task_done"
+type = "lua"
+script = "tasks.lua"
+sandbox = "full"
+description = "Убирает выполненную задачу по номеру"
+triggers.ru = ["выполн задач", "удал задач", "сделал задач"]
+phrases.ru = ["выполнил задачу 2", "удали задачу 1"]
+phrases.en = ["task 2 done"]
+
+[[commands]]
+id = "assistant_task_clear"
+type = "lua"
+script = "tasks.lua"
+sandbox = "full"
+description = "Стирает все задачи (только после «да»)"
+triggers.ru = ["стер все задач", "очист задач", "удал все задач", "стереть все задач"]
+phrases.ru = ["стереть все задачи", "очисти задачи"]
+phrases.en = ["clear all tasks"]
+
+[[commands]]
+id = "assistant_chat_start"
+type = "lua"
+script = "chat.lua"
+sandbox = "full"
+description = "Режим разговора с ИИ без слова «Джарвис» до «закончи чат» (нужен подключённый ИИ)"
+triggers.ru = ["режим разговор", "давай поговор", "включ чат", "начн чат", "чат"]
+phrases.ru = ["чат", "режим разговора", "давай поговорим"]
+phrases.en = ["chat mode", "let's talk"]
+
+[[commands]]
+id = "assistant_chat_end"
+type = "lua"
+script = "chat.lua"
+sandbox = "full"
+description = "Выключает режим разговора"
+triggers.ru = ["законч чат", "выйд из чат", "выключ чат", "законч разговор"]
+phrases.ru = ["закончи чат", "закончи разговор"]
+phrases.en = ["end chat"]
+
+[[commands]]
+id = "assistant_translate_clip"
+type = "lua"
+script = "extra.lua"
+sandbox = "full"
+description = "Открывает перевод выделенного или скопированного текста (Google Переводчик)"
+triggers.ru = ["перевед выделен", "перевед буфер", "перевед скопирован", "перевед этот текст", "перевед текст"]
+phrases.ru = ["переведи выделенное", "переведи буфер обмена", "переведи этот текст на английский"]
+phrases.en = ["translate the selection"]
+
+[[commands]]
+id = "assistant_speedtest"
+type = "lua"
+script = "extra.lua"
+sandbox = "full"
+description = "Открывает проверку скорости интернета (speedtest.net)"
+triggers.ru = ["скорост интернет", "провер скорост"]
+phrases.ru = ["проверь скорость интернета"]
+phrases.en = ["internet speed test"]
+
+[[commands]]
+id = "assistant_browser_set"
+type = "lua"
+script = "extra.lua"
+sandbox = "full"
+description = "Выбирает браузер для сайтов (как в Настройках → Основные)"
+triggers.ru = ["переключ на опер", "переключ на эдж", "переключ на хром", "переключ на фаерфокс", "переключ на яндекс", "переключ на брейв", "браузер по умолчан"]
+phrases.ru = ["переключи на оперу", "переключи на эдж", "переключи на хром"]
+phrases.en = ["switch to edge"]
