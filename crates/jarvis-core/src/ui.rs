@@ -15,6 +15,7 @@ use crate::{i18n, COMMANDS_LIST};
 
 pub const PORT: u16 = 9714;
 const PAGE: &str = include_str!("ui_page.html");
+const ICON: &[u8] = include_bytes!("../../../resources/icons/128x128.png");
 
 pub fn url() -> String {
     format!("http://127.0.0.1:{}/", PORT)
@@ -172,6 +173,7 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
 
     match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/") => respond(&mut stream, "200 OK", "text/html", PAGE),
+        ("GET", "/icon.png") | ("GET", "/favicon.ico") => respond_bytes(&mut stream, "200 OK", "image/png", ICON),
         ("GET", "/commands") => respond(&mut stream, "200 OK", "application/json", &commands_json()),
         ("GET", "/avatar") => {
             match avatar_path().and_then(|p| std::fs::read(p).ok()) {

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Jarvis</title>
+<link rel="icon" type="image/png" href="/icon.png">
 <style>
   :root {
     --bg1: #060a18; --bg2: #0b1330; --panel: #0d1630cc; --line: #1b2750;
@@ -216,6 +217,7 @@ function connect() {
       case 'speaking': setState('speaking', 3500); break;
       case 'error': add('err', m.message); setStatus(m.message); setState('error', 2500); break;
       case 'idle': if (state !== 'speaking') setState('idle'); break;
+      case 'show_page': show(m.page); break;
       case 'stopping': add('note', 'Jarvis завершает работу'); setState('off'); break;
     }
   };

@@ -73,6 +73,41 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
         Ok(())
     })?)?;
     app.set("is_mic_muted", lua.create_function(|_, ()| Ok(crate::MIC_MUTED.load(std::sync::atomic::Ordering::SeqCst)))?)?;
+    // jarvis.app.commands() -> { {pack=, id=, phrases={...}}, ... } for the current language
+    app.set("commands", lua.create_function(|lua, ()| {
+        let out = lua.create_table()?;
+        let lang = crate::i18n::get_language();
+        let mut n = 0;
+        if let Some(list) = crate::COMMANDS_LIST.get() {
+            for pack in list {
+                for cmd in &pack.commands {
+                    let phrases = cmd.get_phrases(&lang);
+                    if phrases.is_empty() {
+                        continue;
+                    }
+                    n += 1;
+                    let row = lua.create_table()?;
+                    row.set("pack", pack.path.file_name().map(|p| p.to_string_lossy().to_string()).unwrap_or_default())?;
+                    row.set("id", cmd.id.as_str())?;
+                    let ph = lua.create_table()?;
+                    for (i, p) in phrases.iter().enumerate() {
+                        ph.set(i + 1, p.as_str())?;
+                    }
+                    row.set("phrases", ph)?;
+                    out.set(n, row)?;
+                }
+            }
+        }
+        Ok(out)
+    })?)?;
+    // jarvis.app.show_page("commands"): switch the Jarvis window to a page
+    app.set("show_page", lua.create_function(|_, page: String| {
+        #[cfg(feature = "jarvis_app")]
+        crate::ipc::send(crate::ipc::IpcEvent::ShowPage { page });
+        #[cfg(not(feature = "jarvis_app"))]
+        let _ = page;
+        Ok(())
+    })?)?;
     jarvis.set("app", app)?;
 
     // jarvis.files.search(query): background search on this computer, the answer arrives by itself

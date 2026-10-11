@@ -19,8 +19,8 @@ sandbox = "full"
 timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3"]
 sounds.en = ["ok1", "ok2", "ok3"]
-triggers.ru = ["громкост", "звук на", "звук процент"]
-triggers.en = ["volume", "sound level"]
+triggers.ru = ["громкост", "звук на", "звук процент", "звук", "звука", "уровен звук", "звук на"]
+triggers.en = ["volume", "sound level", "sound", "volume to"]
 phrases.ru = ["громкость 50 процентов", "поставь звук на 30"]
 phrases.en = ["volume 50 percent", "set volume to 30"]
 
@@ -58,8 +58,8 @@ sandbox = "full"
 timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3"]
 sounds.en = ["ok1", "ok2", "ok3"]
-triggers.ru = ["выключ звук", "отключ звук", "без звук", "выключ громкост", "отключ громкост"]
-triggers.en = ["mute", "sound off"]
+triggers.ru = ["выключ звук", "отключ звук", "без звук", "выключ громкост", "отключ громкост", "беззвучн", "режим без звук", "тихий режим", "выруб звук", "заглуш"]
+triggers.en = ["mute", "sound off", "silent mode", "mute sound"]
 phrases.ru = ["выключи звук", "беззвучный режим"]
 phrases.en = ["mute", "sound off"]
 
@@ -71,7 +71,7 @@ sandbox = "full"
 timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3"]
 sounds.en = ["ok1", "ok2", "ok3"]
-triggers.ru = ["включ звук", "верн звук", "включ громкост", "со звук"]
+triggers.ru = ["включ звук", "верн звук", "включ громкост", "со звук", "верни громкост", "включ громкост", "звук вернуть", "звук включ"]
 triggers.en = ["unmute", "sound on"]
 phrases.ru = ["включи звук", "верни звук"]
 phrases.en = ["unmute", "sound on"]
@@ -531,8 +531,8 @@ type = "lua"
 script = "smalltalk.lua"
 sandbox = "full"
 timeout = 10000
-triggers.ru = ["что ты умеешь", "что умеешь", "помощь", "справк", "список команд", "что можешь"]
-triggers.en = ["what can you do", "help", "list commands", "what do you do"]
+triggers.ru = ["что ты умеешь", "что умеешь", "помощь", "справк", "список команд", "что можешь", "все команд", "покаж команд", "какие команд", "список всех команд", "что можешь", "что ты можешь", "команды"]
+triggers.en = ["what can you do", "help", "list commands", "what do you do", "all commands", "show commands", "commands"]
 phrases.ru = ["что ты умеешь", "помощь"]
 phrases.en = ["what can you do", "help"]
 
@@ -728,3 +728,14 @@ triggers.ru = ["проверь голос","проверк голос","тест
 triggers.en = ["test voice","voice test","check voice","test speech","check speech","why no voice"]
 phrases.ru = ["проверь голос","тест озвучки","почему не говоришь"]
 phrases.en = ["test voice","voice test"]
+
+[[commands]]
+id = "assistant_selftest"
+type = "lua"
+script = "selftest.lua"
+sandbox = "full"
+timeout = 60000
+triggers.ru = ["диагностик","самопроверк","проверь систем","проверк систем","проверь всё","проверь все","что не работает","почему не работает"]
+triggers.en = ["diagnostics","self test","selftest","check system","what is not working"]
+phrases.ru = ["диагностика","самопроверка","проверь систему"]
+phrases.en = ["diagnostics","self test"]

@@ -22,6 +22,9 @@ pub enum IpcEvent {
     // Jarvis is speaking
     Speaking,
 
+    // Switch the Jarvis window to a page (orb, chat, commands, settings)
+    ShowPage { page: String },
+
     // Returned to idle state
     Idle,
     

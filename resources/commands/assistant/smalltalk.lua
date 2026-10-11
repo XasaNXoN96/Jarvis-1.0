@@ -30,29 +30,21 @@ elseif id == "assistant_who" then
     "Я Джарвис, ваш голосовой помощник. Работаю без интернета и стараюсь не обижаться.",
     "I am Jarvis, your voice assistant. I work offline and try not to take offence."))
 
-else -- help
-  local lines = RU and {
-    "таймер на 5 минут / напомни через 10 минут / разбуди завтра в 7:30",
-    "громкость 50 процентов, громче, тише, выключи звук",
-    "открой сайт ютуб, найди в гугле погоду, открой блокнот",
-    "запиши идею ..., что я записывал",
-    "пауза, следующий трек; сколько времени; сколько заряда",
-    "озвучь этот текст (выделите текст мышкой)",
-    "выключи компьютер через 10 минут, отмени выключение",
-    "я играю, остановись через час; режим текста",
-  } or {
-    "timer for 5 minutes / remind me in 10 minutes / wake me tomorrow at 7:30",
-    "volume 50 percent, louder, quieter, mute",
-    "open website youtube, search for the weather, open notepad",
-    "write down ..., read my notes",
-    "pause, next track; what time is it; battery level",
-    "read this (select some text with the mouse)",
-    "shut down the computer in 10 minutes, cancel shutdown",
-    "game mode for one hour; text mode",
-  }
-  jarvis.out(T("Что я умею:", "What I can do:"))
-  for _, l in ipairs(lines) do jarvis.out("  - " .. l) end
-  say(T("Помощь", "Help"), T("Список команд выведен в окне", "The list of commands is in the window"),
-      T("Я умею ставить таймеры и напоминания, менять громкость, открывать сайты и программы, вести заметки и многое другое. Список в окне.",
-        "I can set timers and reminders, change the volume, open sites and programs, keep notes and more. The list is in the window."))
+else -- help: every command with example phrases
+  jarvis.app.show_page("commands")           -- the window shows the full list with clickable phrases
+  local list = jarvis.app.commands()
+  jarvis.out(T("Все команды (" .. #list .. "):", "All commands (" .. #list .. "):"))
+  local pack
+  for _, c in ipairs(list) do
+    if c.pack ~= pack then
+      pack = c.pack
+      jarvis.out("")
+      jarvis.out("[" .. pack .. "]")
+    end
+    local examples = {}
+    for i = 1, math.min(2, #c.phrases) do examples[#examples + 1] = "«" .. c.phrases[i] .. "»" end
+    jarvis.out("  " .. table.concat(examples, ", "))
+  end
+  say(T("Помощь", "Help"), T("Список команд выведен, вкладка «Команды» открыта", "The command list is shown, the Commands tab is open"),
+      T("Показываю все команды. Нажмите на фразу, чтобы вставить её.", "Showing all commands. Click a phrase to insert it."))
 end
