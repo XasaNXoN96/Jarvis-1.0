@@ -65,6 +65,11 @@ pub fn url() -> String {
     format!("https://{}:{}/?t={}", local_ip(), PORT, *TOKEN)
 }
 
+// same page without encryption: opens in any browser without a warning (no microphone button there)
+pub fn url_http() -> String {
+    format!("http://{}:{}/?t={}", local_ip(), PORT, *TOKEN)
+}
+
 pub fn is_running() -> bool {
     RUNNING.load(Ordering::SeqCst)
 }

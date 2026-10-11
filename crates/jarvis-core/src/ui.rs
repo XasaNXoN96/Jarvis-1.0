@@ -313,15 +313,17 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
             let body = serde_json::json!({
                 "enabled": crate::remote::is_running(),
                 "url": if crate::remote::is_running() { crate::remote::url() } else { String::new() },
+                "url_http": if crate::remote::is_running() { crate::remote::url_http() } else { String::new() },
             })
             .to_string();
             respond(&mut stream, "200 OK", "application/json", &body);
         }
-        ("GET", "/remote-qr") => {
+        ("GET", "/remote-qr") | ("GET", "/remote-qr-http") => {
             if !crate::remote::is_running() {
                 respond(&mut stream, "404 Not Found", "text/plain", "remote control is off");
             } else {
-                match qr_svg(&crate::remote::url()) {
+                let link = if req.path == "/remote-qr-http" { crate::remote::url_http() } else { crate::remote::url() };
+                match qr_svg(&link) {
                     Some(svg) => respond_bytes(&mut stream, "200 OK", "image/svg+xml", svg.as_bytes()),
                     None => respond(&mut stream, "500 Internal Server Error", "text/plain", "qr failed"),
                 }
