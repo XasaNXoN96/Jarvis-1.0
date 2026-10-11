@@ -12,12 +12,15 @@ end
 check(jarvis.system.platform == "windows", T("Windows", "Windows"), T("Не Windows: " .. jarvis.system.platform, "Not Windows: " .. jarvis.system.platform))
 check(true, T("Язык: " .. jarvis.context.language, "Language: " .. jarvis.context.language), "")
 
--- PowerShell + the volume script (the same one the volume commands use)
-local r = ps_file("volume.ps1", { "-Action", "get" })
-local vol = tonumber((r.stdout or ""):match("(%d+)"))
-check(r.success and vol ~= nil,
-      T("PowerShell и громкость: сейчас " .. tostring(vol) .. "%", "PowerShell and volume: now " .. tostring(vol) .. "%"),
-      T("Громкость не читается. PowerShell: " .. tostring((r.stderr or ""):sub(1, 200)), "Cannot read the volume: " .. tostring((r.stderr or ""):sub(1, 200))))
+-- native volume (the same call the volume commands use) and PowerShell
+local vol, verr = jarvis.system.volume("get", 0)
+check(vol ~= nil,
+      T("Громкость (Windows API): сейчас " .. tostring(vol) .. "%", "Volume (Windows API): now " .. tostring(vol) .. "%"),
+      T("Громкость не читается: " .. tostring(verr), "Cannot read the volume: " .. tostring(verr)))
+local r = powershell("'ok'")
+check(r.success and (r.stdout or ""):find("ok") ~= nil,
+      T("PowerShell работает", "PowerShell works"),
+      T("PowerShell не работает: " .. tostring((r.stderr or ""):sub(1, 200)), "PowerShell failed: " .. tostring((r.stderr or ""):sub(1, 200))))
 
 local b = ps_file("brightness.ps1", { "-Action", "get" })
 if b.code == 2 then

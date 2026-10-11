@@ -71,7 +71,19 @@ end
 --   kind:   occasionally adds a joke of this kind to the spoken answer
 local function say(title, msg, spoken, kind)
   jarvis.out(title .. ": " .. msg)
-  jarvis.system.notify(title, msg)
+  if spoken ~= false then
+    -- the voice comes first and a failing notification can never swallow it
+    local text = spoken or msg
+    local joke = kind and quip(kind) or nil
+    if joke then
+      jarvis.out("  " .. joke)
+      text = text .. ". " .. joke
+    end
+    pcall(jarvis.speak, text)
+    pcall(jarvis.system.notify, title, msg)
+    return
+  end
+  pcall(jarvis.system.notify, title, msg)
   if spoken == false then return end
   local text = spoken or msg
   local joke = kind and quip(kind) or nil
