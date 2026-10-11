@@ -4,7 +4,7 @@ Offline voice assistant (Rust). Target platform: **Windows**.
 
 ## The Jarvis window
 
-On start Jarvis opens its own window (Edge/Chrome in app mode, no address bar): a glowing orb that reacts to listening/speaking, a chat with everything you say and Jarvis answers, a list of commands (click a phrase to insert it), settings buttons and **a text field at the bottom** for typing commands. Reopen it from the tray menu ("Open window"). Flags: `--background` (no window at start), `--no-ui` (no window at all), `--console` (keep the console window). The page is served on 127.0.0.1 only; the internal WebSocket accepts only the Jarvis window (other web pages are rejected).
+On start Jarvis opens its own window (Edge/Chrome in app mode, no address bar): a glowing orb that reacts to listening/speaking, a chat with everything you say and Jarvis answers, a list of commands (click a phrase to insert it), settings buttons and **a text field at the bottom** for typing commands. The orb is a hologram (wireframe sphere, rings, light base); switch to **Avatar** and pick a photo in Settings: the photo becomes a hologram of your own (stored only in the config folder, never uploaded). Reopen it from the tray menu ("Open window"). Flags: `--background` (no window at start), `--no-ui` (no window at all), `--console` (keep the console window). The page is served on 127.0.0.1 only; the internal WebSocket accepts only the Jarvis window (other web pages are rejected).
 
 ## Two modes
 

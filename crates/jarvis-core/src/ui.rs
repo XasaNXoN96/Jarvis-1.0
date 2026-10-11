@@ -70,34 +70,146 @@ fn commands_json() -> String {
     json!({ "language": lang, "commands": list }).to_string()
 }
 
-fn handle(mut stream: TcpStream) -> std::io::Result<()> {
-    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
-    let mut buf = [0u8; 4096];
-    let n = stream.read(&mut buf)?;
-    let head = String::from_utf8_lossy(&buf[..n]).to_string();
+// the avatar photo chosen by the user lives in the config dir (never leaves this computer)
+fn avatar_path() -> Option<std::path::PathBuf> {
+    crate::APP_CONFIG_DIR.get().map(|d| d.join("avatar.img"))
+}
+
+const MAX_AVATAR_BYTES: usize = 6 * 1024 * 1024;
+
+struct Request {
+    method: String,
+    path: String,
+    host_ok: bool,
+    custom_header: bool,
+    body: Vec<u8>,
+}
+
+fn read_request(stream: &mut TcpStream) -> std::io::Result<Request> {
+    stream.set_read_timeout(Some(Duration::from_secs(10)))?;
+    let mut buf: Vec<u8> = Vec::new();
+    let mut chunk = [0u8; 8192];
+    let header_end = loop {
+        let n = stream.read(&mut chunk)?;
+        if n == 0 {
+            return Err(std::io::ErrorKind::UnexpectedEof.into());
+        }
+        buf.extend_from_slice(&chunk[..n]);
+        if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+            break pos + 4;
+        }
+        if buf.len() > 32 * 1024 {
+            return Err(std::io::ErrorKind::InvalidData.into());
+        }
+    };
+    let head = String::from_utf8_lossy(&buf[..header_end]).to_string();
     let mut lines = head.lines();
     let first = lines.next().unwrap_or("");
     let mut parts = first.split_whitespace();
-    let method = parts.next().unwrap_or("");
-    let path = parts.next().unwrap_or("").split('?').next().unwrap_or("");
+    let method = parts.next().unwrap_or("").to_string();
+    let path = parts.next().unwrap_or("").split('?').next().unwrap_or("").to_string();
+
+    let mut host_ok = false;
+    let mut custom_header = false;
+    let mut content_length = 0usize;
+    for line in lines {
+        if let Some((k, v)) = line.split_once(':') {
+            let (k, v) = (k.trim().to_lowercase(), v.trim());
+            match k.as_str() {
+                "host" => host_ok = v == format!("127.0.0.1:{}", PORT) || v == format!("localhost:{}", PORT),
+                "content-length" => content_length = v.parse().unwrap_or(0),
+                // a web page on another site cannot add this header without our permission
+                "x-jarvis" => custom_header = v == "1",
+                _ => {}
+            }
+        }
+    }
+    if content_length > MAX_AVATAR_BYTES {
+        return Err(std::io::ErrorKind::InvalidData.into());
+    }
+    while buf.len() < header_end + content_length {
+        let n = stream.read(&mut chunk)?;
+        if n == 0 {
+            break;
+        }
+        buf.extend_from_slice(&chunk[..n]);
+    }
+    let end = buf.len().min(header_end + content_length);
+    Ok(Request { method, path, host_ok, custom_header, body: buf[header_end..end].to_vec() })
+}
+
+fn respond_bytes(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]) {
+    let _ = write!(
+        stream,
+        "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
+        status,
+        content_type,
+        body.len()
+    );
+    let _ = stream.write_all(body);
+}
+
+fn sniff_image(data: &[u8]) -> Option<&'static str> {
+    if data.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some("image/jpeg")
+    } else if data.starts_with(&[0x89, b'P', b'N', b'G']) {
+        Some("image/png")
+    } else if data.len() > 12 && &data[0..4] == b"RIFF" && &data[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else {
+        None
+    }
+}
+
+fn handle(mut stream: TcpStream) -> std::io::Result<()> {
+    let req = read_request(&mut stream)?;
 
     // only our own pages: protects against DNS-rebinding tricks from web pages
-    let host_ok = lines
-        .filter_map(|l| l.split_once(':'))
-        .find(|(k, _)| k.trim().eq_ignore_ascii_case("host"))
-        .map(|(_, v)| {
-            let v = v.trim();
-            v == format!("127.0.0.1:{}", PORT) || v == format!("localhost:{}", PORT)
-        })
-        .unwrap_or(false);
-    if !host_ok || method != "GET" {
+    if !req.host_ok {
         respond(&mut stream, "403 Forbidden", "text/plain", "forbidden");
         return Ok(());
     }
 
-    match path {
-        "/" => respond(&mut stream, "200 OK", "text/html", PAGE),
-        "/commands" => respond(&mut stream, "200 OK", "application/json", &commands_json()),
+    match (req.method.as_str(), req.path.as_str()) {
+        ("GET", "/") => respond(&mut stream, "200 OK", "text/html", PAGE),
+        ("GET", "/commands") => respond(&mut stream, "200 OK", "application/json", &commands_json()),
+        ("GET", "/avatar") => {
+            match avatar_path().and_then(|p| std::fs::read(p).ok()) {
+                Some(data) => {
+                    let ct = sniff_image(&data).unwrap_or("application/octet-stream");
+                    respond_bytes(&mut stream, "200 OK", ct, &data);
+                }
+                None => respond(&mut stream, "404 Not Found", "text/plain", "no avatar"),
+            }
+        }
+        ("POST", "/avatar") => {
+            if !req.custom_header {
+                respond(&mut stream, "403 Forbidden", "text/plain", "forbidden");
+                return Ok(());
+            }
+            let path = match avatar_path() {
+                Some(p) => p,
+                None => {
+                    respond(&mut stream, "500 Internal Server Error", "text/plain", "no config dir");
+                    return Ok(());
+                }
+            };
+            if req.body.is_empty() {
+                let _ = std::fs::remove_file(&path);
+                info!("UI: avatar removed");
+                respond(&mut stream, "200 OK", "text/plain", "removed");
+            } else if sniff_image(&req.body).is_none() {
+                respond(&mut stream, "400 Bad Request", "text/plain", "not an image");
+            } else {
+                match std::fs::write(&path, &req.body) {
+                    Ok(()) => {
+                        info!("UI: avatar saved ({} bytes)", req.body.len());
+                        respond(&mut stream, "200 OK", "text/plain", "saved");
+                    }
+                    Err(e) => respond(&mut stream, "500 Internal Server Error", "text/plain", &e.to_string()),
+                }
+            }
+        }
         _ => respond(&mut stream, "404 Not Found", "text/plain", "not found"),
     }
     Ok(())

@@ -37,11 +37,25 @@
   .page { position: absolute; inset: 0; display: none; padding: 16px 18px; overflow: auto; }
   .page.active { display: flex; flex-direction: column; }
 
-  /* orb */
-  #page-orb { align-items: center; justify-content: center; }
-  #orb { width: min(100%, 360px); aspect-ratio: 1; }
-  #status { margin-top: 6px; color: var(--dim); text-align: center; min-height: 24px; max-width: 90%; }
-  #state { margin-top: 10px; font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--accent); }
+  /* orb / hologram */
+  #page-orb { align-items: center; justify-content: center; position: relative; overflow: hidden; }
+  #orb { width: min(100%, 400px); aspect-ratio: 1; position: relative; z-index: 1;
+         filter: drop-shadow(0 0 6px rgba(90,209,255,.85)) drop-shadow(0 0 20px rgba(90,209,255,.35)); }
+  #page-orb::after { /* moving scanlines over the whole hologram page */
+    content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 2;
+    background: repeating-linear-gradient(0deg, rgba(90,209,255,.045) 0 1px, transparent 1px 4px);
+    animation: scan 7s linear infinite;
+  }
+  @keyframes scan { from { background-position-y: 0; } to { background-position-y: 80px; } }
+  .holo-switch { position: absolute; top: 12px; right: 14px; z-index: 3; display: flex; gap: 4px; }
+  .holo-switch button { border: 1px solid var(--line); background: #0d163099; color: var(--dim); padding: 5px 12px; border-radius: 999px; font: inherit; font-size: 13px; cursor: pointer; }
+  .holo-switch button.active { color: var(--accent); border-color: var(--accent); background: #5ad1ff1f; }
+  #status { margin-top: 6px; color: var(--dim); text-align: center; min-height: 24px; max-width: 90%; position: relative; z-index: 3; }
+  #state { margin-top: 10px; font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--accent); position: relative; z-index: 3; text-shadow: 0 0 12px #5ad1ff88; }
+  .avatar-box { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 12px 14px; margin-bottom: 8px; }
+  .avatar-box label { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; color: var(--dim); font-size: 13px; }
+  .avatar-box input[type=range] { width: 55%; }
+  .avatar-box small { color: var(--dim); display: block; margin-top: 6px; }
 
   /* chat */
   #log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
@@ -94,7 +108,11 @@
 
   <div class="pages">
     <section class="page active" id="page-orb">
-      <canvas id="orb" width="720" height="720"></canvas>
+      <div class="holo-switch">
+        <button id="mode-orb" class="active">Орб</button>
+        <button id="mode-avatar">Аватар</button>
+      </div>
+      <canvas id="orb" width="760" height="760"></canvas>
       <div id="state">готов</div>
       <div id="status">Скажите «Джарвис» или напишите команду внизу</div>
     </section>
@@ -116,6 +134,16 @@
         <div class="btns"><button class="btn" data-cmd="включи озвучку">Включить</button><button class="btn" data-cmd="выключи озвучку">Выключить</button></div></div>
       <div class="row"><div>Пульт для телефона<small>ссылка копируется в буфер обмена</small></div>
         <div class="btns"><button class="btn" data-cmd="включи удалённое управление">Включить</button><button class="btn" data-cmd="выключи удалённое управление">Выключить</button></div></div>
+      <div class="avatar-box">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+          <div>Аватар-голограмма<small>ваше фото превращается в голограмму (фото остаётся на этом компьютере)</small></div>
+          <div class="btns"><button class="btn" id="avatar-pick">Выбрать фото</button><button class="btn" id="avatar-clear">Убрать</button></div>
+        </div>
+        <input type="file" id="avatar-file" accept="image/png,image/jpeg,image/webp" style="display:none">
+        <label>Прозрачность фона <input type="range" id="avatar-thr" min="0" max="200" value="45"></label>
+        <label>Фон светлый (инвертировать) <input type="checkbox" id="avatar-inv"></label>
+        <small>Лучше всего подходит фото на тёмном однотонном фоне. Если вокруг фигуры светлый фон, включите «инвертировать».</small>
+      </div>
       <div class="row"><div>Таймеры<small>отменить все таймеры и напоминания</small></div>
         <div class="btns"><button class="btn" data-cmd="отмени таймер">Отменить</button></div></div>
       <div class="row"><div>Остановить чтение<small>если Jarvis читает длинный текст</small></div>
@@ -223,39 +251,254 @@ async function loadCommands() {
   } catch (e) { $('#commands').textContent = 'Не удалось загрузить список команд'; }
 }
 
-// ---------- orb (dotted sphere) ----------
+// ---------- hologram: orb and avatar ----------
 const canvas = $('#orb'), ctx = canvas.getContext('2d');
-const N = 520, pts = [];
+const W = canvas.width, H = canvas.height;
+const rnd = (a, b) => a + Math.random() * (b - a);
+const N = 340, pts = [];
 for (let i = 0; i < N; i++) {           // fibonacci sphere
   const y = 1 - (i / (N - 1)) * 2, r = Math.sqrt(1 - y * y), th = Math.PI * (3 - Math.sqrt(5)) * i;
   pts.push([Math.cos(th) * r, y, Math.sin(th) * r]);
 }
-let angle = 0, level = 0;
+let mode = 'orb';
+try { mode = localStorage.getItem('jarvis-mode') || 'orb'; } catch (e) {}
+function setMode(m) {
+  mode = m; try { localStorage.setItem('jarvis-mode', m); } catch (e) {}
+  $('#mode-orb').classList.toggle('active', m === 'orb');
+  $('#mode-avatar').classList.toggle('active', m === 'avatar');
+}
+$('#mode-orb').onclick = () => setMode('orb');
+$('#mode-avatar').onclick = () => setMode('avatar');
+
+let yaw = 0, level = 0, glitchUntil = 0, nextGlitch = performance.now() + 3000;
+
+function palette() {
+  // [hue, saturation] by state
+  if (state === 'error') return [350, 90];
+  if (state === 'listening' || state === 'wake') return [155, 85];
+  if (state === 'speaking') return [190, 95];
+  return [195, 95];
+}
+
+function project(x, y, z, cx, cy, R, tilt) {
+  const ct = Math.cos(tilt), st = Math.sin(tilt);
+  const y2 = y * ct - z * st, z2 = y * st + z * ct;
+  const k = 3 / (3 - z2);
+  return [cx + x * R * k, cy + y2 * R * k, z2];
+}
+
+function drawEmitter(cx, baseY, R, hue, sat, t) {
+  // glowing base disc + rising light beam + ripples while speaking
+  const g = ctx.createRadialGradient(cx, baseY, 5, cx, baseY, R * 1.2);
+  g.addColorStop(0, `hsla(${hue},${sat}%,65%,.55)`); g.addColorStop(1, `hsla(${hue},${sat}%,50%,0)`);
+  ctx.save(); ctx.translate(0, 0); ctx.scale(1, 1);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(cx, baseY, R * 1.2, R * 0.28, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = `hsla(${hue},${sat}%,70%,.7)`; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.ellipse(cx, baseY, R * 0.95, R * 0.2, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = `hsla(${hue},${sat}%,70%,.3)`; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.ellipse(cx, baseY, R * 0.6, R * 0.12, 0, 0, Math.PI * 2); ctx.stroke();
+  // ripples
+  if (level > 0.25) {
+    for (let k = 0; k < 3; k++) {
+      const ph = ((t / 900) + k / 3) % 1;
+      ctx.strokeStyle = `hsla(${hue},${sat}%,70%,${(1 - ph) * 0.45 * Math.min(1, level * 1.4)})`;
+      ctx.beginPath(); ctx.ellipse(cx, baseY, R * (0.4 + ph * 0.9), R * (0.08 + ph * 0.19), 0, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+  // beam
+  const b = ctx.createLinearGradient(0, baseY, 0, baseY - R * 2.1);
+  b.addColorStop(0, `hsla(${hue},${sat}%,65%,.22)`); b.addColorStop(1, `hsla(${hue},${sat}%,65%,0)`);
+  ctx.fillStyle = b;
+  ctx.beginPath(); ctx.moveTo(cx - R * 0.9, baseY); ctx.lineTo(cx - R * 0.6, baseY - R * 2.1); ctx.lineTo(cx + R * 0.6, baseY - R * 2.1); ctx.lineTo(cx + R * 0.9, baseY); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+function drawWire(cx, cy, R, hue, sat, dx, alphaMul, t) {
+  const tilt = 0.32;
+  const wob = 1 + Math.sin(t / 260) * 0.025 * level * 2;
+  // latitude + longitude lines, back part dimmer
+  ctx.lineWidth = 1.2;
+  const seg = 56;
+  const drawCircle = (fn) => {
+    let prev = null;
+    for (let i = 0; i <= seg; i++) {
+      const [x, y, z] = fn(i / seg * Math.PI * 2);
+      const [px, py, pz] = project(x, y, z, cx + dx, cy, R * wob, tilt);
+      if (prev) {
+        const depth = (pz + 1) / 2;
+        ctx.strokeStyle = `hsla(${hue},${sat}%,${58 + depth * 25}%,${(0.1 + depth * 0.5) * alphaMul})`;
+        ctx.beginPath(); ctx.moveTo(prev[0], prev[1]); ctx.lineTo(px, py); ctx.stroke();
+      }
+      prev = [px, py];
+    }
+  };
+  for (let la = -60; la <= 60; la += 20) {
+    const phi = la * Math.PI / 180, rr = Math.cos(phi), yy = Math.sin(phi);
+    drawCircle(a => [Math.cos(a + yaw) * rr, yy, Math.sin(a + yaw) * rr]);
+  }
+  for (let lo = 0; lo < 180; lo += 30) {
+    const th = lo * Math.PI / 180 + yaw;
+    drawCircle(a => [Math.cos(a) * Math.cos(th), Math.sin(a), Math.cos(a) * Math.sin(th)]);
+  }
+  // glowing points
+  for (const [x0, y0, z0] of pts) {
+    const x = x0 * Math.cos(yaw * 1.3) + z0 * Math.sin(yaw * 1.3), z = -x0 * Math.sin(yaw * 1.3) + z0 * Math.cos(yaw * 1.3);
+    const [px, py, pz] = project(x, y0, z, cx + dx, cy, R * wob * 1.02, tilt);
+    const depth = (pz + 1) / 2;
+    ctx.fillStyle = `hsla(${hue},${sat}%,${70 + depth * 25}%,${(0.15 + depth * 0.8) * alphaMul})`;
+    ctx.beginPath(); ctx.arc(px, py, 0.8 + depth * 1.9, 0, Math.PI * 2); ctx.fill();
+  }
+  // two rotating rings
+  for (let r = 0; r < 2; r++) {
+    const tl = r === 0 ? 1.15 : -0.7, rad = R * (r === 0 ? 1.28 : 1.15), rot = yaw * (r === 0 ? 1.8 : -1.3);
+    ctx.lineWidth = r === 0 ? 2 : 1.4;
+    ctx.setLineDash(r === 0 ? [14, 10] : [3, 7]);
+    ctx.strokeStyle = `hsla(${hue},${sat}%,70%,${(r === 0 ? 0.55 : 0.4) * alphaMul})`;
+    ctx.beginPath();
+    for (let i = 0; i <= 90; i++) {
+      const a = i / 90 * Math.PI * 2 + rot;
+      const [px, py] = project(Math.cos(a) * 1.28 / 1.28, Math.sin(a) * 0.0, Math.sin(a), cx + dx, cy, rad, tl);
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    }
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+}
+
+function drawOrb(t) {
+  const [hue, sat] = palette();
+  const cx = W / 2, cy = H * 0.46, R = W * 0.26 * (1 + Math.sin(t / 330) * 0.03 * level * 2);
+  drawEmitter(cx, H * 0.86, W * 0.3, hue, sat, t);
+  const glitching = t < glitchUntil;
+  if (glitching) {                       // colour-split copies
+    drawWire(cx, cy, R, (hue + 140) % 360, sat, -9, 0.5, t);
+    drawWire(cx, cy, R, (hue + 220) % 360, sat, 9, 0.5, t);
+  }
+  const flick = Math.random() < 0.04 ? rnd(0.55, 0.85) : 1;
+  drawWire(cx, cy, R, hue, sat, 0, flick, t);
+}
+
+// ---------- avatar (photo -> hologram) ----------
+let avatarImg = null, avatarCanvas = null, avatarVersion = 0;
+const avThr = $('#avatar-thr'), avInv = $('#avatar-inv');
+try { avThr.value = localStorage.getItem('jarvis-av-thr') || 45; avInv.checked = localStorage.getItem('jarvis-av-inv') === '1'; } catch (e) {}
+
+function buildAvatar() {
+  if (!avatarImg) { avatarCanvas = null; return; }
+  const maxH = 620, scale = Math.min(1, maxH / avatarImg.height);
+  const w = Math.max(1, Math.round(avatarImg.width * scale)), h = Math.max(1, Math.round(avatarImg.height * scale));
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(avatarImg, 0, 0, w, h);
+  const data = g.getImageData(0, 0, w, h), px = data.data;
+  const thr = +avThr.value, inv = avInv.checked;
+  for (let i = 0; i < px.length; i += 4) {
+    let l = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+    if (inv) l = 255 - l;
+    const a = Math.max(0, Math.min(1, (l - thr) / Math.max(30, 255 - thr)));
+    const k = Math.pow(a, 0.8);
+    px[i] = 70 + l * 0.25; px[i + 1] = 190 + l * 0.25; px[i + 2] = 255;   // cyan tint
+    px[i + 3] = Math.round(k * 255 * (px[i + 3] / 255));
+  }
+  g.putImageData(data, 0, 0);
+  avatarCanvas = c; avatarVersion++;
+}
+function loadAvatar() {
+  const img = new Image();
+  img.onload = () => { avatarImg = img; buildAvatar(); };
+  img.onerror = () => { avatarImg = null; avatarCanvas = null; };
+  img.src = '/avatar?' + Date.now();
+}
+[avThr, avInv].forEach(el => el.oninput = el.onchange = () => {
+  try { localStorage.setItem('jarvis-av-thr', avThr.value); localStorage.setItem('jarvis-av-inv', avInv.checked ? '1' : '0'); } catch (e) {}
+  buildAvatar();
+});
+$('#avatar-pick').onclick = () => $('#avatar-file').click();
+$('#avatar-file').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  const bmp = await createImageBitmap(f);
+  const s = Math.min(1, 900 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas'); c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9));
+  const r = await fetch('/avatar', { method: 'POST', headers: { 'X-Jarvis': '1' }, body: blob });
+  if (r.ok) { loadAvatar(); setMode('avatar'); show('orb'); } else { add('err', 'Не удалось сохранить фото'); }
+  e.target.value = '';
+};
+$('#avatar-clear').onclick = async () => {
+  await fetch('/avatar', { method: 'POST', headers: { 'X-Jarvis': '1' }, body: new Blob([]) });
+  avatarImg = null; avatarCanvas = null; setMode('orb');
+};
+
+function drawAvatar(t) {
+  const [hue, sat] = palette();
+  const cx = W / 2, baseY = H * 0.88;
+  drawEmitter(cx, baseY, W * 0.3, hue, sat, t);
+  if (!avatarCanvas) {
+    ctx.fillStyle = `hsla(${hue},${sat}%,75%,.85)`; ctx.font = '22px Segoe UI, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('Выберите фото: Настройки → Аватар', cx, H * 0.45);
+    return;
+  }
+  const maxW = W * 0.8, maxH = H * 0.78;
+  const k = Math.min(maxW / avatarCanvas.width, maxH / avatarCanvas.height);
+  const w = avatarCanvas.width * k, h = avatarCanvas.height * k;
+  const float = Math.sin(t / 700) * 6;
+  const x0 = cx - w / 2, y0 = baseY - h - 14 + float;
+  const glitching = t < glitchUntil;
+  const speaking = state === 'speaking' || state === 'listening' || state === 'wake';
+  const amp = speaking ? 3 + level * 6 : 0.6;                 // horizontal shimmer, stronger while talking
+  const flick = Math.random() < 0.05 ? rnd(0.5, 0.8) : 1;
+
+  // offscreen layer: image in horizontal slices (shimmer), scanlines, bottom fade
+  const layer = avatarLayer(w, h);
+  const lg = layer.getContext('2d');
+  lg.clearRect(0, 0, w, h);
+  const slice = 3;
+  for (let y = 0; y < h; y += slice) {
+    const off = Math.sin(y / 9 + t / 130) * amp + (glitching && Math.random() < 0.15 ? rnd(-14, 14) : 0);
+    lg.drawImage(avatarCanvas, 0, y / k, avatarCanvas.width, slice / k, off, y, w, slice);
+  }
+  lg.globalCompositeOperation = 'destination-out';          // scanlines
+  const sc = (t / 40) % 4;
+  for (let y = -sc; y < h; y += 4) { lg.fillStyle = 'rgba(0,0,0,.38)'; lg.fillRect(0, y, w, 1.6); }
+  lg.globalCompositeOperation = 'destination-in';           // fade out toward the base
+  const fade = lg.createLinearGradient(0, 0, 0, h);
+  fade.addColorStop(0, 'rgba(0,0,0,1)'); fade.addColorStop(0.8, 'rgba(0,0,0,1)'); fade.addColorStop(1, 'rgba(0,0,0,0.05)');
+  lg.fillStyle = fade; lg.fillRect(0, 0, w, h);
+  lg.globalCompositeOperation = 'source-over';
+
+  ctx.save();
+  ctx.globalAlpha = flick * (speaking ? 0.95 + Math.sin(t / 90) * 0.05 : 0.92);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = flick;
+  if (glitching) {                                                           // colour-split copies
+    ctx.globalAlpha = 0.45 * flick; ctx.drawImage(layer, x0 - 8, y0, w, h); ctx.drawImage(layer, x0 + 8, y0, w, h);
+  }
+  ctx.globalAlpha = flick; ctx.drawImage(layer, x0, y0, w, h);
+  ctx.restore();
+}
+let _layer = null;
+function avatarLayer(w, h) {
+  if (!_layer) _layer = document.createElement('canvas');
+  if (_layer.width !== Math.round(w) || _layer.height !== Math.round(h)) { _layer.width = Math.round(w); _layer.height = Math.round(h); }
+  return _layer;
+}
+
+// ---------- main loop ----------
 function frame(t) {
   if (stateUntil && performance.now() > stateUntil) setState(connected ? 'idle' : 'off');
   const target = { idle: 0.05, listening: 0.55, wake: 0.8, speaking: 0.7, busy: 0.4, error: 0.6, off: 0 }[state] ?? 0.05;
   level += (target - level) * 0.06;
-  const speed = 0.004 + level * 0.012;
-  angle += speed;
-  const W = canvas.width, H = canvas.height, R = W * 0.34;
+  yaw += 0.004 + level * 0.014;
+  if (t > nextGlitch) { glitchUntil = t + rnd(90, 220); nextGlitch = t + rnd(3500, 9000); }
   ctx.clearRect(0, 0, W, H);
-  const cos = Math.cos(angle), sin = Math.sin(angle), tilt = 0.35, ct = Math.cos(tilt), st = Math.sin(tilt);
-  const pulse = 1 + Math.sin(t / 220) * 0.03 * (level * 3);
-  const hue = state === 'error' ? 350 : state === 'listening' || state === 'wake' ? 150 : 200;
-  for (const [x0, y0, z0] of pts) {
-    // wobble the surface a little when active
-    const w = 1 + Math.sin(t / 300 + x0 * 5 + y0 * 4 + z0 * 3) * 0.06 * level * 2;
-    let x = x0 * cos + z0 * sin, z = -x0 * sin + z0 * cos, y = y0;
-    const y2 = y * ct - z * st, z2 = y * st + z * ct;
-    const scale = (2.6 / (2.6 - z2)) * R * pulse * w;
-    const px = W / 2 + x * scale, py = H / 2 + y2 * scale;
-    const depth = (z2 + 1) / 2;                       // 0 back .. 1 front
-    ctx.fillStyle = `hsla(${hue}, 90%, ${55 + depth * 30}%, ${0.18 + depth * 0.75})`;
-    ctx.beginPath(); ctx.arc(px, py, 1.2 + depth * 2.4, 0, Math.PI * 2); ctx.fill();
-  }
+  ctx.globalCompositeOperation = 'lighter';
+  if (mode === 'avatar') drawAvatar(t); else drawOrb(t);
+  ctx.globalCompositeOperation = 'source-over';
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+loadAvatar();
+setMode(mode);
 
 connect();
 show('orb');
