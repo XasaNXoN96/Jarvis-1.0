@@ -389,6 +389,10 @@ fn handle_line(line: &str) {
             }
         }
         "note" => {
+            // a notification is handled only while Windows has really granted the access
+            if EXT_STATE.lock().state != "on" {
+                return;
+            }
             let texts: Vec<String> = match &v["texts"] {
                 Value::Array(a) => a.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect(),
                 Value::String(s) => vec![s.clone()],
@@ -454,10 +458,7 @@ fn ext_start() {
             if let Some(mut c) = EXT_CHILD.lock().take() {
                 let _ = c.wait();
             }
-            let st = EXT_STATE.lock().state.clone();
-            if st == "on" || st == "starting" {
-                ext_set("error", "Наблюдение за уведомлениями остановилось. Выключите и включите переключатель, чтобы запустить его снова.");
-            }
+            ext_on_exit();
         }
     });
 }
@@ -466,6 +467,18 @@ fn ext_start() {
 fn ext_start() {
     let _ = EXT_SCRIPT;
     ext_set("unsupported", "Уведомления других программ доступны только в Windows 10 и 11.");
+}
+
+// the watcher process ended: a refusal or an error stays as it is; "working" never stays shown for a dead process
+fn ext_on_exit() {
+    let st = EXT_STATE.lock().state.clone();
+    if st == "on" || st == "starting" {
+        ext_set("error", "Наблюдение за уведомлениями остановилось. Выключите и включите переключатель, чтобы запустить его снова.");
+    }
+}
+
+pub fn ext_on_exit_for_tests() {
+    ext_on_exit()
 }
 
 pub fn handle_line_for_tests(line: &str) {

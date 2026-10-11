@@ -264,3 +264,24 @@ pub fn preview(text: &str, n: usize) -> String {
 thread_local! {
     pub static TEST_REPLIES: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
 }
+
+#[cfg(test)]
+mod preview_tests {
+    use super::preview;
+
+    #[test]
+    fn the_preview_never_splits_a_character() {
+        assert_eq!(preview("Привет,\n  мир", 80), "Привет, мир");
+        assert_eq!(preview(&"ж".repeat(81), 80), format!("{}…", "ж".repeat(80)));
+        let emoji = "🙂".repeat(100);
+        let p = preview(&emoji, 10);
+        assert_eq!(p, format!("{}…", "🙂".repeat(10)));
+        let long = "a б 🌍 ".repeat(5000);
+        assert!(preview(&long, 200).chars().count() <= 201);
+        assert_eq!(preview("", 80), "");
+        assert_eq!(preview("   \n\t ", 80), "");
+        // a combined emoji may be shortened at a joiner, but the result is always valid text
+        let family = "👨‍👩‍👧‍👦".repeat(30);
+        assert!(std::str::from_utf8(preview(&family, 7).as_bytes()).is_ok());
+    }
+}

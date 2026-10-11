@@ -142,10 +142,15 @@ pub fn parse_or_keep<T: serde::de::DeserializeOwned + Default>(path: &std::path:
 }
 
 fn load_settings() -> UiSettings {
-    let (mut s, problem): (UiSettings, Option<String>) = match file("ui_settings.json") {
-        Some(p) => parse_or_keep(&p, "файл настроек окна (ui_settings.json)"),
-        None => (UiSettings::default(), None),
-    };
+    match file("ui_settings.json") {
+        Some(p) => load_from(&p),
+        None => UiSettings::default(),
+    }
+}
+
+// the settings as the next start reads them from the file
+pub fn load_from(path: &std::path::Path) -> UiSettings {
+    let (mut s, problem): (UiSettings, Option<String>) = parse_or_keep(path, "файл настроек окна (ui_settings.json)");
     if let Some(p) = problem {
         add_load_problem(&p);
     }
@@ -173,13 +178,17 @@ pub fn take_load_problem() -> String {
 // the settings file: the key is encrypted. Written to a temporary file first, so a crash never leaves half a file.
 fn write_settings(s: &UiSettings) {
     if let Some(p) = file("ui_settings.json") {
-        let mut v = serde_json::to_value(s).unwrap_or(Value::Null);
-        v["ai_key"] = Value::String(crate::secret::seal(&s.ai_key));
-        if let Ok(json) = serde_json::to_string_pretty(&v) {
-            let tmp = p.with_extension("json.tmp");
-            if std::fs::write(&tmp, json).is_ok() {
-                let _ = std::fs::rename(&tmp, &p);
-            }
+        write_to(&p, s);
+    }
+}
+
+pub fn write_to(p: &std::path::Path, s: &UiSettings) {
+    let mut v = serde_json::to_value(s).unwrap_or(Value::Null);
+    v["ai_key"] = Value::String(crate::secret::seal(&s.ai_key));
+    if let Ok(json) = serde_json::to_string_pretty(&v) {
+        let tmp = p.with_extension("json.tmp");
+        if std::fs::write(&tmp, json).is_ok() {
+            let _ = std::fs::rename(&tmp, p);
         }
     }
 }
@@ -711,6 +720,42 @@ mod settings_tests {
         assert_eq!(s.ui.get("jarvis-mode").map(|s| s.as_str()), Some("avatar"));
         update_settings(&json!({ "ai_enabled": false }));
         assert_eq!(crate::ai::conf_from_settings().unwrap_err(), crate::ai::AiError::Disabled);
+        set_for_tests(UiSettings::default());
+    }
+
+    #[test]
+    fn every_setting_survives_a_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("ui_settings.json");
+        let mut ui = std::collections::BTreeMap::new();
+        ui.insert("jarvis-mode".to_string(), "avatar".to_string());
+        let saved = UiSettings {
+            voice_rate: 1.3, voice_name: "piper".into(), reaction_voice: "jarvis-og".into(), city: "Самарканд".into(),
+            ai_provider: "gemini".into(), ai_model: "gemini-flash-latest".into(), ai_key: "key-123".into(), ai_fallback: true,
+            ai_enabled: false, mic_off: true, notify_show: false, notify_speak: false, notify_sound: false, dnd: true,
+            ext_enabled: true, ext_show: false, ext_speak: true, ext_strict: false,
+            ext_allowed: vec!["Telegram".into()], ext_blocked: vec!["Spam".into()], ext_seen: vec!["Mail".into()], ui, ..UiSettings::default()
+        };
+        write_to(&p, &saved);
+        assert!(!p.with_extension("json.tmp").exists(), "the temporary file is renamed, not left behind");
+        let back = load_from(&p);
+        assert_eq!(serde_json::to_value(&back).unwrap(), serde_json::to_value(&saved).unwrap(), "the next start reads back exactly what was saved");
+        #[cfg(target_os = "windows")]
+        assert!(!std::fs::read_to_string(&p).unwrap().contains("key-123"), "on Windows the key is stored encrypted");
+    }
+
+    #[test]
+    fn a_reset_of_the_settings_never_deletes_the_history() {
+        let _g = TEST_LOCK.lock();
+        let store = crate::ai::store();
+        let chat = store.create();
+        store.append(&chat.id, "user", "вопрос, который должен остаться");
+        let before = store.stats();
+        set_for_tests(UiSettings { dnd: true, ..UiSettings::default() });
+        reset_settings();
+        assert_eq!(store.stats(), before, "the conversations are untouched by a reset");
+        assert_eq!(store.load(&chat.id).unwrap().messages[0].content, "вопрос, который должен остаться");
+        assert!(!settings().dnd);
         set_for_tests(UiSettings::default());
     }
 

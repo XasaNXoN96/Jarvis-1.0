@@ -186,4 +186,45 @@ mod tests {
         assert!(!src.contains("text:sub(1, 80)"), "the byte cut is gone");
         assert!(!src.contains("jarvis.ai") && !src.contains("jarvis.http"), "no AI, no network in the speech command");
     }
+
+    #[test]
+    fn emoji_and_very_long_clipboard_text_are_read_without_breaking() {
+        let long = "Длинный текст 📚 для проверки озвучки. ".repeat(250); // ~10 000 characters
+        let cases = [
+            "Привет 👋 мир 🌍! Семья: 👨‍👩‍👧‍👦, флаг 🇺🇿, кожа 👍🏽 — всё должно остаться.".to_string(),
+            "😀😃😄😁😆😅🤣😂🙂🙃😉😊😇🥰😍🤩😘😗😚😙😋😛😜🤪😝🤑🤗🤭🤫🤔🤐🤨😐😑😶😏😒🙄😬🤥😌😔😪🤤😴😷🤒🤕🤢🤮🤧🥵🥶🥴😵🤯🤠🥳😎🤓🧐😕😟🙁😮😯😲😳🥺😦😧😨😰😥😢😭😱😖😣😞😓😩😫🥱😤😡😠🤬".to_string(),
+            long.clone(),
+        ];
+        for text in cases {
+            let (r, shown) = read_clipboard(&text);
+            assert!(r.is_ok(), "the command failed: {:?}", r.err().map(|e| e.to_string()));
+            let preview = shown.strip_prefix("Читаю: ").unwrap_or_else(|| panic!("{:?}", shown));
+            assert!(preview.chars().count() <= 81, "the preview is short even for a long text");
+            assert!(!preview.contains('\u{FFFD}'), "no broken characters: {:?}", preview);
+            let first: String = text.chars().take(5).collect();
+            assert!(preview.starts_with(&first), "{:?}", preview);
+        }
+    }
+
+    #[test]
+    fn error_texts_in_the_changed_scripts_are_cut_by_characters() {
+        // office.lua, selftest.lua and volume.lua cut the error text of PowerShell with jarvis.text.preview
+        let dir = tempdir().unwrap();
+        let script_path = dir.path().join("t.lua");
+        fs::write(&script_path, r#"
+            local r = { stderr = string.rep("Ошибка доступа ⛔ к файлу «отчёт.docx». ", 20) }
+            local office = jarvis.text.preview(r.stderr, 200)       -- office.lua (open / delete)
+            local selftest = jarvis.text.preview(r.stderr or "", 200) -- selftest.lua
+            local volume = jarvis.text.preview(({}).stderr or "", 200) -- volume.lua with no error text
+            jarvis.reply(office, "Файл")
+            jarvis.reply(selftest)
+            return { chain = jarvis.text.len(office) == 201 and jarvis.text.len(selftest) == 201 and volume == "" }
+        "#).unwrap();
+        let r = execute(&script_path, create_test_context(dir.path().to_path_buf()), SandboxLevel::Full, Duration::from_secs(5)).unwrap();
+        assert!(r.chain);
+        for name in ["office.lua", "selftest.lua", "volume.lua", "speech.lua"] {
+            let src = fs::read_to_string(speech_script().parent().unwrap().join(name)).unwrap();
+            assert!(!src.contains("stderr or \"\"):sub(") && !src.contains("err:gsub(\"%s+$\", \"\"):sub("), "{}: a byte cut of an error text is left", name);
+        }
+    }
 }

@@ -136,3 +136,38 @@ fn the_answer_of_windows_is_shown_as_it_is() {
     ext_stop();
     assert_eq!(ext_status_json()["state"], "off");
 }
+
+#[test]
+fn a_refusal_of_windows_never_looks_like_working() {
+    let _g = uistate::TEST_LOCK.lock();
+    uistate::set_for_tests(ext_settings());
+    for answer in ["Denied", "Unspecified", ""] {
+        ext_stop();
+        handle_line_for_tests(&format!(r#"{{"type":"access","status":"{}"}}"#, answer));
+        let st = ext_status_json();
+        assert_eq!(st["state"], "denied", "answer {:?}", answer);
+        let detail = st["detail"].as_str().unwrap();
+        assert!(detail.contains("не дала доступ") && detail.contains("Параметры Windows"), "{}", detail);
+        // a notification line after a refusal is ignored: nothing is shown, nothing is read
+        let t = format!("после отказа {}", rand::random::<u32>());
+        handle_line_for_tests(&format!(r#"{{"type":"note","id":"d{}","app":"Telegram","texts":["{}"],"initial":false}}"#, rand::random::<u32>(), t));
+        assert!(recent(10).iter().all(|n| n.text != t));
+        // the process then exits: the refusal stays, it does not turn into "working" or a vague error
+        ext_on_exit_for_tests();
+        assert_eq!(ext_status_json()["state"], "denied");
+    }
+    // the process dies while starting or after the access: shown as an error, never as working
+    ext_stop();
+    handle_line_for_tests(r#"{"type":"access","status":"Allowed"}"#);
+    assert_eq!(ext_status_json()["state"], "on");
+    ext_on_exit_for_tests();
+    assert_eq!(ext_status_json()["state"], "error");
+    ext_stop();
+    *EXT_STATE.lock() = ExtState { state: "starting".into(), detail: String::new() };
+    ext_on_exit_for_tests();
+    assert_eq!(ext_status_json()["state"], "error");
+    // the diagnostics report names the state, not "working"
+    assert!(crate::diag::report().contains("внешние вкл (error)"));
+    ext_stop();
+    uistate::set_for_tests(UiSettings::default());
+}

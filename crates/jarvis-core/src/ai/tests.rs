@@ -744,3 +744,43 @@ fn deleting_the_whole_history_removes_every_conversation() {
     assert!(store.list().is_empty());
     assert!(store.active().is_none());
 }
+
+#[test]
+fn with_the_ai_switched_off_no_path_opens_a_connection_or_a_web_search() {
+    let _g = crate::uistate::TEST_LOCK.lock();
+    // a "provider" on this computer that counts every connection made to it
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let url = format!("http://127.0.0.1:{}/v1", listener.local_addr().unwrap().port());
+    crate::uistate::set_for_tests(crate::uistate::UiSettings { ai_enabled: false, ai_provider: "custom".into(), ai_model: "m".into(), ai_url: url, ..Default::default() });
+
+    // every entry that leads to the provider: the window chat, a voice/typed question, the connection check
+    assert_eq!(send(None, "что такое python", false).unwrap_err(), AiError::Disabled);
+    let hook_called = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = hook_called.clone();
+    let r = send_question("объясни, как работает интернет", Box::new(move |_| flag.store(true, std::sync::atomic::Ordering::SeqCst)));
+    assert_eq!(r.unwrap_err(), AiError::Disabled);
+    assert!(conf_from_settings().is_err(), "the connection check gets no provider either");
+    assert!(!is_configured());
+    // the router never sends a question to the AI, and the refusal never allows the web search of plan B
+    assert_ne!(crate::route::decide("что такое python", is_configured()), crate::route::Route::Ai);
+    assert!(!AiError::Disabled.allows_web_search());
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert!(!hook_called.load(std::sync::atomic::Ordering::SeqCst), "the error hook (which starts the web search) is not called");
+    assert!(listener.accept().is_err(), "no connection was made to the provider");
+    crate::uistate::set_for_tests(crate::uistate::UiSettings::default());
+}
+
+#[test]
+fn switching_the_ai_off_stops_the_answer_that_is_being_generated() {
+    let _g = crate::uistate::TEST_LOCK.lock();
+    crate::uistate::set_for_tests(crate::uistate::UiSettings::default());
+    let chat = store().create();
+    store().set_active(&chat.id);
+    let cancel = Arc::new(AtomicBool::new(false));
+    JOBS.lock().insert(chat.id.clone(), cancel.clone());
+    crate::uistate::update_settings(&json!({ "ai_enabled": false }));
+    assert!(cancel.load(Ordering::SeqCst), "the running generation is cancelled at once");
+    JOBS.lock().remove(&chat.id);
+    crate::uistate::set_for_tests(crate::uistate::UiSettings::default());
+}

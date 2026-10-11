@@ -638,3 +638,24 @@ pub fn open_window() -> bool {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn history_and_settings_are_never_deleted_without_the_confirmation() {
+        let _g = crate::uistate::TEST_LOCK.lock();
+        let store = crate::ai::store();
+        let chat = store.create();
+        store.append(&chat.id, "user", "не удалять");
+        crate::uistate::set_for_tests(crate::uistate::UiSettings { dnd: true, ..Default::default() });
+        let before = store.stats();
+        for body in [json!({ "name": "history_delete_all" }), json!({ "name": "history_delete_all", "confirm": "yes" }), json!({ "name": "settings_reset" }), json!({ "name": "settings_reset", "confirm": "delete" })] {
+            assert_eq!(run_action(&body)["ok"], false, "{} without its confirmation is refused", body);
+        }
+        assert_eq!(store.stats(), before, "nothing was deleted");
+        assert!(crate::uistate::settings().dnd, "nothing was reset");
+        crate::uistate::set_for_tests(Default::default());
+    }
+}
