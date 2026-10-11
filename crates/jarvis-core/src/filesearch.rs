@@ -26,7 +26,7 @@ static RESULTS: Lazy<Mutex<Vec<FoundItem>>> = Lazy::new(|| Mutex::new(Vec::new()
 pub struct FoundItem {
     pub path: PathBuf,
     pub is_dir: bool,
-    score: u8, // 0 exact, 1 starts with, 2 contains
+    score: u8, // 0 exact, 1 starts with, 2 contains, 3 all words match
 }
 
 pub fn results() -> Vec<FoundItem> {
@@ -66,7 +66,53 @@ fn skip_dir(name_lower: &str) -> bool {
     )
 }
 
-fn score(name: &str, query: &str) -> Option<u8> {
+// words of a text: lower case, "ё" = "е", everything that is not a letter or digit separates words
+fn tokens(text: &str) -> Vec<String> {
+    text.to_lowercase()
+        .replace('ё', "е")
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(|w| w.to_string())
+        .collect()
+}
+
+// edit distance where swapping two neighbours counts as one mistake ("micheal" ~ "michael")
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let mut d = vec![vec![0usize; b.len() + 1]; a.len() + 1];
+    for i in 0..=a.len() { d[i][0] = i; }
+    for j in 0..=b.len() { d[0][j] = j; }
+    for i in 1..=a.len() {
+        for j in 1..=b.len() {
+            let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
+            d[i][j] = (d[i - 1][j] + 1).min(d[i][j - 1] + 1).min(d[i - 1][j - 1] + cost);
+            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                d[i][j] = d[i][j].min(d[i - 2][j - 2] + 1);
+            }
+        }
+    }
+    d[a.len()][b.len()]
+}
+
+// every word of the query is in the name (as a part of a word, or with one typo in longer words)
+fn words_match(name: &str, qtokens: &[String]) -> bool {
+    if qtokens.is_empty() {
+        return false;
+    }
+    let ntokens = tokens(name);
+    qtokens.iter().all(|q| {
+        ntokens.iter().any(|n| {
+            n == q
+                || (q.chars().count() >= 3 && n.contains(q.as_str()))
+                || (q.chars().count() >= 5 && n.chars().count() >= 4 && edit_distance(q, n) <= 1)
+        })
+    })
+}
+
+// 0 exact name, 1 starts with the query, 2 contains the query, 3 all words are there (any order of dashes,
+// missing "the", one typo)
+fn score(name: &str, query: &str, qtokens: &[String]) -> Option<u8> {
     let name_l = name.to_lowercase();
     let stem_l = Path::new(&name_l)
         .file_stem()
@@ -78,6 +124,8 @@ fn score(name: &str, query: &str) -> Option<u8> {
         Some(1)
     } else if name_l.contains(query) {
         Some(2)
+    } else if words_match(name, qtokens) {
+        Some(3)
     } else {
         None
     }
@@ -85,6 +133,7 @@ fn score(name: &str, query: &str) -> Option<u8> {
 
 struct Search<'a> {
     query: String,
+    qtokens: Vec<String>,
     generation: u64,
     found: Vec<FoundItem>,
     deadline: Option<Instant>,
@@ -113,7 +162,7 @@ impl<'a> Search<'a> {
                 let name = entry.file_name().to_string_lossy().to_string();
                 let path = entry.path();
                 let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
-                if let Some(s) = score(&name, &self.query) {
+                if let Some(s) = score(&name, &self.query, &self.qtokens) {
                     self.found.push(FoundItem { path: path.clone(), is_dir, score: s });
                 }
                 if is_dir && !skip_dir(&name.to_lowercase()) {
@@ -124,7 +173,7 @@ impl<'a> Search<'a> {
     }
 
     fn good_matches(&self) -> usize {
-        self.found.iter().filter(|f| f.score <= 1).count()
+        self.found.iter().filter(|f| f.score <= 1 || f.score == 3).count()
     }
 }
 
@@ -223,6 +272,7 @@ pub fn start(query: &str) {
 
     std::thread::spawn(move || {
         let mut search = Search {
+            qtokens: tokens(&query),
             query: query.clone(),
             generation,
             found: Vec::new(),
@@ -266,12 +316,18 @@ mod tests {
 
     #[test]
     fn scoring() {
-        assert_eq!(score("123.txt", "123"), Some(0));
-        assert_eq!(score("123", "123"), Some(0));
-        assert_eq!(score("123 отчёт.docx", "123"), Some(1));
-        assert_eq!(score("мой файл 123.pdf", "123"), Some(2));
-        assert_eq!(score("abc.txt", "123"), None);
-        assert_eq!(score("ОТЧЁТ.DOCX", "отчёт"), Some(0));
+        let t = |q: &str| tokens(q);
+        assert_eq!(score("123.txt", "123", &t("123")), Some(0));
+        assert_eq!(score("123", "123", &t("123")), Some(0));
+        assert_eq!(score("123 отчёт.docx", "123", &t("123")), Some(1));
+        assert_eq!(score("мой файл 123.pdf", "123", &t("123")), Some(2));
+        assert_eq!(score("abc.txt", "123", &t("123")), None);
+        assert_eq!(score("ОТЧЁТ.DOCX", "отчёт", &t("отчёт")), Some(0));
+        // the real case: typo, "The" missing, a different dash
+        let q = "micheal jackson – heal world.mp3";
+        assert_eq!(score("Michael Jackson - Heal The World.mp3", q, &t(q)), Some(3));
+        assert_eq!(score("Michael Jackson - Beat It.mp3", q, &t(q)), None);
+        assert_eq!(score("отчет за год.docx", "отчёт год", &t("отчёт год")), Some(3));
     }
 
     #[test]
@@ -284,6 +340,7 @@ mod tests {
         std::fs::write(base.join("a/nope.txt"), b"x").unwrap();
         let mut s = Search {
             query: "123".into(),
+            qtokens: tokens("123"),
             generation: GENERATION.load(Ordering::SeqCst),
             found: Vec::new(),
             deadline: None,
