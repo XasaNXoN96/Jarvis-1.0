@@ -153,6 +153,8 @@ fn wait_current(generation: u64) {
 
 fn speak_piper(exe: &Path, model: &Path, text: &str, generation: u64) -> bool {
     let wav = std::env::temp_dir().join(format!("jarvis_tts_{}.wav", generation));
+    let err_file = std::env::temp_dir().join(format!("jarvis_tts_{}.err", generation));
+    let _ = std::fs::remove_file(&wav);
     let mut command = Command::new(exe);
     command
         .arg("--model")
@@ -161,28 +163,41 @@ fn speak_piper(exe: &Path, model: &Path, text: &str, generation: u64) -> bool {
         .arg(&wav)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stderr(std::fs::File::create(&err_file).map(Stdio::from).unwrap_or_else(|_| Stdio::null()));
+    // piper looks for espeak-ng-data and its dlls next to piper.exe
+    if let Some(dir) = exe.parent() {
+        command.current_dir(dir);
+    }
     hide_window(&mut command);
 
     let mut child = match command.spawn() {
         Ok(c) => c,
         Err(e) => {
-            warn!("TTS: cannot start Piper: {}", e);
+            tell_once(&format!("Голос Piper не запустился: {}. Говорит голос Windows.", e));
             return false;
         }
     };
     if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(text.as_bytes());
+        // one line only: with --output_file every input line overwrites the previous wav
+        let one_line: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        let _ = stdin.write_all(one_line.as_bytes());
         let _ = stdin.write_all(b"\n");
     }
     if !store(child, generation) {
         return true;
     }
     wait_current(generation);
-    if GENERATION.load(Ordering::SeqCst) != generation || !wav.exists() {
+    if GENERATION.load(Ordering::SeqCst) != generation {
         let _ = std::fs::remove_file(&wav);
-        return GENERATION.load(Ordering::SeqCst) != generation;
+        return true;
     }
+    if !wav.exists() {
+        let why = std::fs::read_to_string(&err_file).unwrap_or_default();
+        let why: String = why.lines().rev().take(3).collect::<Vec<_>>().join(" | ");
+        tell_once(&format!("Голос Piper не создал звук ({}). Пока говорит голос Windows. Скажите «проверь голос» и пришлите вывод.", why.chars().take(300).collect::<String>()));
+        return false;
+    }
+    let _ = std::fs::remove_file(&err_file);
 
     // play the wav
     #[cfg(target_os = "windows")]
@@ -272,7 +287,37 @@ pub fn diagnose() {
         let lang = tts_lang();
         tell(&format!("Проверка голоса. Язык Jarvis: {}", lang));
         match piper_voice(&lang) {
-            Some((exe, model)) => tell(&format!("Piper: найден ({}), голос {}", exe.display(), model.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default())),
+            Some((exe, model)) => {
+                tell(&format!("Piper: найден ({}), голос {}", exe.display(), model.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()));
+                // real test: make a short wav
+                let wav = std::env::temp_dir().join("jarvis_tts_selftest.wav");
+                let _ = std::fs::remove_file(&wav);
+                let mut c = Command::new(&exe);
+                c.arg("--model").arg(&model).arg("--output_file").arg(&wav)
+                    .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::piped());
+                if let Some(dir) = exe.parent() { c.current_dir(dir); }
+                hide_window(&mut c);
+                match c.spawn() {
+                    Ok(mut child) => {
+                        if let Some(mut si) = child.stdin.take() { let _ = si.write_all("Проверка голоса\n".as_bytes()); }
+                        match child.wait_with_output() {
+                            Ok(out) => {
+                                let size = std::fs::metadata(&wav).map(|m| m.len()).unwrap_or(0);
+                                if size > 1000 {
+                                    tell(&format!("Piper: работает, тестовый звук {} КБ", size / 1024));
+                                } else {
+                                    let err = String::from_utf8_lossy(&out.stderr).to_string();
+                                    let err: String = err.lines().rev().take(4).collect::<Vec<_>>().join(" | ");
+                                    tell(&format!("Piper: ЗВУК НЕ СОЗДАН (код {:?}). {}", out.status.code(), err.chars().take(400).collect::<String>()));
+                                }
+                            }
+                            Err(e) => tell(&format!("Piper: ошибка ожидания: {}", e)),
+                        }
+                        let _ = std::fs::remove_file(&wav);
+                    }
+                    Err(e) => tell(&format!("Piper: не запускается: {}", e)),
+                }
+            }
             None => tell("Piper: не установлен (в лёгкой версии его нет)"),
         }
         #[cfg(target_os = "windows")]
