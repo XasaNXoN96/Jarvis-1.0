@@ -135,6 +135,26 @@ fn main_loop(text_cmd_rx: &Receiver<String>, rt: &tokio::runtime::Runtime) -> Re
             continue 'wake_word;
         }
 
+        // click on the orb: listen for a command right away, no wake word needed
+        if jarvis_core::LISTEN_NOW.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            info!("Listening on request (orb click)");
+            ipc::send(IpcEvent::WakeWordDetected);
+            stt::reset_wake_recognizer();
+            stt::reset_speech_recognizer();
+            audio_processing::reset();
+            audio_buffer.clear();
+            ipc::send(IpcEvent::Listening);
+            recognize_command(&mut frame_buffer, &rt, frame_length, sample_rate, false);
+            vad_state = VadState::WaitingForVoice;
+            silence_frames = 0;
+            audio_buffer.clear();
+            stt::reset_wake_recognizer();
+            stt::reset_speech_recognizer();
+            audio_processing::reset();
+            ipc::send(IpcEvent::Idle);
+            continue 'wake_word;
+        }
+
         recorder::read_microphone(&mut frame_buffer);
         let peak = frame_buffer.iter().map(|v| (*v as i32).unsigned_abs()).max().unwrap_or(0);
         jarvis_core::MIC_LEVEL.store(peak, std::sync::atomic::Ordering::Relaxed);

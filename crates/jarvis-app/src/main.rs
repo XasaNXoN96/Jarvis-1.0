@@ -168,6 +168,11 @@ fn main() -> Result<(), String> {
                 info!("Received mute request: {}", muted);
                 jarvis_core::MIC_MUTED.store(muted, Ordering::SeqCst);
             }
+            IpcAction::Listen => {
+                info!("Received listen request (orb click)");
+                jarvis_core::MIC_MUTED.store(false, Ordering::SeqCst);
+                jarvis_core::LISTEN_NOW.store(true, Ordering::SeqCst);
+            }
             IpcAction::TextCommand { text } => {
                 info!("Received text command: {}", text);
                 if let Err(e) = text_cmd_tx.send(text) {

@@ -62,4 +62,7 @@ pub enum IpcAction {
 
     // Execute text command
     TextCommand { text: String },
+
+    // Start listening for a command right now (click on the orb), without the wake word
+    Listen,
 }

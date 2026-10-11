@@ -62,6 +62,14 @@
   .hero { display: flex; flex-direction: column; align-items: center; transition: .35s; }
   #orb { width: min(300px, 36vh); aspect-ratio: 1; transition: width .35s; filter: drop-shadow(0 0 18px #2f8bff66); }
   #page-home.chatting #orb { width: min(120px, 16vh); }
+  #orb { cursor: pointer; }
+  /* orb mode: click on the sphere (or say "Джарвис") - big sphere, status text, input stays at the bottom */
+  #page-home.big #orb { width: min(500px, 54vh); }
+  #page-home.big .title, #page-home.big #log, #page-home.big .chips { display: none; }
+  #page-home.big .sub { font-size: 20px; color: var(--text); max-width: 86%; min-height: 56px; }
+  #page-home.big #state { font-size: 14px; }
+  #page-home.big .spacer { flex: 1; }
+  #page-home.big .banner { display: none !important; }
   .title { font-size: clamp(30px, 5.2vh, 46px); font-weight: 700; letter-spacing: -.01em; margin: 4px 0 4px; text-align: center;
            background: linear-gradient(90deg, #2d6fc4 0%, #dbe9ff 45%, #5aa0ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .sub { color: var(--dim); text-align: center; margin: 0; min-height: 22px; max-width: 80%; }
@@ -176,7 +184,7 @@
 
     <section class="page active" id="page-home">
       <div class="hero">
-        <canvas id="orb" width="760" height="760"></canvas>
+        <canvas id="orb" width="760" height="760" title="Нажмите: Jarvis начнёт слушать"></canvas>
         <div class="title" id="title">С возвращением!</div>
         <p class="sub" id="status">Чем могу помочь? Скажите «Джарвис» или напишите команду.</p>
         <div id="state">готов</div>
@@ -382,14 +390,14 @@ function connect() {
   ws.onmessage = ev => {
     let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
     switch (m.event) {
-      case 'wake_word_detected': setState('wake', 1500); setStatus('Слушаю…'); break;
-      case 'listening': setState('listening'); setStatus('Слушаю…'); break;
-      case 'speech_recognized': add('me', m.text); setStatus(m.text); setState('busy', 2500); break;
+      case 'wake_word_detected': setState('wake', 1500); setStatus('Слушаю…'); autoBig(); break;
+      case 'listening': setState('listening'); setStatus('Слушаю…'); autoBig(); break;
+      case 'speech_recognized': add('me', m.text); setStatus('«' + m.text + '»'); setState('busy', 2500); break;
       case 'command_executed': if (!m.success) add('err', 'Не получилось выполнить: ' + m.id); if (currentPage === 'panel') setTimeout(refreshState, 400); break;
       case 'output': add('bot', m.text); setStatus(m.text); setState('speaking', 2500); break;
       case 'speaking': setState('speaking', 3500); break;
       case 'error': add('err', m.message); setStatus(m.message); setState('error', 2500); break;
-      case 'idle': if (state !== 'speaking') setState('idle'); break;
+      case 'idle': if (state !== 'speaking') setState('idle'); scheduleAutoSmall(); break;
       case 'show_page': show(m.page); break;
       case 'stopping': add('note', 'Jarvis завершает работу'); setState('off'); break;
     }
@@ -419,6 +427,26 @@ for (const [ic, label, cmd, fill] of CHIPS) {
   b.onclick = () => { if (cmd) sendCommand(cmd); else { $('#input').value = fill; $('#input').focus(); } };
   $('#chips').appendChild(b);
 }
+
+// ---------- orb mode: click on the sphere / wake word ----------
+let bigAuto = false, smallTimer = 0;
+const home = () => $('#page-home');
+function setBig(on, auto) {
+  home().classList.toggle('big', on); bigAuto = on && !!auto; clearTimeout(smallTimer);
+}
+function autoBig() { if (currentPage === 'home' && !home().classList.contains('big')) setBig(true, true); clearTimeout(smallTimer); }
+// the sphere that opened by itself (wake word) folds back a few seconds after the work is done
+function scheduleAutoSmall() { clearTimeout(smallTimer); if (bigAuto) smallTimer = setTimeout(() => { if (bigAuto && state !== 'speaking') setBig(false); }, 7000); }
+$('#orb').onclick = async () => {
+  if (home().classList.contains('big')) { setBig(false); return; }
+  setBig(true, false);
+  if (!connected) { setStatus('Нет связи с Jarvis'); return; }
+  try { const s = await (await fetch('/state')).json(); applyVoice(s);
+    if (s.voice_active) { ws.send(JSON.stringify({ action: 'listen' })); setState('listening'); setStatus('Слушаю… скажите команду'); }
+    else setStatus('Голос не запущен: ' + (s.voice_error || 'микрофон недоступен') + '. Можно писать команду внизу.');
+  } catch (e) {}
+};
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && home().classList.contains('big')) setBig(false); });
 
 // ---------- api helpers ----------
 async function api(path, body) {
