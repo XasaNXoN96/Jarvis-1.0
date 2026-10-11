@@ -516,8 +516,13 @@ let voiceActive = false;
 function hintText() { return (micMuted ? 'Микрофон выключен — режим текста.' : (voiceActive ? 'Голос и текст работают.' : 'Голос не запущен — только текст.')) + '  Enter — отправить.'; }
 function applyVoice(s) {
   voiceActive = !!s.voice_active;
-  const text = voiceActive ? '' : '<b>Голос не работает</b>, команды принимаются только текстом. Причина: ' + (s.voice_error || 'микрофон ещё запускается') + '.';
-  for (const id of ['#voice-banner', '#voice-banner2']) { const b = $(id); b.innerHTML = text; b.style.display = text ? 'block' : 'none'; }
+  const textOnly = (s.voice_error || '').includes('--text');
+  const text = voiceActive ? '' : '<b>Голос не работает</b>, команды принимаются только текстом. Причина: ' + (s.voice_error || 'микрофон ещё запускается') + '.'
+    + (textOnly ? ' <button class="btn small" data-restart-voice type="button">Включить голос</button>' : '');
+  for (const id of ['#voice-banner', '#voice-banner2']) {
+    const b = $(id); b.innerHTML = text; b.style.display = text ? 'block' : 'none';
+    const rb = b.querySelector('[data-restart-voice]'); if (rb) rb.onclick = async () => { rb.textContent = 'Перезапускаю…'; try { await action('restart_voice'); } catch (e) {} };
+  }
   $('#hint').textContent = hintText();
 }
 function renderMic() {

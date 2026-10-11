@@ -162,6 +162,27 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             json!({ "ok": true })
         }
         "ai_test" => ai_test(),
+        "restart_voice" => {
+            // starts a fresh Jarvis without --text (after this one has closed and freed its ports) and quits
+            if let Ok(exe) = std::env::current_exe() {
+                #[cfg(target_os = "windows")]
+                {
+                    use std::os::windows::process::CommandExt;
+                    let _ = Command::new("cmd")
+                        .args(["/C", &format!("ping -n 3 127.0.0.1 >nul & start \"\" \"{}\"", exe.display())])
+                        .creation_flags(0x0800_0000)
+                        .spawn();
+                }
+                #[cfg(not(target_os = "windows"))]
+                let _ = Command::new(&exe).spawn();
+                std::thread::spawn(|| {
+                    std::thread::sleep(Duration::from_millis(400));
+                    std::process::exit(0);
+                });
+                return json!({ "ok": true });
+            }
+            json!({ "ok": false, "message": "Не удалось перезапустить" })
+        }
         _ => json!({ "ok": false, "message": "unknown action" }),
     }
 }

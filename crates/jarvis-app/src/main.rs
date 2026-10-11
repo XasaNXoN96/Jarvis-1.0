@@ -72,7 +72,7 @@ fn main() -> Result<(), String> {
     let mut voice_mode = !force_text;
     if force_text {
         info!("Text mode forced by --text flag.");
-        *jarvis_core::VOICE_ERROR.lock() = "программа запущена с ключом --text (только текст)".to_string();
+        *jarvis_core::VOICE_ERROR.lock() = "Jarvis запущен ярлыком «только текст» (ключ --text). Нажмите «Включить голос» или запустите обычный ярлык «Jarvis»".to_string();
     }
 
     // init recorder (no microphone -> text mode)
