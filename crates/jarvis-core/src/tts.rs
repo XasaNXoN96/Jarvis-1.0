@@ -151,16 +151,42 @@ fn wait_current(generation: u64) {
     }
 }
 
-fn speak_piper(exe: &Path, model: &Path, text: &str, generation: u64) -> bool {
-    let wav = std::env::temp_dir().join(format!("jarvis_tts_{}.wav", generation));
-    let err_file = std::env::temp_dir().join(format!("jarvis_tts_{}.err", generation));
-    let _ = std::fs::remove_file(&wav);
+// sentences grouped into pieces of about 120-300 characters: the first piece starts playing quickly,
+// the next one is prepared while the current one is played
+fn split_chunks(text: &str) -> Vec<String> {
+    let flat: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut chunks: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for ch in flat.chars() {
+        cur.push(ch);
+        let len = cur.chars().count();
+        let sentence_end = matches!(ch, '.' | '!' | '?' | '…' | ';' | ':');
+        if (sentence_end && len >= 120) || len >= 300 && ch == ' ' || len >= 400 {
+            chunks.push(cur.trim().to_string());
+            cur.clear();
+        }
+    }
+    if !cur.trim().is_empty() {
+        chunks.push(cur.trim().to_string());
+    }
+    chunks
+}
+
+enum Synth {
+    Done,
+    Cancelled,
+    Failed(String),
+}
+
+fn piper_synth(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64) -> Synth {
+    let err_file = wav.with_extension("err");
+    let _ = std::fs::remove_file(wav);
     let mut command = Command::new(exe);
     command
         .arg("--model")
         .arg(model)
         .arg("--output_file")
-        .arg(&wav)
+        .arg(wav)
         .arg("--length_scale")
         .arg(format!("{:.2}", 1.0 / crate::uistate::voice_rate()))
         .stdin(Stdio::piped())
@@ -174,34 +200,35 @@ fn speak_piper(exe: &Path, model: &Path, text: &str, generation: u64) -> bool {
 
     let mut child = match command.spawn() {
         Ok(c) => c,
-        Err(e) => {
-            tell_once(&format!("Голос Piper не запустился: {}. Говорит голос Windows.", e));
-            return false;
-        }
+        Err(e) => return Synth::Failed(format!("не запустился: {}", e)),
     };
     if let Some(mut stdin) = child.stdin.take() {
-        // one line only: with --output_file every input line overwrites the previous wav
-        let one_line: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
-        let _ = stdin.write_all(one_line.as_bytes());
+        let _ = stdin.write_all(text.as_bytes());
         let _ = stdin.write_all(b"\n");
     }
-    if !store(child, generation) {
-        return true;
+    // wait here (not in the shared slot: the previous piece is being played at the same time)
+    loop {
+        if GENERATION.load(Ordering::SeqCst) != generation {
+            let _ = child.kill();
+            let _ = std::fs::remove_file(wav);
+            return Synth::Cancelled;
+        }
+        match child.try_wait() {
+            Ok(Some(_)) | Err(_) => break,
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(40)),
+        }
     }
-    wait_current(generation);
-    if GENERATION.load(Ordering::SeqCst) != generation {
-        let _ = std::fs::remove_file(&wav);
-        return true;
-    }
-    if !wav.exists() {
+    if wav.exists() {
+        let _ = std::fs::remove_file(&err_file);
+        Synth::Done
+    } else {
         let why = std::fs::read_to_string(&err_file).unwrap_or_default();
         let why: String = why.lines().rev().take(3).collect::<Vec<_>>().join(" | ");
-        tell_once(&format!("Голос Piper не создал звук ({}). Пока говорит голос Windows. Скажите «проверь голос» и пришлите вывод.", why.chars().take(300).collect::<String>()));
-        return false;
+        Synth::Failed(why.chars().take(300).collect())
     }
-    let _ = std::fs::remove_file(&err_file);
+}
 
-    // play the wav
+fn play_wav(wav: &Path, generation: u64) {
     #[cfg(target_os = "windows")]
     {
         let mut player = Command::new("powershell");
@@ -220,9 +247,56 @@ fn speak_piper(exe: &Path, model: &Path, text: &str, generation: u64) -> bool {
     }
     #[cfg(not(target_os = "windows"))]
     {
+        let _ = generation;
         info!("TTS (Piper) wrote {}, playback is Windows-only", wav.display());
     }
-    let _ = std::fs::remove_file(&wav);
+}
+
+// returns false only when Piper gave no sound at all (then the Windows voice takes over)
+fn speak_piper(exe: &Path, model: &Path, text: &str, generation: u64) -> bool {
+    let chunks = split_chunks(text);
+    if chunks.is_empty() {
+        return true;
+    }
+    let wav_of = |i: usize| std::env::temp_dir().join(format!("jarvis_tts_{}_{}.wav", generation, i));
+
+    match piper_synth(exe, model, &chunks[0], &wav_of(0), generation) {
+        Synth::Done => {}
+        Synth::Cancelled => return true,
+        Synth::Failed(why) => {
+            tell_once(&format!("Голос Piper не создал звук ({}). Пока говорит голос Windows. Скажите «проверь голос» и пришлите вывод.", why));
+            return false;
+        }
+    }
+
+    for i in 0..chunks.len() {
+        // prepare the next piece while this one is played
+        let next = if i + 1 < chunks.len() {
+            let (exe, model, text, wav) = (exe.to_path_buf(), model.to_path_buf(), chunks[i + 1].clone(), wav_of(i + 1));
+            Some(std::thread::spawn(move || piper_synth(&exe, &model, &text, &wav, generation)))
+        } else {
+            None
+        };
+        play_wav(&wav_of(i), generation);
+        let _ = std::fs::remove_file(wav_of(i));
+        if GENERATION.load(Ordering::SeqCst) != generation {
+            if let Some(h) = next {
+                let _ = h.join();
+                let _ = std::fs::remove_file(wav_of(i + 1));
+            }
+            return true;
+        }
+        if let Some(h) = next {
+            match h.join() {
+                Ok(Synth::Done) => {}
+                Ok(Synth::Cancelled) | Err(_) => return true,
+                Ok(Synth::Failed(why)) => {
+                    tell_once(&format!("Голос Piper остановился: {}", why));
+                    return true;
+                }
+            }
+        }
+    }
     true
 }
 
@@ -419,4 +493,20 @@ pub fn list_voices() -> Vec<(String, String)> {
         }
     }
     list
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_chunks;
+
+    #[test]
+    fn long_text_is_cut_into_sentence_pieces() {
+        let text = "Это первое предложение, оно довольно длинное, чтобы набрать нужное количество символов для первой части текста. Второе предложение тоже достаточно длинное и содержит много слов, чтобы получилась вторая часть. Третье короткое.";
+        let chunks = split_chunks(text);
+        assert!(chunks.len() >= 2, "{:?}", chunks);
+        assert!(chunks.iter().all(|c| c.chars().count() <= 400));
+        assert_eq!(chunks.join(" "), text);
+        assert_eq!(split_chunks("Привет."), vec!["Привет.".to_string()]);
+        assert!(split_chunks("   ").is_empty());
+    }
 }

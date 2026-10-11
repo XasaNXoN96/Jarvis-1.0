@@ -77,7 +77,8 @@ fn fire(entry: &TimerEntry, late: bool) {
     tts::speak(&message);
 
     // make sure the user notices: sound a few times
-    for _ in 0..3 {
+    // silent mode (voice off): only the popup, no beeps
+    for _ in 0..(if tts::is_enabled() { 3 } else { 0 }) {
         voices::play_reply();
         std::thread::sleep(Duration::from_secs(2));
     }

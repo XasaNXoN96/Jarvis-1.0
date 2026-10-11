@@ -58,9 +58,9 @@ sandbox = "full"
 timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3"]
 sounds.en = ["ok1", "ok2", "ok3"]
-triggers.ru = ["выключ звук", "отключ звук", "без звук", "выключ громкост", "отключ громкост", "беззвучн", "режим без звук", "тихий режим", "выруб звук", "заглуш"]
-triggers.en = ["mute", "sound off", "silent mode", "mute sound"]
-phrases.ru = ["выключи звук", "беззвучный режим"]
+triggers.ru = ["выключ звук", "отключ звук", "без звук", "выключ громкост", "отключ громкост", "выруб звук", "заглуш"]
+triggers.en = ["mute", "sound off", "mute sound"]
+phrases.ru = ["выключи звук", "отключи громкость"]
 phrases.en = ["mute", "sound off"]
 
 [[commands]]
@@ -448,10 +448,10 @@ sandbox = "full"
 timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3"]
 sounds.en = ["ok1", "ok2", "ok3"]
-triggers.ru = ["выключ озвучк", "отключ озвучк", "не говор вслух", "озвучк выключ"]
-triggers.en = ["voice off", "speech off", "stop speaking aloud", "disable speech"]
-phrases.ru = ["выключи озвучку"]
-phrases.en = ["speech off"]
+triggers.ru = ["выключ озвучк", "отключ озвучк", "не говор вслух", "озвучк выключ", "беззвучн режим", "включ беззвучн", "тихий режим", "режим тишин", "молчи"]
+triggers.en = ["voice off", "speech off", "stop speaking aloud", "disable speech", "silent mode", "quiet mode"]
+phrases.ru = ["выключи озвучку", "беззвучный режим", "тихий режим"]
+phrases.en = ["speech off", "silent mode"]
 
 [[commands]]
 id = "assistant_tts_on"
@@ -461,9 +461,9 @@ sandbox = "full"
 timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3"]
 sounds.en = ["ok1", "ok2", "ok3"]
-triggers.ru = ["включ озвучк", "говор вслух", "озвучк включ"]
-triggers.en = ["voice on", "speech on", "enable speech"]
-phrases.ru = ["включи озвучку"]
+triggers.ru = ["включ озвучк", "говор вслух", "озвучк включ", "выйд беззвучн", "выйд из беззвучн", "выключ беззвучн режим", "отключ беззвучн режим", "выйд из тих режим", "выключ тих режим", "выйд тихого режим", "выключ тихий режим", "обычный режим"]
+triggers.en = ["voice on", "speech on", "enable speech", "exit silent mode", "normal mode"]
+phrases.ru = ["включи озвучку", "выйди из беззвучного режима"]
 phrases.en = ["speech on"]
 
 [[commands]]
