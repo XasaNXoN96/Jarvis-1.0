@@ -222,6 +222,20 @@ pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Resul
     // jarvis.system.copy_selection() -> true when Ctrl+C was sent to another program
     system.set("copy_selection", lua.create_function(|_, ()| Ok(send_copy()))?)?;
 
+    // jarvis.system.keys("ctrl+t") / jarvis.system.mouse("click" | "double" | "right" | "up" | ..., px)
+    // / jarvis.system.window("maximize" | "minimize" | "restore") -> true | false, reason
+    // (in the user's window: when the Jarvis window is in front, the window under it gets the focus first)
+    fn outcome(o: crate::input::Outcome) -> (bool, Option<String>) {
+        match o {
+            crate::input::Outcome::Done => (true, None),
+            crate::input::Outcome::NoTarget => (false, Some("нет окна, в котором можно выполнить действие: откройте нужную программу".into())),
+            crate::input::Outcome::Unknown(k) => (false, Some(format!("неизвестное действие или клавиша: {}", k))),
+        }
+    }
+    system.set("keys", lua.create_function(|_, combo: String| Ok(outcome(crate::input::keys(&combo))))?)?;
+    system.set("mouse", lua.create_function(|_, (action, amount): (String, Option<i32>)| Ok(outcome(crate::input::mouse(&action, amount.unwrap_or(0)))))?)?;
+    system.set("window", lua.create_function(|_, action: String| Ok(outcome(crate::input::window(&action))))?)?;
+
     // jarvis.system.clipboard - subtable
     let clipboard = lua.create_table()?;
     

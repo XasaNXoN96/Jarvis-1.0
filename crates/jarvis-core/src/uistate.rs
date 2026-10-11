@@ -379,38 +379,53 @@ pub fn settings_json() -> Value {
 // command sections ("groups"): the commands page and the panel show commands by topic, and a whole
 // section can be switched off
 // ---------------------------------------------------------------------------------------------
-// (key, emoji, title, short description)
+// (key, emoji, title, short description). The keys of the sections that existed before are kept: the sections a user
+// switched off stay off. The order follows the catalogue of the reference: browser, keyboard and mouse, media, sound ...
 pub const GROUPS: &[(&str, &str, &str, &str)] = &[
-    ("sound", "🔊", "Звук и экран", "громкость, яркость, музыка: пауза, следующий трек"),
+    ("browser", "🌐", "Браузер и поиск", "вкладки, назад/вперёд, история, закладки, поиск в интернете, Википедия, перевод, карты"),
+    ("input", "⌨", "Клавиатура и мышь", "выделить, копировать, вставить, отменить, печать, клик, курсор, прокрутка"),
+    ("media", "🎬", "Мультимедиа и экран", "пауза, следующий трек, снимок экрана"),
+    ("sound", "🔊", "Звук и яркость", "громкость, без звука, яркость экрана"),
     ("timers", "⏱", "Таймеры и напоминания", "таймер, напоминание, будильник, «остановись через…»"),
-    ("apps", "🌐", "Программы и сайты", "открыть сайт, браузер, блокнот, калькулятор, закрыть программу"),
+    ("voice", "🎤", "Голос и ИИ", "микрофон, озвучка, чтение выделенного и буфера, проверка голоса"),
+    ("apps", "🚀", "Приложения и сайты", "открыть и закрыть программу, сайт, калькулятор, Steam"),
     ("files", "📁", "Файлы и папки", "найти файл, открыть папку, диск, настройки Windows"),
     ("text", "📝", "Тексты и документы", "диктовка в Word и блокнот, таблицы Excel, новый документ, заметки"),
-    ("voice", "🎤", "Голос и озвучка", "микрофон, озвучка, чтение выделенного текста, проверка голоса"),
-    ("system", "🖥", "Компьютер и питание", "выключить, перезагрузить, заблокировать, свернуть окна, скриншот"),
-    ("info", "📊", "Информация", "время, дата, батарея, память, процессор, диск, IP"),
-    ("web", "🌍", "Интернет", "погода, Википедия, перевод, карты, музыка"),
-    ("games", "🎮", "Игры", "игровой режим и таймер игры, Steam"),
+    ("windows", "🪟", "Окна", "свернуть, развернуть, переключить окно, раскладка"),
+    ("power", "⏻", "Питание ПК", "выключить, перезагрузить, спящий режим, заблокировать"),
+    ("system", "🖥", "Системные инструменты", "диспетчер задач, корзина"),
+    ("info", "📊", "Информация", "время, дата, батарея, память, процессор, диск, IP, погода"),
+    ("games", "🎮", "Игры", "игровой режим и таймер игры"),
     ("remote", "📱", "Пульт для телефона", "управление с телефона"),
     ("talk", "💬", "Разговор и помощь", "привет, «что ты умеешь», диагностика, шутки"),
     ("control", "⛔", "Управление Jarvis", "стоп, выключить Jarvis (отключить нельзя)"),
 ];
 
+// categories of the reference that Jarvis cannot do (shown honestly as unavailable, with the reason; no commands)
+pub const UNAVAILABLE_GROUPS: &[(&str, &str, &str, &str)] = &[
+    ("gestures", "✋", "Жесты", "Недоступно: нужна камера и модель распознавания рук, которой в Jarvis нет. Команды жестами не выполняются."),
+    ("lighting", "💡", "Подсветка и умный дом", "Недоступно: нет поддержки ламп, лент и розеток (нужна интеграция с конкретным устройством)."),
+];
+
 pub fn group_key(pack: &str, id: &str) -> &'static str {
     let id = id.strip_prefix("assistant_").unwrap_or(id);
     let starts = |p: &str| id.starts_with(p);
-    if starts("volume") || starts("brightness") || starts("media") { return "sound"; }
+    if starts("web_") || pack == "browser" || id == "website" || id == "wiki" || id == "translate" || id == "maps" || id == "music_search" { return "browser"; }
+    if starts("key_") || starts("mouse_") { return "input"; }
+    if starts("media") || id == "windows_4" { return "media"; }
+    if starts("volume") || starts("brightness") { return "sound"; }
     if starts("timer") || id == "reminder" { return "timers"; }
+    if starts("win_") || id == "windows_1" || id == "windows_8" { return "windows"; }
+    if starts("power") || id == "unlock" || id == "windows_5" || id == "windows_6" { return "power"; }
     if starts("file") || id == "place_open" || id == "disk_open" { return "files"; }
     if starts("note") || starts("office") || starts("object") || id == "session" { return "text"; }
     if starts("tts") || starts("read_") || starts("mic_") { return "voice"; }
-    if starts("power") || id == "unlock" || pack == "windows" { return "system"; }
-    if starts("info") || starts("sys_") { return "info"; }
-    if id == "wiki" || id == "translate" || id == "maps" || id == "music_search" || pack == "weather" { return "web"; }
+    if pack == "windows" { return "system"; }
+    if starts("info") || starts("sys_") || pack == "weather" { return "info"; }
     if starts("game") || pack == "steam" { return "games"; }
     if starts("remote") { return "remote"; }
     if pack == "stop" || pack == "terminate" { return "control"; }
-    if id == "website" || starts("program") || pack == "browser" || pack == "calculator" { return "apps"; }
+    if starts("program") || pack == "calculator" { return "apps"; }
     "talk"
 }
 

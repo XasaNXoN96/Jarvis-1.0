@@ -5,6 +5,7 @@ script = "actions.lua"
 sandbox = "full"
 timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3"]
+triggers.ru = ["сверн все окн", "сверн все", "сверн окна"]
 phrases.ru = [
     "сверни все окна",
     "сверни окна",

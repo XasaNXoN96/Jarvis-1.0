@@ -243,4 +243,20 @@ mod tests {
             assert!(shown.contains("Не могу прочитать вслух") && shown.contains(why), "the reason is told: {:?}", shown);
         }
     }
+
+    // the keyboard/mouse commands answer what they did and never claim an action they could not do
+    // (not on Windows: there the test would press real keys on the test machine)
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn keyboard_and_mouse_commands_run_and_report() {
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../resources/commands/input/input.lua");
+        for (id, reply) in [("key_copy", "Скопировано"), ("mouse_double", "Двойной клик"), ("win_maximize", "Окно развёрнуто"), ("web_tab_new", "Новая вкладка")] {
+            crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow_mut().clear());
+            let ctx = CommandContext { phrase: "x".into(), command_id: id.into(), command_path: script.parent().unwrap().to_path_buf(), language: "ru".into(), slots: None };
+            let r = execute(&script, ctx, SandboxLevel::Full, Duration::from_secs(5));
+            assert!(r.is_ok(), "{}: {:?}", id, r.err().map(|e| e.to_string()));
+            let last = crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow().last().cloned().unwrap_or_default());
+            assert_eq!(last, reply, "{}", id);
+        }
+    }
 }

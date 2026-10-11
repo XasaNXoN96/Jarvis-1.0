@@ -499,3 +499,29 @@ fn work_mode_does_not_trap_the_user_when_the_answer_is_never_understood() {
     assert!(w.fake()["files"].as_object().unwrap().is_empty());
     assert!(w.fake()["recycled"].as_array().unwrap().is_empty());
 }
+
+#[test]
+fn browser_keyboard_mouse_and_window_commands_reach_their_own_handlers() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({}));
+    for (phrase, id) in [
+        ("новая вкладка", "web_tab_new"), ("закрой вкладку", "web_tab_close"), ("верни вкладку", "web_tab_reopen"),
+        ("вкладка влево", "web_tab_prev"), ("обнови страницу", "web_refresh"), ("открой историю", "web_history"),
+        ("открой загрузки браузера", "web_downloads"), ("добавь в закладки", "web_bookmark"), ("инкогнито", "web_incognito"),
+        ("найди на странице", "web_find"), ("верни назад", "key_undo"), ("выдели всё", "key_select_all"),
+        ("вставь", "key_paste"), ("в конец страницы", "key_page_end"), ("напечатай документ", "key_print"),
+        ("открой буфер обмена", "key_clipboard"), ("двойной клик", "mouse_double"), ("правый клик", "mouse_right"),
+        ("клик", "mouse_click"), ("курсор вниз", "mouse_down"), ("прокрути вниз", "mouse_scroll_down"),
+        ("переключи окно", "win_switch"), ("разверни окно", "win_maximize"), ("сверни окно", "win_minimize"),
+    ] {
+        assert_eq!(w.route(phrase).as_deref(), Some(id), "{}", phrase);
+    }
+    // the commands that existed before keep their phrases
+    for (phrase, id) in [
+        ("сверни все окна", "windows_1"), ("сверни окна", "windows_1"), ("открой загрузки", "assistant_place_open"),
+        ("покажи рабочий стол", "assistant_place_open"), ("прочитай буфер обмена", "assistant_read_clipboard"),
+        ("открой блокнот", "assistant_program_open"), ("пиши текст", "assistant_office_dictate"),
+    ] {
+        assert_eq!(w.route(phrase).as_deref(), Some(id), "{} must stay with {}", phrase, id);
+    }
+}

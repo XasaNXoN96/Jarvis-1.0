@@ -61,19 +61,24 @@ fn commands_json() -> String {
                     continue;
                 }
                 let pack_name = pack.path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                let group = crate::uistate::group_key(&pack_name, &cmd.id);
                 list.push(json!({
                     "id": cmd.id,
                     "pack": pack_name,
-                    "group": crate::uistate::group_key(&pack_name, &cmd.id),
+                    "group": group,
                     "phrases": phrases.iter().take(5).collect::<Vec<_>>(),
+                    "description": cmd.description,
+                    // available = it runs when said; off = its section is switched off by the user
+                    "status": if crate::uistate::is_group_disabled(group) { "off" } else { "on" },
                 }));
             }
         }
     }
-    let groups: Vec<_> = crate::uistate::GROUPS
+    let mut groups: Vec<_> = crate::uistate::GROUPS
         .iter()
-        .map(|g| json!({ "key": g.0, "emoji": g.1, "title": g.2, "about": g.3, "disabled": crate::uistate::is_group_disabled(g.0) }))
+        .map(|g| json!({ "key": g.0, "emoji": g.1, "title": g.2, "about": g.3, "disabled": crate::uistate::is_group_disabled(g.0), "locked": g.0 == "control" }))
         .collect();
+    groups.extend(crate::uistate::UNAVAILABLE_GROUPS.iter().map(|g| json!({ "key": g.0, "emoji": g.1, "title": g.2, "about": g.3, "unavailable": true })));
     json!({ "language": lang, "commands": list, "groups": groups }).to_string()
 }
 
@@ -664,7 +669,10 @@ mod tests {
         for body in [json!({ "name": "history_delete_all" }), json!({ "name": "history_delete_all", "confirm": "yes" }), json!({ "name": "settings_reset" }), json!({ "name": "settings_reset", "confirm": "delete" })] {
             assert_eq!(run_action(&body)["ok"], false, "{} without its confirmation is refused", body);
         }
-        assert_eq!(store.stats(), before, "nothing was deleted");
+        // other tests may add messages meanwhile; nothing may disappear
+        assert!(store.stats()["chats"].as_u64() >= before["chats"].as_u64(), "nothing was deleted");
+        assert!(store.stats()["messages"].as_u64() >= before["messages"].as_u64());
+        assert_eq!(store.load(&chat.id).unwrap().messages[0].content, "не удалять");
         assert!(crate::uistate::settings().dnd, "nothing was reset");
         crate::uistate::set_for_tests(Default::default());
     }

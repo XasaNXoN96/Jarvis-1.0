@@ -1,0 +1,450 @@
+[[commands]]
+id = "web_tab_new"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Ctrl+T в активном окне"
+phrases.ru = ["новая вкладка", "открой новую вкладку"]
+phrases.en = ["new tab"]
+triggers.ru = ["нов вкладк"]
+
+[[commands]]
+id = "web_tab_close"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Ctrl+W в активном окне"
+phrases.ru = ["закрой вкладку"]
+phrases.en = ["close tab"]
+triggers.ru = ["закр вкладк"]
+
+[[commands]]
+id = "web_tab_reopen"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Ctrl+Shift+T в активном окне"
+phrases.ru = ["верни вкладку", "восстанови вкладку"]
+phrases.en = ["reopen tab"]
+triggers.ru = ["верн вкладк", "восстанов вкладк"]
+
+[[commands]]
+id = "web_tab_next"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Ctrl+Tab в активном окне"
+phrases.ru = ["вкладка вправо", "следующая вкладка"]
+phrases.en = ["next tab"]
+triggers.ru = ["вкладк вправ", "следующ вкладк"]
+
+[[commands]]
+id = "web_tab_prev"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Ctrl+Shift+Tab в активном окне"
+phrases.ru = ["вкладка влево", "предыдущая вкладка"]
+phrases.en = ["previous tab"]
+triggers.ru = ["вкладк влев", "предыдущ вкладк"]
+
+[[commands]]
+id = "web_back"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Alt+← в активном окне"
+phrases.ru = ["назад", "вернись на страницу назад"]
+phrases.en = ["go back"]
+triggers.ru = ["назад"]
+
+[[commands]]
+id = "web_forward"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Alt+→ в активном окне"
+phrases.ru = ["вперёд", "на страницу вперёд"]
+phrases.en = ["go forward"]
+triggers.ru = ["вперед"]
+
+[[commands]]
+id = "web_refresh"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает F5 в активном окне"
+phrases.ru = ["обнови страницу", "перезагрузи страницу"]
+phrases.en = ["refresh page", "reload page"]
+triggers.ru = ["обнов страниц", "перезагруз страниц"]
+
+[[commands]]
+id = "web_history"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Ctrl+H в активном окне"
+phrases.ru = ["открой историю браузера", "открой историю"]
+phrases.en = ["open history"]
+triggers.ru = ["истори браузер", "откр истори"]
+
+[[commands]]
+id = "web_downloads"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Ctrl+J в активном окне"
+phrases.ru = ["открой загрузки браузера"]
+phrases.en = ["browser downloads"]
+triggers.ru = ["загрузк браузер"]
+
+[[commands]]
+id = "web_bookmark"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Ctrl+D в активном окне"
+phrases.ru = ["добавь в закладки"]
+phrases.en = ["bookmark this page"]
+triggers.ru = ["добав закладк"]
+
+[[commands]]
+id = "web_incognito"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Ctrl+Shift+N в активном окне"
+phrases.ru = ["инкогнито", "открой окно инкогнито"]
+phrases.en = ["incognito window"]
+triggers.ru = ["инкогнито"]
+
+[[commands]]
+id = "web_window_new"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Ctrl+N в активном окне"
+phrases.ru = ["новое окно браузера", "новое окно"]
+phrases.en = ["new window"]
+triggers.ru = ["нов окн"]
+
+[[commands]]
+id = "web_address"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Ctrl+L в активном окне"
+phrases.ru = ["адресная строка", "перейди в адресную строку"]
+phrases.en = ["address bar"]
+triggers.ru = ["адресн строк"]
+
+[[commands]]
+id = "web_find"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Ctrl+F в активном окне"
+phrases.ru = ["найди на странице", "поиск по странице"]
+phrases.en = ["find on page"]
+triggers.ru = ["найд на страниц", "поиск по страниц"]
+
+[[commands]]
+id = "key_undo"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Ctrl+Z в активном окне"
+phrases.ru = ["верни назад", "отмени действие", "отмени последнее действие"]
+phrases.en = ["undo"]
+triggers.ru = ["верн назад", "отмен действ"]
+
+[[commands]]
+id = "key_redo"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Ctrl+Y в активном окне"
+phrases.ru = ["повтори действие", "повтори отменённое"]
+phrases.en = ["redo"]
+triggers.ru = ["повтор действ", "повтор отмен"]
+
+[[commands]]
+id = "key_select_all"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Ctrl+A в активном окне"
+phrases.ru = ["выдели всё"]
+phrases.en = ["select all"]
+triggers.ru = ["выдел все"]
+
+[[commands]]
+id = "key_copy"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Ctrl+C в активном окне"
+phrases.ru = ["скопируй", "скопируй выделенное"]
+phrases.en = ["copy"]
+triggers.ru = ["скопиру"]
+
+[[commands]]
+id = "key_paste"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Ctrl+V в активном окне"
+phrases.ru = ["вставь", "вставь из буфера"]
+phrases.en = ["paste"]
+triggers.ru = ["встав"]
+
+[[commands]]
+id = "key_cut"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Ctrl+X в активном окне"
+phrases.ru = ["вырежи", "вырежи выделенное"]
+phrases.en = ["cut"]
+triggers.ru = ["выреж"]
+
+[[commands]]
+id = "key_page_top"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Ctrl+Home в активном окне"
+phrases.ru = ["в начало страницы", "наверх страницы"]
+phrases.en = ["top of the page"]
+triggers.ru = ["начал страниц", "наверх страниц"]
+
+[[commands]]
+id = "key_page_end"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Ctrl+End в активном окне"
+phrases.ru = ["в конец страницы", "вниз страницы"]
+phrases.en = ["end of the page"]
+triggers.ru = ["конец страниц", "конц страниц"]
+
+[[commands]]
+id = "key_print"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Ctrl+P в активном окне"
+phrases.ru = ["напечатай документ", "распечатай"]
+phrases.en = ["print"]
+triggers.ru = ["напечата", "распечата"]
+
+[[commands]]
+id = "key_save"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Ctrl+S в активном окне"
+phrases.ru = ["сохрани документ", "сохрани файл"]
+phrases.en = ["save file"]
+triggers.ru = ["сохран документ", "сохран файл"]
+
+[[commands]]
+id = "key_clipboard"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Win+V в активном окне"
+phrases.ru = ["открой буфер обмена", "история буфера обмена"]
+phrases.en = ["clipboard history"]
+triggers.ru = ["откр буфер", "истори буфер"]
+
+[[commands]]
+id = "key_enter"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Enter в активном окне"
+phrases.ru = ["нажми энтер", "нажми ввод"]
+phrases.en = ["press enter"]
+triggers.ru = ["нажм энтер", "нажм ввод"]
+
+[[commands]]
+id = "key_escape"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Esc в активном окне"
+phrases.ru = ["нажми эскейп", "нажми escape"]
+phrases.en = ["press escape"]
+triggers.ru = ["нажм эскейп", "нажм escape"]
+
+[[commands]]
+id = "mouse_click"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Левый клик там, где стоит курсор"
+phrases.ru = ["клик", "кликни", "нажми мышкой"]
+phrases.en = ["click"]
+triggers.ru = ["клик", "кликн"]
+
+[[commands]]
+id = "mouse_double"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Двойной клик там, где стоит курсор"
+phrases.ru = ["двойной клик"]
+phrases.en = ["double click"]
+triggers.ru = ["двойн клик"]
+
+[[commands]]
+id = "mouse_right"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Правый клик там, где стоит курсор"
+phrases.ru = ["правый клик", "нажми правой кнопкой"]
+phrases.en = ["right click"]
+triggers.ru = ["прав клик", "прав кнопк"]
+
+[[commands]]
+id = "mouse_up"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Сдвигает курсор мыши вверх на 100 точек"
+phrases.ru = ["курсор вверх"]
+phrases.en = ["cursor up"]
+triggers.ru = ["курсор вверх"]
+
+[[commands]]
+id = "mouse_down"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Сдвигает курсор мыши вниз на 100 точек"
+phrases.ru = ["курсор вниз"]
+phrases.en = ["cursor down"]
+triggers.ru = ["курсор вниз"]
+
+[[commands]]
+id = "mouse_left"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Сдвигает курсор мыши влево на 100 точек"
+phrases.ru = ["курсор влево"]
+phrases.en = ["cursor left"]
+triggers.ru = ["курсор влев"]
+
+[[commands]]
+id = "mouse_right_move"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Сдвигает курсор мыши вправо на 100 точек"
+phrases.ru = ["курсор вправо"]
+phrases.en = ["cursor right"]
+triggers.ru = ["курсор вправ"]
+
+[[commands]]
+id = "mouse_scroll_up"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Прокручивает колесом вверх"
+phrases.ru = ["прокрути вверх", "листай вверх"]
+phrases.en = ["scroll up"]
+triggers.ru = ["прокрут вверх", "листа вверх"]
+
+[[commands]]
+id = "mouse_scroll_down"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Прокручивает колесом вниз"
+phrases.ru = ["прокрути вниз", "листай вниз"]
+phrases.en = ["scroll down"]
+triggers.ru = ["прокрут вниз", "листа вниз"]
+
+[[commands]]
+id = "win_switch"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Нажимает Alt+Tab в активном окне"
+phrases.ru = ["переключи окно", "следующее окно"]
+phrases.en = ["switch window"]
+triggers.ru = ["переключ окн", "следующ окн"]
+
+[[commands]]
+id = "win_maximize"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Разворачивает активное окно на весь экран"
+phrases.ru = ["разверни окно", "на весь экран"]
+phrases.en = ["maximize window"]
+triggers.ru = ["разверн окн", "на весь экран"]
+
+[[commands]]
+id = "win_minimize"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Сворачивает активное окно"
+phrases.ru = ["сверни окно", "сверни это окно"]
+phrases.en = ["minimize window"]
+triggers.ru = ["сверн окн", "сверн это"]
+
+[[commands]]
+id = "win_restore"
+type = "lua"
+script = "input.lua"
+sandbox = "full"
+timeout = 5000
+description = "Восстанавливает обычный размер активного окна"
+phrases.ru = ["восстанови окно", "верни окно"]
+phrases.en = ["restore window"]
+triggers.ru = ["восстанов окн", "верн окн"]
