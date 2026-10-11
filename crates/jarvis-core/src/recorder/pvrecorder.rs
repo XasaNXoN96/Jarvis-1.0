@@ -21,8 +21,32 @@ const FIRST_FRAME_TIMEOUT: Duration = Duration::from_millis(1500);
 // consecutive failed reads after which the microphone is reported as lost
 const LOST_AFTER_ERRORS: u32 = 50;
 
+// the library is also built into the program (Windows), so a lone jarvis-app.exe still has a microphone
+#[cfg(target_os = "windows")]
+static EMBEDDED_LIB: &[u8] = include_bytes!("../../../../lib/windows/amd64/libpv_recorder.dll");
+
+// writes the built-in copy to a temp folder (the program folder may be read-only) and returns its path
+#[cfg(target_os = "windows")]
+fn embedded_library() -> Option<PathBuf> {
+    let dir = std::env::temp_dir().join(format!("jarvis-pvrecorder-{}", EMBEDDED_LIB.len()));
+    let path = dir.join("libpv_recorder.dll");
+    let ok = std::fs::metadata(&path).map(|m| m.len() as usize == EMBEDDED_LIB.len()).unwrap_or(false);
+    if !ok {
+        if let Err(e) = std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&path, EMBEDDED_LIB)) {
+            warn!("Could not unpack the built-in microphone library to {}: {}", path.display(), e);
+            return None;
+        }
+    }
+    Some(path)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn embedded_library() -> Option<PathBuf> {
+    None
+}
+
 // pv_recorder looks for its library at a compile-time path (the build machine's folder),
-// which does not exist on the user's PC. Look next to the program instead.
+// which does not exist on the user's PC. Look next to the program, then use the built-in copy.
 fn library_path() -> Option<PathBuf> {
     let name = if cfg!(target_os = "windows") {
         "libpv_recorder.dll"
@@ -36,7 +60,7 @@ fn library_path() -> Option<PathBuf> {
         APP_DIR.join("lib").join(name),
         APP_DIR.join("lib").join("windows").join("amd64").join(name),
     ];
-    let found = candidates.into_iter().find(|p| p.exists());
+    let found = candidates.into_iter().find(|p| p.exists()).or_else(embedded_library);
     match &found {
         Some(p) => debug!("pvrecorder library: {}", p.display()),
         None => debug!("pvrecorder library not found next to the program, using the default path"),
@@ -52,6 +76,11 @@ fn builder(frame_length: i32) -> PvRecorderBuilder {
     }
 }
 
+// same, but with the built-in copy (used when the file next to the program exists but cannot be loaded)
+fn builder_embedded(frame_length: i32) -> Option<PvRecorderBuilder> {
+    embedded_library().map(|p| PvRecorderBuilder::new(frame_length).library_path(&p))
+}
+
 fn device_name(devices: &[String], index: i32) -> String {
     if index < 0 {
         "системный по умолчанию".to_string()
@@ -65,7 +94,17 @@ fn try_open(index: i32, frame_length: u32, devices: &[String]) -> Result<(PvReco
     let name = device_name(devices, index);
     let fail = |stage: Stage, cause: Cause, detail: String| Attempt { index, name: name.clone(), stage, cause: Some(cause), detail, peak: 0 };
 
-    let rec = match builder(frame_length as i32).device_index(index).init() {
+    let mut opened = builder(frame_length as i32).device_index(index).init();
+    // a broken or blocked library file next to the program: retry with the built-in copy
+    if let Err(e) = &opened {
+        if matches!(e.status(), pv_recorder::PvRecorderErrorStatus::LibraryLoadError) {
+            warn!("Microphone library failed to load ({}), trying the built-in copy", e.message());
+            if let Some(b) = builder_embedded(frame_length as i32) {
+                opened = b.device_index(index).init();
+            }
+        }
+    }
+    let rec = match opened {
         Ok(r) => r,
         Err(e) => {
             let (cause, text) = diag::classify(e.status(), true);
