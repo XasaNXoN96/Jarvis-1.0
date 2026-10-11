@@ -714,3 +714,33 @@ fn gemini_is_asked_to_think_little_and_a_provider_that_refuses_the_parameter_is_
     let o = ProviderConf { kind: Kind::OpenAiCompatible, name: "OpenAI".into(), base: "http://x".into(), model: "m".into(), key: "k".into() };
     assert!(build_body_opts(&o, &[], "s", true).get("reasoning_effort").is_none());
 }
+
+#[test]
+fn with_the_ai_switched_off_nothing_is_sent_or_stored() {
+    let _g = crate::uistate::TEST_LOCK.lock();
+    crate::uistate::set_for_tests(crate::uistate::UiSettings { ai_enabled: false, ai_provider: "gemini".into(), ai_key: "k".into(), ..Default::default() });
+    let dir = tempfile::tempdir().unwrap();
+    let store: &'static Store = Box::leak(Box::new(Store::new(dir.path().to_path_buf())));
+    assert_eq!(conf_from_settings().unwrap_err(), AiError::Disabled);
+    let r = send_with(store, conf_from_settings(), None, "что такое python", true);
+    assert_eq!(r.err(), Some(AiError::Disabled));
+    assert!(store.list().iter().all(|c| c["count"].as_u64().unwrap_or(0) == 0), "the question is not stored either");
+    assert!(AiError::Disabled.user_text().contains("Приватность"));
+    assert_eq!(status_json()["state"], "DISCONNECTED");
+    crate::uistate::set_for_tests(crate::uistate::UiSettings::default());
+}
+
+#[test]
+fn deleting_the_whole_history_removes_every_conversation() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path().to_path_buf());
+    let a = store.create();
+    store.append(&a.id, "user", "раз");
+    let b = store.create();
+    store.append(&b.id, "user", "два");
+    assert_eq!(store.stats()["chats"], 2);
+    assert_eq!(store.stats()["messages"], 2);
+    assert_eq!(store.delete_all(), (2, 0));
+    assert!(store.list().is_empty());
+    assert!(store.active().is_none());
+}

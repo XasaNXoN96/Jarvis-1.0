@@ -68,6 +68,8 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
             _ => text.clone(),
         };
         crate::dialog::reply(&shown, "command");
+        #[cfg(test)]
+        TEST_REPLIES.with(|r| r.borrow_mut().push(shown.clone()));
         Ok(())
     })?;
     jarvis.set("reply", reply_fn)?;
@@ -81,6 +83,16 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
     })?;
     jarvis.set("speak", speak_fn)?;
 
+    // jarvis.text.preview(text, n) / jarvis.text.len(text): cut by CHARACTERS, not bytes.
+    // Lua's string.sub counts bytes: cutting Russian text there splits a letter in two and the broken string
+    // can no longer be passed to jarvis.reply / jarvis.out ("invalid UTF-8"). These helpers never split a character.
+    let text_api = lua.create_table()?;
+    text_api.set("preview", lua.create_function(|_, (text, n): (mlua::String, Option<usize>)| {
+        Ok(preview(&text.to_string_lossy(), n.unwrap_or(80)))
+    })?)?;
+    text_api.set("len", lua.create_function(|_, text: mlua::String| Ok(text.to_string_lossy().chars().count()))?)?;
+    jarvis.set("text", text_api)?;
+
     // jarvis.tts.stop() / jarvis.tts.set_enabled(bool) / jarvis.tts.is_enabled()
     let tts = lua.create_table()?;
     tts.set("stop", lua.create_function(|_, ()| { crate::tts::stop(); Ok(()) })?)?;
@@ -92,7 +104,7 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
     // jarvis.app.set_mic_muted(bool): switch the microphone off (text-only) / on
     let app = lua.create_table()?;
     app.set("set_mic_muted", lua.create_function(|_, muted: bool| {
-        crate::MIC_MUTED.store(muted, std::sync::atomic::Ordering::SeqCst);
+        crate::uistate::set_mic_muted(muted);
         Ok(())
     })?)?;
     app.set("is_mic_muted", lua.create_function(|_, ()| Ok(crate::MIC_MUTED.load(std::sync::atomic::Ordering::SeqCst)))?)?;
@@ -236,4 +248,19 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
     jarvis.set("remote", remote)?;
     
     Ok(())
+}
+// the first `n` characters of the text on one line ("…" when something was cut)
+pub fn preview(text: &str, n: usize) -> String {
+    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.chars().count() <= n {
+        flat
+    } else {
+        format!("{}…", flat.chars().take(n).collect::<String>().trim_end())
+    }
+}
+
+// the replies of the scripts run by this thread (tests read what a command answered without racing other tests)
+#[cfg(test)]
+thread_local! {
+    pub static TEST_REPLIES: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
 }

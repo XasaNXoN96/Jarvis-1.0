@@ -63,6 +63,8 @@ if text == "" then
   return
 end
 
-local preview = text:sub(1, 80):gsub("%s+", " ")
-say(T("Читаю", "Reading"), preview .. (#text > 80 and "…" or ""), false)
+-- the preview is cut by characters (jarvis.text.preview): the old cut with string.sub counted bytes and split a Russian letter
+-- in two, the broken string made jarvis.reply fail with "invalid UTF-8" and nothing was read aloud
+say(T("Читаю", "Reading"), jarvis.text.preview(text, 80), false)
+-- the clipboard text goes only to the local voice (Piper), never to an AI or another service
 jarvis.speak(text)

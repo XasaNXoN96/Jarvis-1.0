@@ -82,6 +82,8 @@ impl std::fmt::Debug for ProviderConf {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AiError {
+    // switched off in the privacy section: nothing is sent to any AI provider
+    Disabled,
     NoProvider,
     NoKey(String),
     NoModel,
@@ -111,6 +113,7 @@ impl AiError {
     // what the user sees: what happened and what to do next
     pub fn user_text(&self) -> String {
         match self {
+            AiError::Disabled => "Запросы к ИИ выключены в Настройках → Приватность. Эта фраза требует ИИ, поэтому никуда не отправлена; команды компьютера работают как обычно.".into(),
             AiError::NoProvider => "ИИ-провайдер не выбран. Откройте Настройки → ИИ-провайдер, выберите провайдера и введите ключ.".into(),
             AiError::NoKey(p) => format!("Не введён ключ API для {}. Откройте Настройки → ИИ-провайдер и вставьте ключ.", p),
             AiError::NoModel => "Не указана модель. Откройте Настройки → ИИ-провайдер и впишите название модели (например, gpt-4o-mini).".into(),
@@ -175,6 +178,9 @@ pub fn conf_from(provider: &str, model: &str, key: &str, url: &str) -> Result<Pr
 
 pub fn conf_from_settings() -> Result<ProviderConf, AiError> {
     let s = crate::uistate::settings();
+    if !s.ai_enabled {
+        return Err(AiError::Disabled);
+    }
     conf_from(&s.ai_provider, &s.ai_model, &s.ai_key, &s.ai_url)
 }
 
@@ -336,6 +342,30 @@ impl Store {
             .unwrap_or_default();
         chats.sort_by(|a, b| b.updated.cmp(&a.updated));
         chats.iter().map(|c| json!({ "id": c.id, "title": c.title, "updated": c.updated, "count": c.messages.len() })).collect()
+    }
+
+    // how much is stored (for the privacy section): never the content
+    pub fn stats(&self) -> Value {
+        let list = self.list();
+        let messages: u64 = list.iter().filter_map(|c| c["count"].as_u64()).sum();
+        json!({ "chats": list.len(), "messages": messages, "dir": self.dir.display().to_string() })
+    }
+
+    // "delete the whole history" (asked and confirmed in the window): every conversation that is not answering right now.
+    // Returns (deleted, kept because busy).
+    pub fn delete_all(&self) -> (usize, usize) {
+        let (mut deleted, mut kept) = (0, 0);
+        for c in self.list() {
+            let id = c["id"].as_str().unwrap_or("");
+            if is_busy(id) {
+                kept += 1;
+            } else if self.delete(id) {
+                deleted += 1;
+            }
+        }
+        let _ = std::fs::remove_file(self.dir.join("active"));
+        bump();
+        (deleted, kept)
     }
 
     pub fn active(&self) -> Option<String> {
@@ -769,6 +799,10 @@ fn first_sentence(text: &str) -> String {
 fn status_error(e: &AiError) {
     if *e != AiError::Cancelled {
         status_set(Conn::Error, &first_sentence(&e.user_text()));
+        // the notification of an AI failure (the text is the explanation, never the question or a key)
+        if !matches!(e, AiError::Duplicate | AiError::Busy | AiError::Empty | AiError::Disabled) {
+            crate::notify::push("ai_error", "Ошибка ИИ", &first_sentence(&e.user_text()), true);
+        }
     }
 }
 

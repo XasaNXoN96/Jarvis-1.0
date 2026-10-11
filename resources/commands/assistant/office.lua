@@ -56,7 +56,7 @@ local function office(app, action, a1, a2, a3)
   elseif err:find("NOTSAVED") then
     return false, "", T("Не удалось подтвердить сохранение: проверьте окно сохранения", "Could not confirm the save: check the save window"), "NOTSAVED"
   end
-  return false, "", (err:gsub("%s+$", ""):sub(1, 200))
+  return false, "", jarvis.text.preview(err, 200)
 end
 
 -- a line in the window only (no toast notification for every cell / sentence)
@@ -396,7 +396,7 @@ local function file_session(text)
       local r = powershell(script)
       jarvis.session.finish()
       if r.success then say(T("Файл", "File"), T("Перемещён в корзину: ", "Moved to the recycle bin: ") .. (item and item.name or ""), T("Удалил в корзину", "Moved to the recycle bin"))
-      else say(T("Файл", "File"), T("Не удалось удалить: ", "Could not delete: ") .. (r.stderr or ""):sub(1, 150), T("Не удалось удалить файл", "Could not delete the file")) end
+      else say(T("Файл", "File"), T("Не удалось удалить: ", "Could not delete: ") .. jarvis.text.preview(r.stderr or "", 150), T("Не удалось удалить файл", "Could not delete the file")) end
     else
       jarvis.session.finish()
       say(T("Файл", "File"), T("Не удаляю", "Not deleting"), T("Хорошо, не удаляю", "Okay, not deleting"))

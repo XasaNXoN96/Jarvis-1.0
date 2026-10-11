@@ -286,6 +286,11 @@ fn recognize_command(
         if crate::should_stop() {
             return;
         }
+        // the microphone was switched off while Jarvis was listening: stop at once, nothing more is recognized
+        if jarvis_core::MIC_MUTED.load(std::sync::atomic::Ordering::SeqCst) {
+            info!("Microphone switched off: listening stopped");
+            return;
+        }
         
         recorder::read_microphone(frame_buffer);
         let processed = audio_processing::process(frame_buffer);
@@ -674,6 +679,21 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
         // typed messages that are not commands are a talk with the AI; spoken ones only when the switch is on
         // (a misheard word in the room should not travel to the Internet)
         let typed = !VOICE_INPUT.load(std::sync::atomic::Ordering::SeqCst);
+        // AI switched off in the privacy section: the phrase needs the AI, so the user is told and nothing is sent anywhere
+        // (not to the provider and not to a web search either)
+        if !jarvis_core::uistate::settings().ai_enabled && (typed || question) {
+            let msg = jarvis_core::ai::AiError::Disabled.user_text();
+            say(&msg);
+            open_request(text, "local");
+            jarvis_core::dialog::reply(&msg, "local");
+            jarvis_core::dialog::end(true);
+            if jarvis_core::tts::is_enabled() {
+                jarvis_core::tts::speak("Запросы к ИИ выключены в настройках приватности.");
+            }
+            jarvis_core::uistate::log_action(text, "ИИ выключен", false);
+            ipc::send(IpcEvent::Idle);
+            return false;
+        }
         if ai_ready && (typed || jarvis_core::uistate::settings().ai_fallback || question) {
             ask_ai(text);
             return false;

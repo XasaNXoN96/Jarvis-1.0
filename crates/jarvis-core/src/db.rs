@@ -34,9 +34,16 @@ pub fn init_settings() -> structs::Settings {
                 return settings;
             }
         }
+        // the file is there but cannot be read: it is kept (renamed), never overwritten by the defaults silently
+        let (settings, problem): (structs::Settings, Option<String>) =
+            crate::uistate::parse_or_keep(&db_file_path, "основной файл настроек (app.db)");
+        if let Some(p) = problem {
+            crate::uistate::add_load_problem(&p);
+        }
+        return settings;
     }
 
-    warn!("No settings file found or there was an error parsing it. Creating default struct.");
+    warn!("No settings file found. Creating default struct.");
     structs::Settings::default()
 }
 

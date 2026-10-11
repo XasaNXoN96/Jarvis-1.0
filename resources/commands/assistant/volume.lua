@@ -16,7 +16,7 @@ local function apply(action, value)
   if value then extra[#extra + 1] = "-Value"; extra[#extra + 1] = tostring(value) end
   local r = ps_file(ps1, extra)
   if not r.success then
-    last_error = (r.stderr or ""):sub(1, 200)
+    last_error = jarvis.text.preview(r.stderr or "", 200)
     jarvis.log("error", "volume.ps1: " .. (r.stderr or ""))
     say(T("Громкость", "Volume"),
         T("Не удалось изменить громкость: ", "Could not change the volume: ") .. tostring(last_error),

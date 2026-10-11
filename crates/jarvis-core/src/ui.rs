@@ -185,7 +185,38 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         }
         "mic_muted" => {
             let muted = body.get("value").and_then(|v| v.as_bool()).unwrap_or(false);
-            crate::MIC_MUTED.store(muted, std::sync::atomic::Ordering::SeqCst);
+            crate::uistate::set_mic_muted(muted);
+            json!({ "ok": true })
+        }
+        // ---- diagnostics: the checks run in the background; the report is built from their last results ----
+        "diag_run" => json!({ "ok": true, "started": crate::diag::start() }),
+        // ---- notifications ----
+        "notify_test" => {
+            let id = crate::notify::push("command", "Проверка уведомлений", "Так выглядят уведомления Джарвиса.", false);
+            json!({ "ok": true, "shown": id.is_some() })
+        }
+        "notes_clear" => {
+            crate::notify::clear();
+            json!({ "ok": true })
+        }
+        // ---- stored data (asked and confirmed in the window) ----
+        "history_delete_all" => {
+            if body.get("confirm").and_then(|v| v.as_str()) != Some("delete") {
+                return json!({ "ok": false, "message": "Нужно подтверждение" });
+            }
+            let (deleted, kept) = crate::ai::store().delete_all();
+            crate::uistate::log_event("info", &format!("История удалена: диалогов {}", deleted));
+            json!({ "ok": true, "deleted": deleted, "kept": kept })
+        }
+        "settings_reset" => {
+            if body.get("confirm").and_then(|v| v.as_str()) != Some("reset") {
+                return json!({ "ok": false, "message": "Нужно подтверждение" });
+            }
+            crate::uistate::reset_settings();
+            json!({ "ok": true })
+        }
+        "ai_key_forget" => {
+            crate::uistate::forget_ai_key();
             json!({ "ok": true })
         }
         "cancel_timer" => {
@@ -366,6 +397,7 @@ const MAX_AVATAR_BYTES: usize = 6 * 1024 * 1024;
 struct Request {
     method: String,
     path: String,
+    query: String,
     host_ok: bool,
     custom_header: bool,
     body: Vec<u8>,
@@ -393,7 +425,9 @@ fn read_request(stream: &mut TcpStream) -> std::io::Result<Request> {
     let first = lines.next().unwrap_or("");
     let mut parts = first.split_whitespace();
     let method = parts.next().unwrap_or("").to_string();
-    let path = parts.next().unwrap_or("").split('?').next().unwrap_or("").to_string();
+    let target = parts.next().unwrap_or("");
+    let path = target.split('?').next().unwrap_or("").to_string();
+    let query = target.split_once('?').map(|(_, q)| q.to_string()).unwrap_or_default();
 
     let mut host_ok = false;
     let mut custom_header = false;
@@ -421,7 +455,7 @@ fn read_request(stream: &mut TcpStream) -> std::io::Result<Request> {
         buf.extend_from_slice(&chunk[..n]);
     }
     let end = buf.len().min(header_end + content_length);
-    Ok(Request { method, path, host_ok, custom_header, body: buf[header_end..end].to_vec() })
+    Ok(Request { method, path, query, host_ok, custom_header, body: buf[header_end..end].to_vec() })
 }
 
 fn respond_bytes(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]) {
@@ -480,7 +514,16 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
                 }
             }
         }
-        ("GET", "/state") => respond(&mut stream, "200 OK", "application/json", &crate::uistate::state_json().to_string()),
+        ("GET", "/state") => {
+            // the window says whether it is visible: results of commands pop up as notifications only when it is not
+            if req.query.split('&').any(|p| p == "v=1") {
+                crate::notify::window_seen();
+            }
+            respond(&mut stream, "200 OK", "application/json", &crate::uistate::state_json().to_string())
+        }
+        ("GET", "/diag") => respond(&mut stream, "200 OK", "application/json", &crate::diag::json().to_string()),
+        // the report from the last results: nothing is checked, sent or changed by copying it
+        ("GET", "/diag-report") => respond(&mut stream, "200 OK", "text/plain", &crate::diag::report()),
         ("GET", "/settings") => respond(&mut stream, "200 OK", "application/json", &settings_page_json().to_string()),
         ("GET", "/voices") => {
             let list: Vec<_> = crate::tts::list_voices().into_iter().map(|(id, name)| json!({ "id": id, "name": name })).collect();

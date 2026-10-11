@@ -78,25 +78,77 @@ pub struct UiSettings {
     pub ai_key: String,
     pub ai_url: String,
     pub ai_fallback: bool, // phrases that are not commands go to the AI (off by default: nothing leaves the PC unasked)
+    // privacy: the AI may be switched off as a whole (no request leaves the computer, local commands keep working)
+    pub ai_enabled: bool,
+    // privacy: the microphone switched off by the user stays off after a restart
+    pub mic_off: bool,
+    // notifications of Jarvis (timers, reminders, finished tasks, errors)
+    pub notify_show: bool,
+    pub notify_speak: bool,
+    pub notify_sound: bool,
+    // "do not disturb": no popups and no sound; critical errors are still kept in the window, silently
+    pub dnd: bool,
+    // notifications of other Windows programs: off by default, only with the permission of Windows
+    pub ext_enabled: bool,
+    pub ext_show: bool,
+    pub ext_speak: bool,
+    pub ext_strict: bool,       // only the programs of the allowed list
+    pub ext_allowed: Vec<String>,
+    pub ext_blocked: Vec<String>,
+    pub ext_seen: Vec<String>,  // names of programs that sent a notification (never their text): to pick from
+    // interface choices of the window (sphere mode, photo settings): the page keeps a copy in its browser storage
+    pub ui: std::collections::BTreeMap<String, String>,
 }
 
 impl Default for UiSettings {
     fn default() -> Self {
-        Self { voice_rate: 1.0, voice_name: String::new(), city: String::new(), reaction_voice: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_key: String::new(), ai_url: String::new(), ai_fallback: false }
+        Self {
+            voice_rate: 1.0, voice_name: String::new(), city: String::new(), reaction_voice: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_key: String::new(), ai_url: String::new(), ai_fallback: false,
+            ai_enabled: true, mic_off: false,
+            notify_show: true, notify_speak: true, notify_sound: true, dnd: false,
+            ext_enabled: false, ext_show: true, ext_speak: false, ext_strict: true, ext_allowed: Vec::new(), ext_blocked: Vec::new(), ext_seen: Vec::new(),
+            ui: Default::default(),
+        }
     }
 }
 
 static SETTINGS: Lazy<Mutex<UiSettings>> = Lazy::new(|| Mutex::new(load_settings()));
+// a settings file that could not be read: what happened (shown once as an important notification)
+static LOAD_PROBLEM: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(String::new()));
 
 fn file(name: &str) -> Option<PathBuf> {
     APP_CONFIG_DIR.get().map(|d| d.join(name))
 }
 
+// An unreadable file is never overwritten silently: it is kept next to the new one (".broken-<time>") and the user is told.
+pub fn parse_or_keep<T: serde::de::DeserializeOwned + Default>(path: &std::path::Path, what: &str) -> (T, Option<String>) {
+    let text = match std::fs::read(path) {
+        Ok(t) => t,
+        Err(_) => return (T::default(), None), // no file yet: the defaults, nothing to report
+    };
+    match serde_json::from_slice::<T>(&text) {
+        Ok(v) => (v, None),
+        Err(e) => {
+            let backup = path.with_extension(format!("broken-{}.json", now()));
+            let kept = std::fs::rename(path, &backup).is_ok();
+            warn!("Settings: cannot read {} ({}), defaults are used", path.display(), e);
+            (T::default(), Some(format!(
+                "Не удалось прочитать {} — используются настройки по умолчанию.{}",
+                what,
+                if kept { format!(" Старый файл сохранён: {}", backup.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()) } else { String::new() }
+            )))
+        }
+    }
+}
+
 fn load_settings() -> UiSettings {
-    let mut s: UiSettings = file("ui_settings.json")
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|t| serde_json::from_str(&t).ok())
-        .unwrap_or_default();
+    let (mut s, problem): (UiSettings, Option<String>) = match file("ui_settings.json") {
+        Some(p) => parse_or_keep(&p, "файл настроек окна (ui_settings.json)"),
+        None => (UiSettings::default(), None),
+    };
+    if let Some(p) = problem {
+        add_load_problem(&p);
+    }
     // the key is stored encrypted (DPAPI); an old plain key is encrypted at the next save
     let plain_on_disk = !s.ai_key.is_empty() && !s.ai_key.starts_with("dpapi:");
     s.ai_key = crate::secret::open(&s.ai_key);
@@ -106,19 +158,56 @@ fn load_settings() -> UiSettings {
     s
 }
 
-// the settings file: the key is encrypted
+pub fn add_load_problem(text: &str) {
+    let mut p = LOAD_PROBLEM.lock();
+    if !p.is_empty() {
+        p.push(' ');
+    }
+    p.push_str(text);
+}
+
+pub fn take_load_problem() -> String {
+    std::mem::take(&mut *LOAD_PROBLEM.lock())
+}
+
+// the settings file: the key is encrypted. Written to a temporary file first, so a crash never leaves half a file.
 fn write_settings(s: &UiSettings) {
     if let Some(p) = file("ui_settings.json") {
         let mut v = serde_json::to_value(s).unwrap_or(Value::Null);
         v["ai_key"] = Value::String(crate::secret::seal(&s.ai_key));
         if let Ok(json) = serde_json::to_string_pretty(&v) {
-            let _ = std::fs::write(p, json);
+            let tmp = p.with_extension("json.tmp");
+            if std::fs::write(&tmp, json).is_ok() {
+                let _ = std::fs::rename(&tmp, &p);
+            }
         }
+    }
+}
+
+// called once at start: restores the saved privacy choices (microphone) and the notification watcher
+pub fn init() {
+    let s = settings();
+    if s.mic_off {
+        crate::MIC_MUTED.store(true, std::sync::atomic::Ordering::SeqCst);
+        info!("Privacy: the microphone is switched off (saved setting)");
+    }
+    let problem = take_load_problem();
+    if !problem.is_empty() {
+        crate::notify::push("important", "Настройки восстановлены", &problem, false);
     }
 }
 
 pub fn settings() -> UiSettings {
     SETTINGS.lock().clone()
+}
+
+// tests that change the shared settings run one at a time and put them back
+#[cfg(test)]
+pub static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+#[cfg(test)]
+pub fn set_for_tests(s: UiSettings) {
+    *SETTINGS.lock() = s;
 }
 
 pub fn voice_rate() -> f32 {
@@ -127,6 +216,70 @@ pub fn voice_rate() -> f32 {
 
 pub fn voice_name() -> String {
     SETTINGS.lock().voice_name.clone()
+}
+
+// the microphone switch (window, tray, voice command, privacy section): one place, and it is remembered
+pub fn set_mic_muted(muted: bool) {
+    crate::MIC_MUTED.store(muted, std::sync::atomic::Ordering::SeqCst);
+    let mut s = SETTINGS.lock();
+    if s.mic_off != muted {
+        s.mic_off = muted;
+        write_settings(&s);
+    }
+}
+
+// the name of a program that sent a notification (only the name) for the allowed list in the settings
+pub fn remember_app(name: &str) {
+    let name: String = name.trim().chars().take(80).collect();
+    if name.is_empty() {
+        return;
+    }
+    let mut s = SETTINGS.lock();
+    if !s.ext_seen.iter().any(|n| n.eq_ignore_ascii_case(&name)) {
+        s.ext_seen.push(name);
+        if s.ext_seen.len() > 40 {
+            s.ext_seen.remove(0);
+        }
+        write_settings(&s);
+    }
+}
+
+// "reset the settings": everything back to the defaults. The conversations, the timers and the AI key are kept
+// (the key has its own "forget" button); the speech and the microphone are switched back on.
+pub fn reset_settings() {
+    let mut s = SETTINGS.lock();
+    let key = std::mem::take(&mut s.ai_key);
+    *s = UiSettings { ai_key: key, ..UiSettings::default() };
+    write_settings(&s);
+    drop(s);
+    crate::MIC_MUTED.store(false, std::sync::atomic::Ordering::SeqCst);
+    crate::tts::set_enabled(true);
+    crate::ai::status_reset();
+    crate::notify::ext_apply();
+    log_event("info", "Настройки сброшены к значениям по умолчанию");
+}
+
+pub fn forget_ai_key() {
+    let mut s = SETTINGS.lock();
+    s.ai_key.clear();
+    write_settings(&s);
+    drop(s);
+    crate::ai::status_reset();
+    log_event("info", "Ключ ИИ удалён с этого компьютера");
+}
+
+fn str_list(v: &Value) -> Option<Vec<String>> {
+    v.as_array().map(|a| {
+        let mut out: Vec<String> = Vec::new();
+        for x in a.iter().filter_map(|x| x.as_str()) {
+            let n: String = x.trim().chars().take(80).collect();
+            if !n.is_empty() && !out.iter().any(|o| o.eq_ignore_ascii_case(&n)) {
+                out.push(n);
+            }
+        }
+        out.truncate(60);
+        out
+    })
 }
 
 // merge the fields present in `patch` into the settings and save
@@ -154,7 +307,41 @@ pub fn update_settings(patch: &Value) {
         crate::ai::status_reset();
     }
     if let Some(v) = patch.get("ai_fallback").and_then(|v| v.as_bool()) { s.ai_fallback = v; }
+    if let Some(v) = patch.get("ai_enabled").and_then(|v| v.as_bool()) {
+        if v != s.ai_enabled {
+            s.ai_enabled = v;
+            crate::ai::status_reset();
+            if !v {
+                // what is being generated right now stops too: nothing more goes to the provider
+                if let Some(id) = crate::ai::store().active() { crate::ai::stop(&id); }
+            }
+        }
+    }
+    let flag = |k: &str| patch.get(k).and_then(|v| v.as_bool());
+    if let Some(v) = flag("notify_show") { s.notify_show = v; }
+    if let Some(v) = flag("notify_speak") { s.notify_speak = v; }
+    if let Some(v) = flag("notify_sound") { s.notify_sound = v; }
+    if let Some(v) = flag("dnd") { s.dnd = v; }
+    if let Some(v) = flag("ext_show") { s.ext_show = v; }
+    if let Some(v) = flag("ext_speak") { s.ext_speak = v; }
+    if let Some(v) = flag("ext_strict") { s.ext_strict = v; }
+    if let Some(v) = patch.get("ext_allowed").and_then(str_list) { s.ext_allowed = v; }
+    if let Some(v) = patch.get("ext_blocked").and_then(str_list) { s.ext_blocked = v; }
+    let ext_changed = match flag("ext_enabled") { Some(v) if v != s.ext_enabled => { s.ext_enabled = v; true } _ => false };
+    if let Some(obj) = patch.get("ui").and_then(|v| v.as_object()) {
+        for (k, v) in obj.iter().take(30) {
+            let k: String = k.chars().take(40).collect();
+            match v.as_str() {
+                Some(val) => { s.ui.insert(k, val.chars().take(200).collect()); }
+                None => { s.ui.remove(&k); }
+            }
+        }
+    }
     write_settings(&s);
+    drop(s);
+    if ext_changed {
+        crate::notify::ext_apply();
+    }
 }
 
 // the settings page never gets the key back, only whether one is saved
@@ -165,6 +352,15 @@ pub fn settings_json() -> Value {
         "ai_provider": s.ai_provider, "ai_model": s.ai_model, "ai_url": s.ai_url,
         "ai_key_saved": !s.ai_key.is_empty(),
         "ai_fallback": s.ai_fallback,
+        "ai_enabled": s.ai_enabled,
+        "mic_off": crate::MIC_MUTED.load(std::sync::atomic::Ordering::SeqCst),
+        "notify_show": s.notify_show, "notify_speak": s.notify_speak, "notify_sound": s.notify_sound, "dnd": s.dnd,
+        "ext_enabled": s.ext_enabled, "ext_show": s.ext_show, "ext_speak": s.ext_speak, "ext_strict": s.ext_strict,
+        "ext_allowed": s.ext_allowed, "ext_blocked": s.ext_blocked, "ext_seen": s.ext_seen,
+        "ext_status": crate::notify::ext_status_json(),
+        "ui": s.ui,
+        "internet": crate::diag::internet_uses(&s),
+        "history": crate::ai::store().stats(),
         "tts_enabled": crate::tts::is_enabled(),
         "piper": crate::tts::piper_available(),
     })
@@ -366,6 +562,9 @@ pub fn state_json() -> Value {
         "health": crate::health::json(),
         "weather": crate::weather::json(),
         "events": recent_events(30),
+        "notes": crate::notify::recent(20),
+        "dnd": settings().dnd,
+        "ai_enabled": settings().ai_enabled,
         "last_output": crate::dialog::last_output(),
         "commands_count": crate::COMMANDS_COUNT.load(std::sync::atomic::Ordering::Relaxed),
     })
@@ -401,8 +600,8 @@ mod voice_tests {
     use super::*;
     use std::sync::atomic::Ordering::SeqCst;
 
-    // the flags are global: one test at a time
-    static LOCK: Mutex<()> = Mutex::new(());
+    // the flags are global (the settings tests switch the microphone too): one test at a time
+    use super::TEST_LOCK as LOCK;
 
     fn reset() {
         crate::VOICE_ACTIVE.store(false, SeqCst);
@@ -440,5 +639,84 @@ mod voice_tests {
         crate::VOICE_LISTENING.store(true, SeqCst);
         assert_eq!(st(), "LISTENING");
         reset();
+    }
+}
+
+#[cfg(test)]
+mod settings_tests {
+    use super::*;
+
+    #[test]
+    fn settings_of_an_installed_older_version_load_with_safe_defaults() {
+        // a ui_settings.json written before notifications and privacy existed
+        let old = r#"{"voice_rate":1.2,"reaction_voice":"","city":"Ташкент","voice_name":"piper","ai_provider":"gemini","ai_model":"gemini-flash-latest","ai_key":"dpapi:00","ai_url":"","ai_fallback":true}"#;
+        let s: UiSettings = serde_json::from_str(old).unwrap();
+        assert_eq!((s.city.as_str(), s.ai_provider.as_str(), s.voice_rate, s.ai_fallback), ("Ташкент", "gemini", 1.2, true), "nothing of the old settings is lost");
+        assert!(s.ai_enabled && s.notify_show && s.notify_speak && !s.dnd && !s.mic_off);
+        assert!(!s.ext_enabled, "notifications of other programs stay off after an update");
+        assert!(s.ext_strict && s.ext_allowed.is_empty());
+        // and a new file still has every old field (an older version can read it back)
+        let v = serde_json::to_value(&s).unwrap();
+        for k in ["voice_rate", "reaction_voice", "city", "voice_name", "ai_provider", "ai_model", "ai_key", "ai_url", "ai_fallback"] {
+            assert!(v.get(k).is_some(), "{} missing", k);
+        }
+    }
+
+    #[test]
+    fn an_unreadable_settings_file_is_kept_and_reported_never_overwritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("ui_settings.json");
+        std::fs::write(&p, "{ broken json").unwrap();
+        let (s, problem): (UiSettings, Option<String>) = parse_or_keep(&p, "файл");
+        assert_eq!(s.voice_rate, 1.0, "defaults are used");
+        let problem = problem.expect("the user is told");
+        assert!(problem.contains("broken-"), "{}", problem);
+        let kept: Vec<_> = std::fs::read_dir(dir.path()).unwrap().flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect();
+        assert!(kept.iter().any(|n| n.contains("broken-")), "the old file is kept: {:?}", kept);
+        assert_eq!(std::fs::read_to_string(dir.path().join(&kept[0])).unwrap(), "{ broken json");
+        // no file at all is not a problem
+        let (_, none): (UiSettings, Option<String>) = parse_or_keep(&dir.path().join("missing.json"), "файл");
+        assert!(none.is_none());
+    }
+
+    #[test]
+    fn the_key_never_goes_back_to_the_window_and_reset_keeps_it() {
+        let _g = TEST_LOCK.lock();
+        set_for_tests(UiSettings { ai_key: "secret-key-777".into(), dnd: true, notify_speak: false, ..UiSettings::default() });
+        let page = serde_json::to_string(&settings_json()).unwrap();
+        assert!(!page.contains("secret-key-777"));
+        assert!(page.contains("\"ai_key_saved\":true"));
+        reset_settings();
+        let s = settings();
+        assert_eq!(s.ai_key, "secret-key-777", "the key has its own button, a reset keeps it");
+        assert!(!s.dnd && s.notify_speak, "the rest is back to the defaults");
+        forget_ai_key();
+        assert!(settings().ai_key.is_empty());
+        set_for_tests(UiSettings::default());
+    }
+
+    #[test]
+    fn switches_change_the_real_state() {
+        let _g = TEST_LOCK.lock();
+        set_for_tests(UiSettings::default());
+        set_mic_muted(true);
+        assert!(crate::MIC_MUTED.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(settings().mic_off, "remembered for the next start");
+        set_mic_muted(false);
+        assert!(!settings().mic_off);
+        update_settings(&json!({ "dnd": true, "notify_sound": false, "ext_allowed": ["Telegram", " telegram ", "", "Mail"], "ui": { "jarvis-mode": "avatar" } }));
+        let s = settings();
+        assert!(s.dnd && !s.notify_sound);
+        assert_eq!(s.ext_allowed, vec!["Telegram".to_string(), "Mail".to_string()], "trimmed, no duplicates, no empty names");
+        assert_eq!(s.ui.get("jarvis-mode").map(|s| s.as_str()), Some("avatar"));
+        update_settings(&json!({ "ai_enabled": false }));
+        assert_eq!(crate::ai::conf_from_settings().unwrap_err(), crate::ai::AiError::Disabled);
+        set_for_tests(UiSettings::default());
+    }
+
+    #[test]
+    fn listening_and_speaking_are_never_stored() {
+        let v = serde_json::to_string(&UiSettings::default()).unwrap();
+        assert!(!v.contains("LISTENING") && !v.contains("SPEAKING") && !v.contains("listening"));
     }
 }

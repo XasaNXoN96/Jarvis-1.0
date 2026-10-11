@@ -6,8 +6,8 @@
 //   jarvis.timer.count()                        -> number of active timers
 //   jarvis.timer.list()                         -> { {id=, remaining=, message=}, ... }
 //
-// When a timer fires: the message is spoken, a notification is shown, a sound is played
-// and the message is printed to the console.
+// When a timer fires: the notification of Jarvis is shown (bottom right of the screen), the message is spoken and/or
+// a sound is played, as the notification settings say (notify.rs), and the message is printed to the console.
 // Timers are saved to <config dir>/timers.json and restored on the next start
 // (init()), so closing Jarvis does not lose them.
 
@@ -18,8 +18,7 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-use crate::lua::api::system::{show_notification, show_popup};
-use crate::{tts, voices, APP_CONFIG_DIR};
+use crate::APP_CONFIG_DIR;
 
 #[derive(Clone, Serialize, Deserialize)]
 struct TimerEntry {
@@ -59,16 +58,6 @@ fn next_id(timers: &[TimerEntry]) -> u64 {
     timers.iter().map(|t| t.id).max().unwrap_or(0) + 1
 }
 
-#[cfg(target_os = "windows")]
-fn beep() {
-    unsafe {
-        winapi::um::winuser::MessageBeep(winapi::um::winuser::MB_ICONASTERISK);
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn beep() {}
-
 fn fire(entry: &TimerEntry, late: bool) {
     let message = if late {
         format!("{} ({})", entry.message, if crate::i18n::get_language() == "en" { "missed while Jarvis was off" } else { "пропущено, пока Jarvis был выключен" })
@@ -82,15 +71,8 @@ fn fire(entry: &TimerEntry, late: bool) {
     }
     #[cfg(feature = "jarvis_app")]
     crate::ipc::send(crate::ipc::IpcEvent::Output { text: format!("{}: {}", entry.title, message) });
-    show_notification(&entry.title, &message);
-    show_popup(&entry.title, &message);
-    tts::speak(&message);
-
-    // The message is spoken once (it is the alert). The old "Да, сэр" clips played over the voice and are gone.
-    // Only when the voice is off: one system beep, so that a silent timer is still noticed.
-    if !tts::is_enabled() {
-        beep();
-    }
+    // one notification: the window of Jarvis, the voice (said once) or a short sound, "do not disturb" respected
+    crate::notify::push(crate::notify::timer_kind(&entry.title), &entry.title, &message, false);
 }
 
 // run the timer in the background; the entry disappears if it is cancelled meanwhile

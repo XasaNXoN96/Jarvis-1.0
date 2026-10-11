@@ -125,9 +125,9 @@ fn handle_menu_event(event: &MenuEvent, settings: &SettingsManager, tray_state: 
     if let Some(key) = id.strip_prefix("toggle:") {
         match key {
             "mic_muted" => {
-                // not a saved setting: the microphone is switched off for this run
+                // remembered like the switch of the window (privacy: stays off after a restart)
                 let muted = tray_state.mic_toggle.is_checked();
-                jarvis_core::MIC_MUTED.store(muted, std::sync::atomic::Ordering::SeqCst);
+                jarvis_core::uistate::set_mic_muted(muted);
                 info!("Tray: microphone muted = {}", muted);
             }
             "gain_normalizer" => {

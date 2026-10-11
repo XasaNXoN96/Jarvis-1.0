@@ -24,6 +24,17 @@ pub const PORT: u16 = 9713;
 
 static TX: OnceCell<Mutex<Sender<String>>> = OnceCell::new();
 static RUNNING: AtomicBool = AtomicBool::new(false);
+// when a device with the right link last opened the remote page or sent a command (unix seconds, 0 = never)
+static LAST_CLIENT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+// the secret of the link, only so that the diagnostics report can remove it (never created here)
+pub fn token_for_diag() -> String {
+    Lazy::get(&TOKEN).cloned().unwrap_or_default()
+}
+
+pub fn last_client() -> Option<u64> {
+    match LAST_CLIENT.load(Ordering::SeqCst) { 0 => None, t => Some(t) }
+}
 static TOKEN: Lazy<String> = Lazy::new(load_or_create_token);
 
 // the app gives us the channel that feeds typed commands into the main loop
@@ -312,6 +323,7 @@ fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
         return Ok(());
     }
 
+    LAST_CLIENT.store(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(1), Ordering::SeqCst);
     let route = req.path.split('?').next().unwrap_or("/");
     match (req.method.as_str(), route) {
         ("GET", "/") => respond(stream, "200 OK", "text/html", PAGE),

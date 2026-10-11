@@ -55,6 +55,9 @@ fn main() -> Result<(), String> {
 
     // speech output and timers saved by the previous run
     jarvis_core::tts::init();
+    // saved privacy choices (microphone off), a message about an unreadable settings file, the notification watcher
+    jarvis_core::uistate::init();
+    jarvis_core::notify::ext_apply();
     jarvis_core::lua::init_timers();
 
     // init voices
@@ -173,11 +176,12 @@ fn main() -> Result<(), String> {
             }
             IpcAction::SetMuted { muted } => {
                 info!("Received mute request: {}", muted);
-                jarvis_core::MIC_MUTED.store(muted, Ordering::SeqCst);
+                jarvis_core::uistate::set_mic_muted(muted);
             }
             IpcAction::Listen => {
                 info!("Received listen request (orb click)");
-                jarvis_core::MIC_MUTED.store(false, Ordering::SeqCst);
+                // a click on the sphere is a clear wish to talk: the microphone is switched on (and that is remembered)
+                jarvis_core::uistate::set_mic_muted(false);
                 jarvis_core::LISTEN_NOW.store(true, Ordering::SeqCst);
             }
             IpcAction::TextCommand { text } => {

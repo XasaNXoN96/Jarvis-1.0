@@ -79,7 +79,7 @@
   .rmlink { word-break: break-all; user-select: all; font-size: 12px; color: var(--accent); text-align: center; margin-bottom: 8px; }
   #rm-on { text-align: center; }
   .rmerr { color: #ff9aa6 !important; } .rmhelp { margin-top: 8px; display: block; color: var(--dim); font-size: 11.5px; line-height: 1.4; }
-  #card-timers .scroll { max-height: 150px; }
+  #timers-card .scroll { max-height: 220px; overflow-y: auto; }
   .hero { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 6px 8px; }
   .hero > * { margin-top: auto; margin-bottom: auto; }
   .orbwrap { width: min(100%, 380px, 38vh); text-align: center; flex-shrink: 0; transition: width .35s; }
@@ -116,7 +116,6 @@
   .hright::-webkit-scrollbar { width: 6px; } .hright::-webkit-scrollbar-thumb { background: #5ad1ff33; border-radius: 6px; }
   .hright .card { flex-shrink: 0; background: #0b1330d9; border-color: #5ad1ff2e; }
   .card.pro h3 { font-size: 13px; letter-spacing: .22em; text-transform: uppercase; color: var(--accent); margin: 0 0 12px; font-weight: 600; }
-  .evcard .scroll { max-height: 170px; } .hubcard .scroll { max-height: 230px; }
   .card.pro .scroll { overflow-y: auto; }
   .hrow { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 13px; color: var(--dim); letter-spacing: .05em; margin-top: 2px; }
   .hrow span { white-space: nowrap; } .hrow b { color: var(--text); font-weight: 600; text-align: right; min-width: 0; overflow-wrap: anywhere; }
@@ -138,7 +137,7 @@
     #page-home { overflow-y: auto; }
     .hgrid { flex: none; grid-template-columns: minmax(0, 1fr); }
     .hcenter { height: clamp(430px, 78vh, 700px); }
-    .hright { overflow: visible; display: grid; grid-template-columns: 1fr 1fr; align-items: start; }
+    .hright { overflow: visible; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); align-items: start; }
   }
   @media (max-width: 760px) {
     nav { width: 64px; padding: 14px 6px; } nav button span:not(.ei), .brand b, .brand small, nav .small { display: none; } nav button { justify-content: center; padding: 12px 6px; }
@@ -146,6 +145,18 @@
     #page-home.has-msgs .orbwrap { width: 84px; } #page-home.has-msgs .hero { gap: 10px; padding-right: 0; }
     .tb-title span { display: none; } .topbar { padding: 10px 14px; } #page-home { padding: 10px; } .composer .sb { padding: 0 12px; }
   }
+
+  /* diagnostics */
+  .diag-acts { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+  .diag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  .dcard { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+  .dcard .dh { display: flex; justify-content: space-between; align-items: center; gap: 8px; } .dcard .dh b { font-size: 14.5px; }
+  .dcard .dd { color: var(--text); font-size: 13px; overflow-wrap: anywhere; } .dcard .df { color: var(--warn); font-size: 12.5px; overflow-wrap: anywhere; }
+  .dcard.error { border-color: #ff6b7a66; } .dcard.warn { border-color: #ffd16655; } .dcard.ok { border-color: #5be3a144; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; } .chips .c { border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 13px; background: #ffffff08; color: var(--text); cursor: pointer; font: inherit; }
+  .chips .c:hover { border-color: var(--accent); } .chips .c.on { border-color: #5be3a177; color: var(--ok); } .chips .c.block { border-color: #ff6b7a77; color: #ff9aa6; }
+  .ntrow { display: flex; gap: 8px; font-size: 13px; padding: 4px 0; border-bottom: 1px solid #ffffff08; } .ntrow time { color: var(--dim); flex-shrink: 0; font-variant-numeric: tabular-nums; } .ntrow b { color: var(--accent); font-weight: 600; } .ntrow.err b { color: #ff9aa6; } .ntrow span { min-width: 0; overflow-wrap: anywhere; }
+  .netrow { display: flex; gap: 10px; align-items: baseline; font-size: 13px; padding: 5px 0; border-bottom: 1px solid #ffffff08; } .netrow .n { flex: 1; min-width: 0; } .netrow small { display: block; color: var(--dim); }
 
   /* dialog */
   #log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; min-height: 0; }
@@ -279,6 +290,7 @@
     <button data-page="home" class="active"><span class="ei">◉</span><span>Главная</span></button>
     <button data-page="chat"><span class="ei">💬</span><span>Диалог</span></button>
     <button data-page="commands"><span class="ei">☰</span><span>Команды</span></button>
+    <button data-page="diag"><span class="ei">🩺</span><span>Диагностика</span></button>
     <button data-page="settings"><span class="ei">⚙</span><span>Настройки</span></button>
     <div class="grow"></div>
     <div class="small">Нажмите на шар или скажите «Джарвис». Или напишите сообщение.</div>
@@ -350,9 +362,6 @@
             <small class="rmerr" id="rm-err"></small>
             <small class="rmhelp">Телефон и компьютер должны быть в одной Wi-Fi сети. Наведите камеру телефона на QR-код или откройте ссылку. Пульт работает в локальной сети, не через интернет. Ссылка секретная.</small>
           </div>
-          <div class="card pro" id="card-timers"><h3>Таймеры и задачи</h3><div class="scroll" id="timers"><div class="empty">Нет активных. Скажите «таймер на 5 минут» или «напомни через 10 минут позвонить маме».</div></div></div>
-          <div class="card pro evcard"><h3>Command Output</h3><div class="scroll" id="events"><div class="empty">Событий пока нет.</div></div></div>
-          <div class="card pro hubcard"><h3>Intelligence Hub</h3><div class="scroll" id="hub"></div></div>
         </aside>
       </div>
     </section>
@@ -390,12 +399,71 @@
         <button data-cmd="заблокируй компьютер">Блокировка<small>заблокировать ПК</small></button>
         <button data-cmd="что ты умеешь">Все команды<small>список с примерами</small></button>
       </div>
+      <div class="card" id="timers-card" style="margin-bottom:14px"><h3><span class="ei">⏱</span>Активные таймеры и напоминания</h3><div class="scroll" id="timers"><div class="empty">Нет активных. Скажите «таймер на 5 минут» или «напомни через 10 минут позвонить маме».</div></div></div>
       <div id="commands">Загрузка…</div>
+    </section>
+
+    <section class="page" id="page-diag">
+      <h1>Диагностика</h1>
+      <p class="lead">Реальное состояние частей Джарвиса. Проверка ничего не меняет на компьютере, не запускает опасных команд и не отправляет запросов к ИИ. «Не проверено» значит, что подтвердить работу пока нечем — это не догадка.</p>
+      <div class="diag-acts"><button class="btn primary" id="diag-run" type="button">Проверить всё</button><button class="btn" id="diag-copy" type="button">Копировать диагностический отчёт</button><span class="msgline" id="diag-msg"></span></div>
+      <div class="diag-grid" id="diag-list"><div class="empty">Нажмите «Проверить всё».</div></div>
+      <div class="card" style="margin-top:14px"><h3><span class="ei">📜</span>Последние события программы</h3><div id="diag-events"><div class="empty">Событий пока нет.</div></div>
+        <small class="dim">Без личных данных: фразы, диалоги и тексты уведомлений сюда не попадают. Отчёт не содержит ключей, токенов и паролей.</small></div>
     </section>
 
     <section class="page" id="page-settings">
       <h1>Центр настроек</h1>
-      <p class="lead">Микрофон, голос, ИИ-провайдер и внешний вид. Изменения сохраняются сами.</p>
+      <p class="lead">Микрофон, голос, ИИ-провайдер, уведомления, приватность и внешний вид. Изменения сохраняются сами и остаются после перезапуска.</p>
+
+      <div class="card" style="margin-bottom:14px" id="privacy-card"><h3><span class="ei">🛡</span>Приватность и разрешения</h3>
+        <div class="setrow"><div class="l">Микрофон<small>выключенный микрофон не начинает новых записей, текущая запись останавливается; остаётся выключенным после перезапуска</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="pv-mic"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Голосовое озвучивание<small>при выключении текущая речь сразу останавливается; голос Windows вместо Piper не подставляется</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="pv-tts"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Запросы к ИИ<small>при выключении ничего не отправляется ИИ-провайдеру; Джарвис скажет, если фраза требует ИИ. Команды компьютера работают как обычно</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="pv-ai"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Чтение уведомлений других программ<small>по умолчанию выключено; подробности и список программ — ниже, в «Уведомления других программ»</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="pv-ext"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Не беспокоить<small>без всплывающих окон, звука и озвучки уведомлений; критические ошибки остаются в списке, без звука</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="pv-dnd"><span></span></label></div></div>
+        <div class="setrow"><div class="l">История диалогов<small id="pv-hist">—</small></div>
+          <div class="r"><button class="btn" id="pv-hist-open" type="button">Просмотреть</button><button class="btn" id="pv-hist-del" type="button">Удалить всю историю</button></div></div>
+        <div class="setrow"><div class="l">Ключ ИИ<small id="pv-key">—</small></div>
+          <div class="r"><button class="btn" id="pv-key-del" type="button">Удалить ключ с компьютера</button></div></div>
+        <div class="setrow"><div class="l">Сброс настроек<small>все настройки — к значениям по умолчанию. История, таймеры и ключ ИИ сохраняются</small></div>
+          <div class="r"><button class="btn" id="pv-reset" type="button">Сбросить настройки</button></div></div>
+        <div class="msgline" id="pv-msg"></div>
+        <h4 style="margin:14px 0 4px">Что использует интернет</h4>
+        <div id="pv-net"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:14px" id="notify-card"><h3><span class="ei">🔔</span>Уведомления Джарвиса</h3>
+        <div class="setrow"><div class="l">Показывать уведомления<small>окно в правом нижнем углу экрана: таймеры, будильники, напоминания, завершённые задачи, ошибки. Не забирает фокус ввода</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="nt-show"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Озвучивать уведомления<small>голосом Джарвиса (Piper); ответ, уже сказанный в диалоге, повторно не озвучивается</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="nt-speak"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Звук уведомлений<small>короткий сигнал, когда уведомление не озвучивается</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="nt-sound"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Не беспокоить<small>то же, что в разделе «Приватность»</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="nt-dnd"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Последние уведомления</div>
+          <div class="r"><button class="btn" id="nt-test" type="button">Показать пример</button><button class="btn" id="nt-clear" type="button">Очистить список</button></div></div>
+        <div id="nt-list"><div class="empty">Уведомлений пока нет.</div></div>
+      </div>
+
+      <div class="card" style="margin-bottom:14px" id="ext-card"><h3><span class="ei">📨</span>Уведомления других программ</h3>
+        <small class="dim">Джарвис может показывать и читать уведомления мессенджеров, почты и других программ — только с вашего разрешения и разрешения Windows (Windows 10 1809+ и Windows 11). При включении Windows может спросить разрешение; без него ничего не читается. Не все программы отправляют уведомления так, чтобы их можно было прочитать, а обычным (не из Microsoft Store) программам Windows иногда не даёт доступ совсем — тогда это будет видно в статусе. Тексты уведомлений остаются на этом компьютере: не сохраняются на диск, не попадают в историю и не отправляются в ИИ или в интернет.</small>
+        <div class="setrow"><div class="l">Читать уведомления других программ<small id="ext-status">выключено</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="ext-on"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Показывать в окне уведомлений</div><div class="r"><label class="sw"><input type="checkbox" id="ext-show"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Озвучивать<small>Джарвис прочитает вслух программу и текст уведомления</small></div><div class="r"><label class="sw"><input type="checkbox" id="ext-speak"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Только разрешённые программы<small>неизвестные программы не пропускаются</small></div><div class="r"><label class="sw"><input type="checkbox" id="ext-strict"><span></span></label></div></div>
+        <div style="margin-top:8px"><b>Разрешённые программы</b> <small class="dim">(нажмите, чтобы убрать)</small><div class="chips" id="ext-allowed"></div></div>
+        <div><b>Исключённые программы</b> <small class="dim">(никогда не показываются; нажмите, чтобы убрать)</small><div class="chips" id="ext-blocked"></div></div>
+        <div><b>Программы, приславшие уведомления</b> <small class="dim">(только названия) — нажмите «+», чтобы разрешить, «⊘», чтобы исключить</small><div class="chips" id="ext-seen"></div></div>
+        <div class="setrow"><div class="l">Добавить программу по названию</div><div class="r"><input type="text" id="ext-name" placeholder="например: Telegram" maxlength="80"><button class="btn" id="ext-add" type="button">Разрешить</button><button class="btn" id="ext-block" type="button">Исключить</button></div></div>
+      </div>
 
       <div class="card" style="margin-bottom:14px"><h3><span class="ei">🎤</span>Микрофон и звук</h3>
         <div class="setrow"><div class="l">Микрофон<small>применится после перезапуска Джарвиса</small></div>
@@ -514,8 +582,8 @@ function ico(name) { return '<svg viewBox="0 0 24 24" fill="none" stroke="curren
 document.querySelectorAll('[data-ico]').forEach(el => { el.innerHTML = ico(el.dataset.ico); });
 
 // ---------- navigation ----------
-const PAGES = ['home', 'chat', 'commands', 'settings'];
-const TITLES = { home: ['Главная', 'Neural Interface'], chat: ['Диалог', 'Conversation'], commands: ['Команды', 'Command Library'], settings: ['Настройки', 'Settings'] };
+const PAGES = ['home', 'chat', 'commands', 'diag', 'settings'];
+const TITLES = { home: ['Главная', 'Neural Interface'], chat: ['Диалог', 'Conversation'], commands: ['Команды', 'Command Library'], diag: ['Диагностика', 'Diagnostics'], settings: ['Настройки', 'Settings'] };
 let currentPage = 'home';
 const curInput = () => currentPage === 'home' ? $('#h-input') : $('#input');
 function show(name) {
@@ -526,7 +594,8 @@ function show(name) {
   $('#page-title').textContent = TITLES[name][0]; $('#page-sub').textContent = TITLES[name][1];
   document.querySelectorAll('nav button[data-page]').forEach(b => b.classList.toggle('active', b.dataset.page === name));
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + name));
-  if (name === 'commands') loadCommands();
+  if (name === 'commands') { loadCommands(); renderTimers(); }
+  if (name === 'diag') diagLoad();
   if (name === 'settings') { loadSettings(); refreshRemote(); }
   if (name === 'chat') { chatTab === 'ai' ? aiOpen() : ($('#log').scrollTop = $('#log').scrollHeight); }
   renderChatViews();
@@ -776,37 +845,6 @@ function aiCard(a) {
 }
 $('#ai-check').onclick = async () => { $('#ai-check').disabled = true; try { await action('ai_test'); } catch (e) {} pollNow(); };
 $('#ai-settings').onclick = () => { show('settings'); setTimeout(() => { const el = $('#ai-provider'); if (el) el.scrollIntoView({ block: 'center' }); }, 120); };
-let eventsSig = '';
-function eventsCard(list) {
-  const sig = (list || []).map(e => e.id).join(',');
-  if (sig === eventsSig) return; eventsSig = sig;
-  const box = $('#events'); box.textContent = '';
-  if (!list || !list.length) { box.innerHTML = '<div class="empty">Событий пока нет.</div>'; return; }
-  for (const e of list) {
-    const r = document.createElement('div'); r.className = 'evrow ' + e.kind;
-    const tm = document.createElement('time'); tm.textContent = fmtTime(e.time); const sp = document.createElement('span'); sp.textContent = e.text;
-    r.append(tm, sp); box.appendChild(r);
-  }
-}
-function hubCard(s) {
-  const a = s.ai || {}, v = s.voice_state || {};
-  const rows = [
-    ['AI Chat', a.configured ? (a.provider + ' · ' + a.model) : 'провайдер не настроен', a.state, AI_PILL[a.state] || ''],
-    ['Voice', (v.tts ? (s.piper ? 'голос Джарвиса (Piper)' : 'голос Windows') : 'озвучка выключена') + (v.detail ? ' · ' + v.detail : ''), v.state, v.state === 'READY' || v.state === 'SPEAKING' || v.state === 'LISTENING' ? 'ok' : (v.state === 'ERROR' ? 'bad' : '')],
-    ['Commands', (s.commands_count || 0) + ' ' + cmdWord(s.commands_count || 0) + ' в 12 разделах', 'доступно', 'info'],
-    ['Documents', 'Word · Excel · Блокнот, режим «Работа с объектом»', 'доступно', 'info'],
-    ['Files', 'поиск файлов и папок, запуск, копирование', 'доступно', 'info'],
-    ['Phone Remote', s.remote ? 'пульт включён' : 'пульт выключен', s.remote ? 'ON' : 'OFF', s.remote ? 'ok' : ''],
-    ['Timers', (s.timers || []).length ? 'активных: ' + s.timers.length : 'активных нет', (s.timers || []).length ? 'ON' : 'OFF', (s.timers || []).length ? 'ok' : ''],
-  ];
-  const box = $('#hub'); box.textContent = '';
-  for (const [name, sub, st, cls] of rows) {
-    const r = document.createElement('div'); r.className = 'hubrow';
-    r.innerHTML = '<div class="n"><b></b><small></small></div><span class="pill ' + cls + '"></span>';
-    r.querySelector('b').textContent = name; r.querySelector('small').textContent = sub; r.querySelector('.pill').textContent = st || '—';
-    box.appendChild(r);
-  }
-}
 function voiceChip(v) {
   if (!v) return;
   for (const c of document.querySelectorAll('.vchip')) { c.dataset.state = v.state; c.querySelector('b').textContent = v.state; c.title = v.detail || ''; }
@@ -839,8 +877,9 @@ function applySpeech(s) {
 function applyState(s) {
   applySession(s); applySpeech(s);
   if (micMuted !== !!s.mic_muted) { micMuted = !!s.mic_muted; renderMic(); }
-  applyVoice(s); voiceChip(s.voice_state); healthCard(s.health); aiCard(s.ai); eventsCard(s.events); hubCard(s);
-  timers = s.timers || []; timersAt = performance.now(); renderTimers();
+  applyVoice(s); voiceChip(s.voice_state); healthCard(s.health); aiCard(s.ai);
+  timers = s.timers || []; timersAt = performance.now(); if (currentPage === 'commands') renderTimers();
+  if (currentPage === 'settings') notesList(s.notes);
   weatherBox(s.weather); remoteCard(s);
 }
 
@@ -851,7 +890,7 @@ const fmtDur = s => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3
 const fmtAgo = s => s < 10 ? 'только что' : s < 60 ? s + ' с назад' : s < 3600 ? Math.floor(s / 60) + ' мин назад' : Math.floor(s / 3600) + ' ч назад';
 const refreshState = () => pollNow();
 function renderTimers() {
-  const box = $('#timers'); const el = (performance.now() - timersAt) / 1000;
+  const box = $('#timers'); if (!box) return; const el = (performance.now() - timersAt) / 1000;
   if (!timers.length) { box.innerHTML = '<div class="empty">Нет активных. Скажите «таймер на 5 минут» или «напомни через 10 минут позвонить маме».</div>'; return; }
   if (box.children.length === timers.length && box.dataset.ids === timers.map(t => t.id).join()) {
     timers.forEach((t, i) => { box.children[i].querySelector('.m').textContent = 'осталось ' + fmtDur(t.remaining - el); });
@@ -867,7 +906,7 @@ function renderTimers() {
   }
 }
 const cmdWord = n => { const m = n % 10, h = n % 100; return (h >= 11 && h <= 14) ? 'команд' : m === 1 ? 'команда' : (m >= 2 && m <= 4) ? 'команды' : 'команд'; };
-setInterval(() => { if (currentPage === 'home') renderTimers(); }, 1000);
+setInterval(() => { if (currentPage === 'commands') renderTimers(); }, 1000);
 const refreshMicState = () => pollNow();
 
 
@@ -985,7 +1024,7 @@ async function loadChat(id) {
 // the single poll of the window: the state of Jarvis and "did the conversation change?" (its revision number)
 async function pollNow(force) {
   try {
-    const s = await (await fetch('/state')).json();
+    const s = await (await fetch(document.hidden ? '/state' : '/state?v=1')).json();
     lastState = s; applyState(s);
     if (force || s.rev !== chatRev || (s.active_chat || '') !== aiActive) await loadChat(s.active_chat || '');
   } catch (e) {}
@@ -1045,6 +1084,7 @@ async function loadSettings() {
     $('#ai-fallback').checked = !!s.ai_fallback; $('#ai-provider').value = s.ai_provider || 'none'; $('#ai-model').value = s.ai_model || ''; $('#ai-url').value = s.ai_url || '';
     $('#ai-key').value = ''; $('#ai-key-hint').textContent = s.ai_key_saved ? 'ключ сохранён (оставьте поле пустым, чтобы не менять)' : 'хранится только на этом компьютере';
     updateAiRows();
+    applyPrivacy(s);
     $('#voice-hint').textContent = s.piper ? 'Джарвис (Piper) — нейросетевой голос, работает без интернета' : 'Piper не установлен: говорит голос Windows (в большом установщике есть Piper)';
     if (!$('#rv-select').options.length) {
       try { (await (await fetch('/reaction-voices')).json()).forEach(v => $('#rv-select').add(new Option(v.name, v.id))); } catch (e) {}
@@ -1107,6 +1147,122 @@ $('#ai-test').onclick = async () => {
   await saveAi();
   try { const r = await action('ai_test'); m.className = 'msgline ' + (r.ok ? 'ok' : 'bad'); m.textContent = (r.ok ? '✓ ' : '✗ ') + r.message; }
   catch (e) { m.className = 'msgline bad'; m.textContent = '✗ Не удалось выполнить проверку'; }
+};
+
+// ---------- privacy, notifications, notifications of other programs ----------
+function applyPrivacy(s) {
+  $('#pv-mic').checked = !s.mic_off; $('#pv-tts').checked = !!s.tts_enabled; $('#pv-ai').checked = s.ai_enabled !== false;
+  $('#pv-ext').checked = !!s.ext_enabled; $('#pv-dnd').checked = !!s.dnd; $('#nt-dnd').checked = !!s.dnd;
+  const h = s.history || {}; $('#pv-hist').textContent = 'Сохранено на этом компьютере: диалогов ' + (h.chats || 0) + ', сообщений ' + (h.messages || 0) + '. Хранится, пока вы её не удалите (обновление программы её не удаляет).';
+  $('#pv-key').textContent = s.ai_key_saved ? 'сохранён в зашифрованном виде (шифрование Windows), в окне не показывается' : 'не сохранён';
+  $('#pv-key-del').disabled = !s.ai_key_saved;
+  const net = $('#pv-net'); net.textContent = '';
+  for (const x of (s.internet || [])) {
+    const r = document.createElement('div'); r.className = 'netrow';
+    r.innerHTML = '<div class="n"><b></b><small></small></div><span class="pill"></span>';
+    r.querySelector('b').textContent = x.name; r.querySelector('small').textContent = x.detail;
+    const p = r.querySelector('.pill'); p.textContent = x.internet ? (x.active ? 'ИНТЕРНЕТ' : 'ИНТЕРНЕТ · ПО ЗАПРОСУ') : (x.active ? 'ЛОКАЛЬНО' : 'ВЫКЛЮЧЕНО');
+    p.className = 'pill ' + (x.internet ? (x.active ? 'warn' : 'info') : (x.active ? 'ok' : '')); net.appendChild(r);
+  }
+  $('#nt-show').checked = !!s.notify_show; $('#nt-speak').checked = !!s.notify_speak; $('#nt-sound').checked = !!s.notify_sound;
+  $('#ext-on').checked = !!s.ext_enabled; $('#ext-show').checked = !!s.ext_show; $('#ext-speak').checked = !!s.ext_speak; $('#ext-strict').checked = !!s.ext_strict;
+  const st = s.ext_status || {}; const ST = { off: 'выключено', starting: 'запуск…', on: 'работает', denied: 'Windows не дала доступ', error: 'ошибка', unsupported: 'недоступно' };
+  $('#ext-status').textContent = (ST[st.state] || st.state || '') + (st.detail ? ' — ' + st.detail : '');
+  extLists = { allowed: s.ext_allowed || [], blocked: s.ext_blocked || [], seen: s.ext_seen || [] }; renderExtLists();
+  if (s.ui && s.ui['jarvis-mode'] && s.ui['jarvis-mode'] !== mode) setMode(s.ui['jarvis-mode'], true);
+}
+let extLists = { allowed: [], blocked: [], seen: [] };
+function chip(text, cls, onclick) { const b = document.createElement('button'); b.type = 'button'; b.className = 'c ' + (cls || ''); b.textContent = text; b.onclick = onclick; return b; }
+function renderExtLists() {
+  const has = (l, n) => l.some(x => x.toLowerCase() === n.toLowerCase());
+  const al = $('#ext-allowed'), bl = $('#ext-blocked'), se = $('#ext-seen'); al.textContent = bl.textContent = se.textContent = '';
+  for (const n of extLists.allowed) al.appendChild(chip(n + ' ✕', 'on', () => saveExt({ ext_allowed: extLists.allowed.filter(x => x !== n) })));
+  for (const n of extLists.blocked) bl.appendChild(chip(n + ' ✕', 'block', () => saveExt({ ext_blocked: extLists.blocked.filter(x => x !== n) })));
+  for (const n of extLists.seen) {
+    if (has(extLists.allowed, n) || has(extLists.blocked, n)) continue;
+    se.appendChild(chip('+ ' + n, '', () => saveExt({ ext_allowed: extLists.allowed.concat([n]) })));
+    se.appendChild(chip('⊘', 'block', () => saveExt({ ext_blocked: extLists.blocked.concat([n]) })));
+  }
+  if (!al.children.length) al.innerHTML = '<small class="dim">пусто — при строгом списке ничего не показывается</small>';
+  if (!se.children.length) se.innerHTML = '<small class="dim">пока нет</small>';
+}
+async function saveExt(patch) { try { await api('/settings', patch); } catch (e) {} loadSettings(); }
+async function setFlag(patch) { try { await api('/settings', patch); } catch (e) {} loadSettings(); pollNow(); }
+$('#pv-mic').onchange = async e => { await action('mic_muted', { value: !e.target.checked }); loadSettings(); refreshMicState(); };
+$('#pv-tts').onchange = async e => { await action('tts_toggle', { value: e.target.checked }); loadSettings(); pollNow(); };
+$('#pv-ai').onchange = e => setFlag({ ai_enabled: e.target.checked });
+$('#pv-ext').onchange = e => setFlag({ ext_enabled: e.target.checked });
+$('#ext-on').onchange = e => setFlag({ ext_enabled: e.target.checked });
+$('#pv-dnd').onchange = e => setFlag({ dnd: e.target.checked });
+$('#nt-dnd').onchange = e => setFlag({ dnd: e.target.checked });
+for (const [id, key] of [['nt-show', 'notify_show'], ['nt-speak', 'notify_speak'], ['nt-sound', 'notify_sound'], ['ext-show', 'ext_show'], ['ext-speak', 'ext_speak'], ['ext-strict', 'ext_strict']])
+  $('#' + id).onchange = e => setFlag({ [key]: e.target.checked });
+$('#ext-add').onclick = () => { const n = $('#ext-name').value.trim(); if (n) { $('#ext-name').value = ''; saveExt({ ext_allowed: extLists.allowed.concat([n]) }); } };
+$('#ext-block').onclick = () => { const n = $('#ext-name').value.trim(); if (n) { $('#ext-name').value = ''; saveExt({ ext_blocked: extLists.blocked.concat([n]) }); } };
+$('#nt-test').onclick = async () => { await action('notify_test'); setTimeout(pollNow, 300); };
+$('#nt-clear').onclick = async () => { await action('notes_clear'); notesSig = ''; pollNow(); };
+$('#pv-hist-open').onclick = () => show('chat');
+function pvMsg(ok, text) { const m = $('#pv-msg'); m.className = 'msgline ' + (ok ? 'ok' : 'bad'); m.textContent = text; }
+$('#pv-hist-del').onclick = async () => {
+  if (!confirm('Удалить ВСЮ историю диалогов с этого компьютера? Это нельзя отменить.')) return;
+  const r = await action('history_delete_all', { confirm: 'delete' });
+  pvMsg(r.ok, r.ok ? 'Удалено диалогов: ' + r.deleted + (r.kept ? '. Не удалён ' + r.kept + ' (ИИ ещё отвечает — повторите позже)' : '') : (r.message || 'Не удалось'));
+  await pollNow(true); loadSettings();
+};
+$('#pv-key-del').onclick = async () => {
+  if (!confirm('Удалить сохранённый ключ ИИ с этого компьютера? Чтобы снова пользоваться ИИ, ключ нужно будет ввести заново.')) return;
+  const r = await action('ai_key_forget'); pvMsg(r.ok, r.ok ? 'Ключ удалён' : 'Не удалось'); loadSettings(); pollNow();
+};
+$('#pv-reset').onclick = async () => {
+  if (!confirm('Сбросить все настройки к значениям по умолчанию? История диалогов, таймеры и ключ ИИ сохранятся.')) return;
+  const r = await action('settings_reset', { confirm: 'reset' });
+  try { localStorage.removeItem('jarvis-mode'); localStorage.removeItem('jarvis-av-thr'); localStorage.removeItem('jarvis-av-inv'); } catch (e) {}
+  pvMsg(r.ok, r.ok ? 'Настройки сброшены' : 'Не удалось'); voicesLoaded = false; loadSettings(); pollNow();
+};
+let notesSig = '';
+function notesList(list) {
+  const sig = (list || []).map(n => n.id).join(','); if (sig === notesSig) return; notesSig = sig;
+  const box = $('#nt-list'); box.textContent = '';
+  if (!list || !list.length) { box.innerHTML = '<div class="empty">Уведомлений пока нет.</div>'; return; }
+  for (const n of list) {
+    const r = document.createElement('div'); r.className = 'ntrow' + (n.kind.endsWith('error') ? ' err' : '');
+    const tm = document.createElement('time'); tm.textContent = fmtTime(n.time);
+    const sp = document.createElement('span'); const b = document.createElement('b'); b.textContent = n.title; sp.append(b, document.createTextNode(' ' + n.text + (n.shown ? '' : ' (без окна)')));
+    r.append(tm, sp); box.appendChild(r);
+  }
+}
+
+// ---------- diagnostics ----------
+const DST = { ok: ['Работает', 'ok'], warn: ['Предупреждение', 'warn'], error: ['Ошибка', 'bad'], unchecked: ['Не проверено', ''] };
+let diagTimer = 0;
+async function diagLoad() {
+  let d; try { d = await (await fetch('/diag')).json(); } catch (e) { return; }
+  const list = $('#diag-list');
+  if (d.checks && d.checks.length) {
+    list.textContent = '';
+    for (const c of d.checks) {
+      const el = document.createElement('div'); el.className = 'dcard ' + c.status;
+      el.innerHTML = '<div class="dh"><b></b><span class="pill"></span></div><div class="dd"></div><div class="df"></div>';
+      el.querySelector('b').textContent = c.name; const p = el.querySelector('.pill'); p.textContent = DST[c.status][0]; p.className = 'pill ' + DST[c.status][1];
+      el.querySelector('.dd').textContent = c.detail; el.querySelector('.df').textContent = c.status !== 'ok' && c.fix ? '→ ' + c.fix : '';
+      list.appendChild(el);
+    }
+  }
+  $('#diag-msg').className = 'msgline'; $('#diag-msg').textContent = d.running ? 'Проверяю… (до 15 секунд)' : (d.at ? 'Проверено в ' + fmtTime(d.at) : '');
+  $('#diag-run').disabled = !!d.running;
+  const ev = $('#diag-events'); ev.textContent = '';
+  if (!d.events || !d.events.length) ev.innerHTML = '<div class="empty">Событий пока нет.</div>';
+  for (const e of (d.events || [])) {
+    const r = document.createElement('div'); r.className = 'ntrow' + (e.kind === 'error' ? ' err' : '');
+    const tm = document.createElement('time'); tm.textContent = fmtTime(e.time); const sp = document.createElement('span'); sp.textContent = e.text; r.append(tm, sp); ev.appendChild(r);
+  }
+  clearTimeout(diagTimer); if (d.running && currentPage === 'diag') diagTimer = setTimeout(diagLoad, 800);
+}
+$('#diag-run').onclick = async () => { $('#diag-run').disabled = true; try { await action('diag_run'); } catch (e) {} setTimeout(diagLoad, 300); };
+$('#diag-copy').onclick = async () => {
+  // the report of the last check: copying runs nothing, sends nothing and changes nothing
+  try { const t = await (await fetch('/diag-report')).text(); await copyText(t, $('#diag-copy')); $('#diag-msg').className = 'msgline ok'; $('#diag-msg').textContent = 'Отчёт скопирован (без ключей, токенов и личных сообщений)'; }
+  catch (e) { $('#diag-msg').className = 'msgline bad'; $('#diag-msg').textContent = 'Не удалось скопировать'; }
 };
 
 // microphone test: live level meter (the browser asks for permission once)
@@ -1211,8 +1367,9 @@ for (let i = 0; i < N; i++) {           // fibonacci sphere
 }
 let mode = 'wire';
 try { mode = localStorage.getItem('jarvis-mode') || 'wire'; if (mode === 'orb' || mode === 'plasma') mode = 'wire'; } catch (e) {}
-function setMode(m) {
+function setMode(m, fromServer) {
   mode = m; try { localStorage.setItem('jarvis-mode', m); } catch (e) {}
+  if (!fromServer) saveSettings({ ui: { 'jarvis-mode': m } });
   document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
 }
 document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => setMode(b.dataset.mode));
@@ -1445,7 +1602,7 @@ function frame(t) {
 }
 requestAnimationFrame(frame);
 loadAvatar();
-setMode(mode);
+setMode(mode, true);
 renderMic();
 connect();
 show('home');

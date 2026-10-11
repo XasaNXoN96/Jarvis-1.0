@@ -1,0 +1,544 @@
+// Diagnostics: the real state of every part of Jarvis, with one of four statuses:
+//   ok ("Работает"), warn ("Предупреждение"), error ("Ошибка"), unchecked ("Не проверено").
+//
+// Rules: a file that exists does not prove that a function works, a key does not prove that the AI is connected,
+// a Piper process does not prove that speech can be made, a local server does not prove that a phone can reach it.
+// So a check either proves something (a real frame from the microphone, a real sound file made by Piper, a real
+// answer of the AI, a real request from a phone) or says "not checked" with the reason.
+// The diagnostics never send a request to the AI, never change a setting and never run a command that changes the
+// computer. The report is built from the last results only (copying it runs nothing) and contains no keys, tokens,
+// conversations or texts of notifications.
+
+use std::io::{Read, Write};
+use std::net::{TcpStream, ToSocketAddrs};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use once_cell::sync::Lazy;
+use parking_lot::Mutex;
+use serde::Serialize;
+use serde_json::{json, Value};
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Status {
+    Ok,
+    Warn,
+    Error,
+    Unchecked,
+}
+
+impl Status {
+    pub fn text(&self) -> &'static str {
+        match self {
+            Status::Ok => "Работает",
+            Status::Warn => "Предупреждение",
+            Status::Error => "Ошибка",
+            Status::Unchecked => "Не проверено",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Check {
+    pub key: &'static str,
+    pub name: &'static str,
+    pub status: Status,
+    pub detail: String,
+    pub fix: String,
+}
+
+fn check(key: &'static str, name: &'static str, status: Status, detail: impl Into<String>, fix: impl Into<String>) -> Check {
+    Check { key, name, status, detail: detail.into(), fix: fix.into() }
+}
+
+fn now() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+fn ago(t: u64) -> String {
+    let s = now().saturating_sub(t);
+    if s < 60 { format!("{} с назад", s) } else if s < 3600 { format!("{} мин назад", s / 60) } else { format!("{} ч назад", s / 3600) }
+}
+
+// ---------------------------------------------------------------------------------------------
+// the checks (each one takes what was measured, so it can be tested without the hardware)
+// ---------------------------------------------------------------------------------------------
+pub struct MicFacts {
+    pub voice_active: bool,
+    pub text_only: bool,
+    pub muted: bool,
+    pub frame_age_ms: Option<u64>,
+    pub error: String,
+    pub devices: usize,
+}
+
+pub fn mic_check(f: &MicFacts) -> Check {
+    let (name, key) = ("Микрофон", "mic");
+    if f.muted {
+        return check(key, name, Status::Warn, "Микрофон выключен пользователем: голосовые команды не слушаются.", "Включите микрофон: Настройки → Приватность или кнопка 🎤 на главной.");
+    }
+    if f.text_only {
+        return check(key, name, Status::Warn, "Джарвис запущен в режиме «только текст».", "Перезапустите Джарвиса обычным ярлыком (без --text), чтобы включить голос.");
+    }
+    if !f.voice_active {
+        let why = if f.error.is_empty() { "голосовой режим не запущен".to_string() } else { f.error.clone() };
+        return check(key, name, Status::Error, format!("Голос не работает: {}. Устройств записи: {}.", why, f.devices), "Подключите микрофон, разрешите доступ к нему в Параметры Windows → Конфиденциальность → Микрофон, выберите его в Настройках и перезапустите Джарвиса.");
+    }
+    match f.frame_age_ms {
+        Some(age) if age < 3000 => check(key, name, Status::Ok, format!("Звук с микрофона поступает (последний блок {} мс назад).", age), ""),
+        Some(age) => check(key, name, Status::Error, format!("Микрофон перестал отдавать звук {} с назад.", age / 1000), "Проверьте, не отключён ли микрофон и не занят ли другой программой; нажмите «Проверить» в Настройках → Микрофон."),
+        None => check(key, name, Status::Error, "Поток открыт, но звук не поступил ни разу.", "Выберите другое устройство в Настройках → Микрофон и перезапустите Джарвиса."),
+    }
+}
+
+pub fn audio_check(inputs: usize, output: Option<Result<String, String>>) -> Check {
+    let (name, key) = ("Аудиосистема", "audio");
+    match output {
+        None => check(key, name, Status::Unchecked, format!("Устройств записи: {}. Устройство вывода проверить не удалось на этой системе.", inputs), ""),
+        Some(Err(e)) => check(key, name, Status::Error, format!("Нет устройства вывода звука ({}). Устройств записи: {}.", e, inputs), "Подключите колонки или наушники и проверьте Параметры Windows → Система → Звук."),
+        Some(Ok(out)) => {
+            if inputs == 0 {
+                check(key, name, Status::Warn, format!("Вывод звука: {}. Устройств записи не найдено.", out), "Подключите микрофон, если нужны голосовые команды.")
+            } else {
+                check(key, name, Status::Ok, format!("Вывод звука: {}. Устройств записи: {}.", out, inputs), "")
+            }
+        }
+    }
+}
+
+pub enum PiperFacts {
+    NotInstalled,
+    Ok(u64),
+    Failed(String),
+    Interrupted,
+}
+
+pub fn piper_check(tts_on: bool, windows_voice: bool, test: PiperFacts, last: Option<(u64, Result<(), String>)>) -> Check {
+    let (name, key) = ("Голос Piper", "piper");
+    let last_txt = match &last {
+        Some((t, Ok(()))) => format!(" Последняя фраза озвучена {}.", ago(*t)),
+        Some((t, Err(e))) => format!(" Последняя ошибка озвучки {}: {}.", ago(*t), e),
+        None => String::new(),
+    };
+    let off = if tts_on { "" } else { " Озвучка ответов сейчас выключена пользователем." };
+    match test {
+        PiperFacts::NotInstalled => {
+            if windows_voice {
+                check(key, name, Status::Warn, format!("Piper не установлен; выбран голос Windows.{}", off), "Настройки → Голос → «Установить голос Джарвиса».")
+            } else {
+                check(key, name, Status::Error, format!("Голос Джарвиса (Piper) не установлен, ответы не звучат.{}", off), "Настройки → Голос → «Установить голос Джарвиса» (нужен интернет, ≈80 МБ).")
+            }
+        }
+        PiperFacts::Ok(bytes) => check(key, name, if tts_on { Status::Ok } else { Status::Warn }, format!("Пробная фраза синтезирована ({} КБ звука, без воспроизведения).{}{}", bytes / 1024, last_txt, off), if tts_on { "" } else { "Включите озвучку: Настройки → Приватность." }),
+        PiperFacts::Failed(e) => check(key, name, Status::Error, format!("Piper не смог создать звук: {}.{}", e, last_txt), "Переустановите голос: Настройки → Голос → «Установить голос Джарвиса». Проверьте, что антивирус не блокирует piper.exe."),
+        PiperFacts::Interrupted => check(key, name, Status::Unchecked, format!("Проверка прервана: Джарвис начал говорить.{}", last_txt), "Повторите проверку."),
+    }
+}
+
+pub fn ai_check(ai_enabled: bool, status: &Value) -> Check {
+    let (name, key) = ("ИИ-провайдер", "ai");
+    if !ai_enabled {
+        return check(key, name, Status::Warn, "Запросы к ИИ выключены в Настройках → Приватность.", "Включите «Запросы к ИИ», если нужны ответы нейросети.");
+    }
+    let detail = status["detail"].as_str().unwrap_or("").to_string();
+    if !status["configured"].as_bool().unwrap_or(false) {
+        return check(key, name, Status::Warn, format!("Не настроен: {}.", detail), "Настройки → ИИ-провайдер: выберите провайдера, модель и ключ.");
+    }
+    let who = format!("{} · {}", status["provider"].as_str().unwrap_or(""), status["model"].as_str().unwrap_or(""));
+    match status["state"].as_str().unwrap_or("") {
+        "CONNECTED" => check(key, name, Status::Ok, format!("{}: последний запрос успешен{}.", who, status["last_ok"].as_u64().map(|t| format!(" ({})", ago(t))).unwrap_or_default()), ""),
+        "ERROR" => check(key, name, Status::Error, format!("{}: {}.", who, detail), "Проверьте ключ, модель и интернет; нажмите «Проверить подключение» на главной."),
+        "CHECKING" => check(key, name, Status::Unchecked, format!("{}: идёт проверка.", who), ""),
+        // a key is saved, but nothing has proved the connection yet: no request is sent just for this indicator
+        _ => check(key, name, Status::Unchecked, format!("{}: ключ задан, но подключение ещё не подтверждено реальным запросом.", who), "Нажмите «Проверить подключение» на карточке AI Connection или задайте вопрос."),
+    }
+}
+
+pub fn latency_check(timing: Option<&Value>) -> Check {
+    let (name, key) = ("Задержка ИИ", "ai_latency");
+    match timing {
+        None => check(key, name, Status::Unchecked, "Запросов к ИИ в этом запуске ещё не было.", ""),
+        Some(t) => {
+            let total = t["total_ms"].as_u64().unwrap_or(0);
+            let first = t["first_chunk_ms"].as_u64();
+            let detail = format!("Последний ответ: первый фрагмент {}, целиком {} мс{}.", first.map(|x| format!("{} мс", x)).unwrap_or("—".into()), total, if t["streamed"].as_bool().unwrap_or(false) { " (поток)" } else { "" });
+            if total > 20_000 { check(key, name, Status::Warn, detail, "Выберите более быструю модель (например, gemini-flash) или проверьте интернет.") } else { check(key, name, Status::Ok, detail, "") }
+        }
+    }
+}
+
+pub fn internet_check(route: bool, dns: Result<(), String>, tcp: Result<u128, String>) -> Check {
+    let (name, key) = ("Интернет", "internet");
+    if !route {
+        return check(key, name, Status::Error, "Нет сетевого маршрута: компьютер не подключён к сети.", "Подключитесь к Wi-Fi или кабелю.");
+    }
+    match (dns, tcp) {
+        (Ok(()), Ok(ms)) => check(key, name, Status::Ok, format!("DNS работает, соединение с интернетом за {} мс.", ms), ""),
+        (Err(e), _) => check(key, name, Status::Error, format!("Имена сайтов не определяются (DNS): {}.", e), "Проверьте подключение к интернету и настройки DNS/прокси."),
+        (Ok(()), Err(e)) => check(key, name, Status::Warn, format!("DNS работает, но соединение не установлено: {}.", e), "Возможно, интернет закрыт брандмауэром или прокси."),
+    }
+}
+
+pub fn remote_check(running: bool, lan_answer: Option<Result<(), String>>, last_client: Option<u64>) -> Check {
+    let (name, key) = ("Пульт телефона", "remote");
+    if !running {
+        return check(key, name, Status::Unchecked, "Пульт выключен.", "Включите пульт на главной, если нужен телефон.");
+    }
+    match (lan_answer, last_client) {
+        (Some(Err(e)), _) => check(key, name, Status::Error, format!("Пульт включён, но не отвечает по адресу в сети: {}.", e), "Выключите и включите пульт; разрешите Джарвиса в брандмауэре Windows (частные сети)."),
+        (_, Some(t)) => check(key, name, Status::Ok, format!("Сервер отвечает в локальной сети; устройство с правильной ссылкой подключалось {}.", ago(t)), ""),
+        (Some(Ok(())), None) => check(key, name, Status::Unchecked, "Сервер отвечает по адресу в локальной сети, но телефон ещё не подключался — доступ с телефона не подтверждён.", "Откройте ссылку или QR-код на телефоне в той же Wi-Fi сети. Если не открывается — разрешите Джарвиса в брандмауэре Windows."),
+        (None, None) => check(key, name, Status::Unchecked, "Не удалось определить адрес в сети для проверки.", ""),
+    }
+}
+
+pub fn monitor_check(mem_total_gb: f32, cpu: f32, disk_total_gb: f32) -> Check {
+    let (name, key) = ("Системный мониторинг", "monitor");
+    if mem_total_gb <= 0.0 {
+        return check(key, name, Status::Error, "Показатели памяти не получены.", "Перезапустите Джарвиса; если не поможет — пришлите диагностический отчёт.");
+    }
+    let disk = if disk_total_gb > 0.0 { format!(", диск {:.0} ГБ", disk_total_gb) } else { ", диск: нет данных".into() };
+    let st = if disk_total_gb > 0.0 { Status::Ok } else { Status::Warn };
+    check(key, name, st, format!("Память {:.1} ГБ, процессор {:.0}%{}.", mem_total_gb, cpu, disk), "")
+}
+
+pub fn resources_check(commands: usize, missing: &[String], vosk: bool) -> Check {
+    let (name, key) = ("Файлы и ресурсы", "files");
+    if commands == 0 {
+        return check(key, name, Status::Error, format!("Команды не загружены.{}", if missing.is_empty() { String::new() } else { format!(" Нет: {}.", missing.join(", ")) }), "Переустановите Джарвиса (папка resources повреждена или удалена).");
+    }
+    if !missing.is_empty() {
+        return check(key, name, Status::Error, format!("Загружено команд: {}. Нет: {}.", commands, missing.join(", ")), "Переустановите Джарвиса или распакуйте commands-update.zip в папку resources.");
+    }
+    if !vosk {
+        return check(key, name, Status::Warn, format!("Загружено команд: {}. Модель распознавания речи (Vosk) не найдена — голос недоступен.", commands), "Установите полный установщик (Jarvis-Setup.exe) или модель из resources/vosk/README.md.");
+    }
+    check(key, name, Status::Ok, format!("Загружено команд: {}; звуки, модель речи и команды на месте.", commands), "")
+}
+
+pub fn commands_check(found: &[(&str, bool)]) -> Check {
+    let (name, key) = ("Системные команды", "syscmd");
+    let missing: Vec<&str> = found.iter().filter(|(_, ok)| !ok).map(|(n, _)| *n).collect();
+    if found.is_empty() {
+        return check(key, name, Status::Unchecked, "Проверка доступна только в Windows.", "");
+    }
+    if missing.is_empty() {
+        check(key, name, Status::Ok, format!("Найдены: {}.", found.iter().map(|(n, _)| *n).collect::<Vec<_>>().join(", ")), "")
+    } else {
+        check(key, name, Status::Error, format!("Не найдены: {}.", missing.join(", ")), "Без них часть команд не работает (PowerShell — озвучка, громкость, офис). Проверьте политику компьютера или восстановите компоненты Windows.")
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// measuring (the only place that touches the system; nothing here changes anything)
+// ---------------------------------------------------------------------------------------------
+fn with_timeout<T: Send + 'static>(ms: u64, f: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    rx.recv_timeout(Duration::from_millis(ms)).ok()
+}
+
+fn measure_internet() -> Check {
+    let (route, _) = crate::health::network();
+    let dns = with_timeout(3000, || ("www.msftconnecttest.com", 443).to_socket_addrs().map(|mut a| a.next()).map_err(|e| e.to_string()))
+        .unwrap_or_else(|| Err("нет ответа за 3 с".into()));
+    let (dns_res, addr) = match dns {
+        Ok(Some(a)) => (Ok(()), Some(a)),
+        Ok(None) => (Err("адрес не найден".to_string()), None),
+        Err(e) => (Err(e), None),
+    };
+    let tcp = match addr {
+        Some(a) => {
+            let t0 = std::time::Instant::now();
+            TcpStream::connect_timeout(&a, Duration::from_secs(3)).map(|_| t0.elapsed().as_millis()).map_err(|e| e.to_string())
+        }
+        None => Err("не проверено".into()),
+    };
+    internet_check(route, dns_res, tcp)
+}
+
+// The remote page answers on the address of the computer in the local network (without the secret: the answer is
+// "forbidden", which proves that the server listens there; nothing is executed).
+fn measure_remote() -> Check {
+    let running = crate::remote::is_running();
+    let lan = if running {
+        let url = crate::remote::url();
+        let host = url.trim_start_matches("http://").split('/').next().unwrap_or("").to_string();
+        if host.is_empty() {
+            None
+        } else {
+            Some(
+                with_timeout(3000, move || -> Result<(), String> {
+                    let addr = host.to_socket_addrs().map_err(|e| e.to_string())?.next().ok_or("нет адреса")?;
+                    let mut s = TcpStream::connect_timeout(&addr, Duration::from_secs(2)).map_err(|e| e.to_string())?;
+                    s.set_read_timeout(Some(Duration::from_secs(2))).ok();
+                    write!(s, "GET /diag HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n", host).map_err(|e| e.to_string())?;
+                    let mut buf = [0u8; 16];
+                    let n = s.read(&mut buf).map_err(|e| e.to_string())?;
+                    if buf[..n].starts_with(b"HTTP/1.") { Ok(()) } else { Err("непонятный ответ".into()) }
+                })
+                .unwrap_or_else(|| Err("нет ответа за 3 с".into())),
+            )
+        }
+    } else {
+        None
+    };
+    remote_check(running, lan, crate::remote::last_client())
+}
+
+#[cfg(feature = "lua")]
+fn output_device() -> Option<Result<String, String>> {
+    use rodio::cpal::traits::{DeviceTrait, HostTrait};
+    with_timeout(3000, || match rodio::cpal::default_host().default_output_device() {
+        Some(d) => Ok(d.name().unwrap_or_else(|_| "устройство по умолчанию".into())),
+        None => Err("устройство по умолчанию не найдено".into()),
+    })
+}
+
+#[cfg(not(feature = "lua"))]
+fn output_device() -> Option<Result<String, String>> {
+    None
+}
+
+fn measure_resources() -> Check {
+    let app = &*crate::APP_DIR;
+    let mut missing = Vec::new();
+    for (path, what) in [("resources/commands", "папка команд"), ("resources/sound", "звуки"), ("resources/commands/_prelude.lua", "общие функции команд")] {
+        if !app.join(path).exists() {
+            missing.push(what.to_string());
+        }
+    }
+    let vosk = std::fs::read_dir(app.join(crate::config::VOSK_MODELS_PATH)).map(|rd| rd.flatten().any(|e| e.path().is_dir())).unwrap_or(false);
+    resources_check(crate::COMMANDS_COUNT.load(Ordering::Relaxed), &missing, vosk)
+}
+
+fn measure_syscmds() -> Check {
+    #[cfg(target_os = "windows")]
+    {
+        let root = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".into());
+        let sys = std::path::Path::new(&root).join("System32");
+        let list = [
+            ("PowerShell", sys.join("WindowsPowerShell\\v1.0\\powershell.exe")),
+            ("cmd", sys.join("cmd.exe")),
+            ("explorer", std::path::Path::new(&root).join("explorer.exe")),
+            ("shutdown", sys.join("shutdown.exe")),
+            ("rundll32", sys.join("rundll32.exe")),
+        ];
+        let found: Vec<(&str, bool)> = list.iter().map(|(n, p)| (*n, p.exists())).collect();
+        commands_check(&found)
+    }
+    #[cfg(not(target_os = "windows"))]
+    commands_check(&[])
+}
+
+fn os_version() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        if let Ok(out) = std::process::Command::new("cmd").args(["/C", "ver"]).creation_flags(0x0800_0000).output() {
+            let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !v.is_empty() {
+                return v;
+            }
+        }
+        "Windows".into()
+    }
+    #[cfg(not(target_os = "windows"))]
+    format!("{} {}", std::env::consts::OS, std::env::consts::ARCH)
+}
+
+// ---------------------------------------------------------------------------------------------
+// running and the report
+// ---------------------------------------------------------------------------------------------
+#[derive(Clone)]
+struct Run {
+    at: u64,
+    checks: Vec<Check>,
+    os: String,
+}
+
+static LAST: Lazy<Mutex<Option<Run>>> = Lazy::new(|| Mutex::new(None));
+static RUNNING: AtomicBool = AtomicBool::new(false);
+
+pub fn run() -> Vec<Check> {
+    use std::sync::atomic::Ordering::SeqCst;
+    let devices = crate::recorder::get_audio_devices();
+    let mic = mic_check(&MicFacts {
+        voice_active: crate::VOICE_ACTIVE.load(SeqCst),
+        text_only: crate::VOICE_TEXT_ONLY.load(SeqCst),
+        muted: crate::MIC_MUTED.load(SeqCst),
+        frame_age_ms: crate::recorder::last_frame_age_ms(),
+        error: crate::VOICE_ERROR.lock().clone(),
+        devices: devices.len(),
+    });
+    let audio = audio_check(devices.len(), output_device());
+    let test = match crate::tts::synth_check() {
+        crate::tts::SynthCheck::NotInstalled => PiperFacts::NotInstalled,
+        crate::tts::SynthCheck::Ok(b) => PiperFacts::Ok(b),
+        crate::tts::SynthCheck::Failed(e) => PiperFacts::Failed(e),
+        crate::tts::SynthCheck::Interrupted => PiperFacts::Interrupted,
+    };
+    let piper = piper_check(crate::tts::is_enabled(), crate::uistate::voice_name().starts_with("win:"), test, crate::tts::last_synth());
+    let ai_status = crate::ai::status_json();
+    let ai = ai_check(crate::uistate::settings().ai_enabled, &ai_status);
+    let latency = latency_check(ai_status.get("timing").filter(|t| !t.is_null()));
+    let internet = measure_internet();
+    let remote = measure_remote();
+    let st = crate::uistate::stats();
+    let monitor = monitor_check(st.mem_total_gb, st.cpu, st.disk_total_gb);
+    let checks = vec![mic, audio, piper, ai, latency, internet, remote, monitor, measure_resources(), measure_syscmds()];
+    *LAST.lock() = Some(Run { at: now(), checks: checks.clone(), os: os_version() });
+    checks
+}
+
+// started from the window: in the background, the window asks for the result
+pub fn start() -> bool {
+    if RUNNING.swap(true, Ordering::SeqCst) {
+        return false;
+    }
+    std::thread::spawn(|| {
+        let _ = std::panic::catch_unwind(run);
+        RUNNING.store(false, Ordering::SeqCst);
+    });
+    true
+}
+
+pub fn json() -> Value {
+    let last = LAST.lock().clone();
+    json!({
+        "running": RUNNING.load(Ordering::SeqCst),
+        "at": last.as_ref().map(|r| r.at),
+        "checks": last.as_ref().map(|r| r.checks.clone()).unwrap_or_default(),
+        "events": safe_events(25),
+    })
+}
+
+// events of the program that carry no personal text: start, voice, AI state, errors. Events that quote what the user
+// said («…») and notifications are left out.
+fn safe_events(n: usize) -> Vec<Value> {
+    crate::uistate::recent_events(80)
+        .into_iter()
+        .filter(|e| matches!(e.kind.as_str(), "start" | "voice" | "ai" | "error"))
+        .filter(|e| !e.text.contains('«') && !e.text.starts_with("Уведомление") && !e.text.starts_with("Вопрос"))
+        .take(n)
+        .map(|e| json!({ "time": e.time, "kind": e.kind, "text": sanitize(&e.text) }))
+        .collect()
+}
+
+// removes anything that looks like a secret: the saved AI key, the remote token, keys and tokens in URLs and headers
+pub fn sanitize(text: &str) -> String {
+    let mut out = text.to_string();
+    let key = crate::uistate::settings().ai_key;
+    if key.len() >= 6 {
+        out = out.replace(&key, "***");
+    }
+    let token = crate::remote::token_for_diag();
+    if token.len() >= 6 {
+        out = out.replace(&token, "***");
+    }
+    let mut prev_bearer = false;
+    let words: Vec<String> = out
+        .split(' ')
+        .map(|w| {
+            let lw = w.to_lowercase();
+            if std::mem::replace(&mut prev_bearer, lw == "bearer") && !w.is_empty() {
+                return "***".to_string();
+            }
+            let secretish = lw.starts_with("sk-") || lw.starts_with("aiza") || lw.starts_with("sk_") || lw.starts_with("xox") || lw.starts_with("ghp_");
+            if secretish && w.len() > 12 {
+                return "***".to_string();
+            }
+            for marker in ["t=", "token=", "key=", "api_key=", "apikey=", "password="] {
+                if let Some(i) = lw.find(marker) {
+                    let start = i + marker.len();
+                    if w.len() > start && w.is_char_boundary(start) {
+                        return format!("{}***", &w[..start]);
+                    }
+                }
+            }
+            w.to_string()
+        })
+        .collect();
+    words.join(" ")
+}
+
+// the text of "Copy the diagnostics report": the last results only (nothing is run, nothing is sent)
+pub fn report() -> String {
+    let last = LAST.lock().clone();
+    let s = crate::uistate::settings();
+    let ai = crate::ai::status_json();
+    let mut r = String::new();
+    r.push_str("=== Диагностический отчёт Jarvis ===\n");
+    r.push_str(&format!("Версия Jarvis: {}\n", crate::config::APP_VERSION.unwrap_or("?")));
+    r.push_str(&format!("Система: {}\n", last.as_ref().map(|l| l.os.clone()).unwrap_or_else(os_version_cached)));
+    r.push_str(&format!("Язык: {}\n", crate::i18n::get_language()));
+    r.push_str(&format!("ИИ: провайдер {} · модель {} · запросы {} · состояние {}\n", ai["provider"].as_str().filter(|p| !p.is_empty()).unwrap_or("не выбран"), ai["model"].as_str().filter(|p| !p.is_empty()).unwrap_or("—"), if s.ai_enabled { "включены" } else { "выключены" }, ai["state"].as_str().unwrap_or("")));
+    r.push_str(&format!("Озвучка: {} · голос: {} · микрофон: {}\n", if crate::tts::is_enabled() { "вкл" } else { "выкл" }, if s.voice_name.is_empty() { "авто" } else if s.voice_name.starts_with("win:") { "Windows" } else { "Piper" }, if crate::MIC_MUTED.load(Ordering::SeqCst) { "выключен" } else { "включён" }));
+    r.push_str(&format!("Уведомления: показ {} · голос {} · звук {} · не беспокоить {} · внешние {} ({})\n", onoff(s.notify_show), onoff(s.notify_speak), onoff(s.notify_sound), onoff(s.dnd), onoff(s.ext_enabled), crate::notify::ext_status_json()["state"].as_str().unwrap_or("")));
+    match last {
+        None => r.push_str("\nПроверка ещё не запускалась (нажмите «Проверить всё»).\n"),
+        Some(l) => {
+            r.push_str(&format!("\nПроверка: {} (unix {})\n", ago(l.at), l.at));
+            for c in &l.checks {
+                r.push_str(&format!("[{}] {}: {}\n", c.status.text(), c.name, sanitize(&c.detail)));
+                if !c.fix.is_empty() && c.status != Status::Ok {
+                    r.push_str(&format!("    Что сделать: {}\n", c.fix));
+                }
+            }
+        }
+    }
+    let ev = safe_events(15);
+    if !ev.is_empty() {
+        r.push_str("\nПоследние события (без личных данных):\n");
+        for e in ev {
+            r.push_str(&format!("  {} [{}] {}\n", e["time"], e["kind"].as_str().unwrap_or(""), e["text"].as_str().unwrap_or("")));
+        }
+    }
+    r.push_str("\nВ отчёт не входят: ключи API, токены, пароли, тексты диалогов и уведомлений.\n");
+    r
+}
+
+fn os_version_cached() -> String {
+    format!("{} {}", std::env::consts::OS, std::env::consts::ARCH)
+}
+
+fn onoff(b: bool) -> &'static str {
+    if b { "вкл" } else { "выкл" }
+}
+
+// ---------------------------------------------------------------------------------------------
+// what uses the Internet (the privacy section): from the real settings
+// ---------------------------------------------------------------------------------------------
+pub fn internet_uses(s: &crate::uistate::UiSettings) -> Value {
+    let provider_local = matches!(s.ai_provider.as_str(), "ollama") || (s.ai_provider == "custom" && {
+        let u = s.ai_url.to_lowercase();
+        u.contains("://localhost") || u.contains("://127.") || u.contains("://192.168.") || u.contains("://10.")
+    });
+    let ai_active = s.ai_enabled && s.ai_provider != "none";
+    let ai_detail = if !s.ai_enabled {
+        "выключено в разделе Приватность: ничего не отправляется".to_string()
+    } else if s.ai_provider == "none" {
+        "провайдер не выбран: ничего не отправляется".to_string()
+    } else if provider_local {
+        "сервер на этом компьютере или в локальной сети: в интернет не уходит".to_string()
+    } else {
+        "ваши вопросы и последние сообщения диалога уходят выбранному провайдеру, когда вы их задаёте; команды компьютера не отправляются".to_string()
+    };
+    json!([
+        { "name": "Ответы ИИ", "internet": ai_active && !provider_local, "active": ai_active, "detail": ai_detail },
+        { "name": "Погода", "internet": true, "active": !s.city.is_empty(), "detail": "название города уходит на open-meteo.com (блок на главной) и wttr.in (команда «какая погода»)" },
+        { "name": "Поиск, сайты, карты, перевод, музыка", "internet": true, "active": true, "detail": "открываются в браузере, только когда вы просите" },
+        { "name": "Установка голоса Джарвиса", "internet": true, "active": false, "detail": "загрузка с github.com и huggingface.co, только по кнопке" },
+        { "name": "Распознавание речи (Vosk)", "internet": false, "active": true, "detail": "на этом компьютере: звук с микрофона никуда не отправляется" },
+        { "name": "Голос (Piper)", "internet": false, "active": true, "detail": "на этом компьютере" },
+        { "name": "Пульт телефона", "internet": false, "active": crate::remote::is_running(), "detail": "только локальная сеть (Wi-Fi), по секретной ссылке" },
+        { "name": "Уведомления других программ", "internet": false, "active": s.ext_enabled, "detail": "читаются только на этом компьютере, никуда не отправляются и не сохраняются" },
+        { "name": "Диагностика", "internet": true, "active": false, "detail": "проверка интернета подключается к msftconnecttest.com, только по кнопке «Проверить всё»" },
+    ])
+}
+
+#[cfg(test)]
+mod tests;

@@ -20,7 +20,7 @@ check(vol ~= nil,
 local r = powershell("'ok'")
 check(r.success and (r.stdout or ""):find("ok") ~= nil,
       T("PowerShell работает", "PowerShell works"),
-      T("PowerShell не работает: " .. tostring((r.stderr or ""):sub(1, 200)), "PowerShell failed: " .. tostring((r.stderr or ""):sub(1, 200))))
+      T("PowerShell не работает: " .. jarvis.text.preview(r.stderr or "", 200), "PowerShell failed: " .. jarvis.text.preview(r.stderr or "", 200)))
 
 local b = ps_file("brightness.ps1", { "-Action", "get" })
 if b.code == 2 then

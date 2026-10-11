@@ -61,52 +61,14 @@ fn open_target(target: &str) -> bool {
     result.is_ok()
 }
 
-// Show a desktop notification (toast on Windows). Never fails, errors are only logged.
+// A notification from a command (jarvis.system.notify): the notification window of Jarvis, with its settings
+// ("do not disturb", sound, voice). It is never spoken here: the command speaks for itself.
+#[cfg(test)]
+pub static TEST_CLIPBOARD: once_cell::sync::Lazy<parking_lot::Mutex<Option<String>>> = once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(None));
+
 pub fn show_notification(title: &str, message: &str) {
-    // the same notification twice in a few seconds is shown once
-    if !crate::guard::first(&format!("notify:{}:{}", title, message), crate::guard::NOTIFY_WINDOW) {
-        return;
-    }
     log::info!("[Lua] NOTIFY: {} - {}", title, message);
-
-    // platform-specific notification
-    #[cfg(target_os = "windows")]
-    {
-        use winrt_notification::{Toast, Duration as ToastDuration};
-
-        if let Err(e) = Toast::new(Toast::POWERSHELL_APP_ID)
-            .title(title)
-            .text1(message)
-            .duration(ToastDuration::Short)
-            .show()
-        {
-            log::warn!("[Lua] Failed to show toast notification: {}", e);
-            // fallback to msg.exe
-            let _ = Command::new("msg")
-                .args(["*", "/time:10", &format!("{}: {}", title, message)])
-                .spawn();
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        let _ = Command::new("notify-send")
-            .args([title, message])
-            .spawn();
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        let script = format!(
-            r#"display notification "{}" with title "{}""#,
-            message.replace("\"", "\\\""),
-            title.replace("\"", "\\\"")
-        );
-        let _ = Command::new("osascript")
-            .args(["-e", &script])
-            .spawn();
-    }
-
+    crate::notify::push("command", title, message, true);
 }
 
 pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Result<()> {
@@ -265,6 +227,10 @@ pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Resul
     
     // jarvis.system.clipboard.get() - always available
     let clipboard_get_fn = lua.create_function(|_, ()| {
+        #[cfg(test)]
+        if let Some(text) = TEST_CLIPBOARD.lock().clone() {
+            return Ok(text);
+        }
         #[cfg(target_os = "windows")]
         {
             // native read of the Unicode text: PowerShell output arrives in the OEM code page (garbled Russian)

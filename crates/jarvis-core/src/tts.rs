@@ -242,6 +242,42 @@ enum Synth {
     Failed(String),
 }
 
+// the last real synthesis of Piper (unix time, Ok or the error): the diagnostics show what really happened
+static LAST_SYNTH: Lazy<Mutex<Option<(u64, Result<(), String>)>>> = Lazy::new(|| Mutex::new(None));
+
+pub fn last_synth() -> Option<(u64, Result<(), String>)> {
+    LAST_SYNTH.lock().clone()
+}
+
+fn note_synth(result: Result<(), String>) {
+    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    *LAST_SYNTH.lock() = Some((t, result));
+}
+
+pub enum SynthCheck {
+    NotInstalled,
+    Ok(u64),          // bytes of sound made
+    Failed(String),
+    Interrupted,      // Jarvis started to speak meanwhile: not checked
+}
+
+// diagnostics: Piper makes a short phrase into a temporary file, nothing is played. Proves that the voice can be made.
+pub fn synth_check() -> SynthCheck {
+    let Some((exe, model)) = piper_voice(&tts_lang()) else { return SynthCheck::NotInstalled };
+    let wav = std::env::temp_dir().join(format!("jarvis_diag_{}.wav", std::process::id()));
+    let generation = GENERATION.load(Ordering::SeqCst);
+    let r = match piper_synth(&exe, &model, if tts_lang() == "en" { "Check." } else { "Проверка." }, &wav, generation) {
+        Synth::Done => {
+            let len = std::fs::metadata(&wav).map(|m| m.len()).unwrap_or(0);
+            if len > 1000 { SynthCheck::Ok(len) } else { SynthCheck::Failed(format!("звуковой файл почти пустой ({} байт)", len)) }
+        }
+        Synth::Cancelled => SynthCheck::Interrupted,
+        Synth::Failed(why) => SynthCheck::Failed(if why.is_empty() { "Piper не создал звук".into() } else { why }),
+    };
+    let _ = std::fs::remove_file(&wav);
+    r
+}
+
 fn piper_synth(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64) -> Synth {
     let err_file = wav.with_extension("err");
     let _ = std::fs::remove_file(wav);
@@ -264,7 +300,10 @@ fn piper_synth(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64
 
     let mut child = match command.spawn() {
         Ok(c) => c,
-        Err(e) => return Synth::Failed(format!("не запустился: {}", e)),
+        Err(e) => {
+            note_synth(Err(format!("не запустился: {}", e)));
+            return Synth::Failed(format!("не запустился: {}", e));
+        }
     };
     if let Some(mut stdin) = child.stdin.take() {
         let _ = stdin.write_all(text.as_bytes());
@@ -284,11 +323,14 @@ fn piper_synth(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64
     }
     if wav.exists() {
         let _ = std::fs::remove_file(&err_file);
+        note_synth(Ok(()));
         Synth::Done
     } else {
         let why = std::fs::read_to_string(&err_file).unwrap_or_default();
         let why: String = why.lines().rev().take(3).collect::<Vec<_>>().join(" | ");
-        Synth::Failed(why.chars().take(300).collect())
+        let why: String = why.chars().take(300).collect();
+        note_synth(Err(if why.is_empty() { "Piper не создал звук".into() } else { why.clone() }));
+        Synth::Failed(why)
     }
 }
 

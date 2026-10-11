@@ -51,15 +51,16 @@ pub fn continue_last() -> bool {
     }
 }
 
-fn target() -> Option<(String, String)> {
+// (chat, request id, late): `late` = the request was already finished (a file search that ends seconds later)
+fn target() -> Option<(String, String, bool)> {
     if let Some(r) = CUR.lock().as_mut() {
         r.replies += 1;
-        return Some((r.chat_id.clone(), r.rid.clone()));
+        return Some((r.chat_id.clone(), r.rid.clone(), false));
     }
     if let Some(r) = LAST.lock().as_mut() {
         if r.at.elapsed() < LATE_REPLY {
             r.replies += 1;
-            return Some((r.chat_id.clone(), r.rid.clone()));
+            return Some((r.chat_id.clone(), r.rid.clone(), true));
         }
     }
     None
@@ -72,8 +73,13 @@ pub fn reply(text: &str, src: &str) {
         return;
     }
     *LAST_OUTPUT.lock() = text.to_string();
-    if let Some((chat, rid)) = target() {
+    if let Some((chat, rid, late)) = target() {
         ai::store().append_with(&chat, "assistant", text, &rid, src);
+        // a task that finished after its request (search results, a download): a notification, unless the user
+        // is looking at the window. The command has already said it aloud when the voice is on.
+        if late && !crate::notify::window_visible() {
+            crate::notify::push("task", "Задача выполнена", text, crate::tts::is_enabled());
+        }
     }
 }
 
@@ -84,8 +90,12 @@ pub fn fail(text: &str, src: &str) {
         return;
     }
     *LAST_OUTPUT.lock() = text.to_string();
-    if let Some((chat, rid)) = target() {
+    if let Some((chat, rid, _)) = target() {
         ai::store().append_with(&chat, "error", text, &rid, src);
+    }
+    // an error of a computer function (the AI reports its own errors in ai.rs)
+    if src != "ai" {
+        crate::notify::push("system_error", "Ошибка", text, true);
     }
 }
 
@@ -113,6 +123,17 @@ pub fn end(ok: bool) {
                 store.append_with(&r.chat_id, "assistant", "Выполнено.", &r.rid, "command");
             } else {
                 store.append_with(&r.chat_id, "error", "Не получилось выполнить команду.", &r.rid, "command");
+                crate::notify::push("system_error", "Ошибка", "Не получилось выполнить команду.", true);
+            }
+        }
+        // the result of a command when nobody looks at the window (a voice command with the window hidden)
+        let last = LAST_OUTPUT.lock().clone();
+        if r.replies > 0 && !last.is_empty() {
+            if !ok {
+                // a command that failed and said why: the error is a notification too (shown, not said again)
+                crate::notify::push("system_error", "Команда не выполнена", &last, true);
+            } else if !crate::notify::window_visible() {
+                crate::notify::push("command", "Результат команды", &last, crate::tts::is_enabled());
             }
         }
         *LAST.lock() = Some(Req { at: Instant::now(), ..r });
@@ -135,12 +156,16 @@ pub fn adopt_ai_request() {
     }
 }
 
+// the conversation state is global: tests of several modules that use it run one at a time
+#[cfg(test)]
+pub static TEST_LOCK: Mutex<()> = Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     // the current request and the store are global: one test at a time
-    static LOCK: Mutex<()> = Mutex::new(());
+    use super::TEST_LOCK as LOCK;
 
     fn last_messages(n: usize) -> Vec<ai::ChatMsg> {
         let store = ai::store();
