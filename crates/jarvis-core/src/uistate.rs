@@ -219,6 +219,9 @@ pub fn state_json() -> Value {
         "disk_free": st.disk_free_gb, "disk_total": st.disk_total_gb,
         "timers": timers, "actions": actions,
         "mic_muted": crate::MIC_MUTED.load(std::sync::atomic::Ordering::SeqCst),
+        "voice_active": crate::VOICE_ACTIVE.load(std::sync::atomic::Ordering::SeqCst),
+        "voice_error": crate::VOICE_ERROR.lock().clone(),
+        "mic_level": crate::MIC_LEVEL.load(std::sync::atomic::Ordering::Relaxed),
         "tts_enabled": crate::tts::is_enabled(),
         "remote": crate::remote::is_running(),
     })

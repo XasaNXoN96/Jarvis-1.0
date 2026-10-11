@@ -152,6 +152,8 @@
   .chip { display: inline-block; margin: 5px 6px 0 0; padding: 3px 11px; border-radius: 999px; background: #ffffff12; cursor: pointer; font-size: 13px; }
   .chip:hover { background: #5ad1ff33; }
   small.dim { color: var(--faint); }
+  .banner { width: min(900px, 100%); margin: 0 0 10px; padding: 10px 14px; border-radius: 14px; border: 1px solid #ffb34766; background: #3a2a0acc; color: #ffd9a0; font-size: 14px; display: none; }
+  .banner b { color: #ffe3b3; }
 </style>
 </head>
 <body>
@@ -179,6 +181,7 @@
         <p class="sub" id="status">Чем могу помочь? Скажите «Джарвис» или напишите команду.</p>
         <div id="state">готов</div>
       </div>
+      <div class="banner" id="voice-banner"></div>
       <div id="log"></div>
       <div class="spacer"></div>
       <form class="composer" id="form" autocomplete="off">
@@ -244,6 +247,7 @@
         <div class="setrow"><div class="l">Проверка микрофона<small>скажите что-нибудь: полоска должна двигаться (показывает микрофон Windows по умолчанию)</small></div>
           <div class="r"><div class="meter" id="meter"></div><button class="btn small" id="mic-test">Проверить</button></div></div>
         <div class="msgline" id="mic-msg"></div>
+        <div class="banner" id="voice-banner2" style="margin-top:10px;width:100%"></div>
       </div>
 
       <div class="card" style="margin-bottom:14px"><h3><span data-ico="speaker"></span>Голос</h3>
@@ -427,12 +431,19 @@ function saveSettings(patch) { clearTimeout(saveTimer); saveTimer = setTimeout((
 
 // ---------- microphone button (voice <-> text mode) ----------
 let micMuted = false;
+let voiceActive = false;
+function applyVoice(s) {
+  voiceActive = !!s.voice_active;
+  const text = voiceActive ? '' : '<b>Голос не работает</b>, команды принимаются только текстом. Причина: ' + (s.voice_error || 'микрофон ещё запускается') + '.';
+  for (const id of ['#voice-banner', '#voice-banner2']) { const b = $(id); b.innerHTML = text; b.style.display = text ? 'block' : 'none'; }
+  if (!voiceActive) $('#hint').textContent = 'Только текст';
+}
 function renderMic() {
   const b = $('#micbtn');
   b.innerHTML = ico(micMuted ? 'micoff' : 'mic');
   b.classList.toggle('off', micMuted);
   b.title = micMuted ? 'Микрофон выключен (только текст). Нажмите, чтобы включить' : 'Микрофон включён. Нажмите, чтобы выключить';
-  $('#hint').textContent = micMuted ? 'Режим текста' : 'Голос и текст';
+  $('#hint').textContent = micMuted ? 'Режим текста' : (voiceActive ? 'Голос и текст' : 'Только текст');
   const sw = $('#mic-on'); if (sw) sw.checked = !micMuted;
 }
 $('#micbtn').onclick = async () => { micMuted = !micMuted; renderMic(); await action('mic_muted', { value: micMuted }); };
@@ -451,7 +462,7 @@ function setBar(id, pct, text) {
 async function refreshState() {
   try {
     const s = await (await fetch('/state')).json();
-    micMuted = !!s.mic_muted; renderMic();
+    micMuted = !!s.mic_muted; renderMic(); applyVoice(s);
     $('#tts-on').checked = !!s.tts_enabled;
     $('#s-cpu').textContent = Math.round(s.cpu) + '%';
     $('#s-ram').textContent = s.mem_used.toFixed(1) + ' ГБ'; $('#s-ram2').textContent = 'из ' + s.mem_total.toFixed(0) + ' ГБ';
@@ -506,7 +517,7 @@ async function loadModules() {
 setInterval(() => { if (currentPage === 'panel') refreshState(); }, 2500);
 setInterval(() => { if (currentPage === 'panel') renderTimers(); }, 1000);
 setInterval(() => { if (currentPage !== 'panel') refreshMicState(); }, 4000);
-async function refreshMicState() { try { const s = await (await fetch('/state')).json(); if (micMuted !== !!s.mic_muted) { micMuted = !!s.mic_muted; renderMic(); } } catch (e) {} }
+async function refreshMicState() { try { const s = await (await fetch('/state')).json(); if (micMuted !== !!s.mic_muted) { micMuted = !!s.mic_muted; renderMic(); } applyVoice(s); } catch (e) {} }
 
 // ---------- settings center ----------
 let voicesLoaded = false;
@@ -565,15 +576,31 @@ async function stopMicTest() {
   cancelAnimationFrame(micRaf); if (micStream) micStream.getTracks().forEach(t => t.stop()); if (micCtx) micCtx.close();
   micStream = micCtx = null; meter.querySelectorAll('i').forEach(i => i.classList.remove('on')); $('#mic-test').textContent = 'Проверить';
 }
+let jarvisTest = 0;
 $('#mic-test').onclick = async () => {
-  if (micStream) { stopMicTest(); return; }
+  if (micStream || jarvisTest) { clearInterval(jarvisTest); jarvisTest = 0; stopMicTest(); $('#mic-test').textContent = 'Проверить'; return; }
   const msg = $('#mic-msg'); msg.className = 'msgline'; msg.textContent = '';
+  await refreshMicState();
+  const bars = meter.querySelectorAll('i');
+  if (voiceActive && !micMuted) {
+    // the level of the microphone Jarvis itself listens to
+    $('#mic-test').textContent = 'Остановить'; let peakSeen = 0, ticks = 0;
+    jarvisTest = setInterval(async () => {
+      try {
+        const s = await (await fetch('/state')).json(); const lvl = Math.min(1, Math.sqrt(s.mic_level / 32768) * 1.4);
+        peakSeen = Math.max(peakSeen, s.mic_level); bars.forEach((b, i) => b.classList.toggle('on', i / bars.length < lvl));
+        if (++ticks === 25 && peakSeen < 200) { msg.className = 'msgline bad'; msg.textContent = 'Jarvis почти не слышит сигнал. Проверьте, что в Windows выбран нужный микрофон (Параметры → Система → Звук → Ввод) и что он не отключён.'; }
+      } catch (e) {}
+    }, 120);
+    return;
+  }
+  // voice mode is not running: at least check the Windows default microphone in the browser
+  msg.className = 'msgline'; msg.textContent = voiceActive ? 'Микрофон выключен переключателем выше: включите его.' : 'Голосовой режим Jarvis не запущен (см. причину ниже). Проверяю микрофон Windows по умолчанию.';
   try {
     micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     micCtx = new AudioContext(); const an = micCtx.createAnalyser(); an.fftSize = 512;
     micCtx.createMediaStreamSource(micStream).connect(an);
     const buf = new Uint8Array(an.fftSize); $('#mic-test').textContent = 'Остановить';
-    const bars = meter.querySelectorAll('i');
     const tick = () => {
       an.getByteTimeDomainData(buf); let peak = 0; for (const v of buf) peak = Math.max(peak, Math.abs(v - 128));
       const lvl = Math.min(1, peak / 70); bars.forEach((b, i) => b.classList.toggle('on', i / bars.length < lvl));

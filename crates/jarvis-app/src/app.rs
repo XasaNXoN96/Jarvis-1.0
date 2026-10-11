@@ -23,7 +23,11 @@ pub fn start(voice_mode: bool, text_cmd_rx: Receiver<String>, rt: &tokio::runtim
     if voice_mode {
         match main_loop(&text_cmd_rx, rt) {
             // microphone failed to start: don't die, keep working in text mode
-            Err(()) => warn!("Voice mode failed, switching to TEXT mode."),
+            Err(()) => {
+                warn!("Voice mode failed, switching to TEXT mode.");
+                let mut e = jarvis_core::VOICE_ERROR.lock();
+                if e.is_empty() { *e = "микрофон не запустился".to_string(); }
+            }
             Ok(()) => return Ok(()),
         }
     }
@@ -107,6 +111,8 @@ fn main_loop(text_cmd_rx: &Receiver<String>, rt: &tokio::runtime::Runtime) -> Re
         }
     }
 
+    jarvis_core::VOICE_ACTIVE.store(true, std::sync::atomic::Ordering::SeqCst);
+    jarvis_core::VOICE_ERROR.lock().clear();
     ipc::send(IpcEvent::Idle);
 
     // ### WAKE WORD DETECTION LOOP
@@ -130,6 +136,8 @@ fn main_loop(text_cmd_rx: &Receiver<String>, rt: &tokio::runtime::Runtime) -> Re
         }
 
         recorder::read_microphone(&mut frame_buffer);
+        let peak = frame_buffer.iter().map(|v| (*v as i32).unsigned_abs()).max().unwrap_or(0);
+        jarvis_core::MIC_LEVEL.store(peak, std::sync::atomic::Ordering::Relaxed);
         let processed = audio_processing::process(&frame_buffer);
         
         match vad_state {

@@ -72,11 +72,13 @@ fn main() -> Result<(), String> {
     let mut voice_mode = !force_text;
     if force_text {
         info!("Text mode forced by --text flag.");
+        *jarvis_core::VOICE_ERROR.lock() = "программа запущена с ключом --text (только текст)".to_string();
     }
 
     // init recorder (no microphone -> text mode)
     if voice_mode && recorder::init().is_err() {
         warn!("Microphone is not available, switching to TEXT mode.");
+        *jarvis_core::VOICE_ERROR.lock() = "микрофон не найден или занят другой программой (проверьте Параметры Windows → Конфиденциальность → Микрофон: разрешите доступ классическим приложениям)".to_string();
         voice_mode = false;
     }
 
@@ -89,6 +91,7 @@ fn main() -> Result<(), String> {
     if voice_mode {
         if let Err(e) = stt::init() {
             warn!("Speech recognition is not available ({}), switching to TEXT mode.", e);
+            *jarvis_core::VOICE_ERROR.lock() = format!("не загрузилась модель распознавания речи ({}). Нужен большой установщик или папка vosk\\model рядом с программой", e);
             voice_mode = false;
         }
     }
@@ -114,6 +117,7 @@ fn main() -> Result<(), String> {
     if voice_mode {
         if let Err(e) = listener::init() {
             warn!("Wake-word engine init failed ({}), switching to TEXT mode.", e);
+            *jarvis_core::VOICE_ERROR.lock() = format!("не запустился поиск слова «Джарвис» ({})", e);
             voice_mode = false;
         }
     }

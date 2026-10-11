@@ -70,6 +70,11 @@ pub static APP_LOG_DIR: OnceCell<PathBuf> = OnceCell::new();
 pub static DB: OnceCell<Arc<RwLock<db::structs::Settings>>> = OnceCell::new();
 // microphone switched off from the tray / a command: Jarvis keeps working from text input
 pub static MIC_MUTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+// real state of the voice mode (the window shows it): active, or why it fell back to text mode
+pub static VOICE_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub static VOICE_ERROR: Lazy<parking_lot::Mutex<String>> = Lazy::new(|| parking_lot::Mutex::new(String::new()));
+// peak of the last microphone frame, 0..32767 (live level meter in the settings)
+pub static MIC_LEVEL: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 pub static COMMANDS_LIST: OnceCell<Vec<JCommandsList>> = OnceCell::new();
 
 // re-exports
