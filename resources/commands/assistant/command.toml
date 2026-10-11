@@ -520,10 +520,10 @@ type = "lua"
 script = "smalltalk.lua"
 sandbox = "full"
 timeout = 10000
-triggers.ru = ["кто ты", "как тебя зовут", "представь", "ты кто"]
-triggers.en = ["who are you", "what is your name", "what's your name"]
-phrases.ru = ["кто ты", "как тебя зовут"]
-phrases.en = ["who are you"]
+triggers.ru = ["кто ты", "как тебя зовут", "представь", "ты кто", "расскаж о себ", "расскаж про себ", "расскаж о тебе", "о себе", "про себя", "что ты такое", "кто такой джарвис"]
+triggers.en = ["who are you", "what is your name", "what's your name", "tell me about yourself", "about yourself", "introduce yourself", "what are you"]
+phrases.ru = ["кто ты", "как тебя зовут", "расскажи о себе"]
+phrases.en = ["who are you", "tell me about yourself"]
 
 [[commands]]
 id = "assistant_help"
