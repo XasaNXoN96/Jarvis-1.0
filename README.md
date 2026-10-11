@@ -64,7 +64,7 @@ Jarvis speaks with the Piper neural voice if `piper\` is installed next to the p
 
 ### Phone remote
 
-Say «включи удалённое управление»: Jarvis copies a link like `http://192.168.x.x:9713/?t=<secret>` to the clipboard. Open it on a phone in the same Wi-Fi: a page with a text box and quick buttons sends commands to the PC. Off by default, protected by the secret token (do not share the link); Windows may ask once to allow Jarvis through the firewall. «выключи удалённое управление» stops it.
+Say «включи удалённое управление»: the Jarvis window opens Settings with a **QR code** (point the phone camera at it); Jarvis also copies a link like `http://192.168.x.x:9713/?t=<secret>` to the clipboard. Open it on a phone in the same Wi-Fi: a page with a text box and quick buttons sends commands to the PC. Off by default, protected by the secret token (do not share the link); Windows may ask once to allow Jarvis through the firewall. «выключи удалённое управление» stops it.
 
 ### Start with Windows
 

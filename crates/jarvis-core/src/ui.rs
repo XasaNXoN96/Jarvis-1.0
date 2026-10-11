@@ -71,6 +71,20 @@ fn commands_json() -> String {
     json!({ "language": lang, "commands": list }).to_string()
 }
 
+// QR code (SVG) of the phone-remote link
+fn qr_svg(data: &str) -> Option<String> {
+    use qrcode::render::svg;
+    let code = qrcode::QrCode::new(data.as_bytes()).ok()?;
+    Some(
+        code.render::<svg::Color>()
+            .min_dimensions(300, 300)
+            .quiet_zone(true)
+            .dark_color(svg::Color("#04101f"))
+            .light_color(svg::Color("#ffffff"))
+            .build(),
+    )
+}
+
 // the avatar photo chosen by the user lives in the config dir (never leaves this computer)
 fn avatar_path() -> Option<std::path::PathBuf> {
     crate::APP_CONFIG_DIR.get().map(|d| d.join("avatar.img"))
@@ -174,6 +188,25 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
     match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/") => respond(&mut stream, "200 OK", "text/html", PAGE),
         ("GET", "/icon.png") | ("GET", "/favicon.ico") => respond_bytes(&mut stream, "200 OK", "image/png", ICON),
+        ("GET", "/remote") => {
+            // phone remote state for the Settings page (the secret link is shown only to this window)
+            let body = serde_json::json!({
+                "enabled": crate::remote::is_running(),
+                "url": if crate::remote::is_running() { crate::remote::url() } else { String::new() },
+            })
+            .to_string();
+            respond(&mut stream, "200 OK", "application/json", &body);
+        }
+        ("GET", "/remote-qr") => {
+            if !crate::remote::is_running() {
+                respond(&mut stream, "404 Not Found", "text/plain", "remote control is off");
+            } else {
+                match qr_svg(&crate::remote::url()) {
+                    Some(svg) => respond_bytes(&mut stream, "200 OK", "image/svg+xml", svg.as_bytes()),
+                    None => respond(&mut stream, "500 Internal Server Error", "text/plain", "qr failed"),
+                }
+            }
+        }
         ("GET", "/commands") => respond(&mut stream, "200 OK", "application/json", &commands_json()),
         ("GET", "/avatar") => {
             match avatar_path().and_then(|p| std::fs::read(p).ok()) {

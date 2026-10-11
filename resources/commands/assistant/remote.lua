@@ -13,6 +13,7 @@ if not url then
 end
 
 jarvis.out(url)
+jarvis.app.show_page("settings")   -- the QR code is shown there
 if jarvis.system.clipboard.set then pcall(jarvis.system.clipboard.set, url) end
 say(T("Пульт", "Remote"), T("Ссылка для телефона скопирована в буфер обмена: ", "Phone link copied to the clipboard: ") .. url,
-    T("Пульт включён. Ссылка для телефона в буфере обмена.", "Remote control is on. The phone link is in the clipboard."))
+    T("Пульт включён. Наведите камеру телефона на QR-код в настройках.", "Remote control is on. Point the phone camera at the QR code in Settings."))

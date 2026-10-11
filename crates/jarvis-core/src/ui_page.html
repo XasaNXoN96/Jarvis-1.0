@@ -133,8 +133,13 @@
         <div class="btns"><button class="btn" data-cmd="режим голоса">Включить</button><button class="btn" data-cmd="режим текста">Выключить</button></div></div>
       <div class="row"><div>Голос Jarvis<small>озвучка ответов</small></div>
         <div class="btns"><button class="btn" data-cmd="включи озвучку">Включить</button><button class="btn" data-cmd="выключи озвучку">Выключить</button></div></div>
-      <div class="row"><div>Пульт для телефона<small>ссылка копируется в буфер обмена</small></div>
+      <div class="row"><div>Пульт для телефона<small>включите, и появится QR-код: наведите на него камеру телефона (телефон и компьютер в одной Wi-Fi сети)</small></div>
         <div class="btns"><button class="btn" data-cmd="включи удалённое управление">Включить</button><button class="btn" data-cmd="выключи удалённое управление">Выключить</button></div></div>
+      <div class="avatar-box" id="remote-box" style="display:none;text-align:center">
+        <div style="background:#fff;border-radius:14px;padding:10px;display:inline-block"><img id="remote-qr" alt="QR" style="width:240px;height:240px;display:block"></div>
+        <small>Откройте камеру телефона и наведите на код. Ссылка секретная: не показывайте её другим. Чтобы закрыть доступ, нажмите «Выключить».</small>
+        <small id="remote-url" style="word-break:break-all;user-select:all"></small>
+      </div>
       <div class="avatar-box">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
           <div>Аватар-голограмма<small>ваше фото превращается в голограмму (фото остаётся на этом компьютере)</small></div>
@@ -172,6 +177,7 @@ function show(name) {
   document.querySelectorAll('nav button[data-page]').forEach(b => b.classList.toggle('active', b.dataset.page === name));
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + name));
   if (name === 'commands') loadCommands();
+  if (name === 'settings') refreshRemote();
   if (name === 'chat') { const l = $('#log'); l.scrollTop = l.scrollHeight; }
   $('#input').focus();
 }
@@ -229,7 +235,25 @@ function sendCommand(text) {
   ws.send(JSON.stringify({ action: 'text_command', text }));
 }
 $('#form').onsubmit = e => { e.preventDefault(); sendCommand($('#input').value); $('#input').value = ''; };
-document.querySelectorAll('[data-cmd]').forEach(b => b.onclick = () => { sendCommand(b.dataset.cmd); show('chat'); });
+document.querySelectorAll('[data-cmd]').forEach(b => b.onclick = () => {
+  sendCommand(b.dataset.cmd);
+  if (b.dataset.cmd.includes('удалённое управление')) { setTimeout(refreshRemote, 700); setTimeout(refreshRemote, 1800); }   // stay on Settings, the QR code appears here
+  else show('chat');
+});
+
+// ---------- phone remote: QR code ----------
+let remoteShown = '';
+async function refreshRemote() {
+  try {
+    const r = await (await fetch('/remote')).json();
+    const box = $('#remote-box');
+    if (r.enabled) {
+      if (remoteShown !== r.url) { $('#remote-qr').src = '/remote-qr?' + Date.now(); $('#remote-url').textContent = r.url; remoteShown = r.url; }
+      box.style.display = 'block';
+    } else { box.style.display = 'none'; remoteShown = ''; }
+  } catch (e) {}
+}
+setInterval(() => { if ($('#page-settings').classList.contains('active')) refreshRemote(); }, 1500);
 
 // ---------- commands page ----------
 let commandsLoaded = false;
