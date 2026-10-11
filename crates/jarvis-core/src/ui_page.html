@@ -815,36 +815,26 @@ async function stopMicTest() {
 }
 let jarvisTest = 0;
 $('#mic-test').onclick = async () => {
-  if (micStream || jarvisTest) { clearInterval(jarvisTest); jarvisTest = 0; stopMicTest(); $('#mic-test').textContent = 'Проверить'; return; }
-  const msg = $('#mic-msg'); msg.className = 'msgline'; msg.textContent = '';
+  if (jarvisTest) { clearInterval(jarvisTest); jarvisTest = 0; stopMicTest(); return; }
+  const msg = $('#mic-msg'); msg.className = 'msgline'; msg.textContent = 'Проверяю: открываю микрофон и жду звук…';
+  $('#mic-test').disabled = true;
+  let res = null;
+  try { res = await action('mic_check'); } catch (e) {}
+  $('#mic-test').disabled = false;
+  if (!res || !res.lines) { msg.className = 'msgline bad'; msg.textContent = '✗ Не удалось выполнить проверку'; return; }
+  msg.className = 'msgline ' + (res.ok ? 'ok' : 'bad');
+  msg.style.whiteSpace = 'pre-line'; msg.textContent = res.lines.join('\n');
   await refreshMicState();
+  if (!res.working || !voiceActive) return;
+  // audio really arrives and Jarvis is listening: show the live level
   const bars = meter.querySelectorAll('i');
-  if (voiceActive && !micMuted) {
-    // the level of the microphone Jarvis itself listens to
-    $('#mic-test').textContent = 'Остановить'; let peakSeen = 0, ticks = 0;
-    jarvisTest = setInterval(async () => {
-      try {
-        const s = await (await fetch('/state')).json(); const lvl = Math.min(1, Math.sqrt(s.mic_level / 32768) * 1.4);
-        peakSeen = Math.max(peakSeen, s.mic_level); bars.forEach((b, i) => b.classList.toggle('on', i / bars.length < lvl));
-        if (++ticks === 25 && peakSeen < 200) { msg.className = 'msgline bad'; msg.textContent = 'Jarvis почти не слышит сигнал. Проверьте, что в Windows выбран нужный микрофон (Параметры → Система → Звук → Ввод) и что он не отключён.'; }
-      } catch (e) {}
-    }, 120);
-    return;
-  }
-  // voice mode is not running: at least check the Windows default microphone in the browser
-  msg.className = 'msgline'; msg.textContent = voiceActive ? 'Микрофон выключен переключателем выше: включите его.' : 'Голосовой режим Jarvis не запущен (см. причину ниже). Проверяю микрофон Windows по умолчанию.';
-  try {
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    micCtx = new AudioContext(); const an = micCtx.createAnalyser(); an.fftSize = 512;
-    micCtx.createMediaStreamSource(micStream).connect(an);
-    const buf = new Uint8Array(an.fftSize); $('#mic-test').textContent = 'Остановить';
-    const tick = () => {
-      an.getByteTimeDomainData(buf); let peak = 0; for (const v of buf) peak = Math.max(peak, Math.abs(v - 128));
-      const lvl = Math.min(1, peak / 70); bars.forEach((b, i) => b.classList.toggle('on', i / bars.length < lvl));
-      micRaf = requestAnimationFrame(tick);
-    };
-    tick();
-  } catch (e) { stopMicTest(); msg.className = 'msgline bad'; msg.textContent = 'Нет доступа к микрофону: разрешите его для окна Jarvis (значок замка в адресной строке) или проверьте настройки конфиденциальности Windows.'; }
+  $('#mic-test').textContent = 'Остановить';
+  jarvisTest = setInterval(async () => {
+    try {
+      const s = await (await fetch('/state')).json(); const lvl = Math.min(1, Math.sqrt(s.mic_level / 32768) * 1.4);
+      bars.forEach((b, i) => b.classList.toggle('on', i / bars.length < lvl));
+    } catch (e) {}
+  }, 120);
 };
 
 // ---------- phone remote: QR code ----------

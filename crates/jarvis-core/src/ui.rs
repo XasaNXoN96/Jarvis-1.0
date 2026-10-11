@@ -103,6 +103,46 @@ fn modules_json() -> serde_json::Value {
     json!(list)
 }
 
+// "Check" button: proves that audio really arrives, step by step
+fn mic_check() -> serde_json::Value {
+    use crate::recorder::diag::{self, Attempt, Stage};
+    use std::sync::atomic::Ordering;
+    if crate::MIC_MUTED.load(Ordering::SeqCst) && crate::VOICE_ACTIVE.load(Ordering::SeqCst) {
+        return json!({ "ok": false, "lines": ["Микрофон выключен переключателем на странице: включите его и повторите проверку"] });
+    }
+    let report = if crate::VOICE_ACTIVE.load(Ordering::SeqCst) && crate::recorder::is_open() {
+        // the live stream Jarvis listens to: count frames and watch the level for a moment
+        let before = crate::recorder::frames_received();
+        let mut peak = 0u32;
+        for _ in 0..12 {
+            std::thread::sleep(Duration::from_millis(100));
+            peak = peak.max(crate::MIC_LEVEL.load(Ordering::Relaxed));
+        }
+        let got = crate::recorder::frames_received().saturating_sub(before);
+        let base = diag::LAST_REPORT.lock().clone();
+        let idx = crate::recorder::active_index();
+        let name = base.attempts.iter().find(|a| a.index == idx).map(|a| a.name.clone()).unwrap_or_else(|| "системный по умолчанию".into());
+        let (stage, detail) = if got == 0 {
+            (Stage::NoData, "поток открыт, но за секунду не пришло ни одного блока звука".to_string())
+        } else {
+            (diag::stage_from_peak(peak), String::new())
+        };
+        let a = Attempt { index: idx, name, stage, cause: None, detail, peak };
+        diag::Report { devices: base.devices, attempts: vec![a], working: if got > 0 { Some(idx) } else { None }, summary: base.summary }
+    } else {
+        let r = crate::recorder::probe_all();
+        diag::store(r.clone());
+        r
+    };
+    let mut lines: Vec<String> = Vec::new();
+    lines.push(if report.devices.is_empty() { "Устройства записи, которые видит Windows: нет".to_string() } else { format!("Устройств записи найдено: {} ({})", report.devices.len(), report.devices.join(", ")) });
+    for a in &report.attempts { lines.push(diag::stage_text(a)); }
+    if report.working.is_none() && !report.summary.is_empty() { lines.push(report.summary.clone()); }
+    if !report.summary.is_empty() && report.working.is_some() { lines.push(report.summary.clone()); }
+    let ok = report.attempts.iter().any(|a| a.stage == Stage::Ok);
+    json!({ "ok": ok, "working": report.working.is_some(), "lines": lines })
+}
+
 fn settings_page_json() -> serde_json::Value {
     let mut v = crate::uistate::settings_json();
     let devices = crate::recorder::get_audio_devices();
@@ -171,6 +211,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             Ok(()) => json!({ "ok": true }),
             Err(e) => json!({ "ok": false, "message": e }),
         },
+        "mic_check" => mic_check(),
         "restart_voice" => {
             // starts a fresh Jarvis without --text (after this one has closed and freed its ports) and quits
             if let Ok(exe) = std::env::current_exe() {

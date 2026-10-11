@@ -1,4 +1,5 @@
 mod pvrecorder;
+pub mod diag;
 
 // mod cpal;
 // mod portaudio;
@@ -13,7 +14,7 @@ static FRAME_LENGTH: OnceCell<u32> = OnceCell::new();
 pub fn init() -> Result<(), ()> {
     // set default recorder type
     // @TODO. Make it configurable?
-    RECORDER_TYPE.set(config::DEFAULT_RECORDER_TYPE).unwrap();
+    let _ = RECORDER_TYPE.set(config::DEFAULT_RECORDER_TYPE);
 
     // some info
     info!("Loading recorder ...");
@@ -24,7 +25,7 @@ pub fn init() -> Result<(), ()> {
         RecorderType::PvRecorder => {
             // Init Pv Recorder
             info!("Initializing PvRecorder recording backend.");
-            FRAME_LENGTH.set(512u32).unwrap(); // pvrecorder requires frame buffer of 512
+            let _ = FRAME_LENGTH.set(512u32); // pvrecorder requires frame buffer of 512
             let selected_microphone = get_selected_microphone_index();
             match pvrecorder::init_microphone(
                 selected_microphone,
@@ -38,8 +39,8 @@ pub fn init() -> Result<(), ()> {
                 _ => {
                     info!(
                         "Recorder initialization success. Listening to microphone ({}): {}",
-                        selected_microphone,
-                        get_audio_device_name(selected_microphone)
+                        pvrecorder::active_index(),
+                        get_audio_device_name(pvrecorder::active_index())
                     );
                 }
             }
@@ -124,18 +125,35 @@ pub fn stop_recording() -> Result<(), ()> {
 
 pub fn get_selected_microphone_index() -> i32 {
     let idx = DB.get().unwrap().read().microphone;
-
-    if idx > 0 {
-        // validate that this microphone is actually in the list
-        let devices = get_audio_devices();
-        if (idx as usize) >= devices.len() {
-            warn!("Microphone index {} not found ({} available), falling back to default", 
-                idx, devices.len());
-            return -1;
-        }
+    let validated = diag::validate_index(idx, get_audio_devices().len());
+    if validated != idx {
+        warn!("Microphone index {} is not available, using the system default", idx);
     }
-    
-    idx
+    validated
+}
+
+// stops and frees the audio stream (the device becomes available to other programs)
+pub fn release() {
+    pvrecorder::release();
+}
+
+// index of the device that is actually open (-1 = system default)
+pub fn active_index() -> i32 {
+    pvrecorder::active_index()
+}
+
+pub fn is_open() -> bool {
+    pvrecorder::is_open()
+}
+
+// number of audio frames delivered so far
+pub fn frames_received() -> u64 {
+    pvrecorder::FRAMES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+// checks every device while the recorder is not running
+pub fn probe_all() -> diag::Report {
+    pvrecorder::probe_all()
 }
 
 pub fn get_audio_devices() -> Vec<String> {

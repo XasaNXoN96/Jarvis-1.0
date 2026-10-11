@@ -82,7 +82,8 @@ fn main() -> Result<(), String> {
     // init recorder (no microphone -> text mode)
     if voice_mode && recorder::init().is_err() {
         warn!("Microphone is not available, switching to TEXT mode.");
-        *jarvis_core::VOICE_ERROR.lock() = "микрофон не найден или занят другой программой (проверьте Параметры Windows → Конфиденциальность → Микрофон: разрешите доступ классическим приложениям)".to_string();
+        let summary = jarvis_core::recorder::diag::LAST_REPORT.lock().summary.clone();
+        *jarvis_core::VOICE_ERROR.lock() = if summary.is_empty() { "микрофон не запустился (подробности в журнале)".to_string() } else { summary };
         voice_mode = false;
     }
 
