@@ -59,6 +59,16 @@ fn next_id(timers: &[TimerEntry]) -> u64 {
     timers.iter().map(|t| t.id).max().unwrap_or(0) + 1
 }
 
+#[cfg(target_os = "windows")]
+fn beep() {
+    unsafe {
+        winapi::um::winuser::MessageBeep(winapi::um::winuser::MB_ICONASTERISK);
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn beep() {}
+
 fn fire(entry: &TimerEntry, late: bool) {
     let message = if late {
         format!("{} ({})", entry.message, if crate::i18n::get_language() == "en" { "missed while Jarvis was off" } else { "пропущено, пока Jarvis был выключен" })
@@ -76,11 +86,10 @@ fn fire(entry: &TimerEntry, late: bool) {
     show_popup(&entry.title, &message);
     tts::speak(&message);
 
-    // make sure the user notices: sound a few times
-    // silent mode (voice off): only the popup, no beeps
-    for _ in 0..(if tts::is_enabled() { 3 } else { 0 }) {
-        voices::play_reply();
-        std::thread::sleep(Duration::from_secs(2));
+    // The message is spoken once (it is the alert). The old "Да, сэр" clips played over the voice and are gone.
+    // Only when the voice is off: one system beep, so that a silent timer is still noticed.
+    if !tts::is_enabled() {
+        beep();
     }
 }
 

@@ -50,7 +50,7 @@ if id == "assistant_file_search" then
 
   jarvis.files.search(query)
   say(T("Поиск файла", "File search"), T("Ищу «" .. query .. "»…", "Searching for \"" .. query .. "\"…"),
-      T("Ищу " .. query, "Searching for " .. query))
+      T("Ищу файл", "Searching for the file"))
   return
 end
 
@@ -74,5 +74,5 @@ if id == "assistant_file_folder" then
   say(T("Папка", "Folder"), item.dir, T("Показываю папку", "Showing the folder"))
 else
   open(item.path)
-  say(T("Открываю", "Opening"), item.name, T("Открываю " .. item.name, "Opening " .. item.name))
+  say(T("Открываю", "Opening"), item.name, T("Запускаю", "Opening"))
 end

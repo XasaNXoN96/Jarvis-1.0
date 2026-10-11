@@ -330,7 +330,7 @@ local function file_session(text)
       local r = powershell(script)
       jarvis.session.finish()
       if r.success then say(T("Файл", "File"), T("Перемещён в корзину: ", "Moved to the recycle bin: ") .. (item and item.name or ""), T("Удалил в корзину", "Moved to the recycle bin"))
-      else say(T("Файл", "File"), T("Не удалось удалить: ", "Could not delete: ") .. (r.stderr or ""):sub(1, 150)) end
+      else say(T("Файл", "File"), T("Не удалось удалить: ", "Could not delete: ") .. (r.stderr or ""):sub(1, 150), T("Не удалось удалить файл", "Could not delete the file")) end
     else
       jarvis.session.finish()
       say(T("Файл", "File"), T("Не удаляю", "Not deleting"), T("Хорошо, не удаляю", "Okay, not deleting"))
@@ -351,8 +351,8 @@ local function file_session(text)
   if has("запуск") or has("запуст") or has("открой") or has("открыв") or has("открыть") or has("включ") or has("играй") or has("воспроизв") or has("смотр") or has("слуша") then
     jarvis.session.finish()
     local ok = pcall(open, item.path)
-    if ok then say(T("Открываю", "Opening"), item.name, T("Открываю " .. item.name, "Opening " .. item.name))
-    else say(T("Файл", "File"), T("Не удалось открыть ", "Could not open ") .. item.name) end
+    if ok then say(T("Открываю", "Opening"), item.name, T("Запускаю", "Opening"))
+    else say(T("Файл", "File"), T("Не удалось открыть ", "Could not open ") .. item.name, T("Не удалось открыть файл", "Could not open the file")) end
   elseif has("папк") then
     jarvis.session.finish()
     launch("explorer.exe", { "/select," .. item.path:gsub("/", "\\") })
@@ -371,11 +371,11 @@ local function file_session(text)
   elseif has("удал") or has("сотр") or has("убер") then
     jarvis.session.set_data(tostring(n) == "" and "confirm_delete" or ("confirm_delete:" .. n))
     say(T("Файл", "File"), T("Удалить «" .. item.name .. "» в корзину? Скажите да или нет.", "Delete '" .. item.name .. "' to the recycle bin? Say yes or no."),
-        T("Удалить " .. item.name .. " в корзину? Скажите да или нет", "Delete " .. item.name .. " to the recycle bin? Say yes or no"))
+        T("Удалить найденный файл в корзину? Скажите да или нет", "Delete the found file to the recycle bin? Say yes or no"))
   elseif #tokens == 1 and ORDINALS[tokens[1]] then
     jarvis.session.set_data(tostring(n))
     say(T("Файл", "File"), T("Выбран " .. n .. ": " .. item.name .. ". Что сделать?", "Selected " .. n .. ": " .. item.name .. ". What to do?"),
-        T("Выбрал " .. item.name .. ". Что сделать?", "Selected " .. item.name .. ". What to do?"))
+        T("Выбрал номер " .. n .. ". Что сделать?", "Selected number " .. n .. ". What to do?"))
   else
     -- not an answer about the file: leave the question and handle the phrase as an ordinary command
     jarvis.session.finish()
