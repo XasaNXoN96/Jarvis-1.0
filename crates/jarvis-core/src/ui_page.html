@@ -491,6 +491,17 @@
     <section class="page" id="page-settings">
       <h1>Центр настроек</h1>
       <p class="lead">Микрофон, голос, ИИ-провайдер, уведомления, приватность и внешний вид. Изменения сохраняются сами и остаются после перезапуска.</p>
+      <input type="text" id="set-search" placeholder="Поиск по настройкам, например: громкость" style="width:100%;margin-bottom:14px">
+
+      <div class="card" style="margin-bottom:14px" id="general-card"><h3><span class="ei">⚙</span>Основные</h3>
+        <div class="setrow"><div class="l">Автозагрузка с Windows<small id="as-hint">запускать Джарвиса в фоне (значок в трее) при входе в Windows; та же настройка, что в установщике</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="as-on"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Браузер для сайтов<small>в нём открываются сайты по голосовым командам; если его нет на компьютере — откроется браузер Windows по умолчанию</small></div>
+          <div class="r"><div class="seg" id="br-seg"><button data-br="">Системный</button><button data-br="chrome">Chrome</button><button data-br="edge">Edge</button><button data-br="firefox">Firefox</button><button data-br="opera">Opera</button><button data-br="brave">Brave</button><button data-br="yandex">Яндекс</button></div></div></div>
+        <div class="setrow"><div class="l">Движки распознавания<small id="eng-info">—</small></div>
+          <div class="r"><button class="btn" id="logs-open" type="button">Открыть папку с логами</button></div></div>
+        <div class="msgline" id="gen-msg"></div>
+      </div>
 
       <div class="card" style="margin-bottom:14px" id="privacy-card"><h3><span class="ei">🛡</span>Приватность и разрешения</h3>
         <div class="setrow"><div class="l">Микрофон<small>выключенный микрофон не начинает новых записей, текущая запись останавливается; остаётся выключенным после перезапуска</small></div>
@@ -546,6 +557,8 @@
           <div class="r"><select id="mic-select"><option value="-1">Системный по умолчанию</option></select></div></div>
         <div class="setrow"><div class="l">Режим<small>выключите микрофон, чтобы управлять только текстом</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="mic-on"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Чувствительность микрофона<small>как легко Джарвис принимает звук за речь: больше — слышит тихий голос (но и шум), меньше — только громкую речь. 50% — как раньше. Применяется сразу</small></div>
+          <div class="r"><input type="range" id="mic-sens" min="0" max="100" step="5" value="50"><b id="mic-sens-v" style="min-width:42px;text-align:right">50%</b></div></div>
         <div class="setrow"><div class="l">Проверка микрофона<small>скажите что-нибудь: полоска должна двигаться. Это микрофон, который слушает сам Jarvis</small></div>
           <div class="r"><div class="meter" id="meter"></div><button class="btn small" id="mic-test">Проверить</button></div></div>
         <div class="msgline" id="mic-msg"></div>
@@ -560,7 +573,9 @@
         <div class="setrow"><div class="l">Голос<small id="voice-hint">Джарвис (Piper) — нейросетевой голос, работает без интернета</small></div>
           <div class="r"><select id="voice-select"><option value="">Автоматически</option></select></div></div>
         <div class="setrow"><div class="l">Скорость речи</div>
-          <div class="r"><input type="range" id="rate" min="0.6" max="1.6" step="0.05" value="1"><b id="rate-v" style="min-width:42px;text-align:right">1.0×</b></div></div>
+          <div class="r"><div class="seg" id="rate-seg"><button data-rate="0.8">Медленно</button><button data-rate="1">Норм</button><button data-rate="1.25">Быстро</button><button data-rate="1.5">Очень быстро</button></div><input type="range" id="rate" min="0.6" max="1.6" step="0.05" value="1"><b id="rate-v" style="min-width:42px;text-align:right">1.0×</b></div></div>
+        <div class="setrow"><div class="l">Громкость озвучки<small>громкость голоса Джарвиса; громкость Windows не меняется</small></div>
+          <div class="r"><input type="range" id="tts-vol" min="10" max="100" step="5" value="100"><b id="tts-vol-v" style="min-width:42px;text-align:right">100%</b></div></div>
         <div class="setrow"><div class="l">Озвучка ответов</div>
           <div class="r"><label class="sw"><input type="checkbox" id="tts-on"><span></span></label><button class="btn primary" id="tts-test">Проверить звук</button></div></div>
       </div>
@@ -579,6 +594,8 @@
           <div class="r"><button class="btn" id="ai-save">Сохранить</button><button class="btn primary" id="ai-test">Проверить соединение</button></div></div>
         <div class="setrow"><div class="l">Отвечать ИИ на непонятные фразы, сказанные голосом<small>Всё, что вы напечатали и что не является командой, идёт выбранному ИИ, если он подключён. Вопросы голосом («что такое…», «объясни…») тоже. Этот переключатель добавляет к ним остальные непонятные фразы, сказанные голосом.</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="ai-fallback"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Анализ экрана («что на экране»)<small>по команде «Джарвис, что на экране» снимок главного экрана уйдёт выбранному провайдеру с вашим вопросом; без команды экран не снимается, снимок не сохраняется. Нужна модель, которая видит картинки (например, gemini-flash). По умолчанию выключено</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="ai-screen"><span></span></label></div></div>
         <small class="dim">Ответы ИИ появляются на странице «Диалог». Ключ хранится только на этом компьютере в зашифрованном виде (шифрование Windows) и не показывается в окне. Сообщения уходят провайдеру, когда вы нажимаете «Отправить» или задаёте вопрос; команды компьютера («открой ворд», «поставь таймер») в ИИ не отправляются.</small>
       </div>
 
@@ -1161,7 +1178,7 @@ async function loadSettings() {
     $('#ai-fallback').checked = !!s.ai_fallback; $('#ai-provider').value = s.ai_provider || 'none'; $('#ai-model').value = s.ai_model || ''; $('#ai-url').value = s.ai_url || '';
     $('#ai-key').value = ''; $('#ai-key-hint').textContent = s.ai_key_saved ? 'ключ сохранён (оставьте поле пустым, чтобы не менять)' : 'хранится только на этом компьютере';
     updateAiRows();
-    applyPrivacy(s);
+    applyPrivacy(s); applyGeneral(s); $('#ai-screen').checked = !!s.ai_screen;
     $('#voice-hint').textContent = s.piper ? 'Джарвис (Piper) — нейросетевой голос, работает без интернета' : 'Piper не установлен: говорит голос Windows (в большом установщике есть Piper)';
     if (!$('#rv-select').options.length) {
       try { (await (await fetch('/reaction-voices')).json()).forEach(v => $('#rv-select').add(new Option(v.name, v.id))); } catch (e) {}
@@ -1226,6 +1243,29 @@ $('#ai-test').onclick = async () => {
   catch (e) { m.className = 'msgline bad'; m.textContent = '✗ Не удалось выполнить проверку'; }
 };
 
+// ---------- general: autostart, browser, engines, logs; microphone sensitivity, voice volume ----------
+function applyGeneral(s) {
+  const as = s.autostart || {}; $('#as-on').checked = !!as.on; $('#as-on').disabled = as.supported === false;
+  $('#as-hint').textContent = as.supported === false ? 'доступно только в Windows' : (as.other_copy ? 'включено для другой копии Джарвиса — переключите, чтобы запускать эту' : 'запускать Джарвиса в фоне (значок в трее) при входе в Windows; та же настройка, что в установщике');
+  document.querySelectorAll('#br-seg button').forEach(b => b.classList.toggle('active', (s.browser || '') === b.dataset.br));
+  const e = s.engines; $('#eng-info').textContent = e ? 'активация: ' + e.wake + ' · распознавание речи: ' + e.stt + ' (на этом компьютере, звук никуда не отправляется) · намерения: ' + e.intent + ' · параметры: ' + e.slots + '. Меняются в меню трея, применяются после перезапуска' : '—';
+  $('#mic-sens').value = s.mic_sensitivity ?? 50; $('#mic-sens-v').textContent = (s.mic_sensitivity ?? 50) + '%';
+  $('#tts-vol').value = s.tts_volume ?? 100; $('#tts-vol-v').textContent = (s.tts_volume ?? 100) + '%';
+  document.querySelectorAll('#rate-seg button').forEach(b => b.classList.toggle('active', Math.abs(+b.dataset.rate - (+s.voice_rate || 1)) < 0.03));
+}
+function genMsg(ok, t) { const m = $('#gen-msg'); m.className = 'msgline ' + (ok ? 'ok' : 'bad'); m.textContent = t; }
+$('#as-on').onchange = async e => { const r = await action('autostart', { value: e.target.checked }); genMsg(r.ok, r.ok ? (e.target.checked ? 'Джарвис будет запускаться вместе с Windows' : 'Автозагрузка выключена') : r.message); loadSettings(); };
+document.querySelectorAll('#br-seg button').forEach(b => b.onclick = async () => { await api('/settings', { browser: b.dataset.br }); genMsg(true, 'Сайты будут открываться: ' + b.textContent); loadSettings(); });
+$('#logs-open').onclick = async () => { const r = await action('open_logs'); if (!r.ok) genMsg(false, r.message); };
+$('#mic-sens').oninput = e => { $('#mic-sens-v').textContent = e.target.value + '%'; saveSettings({ mic_sensitivity: +e.target.value }); };
+$('#tts-vol').oninput = e => { $('#tts-vol-v').textContent = e.target.value + '%'; saveSettings({ tts_volume: +e.target.value }); };
+document.querySelectorAll('#rate-seg button').forEach(b => b.onclick = () => { $('#rate').value = b.dataset.rate; $('#rate').oninput({ target: $('#rate') }); document.querySelectorAll('#rate-seg button').forEach(x => x.classList.toggle('active', x === b)); });
+// search in the settings: the cards whose text has the words stay visible
+$('#set-search').oninput = e => {
+  const q = e.target.value.trim().toLowerCase();
+  document.querySelectorAll('#page-settings > .card').forEach(c => { c.style.display = !q || c.textContent.toLowerCase().includes(q) ? '' : 'none'; });
+};
+
 // ---------- privacy, notifications, notifications of other programs ----------
 function applyPrivacy(s) {
   $('#pv-mic').checked = !s.mic_off; $('#pv-tts').checked = !!s.tts_enabled; $('#pv-ai').checked = s.ai_enabled !== false;
@@ -1278,6 +1318,7 @@ async function setFlag(patch) { try { await api('/settings', patch); } catch (e)
 $('#pv-mic').onchange = async e => { await action('mic_muted', { value: !e.target.checked }); loadSettings(); refreshMicState(); };
 $('#pv-tts').onchange = async e => { await action('tts_toggle', { value: e.target.checked }); loadSettings(); pollNow(); };
 $('#pv-ai').onchange = e => setFlag({ ai_enabled: e.target.checked });
+$('#ai-screen').onchange = e => setFlag({ ai_screen: e.target.checked });
 $('#pv-ext').onchange = e => setFlag({ ext_enabled: e.target.checked });
 $('#ext-on').onchange = e => setFlag({ ext_enabled: e.target.checked });
 $('#pv-dnd').onchange = e => setFlag({ dnd: e.target.checked });

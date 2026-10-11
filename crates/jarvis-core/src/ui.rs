@@ -220,6 +220,24 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             crate::uistate::reset_settings();
             json!({ "ok": true })
         }
+        "autostart" => {
+            let on = body.get("value").and_then(|v| v.as_bool()).unwrap_or(false);
+            match crate::autostart::set(on) {
+                Ok(()) => json!({ "ok": true, "state": crate::autostart::state() }),
+                Err(e) => json!({ "ok": false, "message": e, "state": crate::autostart::state() }),
+            }
+        }
+        // "Открыть папку с логами"
+        "open_logs" => match crate::APP_LOG_DIR.get() {
+            #[cfg(all(feature = "lua", target_os = "windows"))]
+            Some(d) => match crate::lua::shell_open(&d.display().to_string()) {
+                Ok(()) => json!({ "ok": true }),
+                Err(e) => json!({ "ok": false, "message": e }),
+            },
+            #[cfg(not(all(feature = "lua", target_os = "windows")))]
+            Some(d) => json!({ "ok": false, "message": format!("Папка логов: {}", d.display()) }),
+            None => json!({ "ok": false, "message": "Папка логов не определена" }),
+        },
         "ai_key_forget" => {
             crate::uistate::forget_ai_key();
             json!({ "ok": true })

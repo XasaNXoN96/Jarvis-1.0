@@ -84,6 +84,8 @@ impl std::fmt::Debug for ProviderConf {
 pub enum AiError {
     // switched off in the privacy section: nothing is sent to any AI provider
     Disabled,
+    // "Анализ экрана" is not allowed in the settings: no picture of the screen leaves the computer
+    ScreenNotAllowed,
     NoProvider,
     NoKey(String),
     NoModel,
@@ -114,6 +116,7 @@ impl AiError {
     pub fn user_text(&self) -> String {
         match self {
             AiError::Disabled => "Запросы к ИИ выключены в Настройках → Приватность. Эта фраза требует ИИ, поэтому никуда не отправлена; команды компьютера работают как обычно.".into(),
+            AiError::ScreenNotAllowed => "Анализ экрана не разрешён. Включите его в Настройки → ИИ-провайдер → «Анализ экрана»: тогда по команде «что на экране» снимок экрана уйдёт выбранному провайдеру.".into(),
             AiError::NoProvider => "ИИ-провайдер не выбран. Откройте Настройки → ИИ-провайдер, выберите провайдера и введите ключ.".into(),
             AiError::NoKey(p) => format!("Не введён ключ API для {}. Откройте Настройки → ИИ-провайдер и вставьте ключ.", p),
             AiError::NoModel => "Не указана модель. Откройте Настройки → ИИ-провайдер и впишите название модели (например, gpt-4o-mini).".into(),
@@ -800,7 +803,7 @@ fn status_error(e: &AiError) {
     if *e != AiError::Cancelled {
         status_set(Conn::Error, &first_sentence(&e.user_text()));
         // the notification of an AI failure (the text is the explanation, never the question or a key)
-        if !matches!(e, AiError::Duplicate | AiError::Busy | AiError::Empty | AiError::Disabled) {
+        if !matches!(e, AiError::Duplicate | AiError::Busy | AiError::Empty | AiError::Disabled | AiError::ScreenNotAllowed) {
             crate::notify::push("ai_error", "Ошибка ИИ", &first_sentence(&e.user_text()), true);
         }
     }
@@ -1243,6 +1246,79 @@ pub fn send_question(text: &str, on_error: ErrorHook) -> Result<String, AiError>
 
 pub fn send(chat_id: Option<&str>, text: &str, speak: bool) -> Result<String, AiError> {
     send_with(store(), conf_from_settings(), chat_id, text, speak).map(|o| o.chat_id)
+}
+
+// ---------------------------------------------------------------------------------------------
+// "что на экране": one question about a picture (the model of the provider must see images)
+// ---------------------------------------------------------------------------------------------
+pub fn base64(data: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    for c in data.chunks(3) {
+        let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
+        out.push(T[(n >> 18) as usize & 63] as char);
+        out.push(T[(n >> 12) as usize & 63] as char);
+        out.push(if c.len() > 1 { T[(n >> 6) as usize & 63] as char } else { '=' });
+        out.push(if c.len() > 2 { T[n as usize & 63] as char } else { '=' });
+    }
+    out
+}
+
+pub fn vision_body(conf: &ProviderConf, question: &str, mime: &str, b64: &str) -> Value {
+    let system = "Ты — голосовой помощник Джарвис. Тебе прислали снимок экрана пользователя. Ответь коротко и по делу, на языке вопроса.";
+    match conf.kind {
+        Kind::OpenAiCompatible => json!({
+            "model": conf.model, "stream": false,
+            "messages": [
+                { "role": "system", "content": system },
+                { "role": "user", "content": [
+                    { "type": "text", "text": question },
+                    { "type": "image_url", "image_url": { "url": format!("data:{};base64,{}", mime, b64) } }
+                ] }
+            ]
+        }),
+        Kind::Anthropic => json!({
+            "model": conf.model, "max_tokens": 1024, "system": system,
+            "messages": [{ "role": "user", "content": [
+                { "type": "image", "source": { "type": "base64", "media_type": mime, "data": b64 } },
+                { "type": "text", "text": question }
+            ] }]
+        }),
+    }
+}
+
+// only with the AI switched on, a provider set up and the screen analysis allowed
+pub fn screen_conf() -> Result<ProviderConf, AiError> {
+    let conf = conf_from_settings()?;
+    if !crate::uistate::settings().ai_screen {
+        return Err(AiError::ScreenNotAllowed);
+    }
+    Ok(conf)
+}
+
+#[cfg(feature = "lua")]
+pub fn ask_about_screen(question: &str) -> Result<String, AiError> {
+    let conf = screen_conf()?;
+    let jpeg = crate::screen::capture().map_err(AiError::Other)?;
+    let body = vision_body(&conf, question, "image/jpeg", &base64(&jpeg));
+    drop(jpeg);
+    let resp = with_key(&conf, client()?.post(endpoint(&conf)).json(&body)).send().map_err(|e| net_error(&conf, e))?;
+    let status = resp.status().as_u16();
+    let text = resp.text().map_err(|e| net_error(&conf, e))?;
+    if !(200..300).contains(&status) {
+        let e = map_status(&conf, status, &text);
+        status_error(&e);
+        return Err(e);
+    }
+    let v: Value = serde_json::from_str(&text).map_err(|_| AiError::BadResponse)?;
+    let answer = parse_answer(&conf, &v)?;
+    status_set(Conn::Connected, "");
+    Ok(answer)
+}
+
+#[cfg(not(feature = "lua"))]
+pub fn ask_about_screen(_question: &str) -> Result<String, AiError> {
+    screen_conf().map(|_| String::new()).and(Err(AiError::Other("в этой сборке нет сетевого модуля".into())))
 }
 
 #[cfg(test)]

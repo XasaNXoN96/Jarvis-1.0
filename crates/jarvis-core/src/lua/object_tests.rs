@@ -525,3 +525,13 @@ fn browser_keyboard_mouse_and_window_commands_reach_their_own_handlers() {
         assert_eq!(w.route(phrase).as_deref(), Some(id), "{} must stay with {}", phrase, id);
     }
 }
+
+#[test]
+fn the_screen_question_is_a_command_not_a_chat_message() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({}));
+    for p in ["что на экране", "опиши экран", "что ты видишь на экране"] {
+        assert_eq!(w.route(p).as_deref(), Some("assistant_screen"), "{}", p);
+    }
+    assert_eq!(crate::route::decide("что на экране", true), crate::route::Route::Command);
+}

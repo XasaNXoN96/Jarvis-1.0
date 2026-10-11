@@ -549,6 +549,7 @@ pub fn internet_uses(s: &crate::uistate::UiSettings) -> Value {
     };
     json!([
         { "name": "Ответы ИИ", "internet": ai_active && !provider_local, "active": ai_active, "detail": ai_detail },
+        { "name": "Анализ экрана", "internet": s.ai_screen && ai_active && !provider_local, "active": s.ai_screen && ai_active, "detail": if s.ai_screen { "снимок экрана уходит ИИ-провайдеру только по команде «что на экране» и не сохраняется" } else { "выключено: снимки экрана никуда не отправляются" } },
         { "name": "Погода", "internet": true, "active": !s.city.is_empty(), "detail": "название города уходит на open-meteo.com (блок на главной) и wttr.in (команда «какая погода»)" },
         { "name": "Поиск, сайты, карты, перевод, музыка", "internet": true, "active": true, "detail": "открываются в браузере, только когда вы просите" },
         { "name": "Установка голоса Джарвиса", "internet": true, "active": false, "detail": "загрузка с github.com и huggingface.co, только по кнопке" },

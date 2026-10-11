@@ -205,6 +205,16 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
     })?)?;
     jarvis.set("apps", apps)?;
 
+    // jarvis.ai.screen(question) -> answer | nil, reason: a question about the screen (only when allowed in the settings)
+    let ai = lua.create_table()?;
+    ai.set("screen", lua.create_function(|_, question: String| {
+        Ok(match crate::ai::ask_about_screen(&question) {
+            Ok(a) => (Some(a), None),
+            Err(e) => (None, Some(e.user_text())),
+        })
+    })?)?;
+    jarvis.set("ai", ai)?;
+
     // jarvis.session: a conversation without the wake word (see session.rs)
     let session = lua.create_table()?;
     session.set("start", lua.create_function(|_, (kind, secs): (String, Option<u64>)| { crate::session::start(&kind, secs.unwrap_or(60)); Ok(()) })?)?;

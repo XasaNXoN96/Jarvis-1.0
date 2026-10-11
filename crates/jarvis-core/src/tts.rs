@@ -422,7 +422,43 @@ fn ansi_safe_new(p: &Path) -> PathBuf {
     }
 }
 
+// "Громкость озвучки": the samples of a 16-bit PCM wav are scaled (the volume of Windows is not touched). Pure, tested.
+pub fn scale_wav(data: &mut [u8], volume: u8) {
+    if volume >= 100 || data.len() < 12 || &data[0..4] != b"RIFF" || &data[8..12] != b"WAVE" {
+        return;
+    }
+    // find the "data" chunk (Piper writes the plain 44-byte header, but other chunks are allowed)
+    let mut pos = 12;
+    while pos + 8 <= data.len() {
+        let id = &data[pos..pos + 4];
+        let len = u32::from_le_bytes([data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7]]) as usize;
+        if id == b"data" {
+            let start = pos + 8;
+            let end = (start + len).min(data.len());
+            let k = volume as i32;
+            for chunk in data[start..end].chunks_exact_mut(2) {
+                let v = i16::from_le_bytes([chunk[0], chunk[1]]) as i32 * k / 100;
+                chunk.copy_from_slice(&(v as i16).to_le_bytes());
+            }
+            return;
+        }
+        pos += 8 + len + (len & 1);
+    }
+}
+
+fn apply_volume(wav: &Path) {
+    let vol = crate::uistate::settings().tts_volume;
+    if vol >= 100 {
+        return;
+    }
+    if let Ok(mut data) = std::fs::read(wav) {
+        scale_wav(&mut data, vol);
+        let _ = std::fs::write(wav, data);
+    }
+}
+
 fn play_wav(wav: &Path, generation: u64) {
+    apply_volume(wav);
     // a sound file Piper made, but without any sound in it, is a failure, not a success
     let size = std::fs::metadata(wav).map(|m| m.len()).unwrap_or(0);
     if size <= 44 {
@@ -511,6 +547,7 @@ const SAPI_SCRIPT: &str = r#"
 Add-Type -AssemblyName System.Speech
 $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
 $s.Rate = [int]$env:JARVIS_TTS_RATE
+if ($env:JARVIS_TTS_VOLUME) { $s.Volume = [int]$env:JARVIS_TTS_VOLUME }
 $lang = $env:JARVIS_TTS_LANG
 $voices = @($s.GetInstalledVoices() | Where-Object { $_.Enabled })
 $pick = $null
@@ -537,6 +574,7 @@ fn speak_sapi(text: &str, lang: &str, generation: u64) {
             .env("JARVIS_TTS_TEXT", text)
             .env("JARVIS_TTS_LANG", lang)
             .env("JARVIS_TTS_RATE", ((crate::uistate::voice_rate() - 1.0) * 10.0).round().clamp(-10.0, 10.0).to_string())
+            .env("JARVIS_TTS_VOLUME", crate::uistate::settings().tts_volume.min(100).to_string())
             .env("JARVIS_TTS_VOICE", crate::uistate::voice_name().strip_prefix("win:").unwrap_or(""))
             .env("JARVIS_TTS_NOTE", &note)
             .stdout(Stdio::null())
@@ -788,5 +826,40 @@ mod tests {
         assert_eq!(chunks.join(" "), text);
         assert_eq!(split_chunks("Привет."), vec!["Привет.".to_string()]);
         assert!(split_chunks("   ").is_empty());
+    }
+}
+
+#[cfg(test)]
+mod volume_tests {
+    use super::scale_wav;
+
+    fn wav(samples: &[i16]) -> Vec<u8> {
+        let data: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
+        let mut v = b"RIFF".to_vec();
+        v.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
+        v.extend_from_slice(b"WAVEfmt ");
+        v.extend_from_slice(&16u32.to_le_bytes());
+        v.extend_from_slice(&[1, 0, 1, 0, 0x22, 0x56, 0, 0, 0x44, 0xAC, 0, 0, 2, 0, 16, 0]);
+        v.extend_from_slice(b"data");
+        v.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        v.extend_from_slice(&data);
+        v
+    }
+
+    #[test]
+    fn the_voice_volume_scales_the_samples_and_keeps_the_header() {
+        let mut w = wav(&[1000, -1000, 32767, -32768]);
+        let header = w[..44].to_vec();
+        scale_wav(&mut w, 50);
+        assert_eq!(&w[..44], header.as_slice(), "the header is untouched");
+        let s: Vec<i16> = w[44..].chunks(2).map(|c| i16::from_le_bytes([c[0], c[1]])).collect();
+        assert_eq!(s, vec![500, -500, 16383, -16384]);
+        let mut full = wav(&[1234]);
+        let before = full.clone();
+        scale_wav(&mut full, 100);
+        assert_eq!(full, before, "100 % changes nothing");
+        let mut junk = b"not a wav at all".to_vec();
+        scale_wav(&mut junk, 10);
+        assert_eq!(junk, b"not a wav at all".to_vec());
     }
 }

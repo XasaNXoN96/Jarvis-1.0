@@ -8,8 +8,24 @@ use crate::lua::sandbox::SandboxLevel;
 
 // Opens a URL / file / program the way a double click does (ShellExecute). Returns the real result:
 // rundll32 "succeeds" even when nothing opens, ShellExecute reports an error code.
+// sites open in the browser chosen in the settings ("" = the Windows default); when that browser cannot be started,
+// the default one opens the site (and the log says why)
 #[cfg(target_os = "windows")]
 pub fn shell_open(target: &str) -> Result<(), String> {
+    let lower = target.to_lowercase();
+    if lower.starts_with("http://") || lower.starts_with("https://") {
+        if let Some(exe) = crate::uistate::browser_exe(&crate::uistate::settings().browser) {
+            match shell_execute(exe, Some(target)) {
+                Ok(()) => return Ok(()),
+                Err(e) => log::warn!("Browser {} did not start ({}), the default browser is used", exe, e),
+            }
+        }
+    }
+    shell_execute(target, None)
+}
+
+#[cfg(target_os = "windows")]
+fn shell_execute(target: &str, params: Option<&str>) -> Result<(), String> {
     use std::os::windows::ffi::OsStrExt;
     use winapi::um::shellapi::{ShellExecuteExW, SEE_MASK_FLAG_NO_UI, SHELLEXECUTEINFOW};
     use winapi::um::winuser::SW_SHOWNORMAL;
@@ -17,6 +33,7 @@ pub fn shell_open(target: &str) -> Result<(), String> {
     let wide = |s: &str| -> Vec<u16> { std::ffi::OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect() };
     let verb = wide("open");
     let file = wide(target);
+    let args = params.map(wide);
     unsafe {
         let mut info: SHELLEXECUTEINFOW = std::mem::zeroed();
         info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
@@ -24,6 +41,9 @@ pub fn shell_open(target: &str) -> Result<(), String> {
         info.fMask = SEE_MASK_FLAG_NO_UI;
         info.lpVerb = verb.as_ptr();
         info.lpFile = file.as_ptr();
+        if let Some(a) = &args {
+            info.lpParameters = a.as_ptr();
+        }
         info.nShow = SW_SHOWNORMAL;
         if ShellExecuteExW(&mut info) != 0 {
             Ok(())

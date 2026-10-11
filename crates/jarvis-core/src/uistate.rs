@@ -98,6 +98,45 @@ pub struct UiSettings {
     pub ext_seen: Vec<String>,  // names of programs that sent a notification (never their text): to pick from
     // interface choices of the window (sphere mode, photo settings): the page keeps a copy in its browser storage
     pub ui: std::collections::BTreeMap<String, String>,
+    // loudness of Jarvis' voice, 0..100 (the Windows volume is not touched)
+    pub tts_volume: u8,
+    // "Анализ экрана": a picture of the screen may be sent to the AI provider, only by the command «что на экране»
+    pub ai_screen: bool,
+    // the browser for sites opened by voice: "" = the Windows default | chrome | edge | firefox | opera | brave | yandex
+    pub browser: String,
+    // how easily the microphone takes a sound for speech, 0..100 (50 = as before)
+    pub mic_sensitivity: u8,
+}
+
+// the speech threshold of the microphone for a sensitivity: 50 % = 100 (the old fixed value), 100 % = 30 (hears a
+// quiet voice), 0 % = 300 (only loud speech). Pure, tested.
+pub fn vad_threshold(sensitivity: u8) -> f32 {
+    let s = sensitivity.min(100) as f32;
+    if s >= 50.0 { 100.0 - (s - 50.0) / 50.0 * 70.0 } else { 300.0 - s / 50.0 * 200.0 }
+}
+
+static MIC_THRESHOLD: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x42C8_0000); // 100.0
+
+// read for every microphone frame: no lock
+pub fn mic_threshold() -> f32 {
+    f32::from_bits(MIC_THRESHOLD.load(std::sync::atomic::Ordering::Relaxed))
+}
+
+fn apply_mic_threshold(s: &UiSettings) {
+    MIC_THRESHOLD.store(vad_threshold(s.mic_sensitivity).to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+
+// the program of a browser choice (an App Paths name Windows knows)
+pub fn browser_exe(key: &str) -> Option<&'static str> {
+    match key {
+        "chrome" => Some("chrome.exe"),
+        "edge" => Some("msedge.exe"),
+        "firefox" => Some("firefox.exe"),
+        "opera" => Some("opera.exe"),
+        "brave" => Some("brave.exe"),
+        "yandex" => Some("browser.exe"),
+        _ => None,
+    }
 }
 
 impl Default for UiSettings {
@@ -108,6 +147,7 @@ impl Default for UiSettings {
             notify_show: true, notify_speak: true, notify_sound: true, dnd: false,
             ext_enabled: false, ext_show: true, ext_speak: false, ext_strict: true, ext_allowed: Vec::new(), ext_blocked: Vec::new(), ext_seen: Vec::new(),
             ui: Default::default(),
+            tts_volume: 100, browser: String::new(), mic_sensitivity: 50, ai_screen: false,
         }
     }
 }
@@ -196,6 +236,7 @@ pub fn write_to(p: &std::path::Path, s: &UiSettings) {
 // called once at start: restores the saved privacy choices (microphone) and the notification watcher
 pub fn init() {
     let s = settings();
+    apply_mic_threshold(&s);
     if s.mic_off {
         crate::MIC_MUTED.store(true, std::sync::atomic::Ordering::SeqCst);
         info!("Privacy: the microphone is switched off (saved setting)");
@@ -336,6 +377,10 @@ pub fn update_settings(patch: &Value) {
     if let Some(v) = flag("ext_strict") { s.ext_strict = v; }
     if let Some(v) = patch.get("ext_allowed").and_then(str_list) { s.ext_allowed = v; }
     if let Some(v) = patch.get("ext_blocked").and_then(str_list) { s.ext_blocked = v; }
+    if let Some(v) = flag("ai_screen") { s.ai_screen = v; }
+    if let Some(v) = patch.get("tts_volume").and_then(|v| v.as_u64()) { s.tts_volume = v.min(100) as u8; }
+    if let Some(v) = patch.get("mic_sensitivity").and_then(|v| v.as_u64()) { s.mic_sensitivity = v.min(100) as u8; apply_mic_threshold(&s); }
+    if let Some(v) = patch.get("browser").and_then(|v| v.as_str()) { s.browser = if browser_exe(v).is_some() { v.to_string() } else { String::new() }; }
     let ext_changed = match flag("ext_enabled") { Some(v) if v != s.ext_enabled => { s.ext_enabled = v; true } _ => false };
     if let Some(obj) = patch.get("ui").and_then(|v| v.as_object()) {
         for (k, v) in obj.iter().take(30) {
@@ -368,6 +413,11 @@ pub fn settings_json() -> Value {
         "ext_allowed": s.ext_allowed, "ext_blocked": s.ext_blocked, "ext_seen": s.ext_seen,
         "ext_status": crate::notify::ext_status_json(),
         "ui": s.ui,
+        "ai_screen": s.ai_screen,
+        "tts_volume": s.tts_volume, "browser": s.browser, "mic_sensitivity": s.mic_sensitivity,
+        "autostart": crate::autostart::state(),
+        "engines": crate::DB.get().map(|d| { let d = d.read(); json!({ "wake": format!("{:?}", d.wake_word_engine), "stt": format!("{:?}", d.speech_to_text_engine), "intent": d.intent_backend, "slots": d.slots_backend }) }).unwrap_or(Value::Null),
+        "log_dir": crate::APP_LOG_DIR.get().map(|d| d.display().to_string()).unwrap_or_default(),
         "internet": crate::diag::internet_uses(&s),
         "history": crate::ai::store().stats(),
         "tts_enabled": crate::tts::is_enabled(),
@@ -419,7 +469,7 @@ pub fn group_key(pack: &str, id: &str) -> &'static str {
     if starts("power") || id == "unlock" || id == "windows_5" || id == "windows_6" { return "power"; }
     if starts("file") || id == "place_open" || id == "disk_open" { return "files"; }
     if starts("note") || starts("office") || starts("object") || id == "session" { return "text"; }
-    if starts("tts") || starts("read_") || starts("mic_") { return "voice"; }
+    if starts("tts") || starts("read_") || starts("mic_") || id == "screen" { return "voice"; }
     if pack == "windows" { return "system"; }
     if starts("info") || starts("sys_") || pack == "weather" { return "info"; }
     if starts("game") || pack == "steam" { return "games"; }
@@ -771,6 +821,24 @@ mod settings_tests {
         assert_eq!(store.stats(), before, "the conversations are untouched by a reset");
         assert_eq!(store.load(&chat.id).unwrap().messages[0].content, "вопрос, который должен остаться");
         assert!(!settings().dnd);
+        set_for_tests(UiSettings::default());
+    }
+
+    #[test]
+    fn the_microphone_sensitivity_really_changes_the_speech_threshold() {
+        assert_eq!(vad_threshold(50), 100.0, "50 % keeps the old behaviour");
+        assert!(vad_threshold(100) < vad_threshold(80) && vad_threshold(80) < vad_threshold(50), "more sensitive = a lower threshold");
+        assert!(vad_threshold(0) > vad_threshold(20) && vad_threshold(20) > vad_threshold(50));
+        assert_eq!(vad_threshold(250), vad_threshold(100));
+        let _g = TEST_LOCK.lock();
+        set_for_tests(UiSettings::default());
+        update_settings(&json!({ "mic_sensitivity": 90, "tts_volume": 140, "browser": "evil.exe" }));
+        assert_eq!(mic_threshold(), vad_threshold(90), "applied at once to the microphone");
+        let s = settings();
+        assert_eq!((s.tts_volume, s.browser.as_str()), (100, ""), "out of range is limited, an unknown browser is refused");
+        update_settings(&json!({ "browser": "firefox", "mic_sensitivity": 50 }));
+        assert_eq!(settings().browser, "firefox");
+        assert_eq!(browser_exe("yandex"), Some("browser.exe"));
         set_for_tests(UiSettings::default());
     }
 

@@ -784,3 +784,35 @@ fn switching_the_ai_off_stops_the_answer_that_is_being_generated() {
     JOBS.lock().remove(&chat.id);
     crate::uistate::set_for_tests(crate::uistate::UiSettings::default());
 }
+
+#[test]
+fn a_picture_of_the_screen_needs_the_consent_and_the_ai_switched_on() {
+    let _g = crate::uistate::TEST_LOCK.lock();
+    let base = crate::uistate::UiSettings { ai_provider: "gemini".into(), ai_key: "k".into(), ..Default::default() };
+    crate::uistate::set_for_tests(base.clone());
+    assert_eq!(screen_conf().unwrap_err(), AiError::ScreenNotAllowed, "off by default: nothing is captured or sent");
+    assert!(!crate::uistate::UiSettings::default().ai_screen);
+    crate::uistate::set_for_tests(crate::uistate::UiSettings { ai_screen: true, ai_enabled: false, ..base.clone() });
+    assert_eq!(screen_conf().unwrap_err(), AiError::Disabled, "the AI switch wins");
+    assert_eq!(ask_about_screen("что на экране").unwrap_err(), AiError::Disabled, "refused before any picture is taken");
+    crate::uistate::set_for_tests(crate::uistate::UiSettings { ai_screen: true, ..base });
+    assert!(screen_conf().is_ok());
+    crate::uistate::set_for_tests(crate::uistate::UiSettings::default());
+}
+
+#[test]
+fn the_picture_is_sent_in_the_format_of_each_provider() {
+    assert_eq!(base64(b"Man"), "TWFu");
+    assert_eq!(base64(b"Ma"), "TWE=");
+    assert_eq!(base64(b"M"), "TQ==");
+    assert_eq!(base64(&[0xFF, 0xD8, 0xFF]), "/9j/");
+    let oa = conf_from("openrouter", "google/gemini-2.5-flash-lite", "k", "").unwrap();
+    let b = vision_body(&oa, "что тут?", "image/jpeg", "AAAA");
+    assert_eq!(b["messages"][1]["content"][1]["image_url"]["url"], "data:image/jpeg;base64,AAAA");
+    assert_eq!(b["messages"][1]["content"][0]["text"], "что тут?");
+    assert!(!b.to_string().contains("\"k\""), "the key is never in the body");
+    let an = conf_from("anthropic", "claude-sonnet-5-5", "k", "").unwrap();
+    let b = vision_body(&an, "что тут?", "image/jpeg", "AAAA");
+    assert_eq!(b["messages"][0]["content"][0]["source"]["data"], "AAAA");
+    assert_eq!(b["messages"][0]["content"][0]["source"]["media_type"], "image/jpeg");
+}

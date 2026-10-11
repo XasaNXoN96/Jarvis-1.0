@@ -3,10 +3,12 @@ use crate::config;
 // Simple energy-based VAD
 pub fn detect(input: &[i16]) -> (bool, f32) {
     let rms = calculate_rms(input);
-    let is_voice = rms > config::VAD_ENERGY_THRESHOLD;
+    // the threshold follows "Чувствительность микрофона" in the settings (50 % = config::VAD_ENERGY_THRESHOLD)
+    let threshold = crate::uistate::mic_threshold();
+    let is_voice = rms > threshold;
     
     // normalize confidence to 0-1 range (rough approximation)
-    let confidence = (rms / (config::VAD_ENERGY_THRESHOLD * 2.0)).min(1.0);
+    let confidence = (rms / (threshold * 2.0)).min(1.0);
     
     (is_voice, confidence)
 }

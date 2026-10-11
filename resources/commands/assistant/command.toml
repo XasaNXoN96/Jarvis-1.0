@@ -812,3 +812,15 @@ type = "lua"
 script = "office.lua"
 sandbox = "full"
 timeout = 25000
+
+[[commands]]
+id = "assistant_screen"
+type = "lua"
+script = "screen.lua"
+sandbox = "full"
+timeout = 90000
+description = "Вопрос ИИ по снимку экрана (только если «Анализ экрана» разрешён в настройках)"
+triggers.ru = ["что на экран", "опиши экран", "что видишь на экран", "посмотри на экран", "прочитай с экран"]
+triggers.en = ["what is on the screen", "describe the screen", "look at the screen"]
+phrases.ru = ["что на экране", "опиши экран", "что ты видишь на экране", "посмотри на экран"]
+phrases.en = ["what is on the screen", "describe the screen", "look at the screen"]
