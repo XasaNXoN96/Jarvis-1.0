@@ -395,6 +395,17 @@
               <div class="qrbox"><img id="rm-qr" alt="QR-код пульта"></div>
               <div class="rmlink" id="rm-url"></div>
               <button class="btn small" id="rm-copy" type="button">Копировать ссылку</button>
+              <div class="hrow" style="margin-top:10px"><span>ТЕЛЕФОН</span><b id="ph-state">не подключён</b></div>
+              <div class="hrow"><span>ПОСЛЕДНЯЯ СВЯЗЬ</span><b id="ph-last">—</b></div>
+              <div class="hrow"><span>ЗАРЯД</span><b id="ph-bat">—</b></div>
+              <div class="hrow"><span>ГОЛОС НА ТЕЛЕФОНЕ</span><b id="ph-voice">—</b></div>
+              <small class="rmerr" id="ph-verr"></small>
+              <div class="acts" style="flex-wrap:wrap">
+                <button class="btn small" id="ph-ring" type="button">Найти телефон</button>
+                <button class="btn small" id="ph-stop" type="button">Остановить сигнал</button>
+              </div>
+              <form id="ph-form" style="display:flex;gap:6px;margin-top:8px"><input id="ph-text" placeholder="Ссылка или текст для телефона" autocomplete="off" style="flex:1;min-width:0"><button class="btn small" type="submit">На телефон</button></form>
+              <small id="ph-msg"></small>
             </div>
             <small class="rmerr" id="rm-err"></small>
             <small class="rmhelp">Телефон и компьютер должны быть в одной Wi-Fi сети. Наведите камеру телефона на QR-код или откройте ссылку. Пульт работает в локальной сети, не через интернет. Ссылка секретная.</small>
@@ -912,6 +923,32 @@ $('#rm-switch').onchange = async e => {
   remoteBusy = false; remoteLink = ''; await pollNow();
 };
 $('#rm-copy').onclick = () => { if (remoteLink) copyText(remoteLink, $('#rm-copy')); };
+// what the phone page reports: only what it really told us (nothing is shown as known when it is not)
+function phoneCard(p) {
+  if (!p) return;
+  const ago = t => { const d = Math.max(0, Math.round(Date.now() / 1000 - t)); return d < 60 ? d + ' с назад' : d < 3600 ? Math.round(d / 60) + ' мин назад' : new Date(t * 1000).toLocaleString('ru-RU'); };
+  $('#ph-state').textContent = p.online ? (p.ringing ? 'на связи · звонит' : 'на связи') : (p.last_seen ? 'нет связи' : 'не подключён');
+  $('#ph-state').className = p.online ? 'ok' : '';
+  $('#ph-last').textContent = p.last_seen ? ago(p.last_seen) : '—';
+  $('#ph-bat').textContent = p.battery != null ? p.battery + '%' + (p.charging ? ' ⚡' : '') : (p.online ? 'браузер не сообщает' : '—');
+  const vn = { off: 'выключен', listening: 'слушает', error: 'ошибка', unavailable: 'недоступен' };
+  $('#ph-voice').textContent = p.online && p.voice ? (vn[p.voice] || p.voice) : '—';
+  $('#ph-verr').textContent = p.online ? (p.voice_error || '') : '';
+}
+async function phoneSend(kind, data) {
+  $('#ph-msg').textContent = '…';
+  try {
+    const r = await action('phone_send', { kind, data: data || '' });
+    $('#ph-msg').textContent = (r.ok ? '✓ ' : 'Не отправлено: ') + (r.message || '');
+    $('#ph-msg').className = r.ok ? '' : 'rmerr';
+  } catch (e) { $('#ph-msg').textContent = 'Нет связи с Джарвисом'; $('#ph-msg').className = 'rmerr'; }
+}
+$('#ph-ring').onclick = () => phoneSend('ring');
+$('#ph-stop').onclick = () => phoneSend('stop');
+$('#ph-form').onsubmit = e => {
+  e.preventDefault(); const v = $('#ph-text').value.trim(); if (!v) return;
+  phoneSend(/^https?:\/\/\S+$/i.test(v) ? 'link' : 'text', v); $('#ph-text').value = '';
+};
 
 // ---------- the cards of the home page: only what the program really knows ----------
 const fmtTime = ts => { const d = new Date(ts * 1000); return [d.getHours(), d.getMinutes(), d.getSeconds()].map(x => String(x).padStart(2, '0')).join(':'); };
@@ -974,7 +1011,7 @@ function applyState(s) {
   applyVoice(s); voiceChip(s.voice_state); healthCard(s.health); aiCard(s.ai);
   timers = s.timers || []; timersAt = performance.now(); if (currentPage === 'commands') { renderTimers(); commandActions(s.actions); }
   if (currentPage === 'settings') notesList(s.notes);
-  weatherBox(s.weather); remoteCard(s);
+  weatherBox(s.weather); remoteCard(s); phoneCard(s.phone);
 }
 
 // ---------- panel: computer state, timers, log, modules ----------

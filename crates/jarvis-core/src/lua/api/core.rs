@@ -91,6 +91,8 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
         Ok(preview(&text.to_string_lossy(), n.unwrap_or(80)))
     })?)?;
     text_api.set("len", lua.create_function(|_, text: mlua::String| Ok(text.to_string_lossy().chars().count()))?)?;
+    // jarvis.text.lower(text): lower case for any language (Lua's string.lower knows only Latin letters)
+    text_api.set("lower", lua.create_function(|_, text: mlua::String| Ok(text.to_string_lossy().to_lowercase().replace('ё', "е")))?)?;
     jarvis.set("text", text_api)?;
 
     // jarvis.tts.stop() / jarvis.tts.set_enabled(bool) / jarvis.tts.is_enabled()
@@ -278,6 +280,23 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
     remote.set("disable", lua.create_function(|_, ()| { crate::remote::stop(); Ok(()) })?)?;
     remote.set("is_enabled", lua.create_function(|_, ()| Ok(crate::remote::is_running()))?)?;
     remote.set("url", lua.create_function(|_, ()| Ok(crate::remote::url()))?)?;
+    // jarvis.remote.send(kind, data) -> reply | nil, error   (kind: ring, stop, link, text)
+    remote.set("send", lua.create_function(|_, (kind, data): (String, Option<String>)| {
+        Ok(match crate::remote::send_to_phone(&kind, data.as_deref().unwrap_or("")) {
+            Ok(m) => (Some(m), None),
+            Err(e) => (None, Some(e)),
+        })
+    })?)?;
+    // jarvis.remote.phone() -> { online, battery, charging, last_seen, ... }
+    remote.set("phone", lua.create_function(|lua, ()| {
+        let j = crate::remote::phone_json();
+        let t = lua.create_table()?;
+        t.set("online", j["online"].as_bool().unwrap_or(false))?;
+        t.set("battery", j["battery"].as_u64())?;
+        t.set("charging", j["charging"].as_bool())?;
+        t.set("last_seen", j["last_seen"].as_u64())?;
+        Ok(t)
+    })?)?;
     jarvis.set("remote", remote)?;
     
     Ok(())

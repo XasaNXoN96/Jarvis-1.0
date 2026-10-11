@@ -402,6 +402,50 @@ phrases.ru = ["выключи удалённое управление", "вык�
 phrases.en = ["disable remote control"]
 
 [[commands]]
+id = "assistant_phone_find"
+type = "lua"
+script = "phone.lua"
+sandbox = "full"
+timeout = 10000
+triggers.ru = ["найд телефон", "найд мой телефон", "где мой телефон", "где телефон", "позов телефон", "потеря телефон", "потерял телефон"]
+triggers.en = ["find my phone", "find phone", "where is my phone", "ring my phone", "ring the phone"]
+phrases.ru = ["найди телефон", "где мой телефон"]
+phrases.en = ["find my phone"]
+
+[[commands]]
+id = "assistant_phone_stop"
+type = "lua"
+script = "phone.lua"
+sandbox = "full"
+timeout = 10000
+triggers.ru = ["останов сигнал", "выключ сигнал", "останов сигнал телефон", "выключ сигнал телефон", "нашел телефон", "я нашел телефон", "хват звон"]
+triggers.en = ["stop the signal", "stop ringing", "found my phone", "found the phone", "stop phone ringing"]
+phrases.ru = ["останови сигнал телефона", "я нашёл телефон"]
+phrases.en = ["stop the signal"]
+
+[[commands]]
+id = "assistant_phone_link"
+type = "lua"
+script = "phone.lua"
+sandbox = "full"
+timeout = 10000
+triggers.ru = ["отправ ссылк на телефон", "скин ссылк на телефон", "перешл ссылк на телефон", "ссылк на телефон", "откр на телефон", "откр ссылк на телефон"]
+triggers.en = ["send link to phone", "send the link to my phone", "open on phone", "link to phone"]
+phrases.ru = ["отправь ссылку на телефон"]
+phrases.en = ["send link to phone"]
+
+[[commands]]
+id = "assistant_phone_text"
+type = "lua"
+script = "phone.lua"
+sandbox = "full"
+timeout = 10000
+triggers.ru = ["отправ на телефон", "скин на телефон", "перешл на телефон", "пошл на телефон", "отправ текст на телефон", "отправ буфер на телефон", "скин текст на телефон"]
+triggers.en = ["send to phone", "send to my phone", "send text to phone", "send clipboard to phone"]
+phrases.ru = ["отправь на телефон купить молоко", "отправь буфер обмена на телефон"]
+phrases.en = ["send to phone"]
+
+[[commands]]
 id = "assistant_mic_off"
 type = "lua"
 script = "mic.lua"

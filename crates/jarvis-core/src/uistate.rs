@@ -473,7 +473,7 @@ pub fn group_key(pack: &str, id: &str) -> &'static str {
     if pack == "windows" { return "system"; }
     if starts("info") || starts("sys_") || pack == "weather" { return "info"; }
     if starts("game") || pack == "steam" { return "games"; }
-    if starts("remote") { return "remote"; }
+    if starts("remote") || starts("phone_") { return "remote"; }
     if pack == "stop" || pack == "terminate" { return "control"; }
     if starts("program") || pack == "calculator" { return "apps"; }
     "talk"
@@ -626,6 +626,7 @@ pub fn state_json() -> Value {
         "mic_level": crate::MIC_LEVEL.load(std::sync::atomic::Ordering::Relaxed),
         "tts_enabled": crate::tts::is_enabled(),
         "remote": crate::remote::is_running(),
+        "phone": crate::remote::phone_json(),
         "voice_state": voice_state(),
         "rev": crate::ai::rev(),
         "ai": crate::ai::status_json(),

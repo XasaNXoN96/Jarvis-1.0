@@ -272,6 +272,15 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             std::thread::sleep(Duration::from_millis(250));
             json!({ "ok": true, "enabled": crate::remote::is_running() })
         }
+        // phone remote: what the PC can send to the phone page (find the phone, a link, a text)
+        "phone_send" => {
+            let kind = body.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+            let data = body.get("data").and_then(|v| v.as_str()).unwrap_or("");
+            match crate::remote::send_to_phone(kind, data) {
+                Ok(m) => json!({ "ok": true, "message": m }),
+                Err(e) => json!({ "ok": false, "message": e }),
+            }
+        }
         "voice_install" => match crate::voice_install::start() {
             Ok(()) => json!({ "ok": true }),
             Err(e) => json!({ "ok": false, "message": e }),

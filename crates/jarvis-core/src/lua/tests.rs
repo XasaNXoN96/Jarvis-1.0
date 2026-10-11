@@ -378,4 +378,63 @@ mod tests {
         assert!(run("открой сайт непонятныйсайт").contains("Не знаю такой сайт"), "an unknown name is said to be a search");
         assert!(run("зайди на сайт example.com").contains("example.com"));
     }
+
+    // the phone commands queue only real messages and say honestly when the phone is not connected
+    #[test]
+    fn the_phone_commands_send_to_the_phone_page_and_never_pretend() {
+        let _r = crate::remote::PHONE_TEST_LOCK.lock();
+        let _g = CLIPBOARD_LOCK.lock();
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../resources/commands/assistant");
+        let run = |id: &str, phrase: &str, clip: &str| -> String {
+            crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow_mut().clear());
+            *crate::lua::api::system::TEST_CLIPBOARD.lock() = Some(clip.to_string());
+            let ctx = CommandContext { phrase: phrase.into(), command_id: id.into(), command_path: dir.clone(), language: "ru".into(), slots: None };
+            let r = execute(&dir.join("phone.lua"), ctx, SandboxLevel::Full, Duration::from_secs(5));
+            *crate::lua::api::system::TEST_CLIPBOARD.lock() = None;
+            assert!(r.is_ok(), "{} {}: {:?}", id, phrase, r.err().map(|e| e.to_string()));
+            crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow().join(" | "))
+        };
+        let q = |k: &str, d: &str| vec![(k.to_string(), d.to_string())];
+
+        crate::remote::phone_for_tests(false, false);
+        assert!(run("assistant_phone_find", "найди телефон", "").contains("выключен"), "remote off: nothing pretends to ring");
+        assert!(crate::remote::queued_for_tests().is_empty());
+
+        crate::remote::phone_for_tests(true, true);
+        assert!(run("assistant_phone_find", "найди телефон", "").contains("звонит"));
+        assert_eq!(crate::remote::queued_for_tests(), q("ring", ""));
+        crate::remote::phone_for_tests(true, true);
+        assert!(run("assistant_phone_stop", "останови сигнал телефона", "").contains("остановлен"));
+
+        crate::remote::phone_for_tests(true, false);
+        let r = run("assistant_phone_find", "где мой телефон", "");
+        assert!(r.contains("не на связи") && !r.contains("звонит"), "the phone page is not open: {}", r);
+
+        crate::remote::phone_for_tests(true, true);
+        assert!(run("assistant_phone_link", "отправь ссылку на телефон", "просто текст").contains("нет ссылки"));
+        assert!(crate::remote::queued_for_tests().is_empty());
+        assert!(run("assistant_phone_link", "отправь ссылку на телефон", " https://example.com/x?a=1 \n").contains("отправлена"));
+        assert_eq!(crate::remote::queued_for_tests(), q("link", "https://example.com/x?a=1"));
+        crate::remote::phone_for_tests(true, true);
+        assert!(run("assistant_phone_link", "открой ютуб на телефоне", "").contains("YouTube"));
+        assert_eq!(crate::remote::queued_for_tests(), q("link", "https://www.youtube.com/"), "a site of the catalogue, not the clipboard");
+        crate::remote::phone_for_tests(true, true);
+        assert!(run("assistant_phone_find", "найди файл на телефоне", "").contains("не умеет"));
+        assert!(crate::remote::queued_for_tests().is_empty(), "a file search does not ring the phone");
+
+        for (phrase, clip, sent) in [
+            ("отправь на телефон купить молоко", "", "купить молоко"),
+            ("Отправь текст Позвонить маме на телефон", "", "Позвонить маме"),
+            ("отправь буфер обмена на телефон", "Код подъезда 1234 🙂", "Код подъезда 1234 🙂"),
+            ("скинь на телефон", "адрес: ул. Ленина 5", "адрес: ул. Ленина 5"),
+        ] {
+            crate::remote::phone_for_tests(true, true);
+            assert!(run("assistant_phone_text", phrase, clip).contains("отправлен"), "{}", phrase);
+            assert_eq!(crate::remote::queued_for_tests(), q("text", sent), "{}", phrase);
+        }
+        crate::remote::phone_for_tests(true, true);
+        assert!(run("assistant_phone_text", "отправь на телефон", "  ").contains("Нечего отправлять"));
+        assert!(crate::remote::queued_for_tests().is_empty());
+        crate::remote::phone_for_tests(false, false);
+    }
 }
