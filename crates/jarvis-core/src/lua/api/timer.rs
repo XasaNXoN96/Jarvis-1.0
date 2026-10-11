@@ -118,6 +118,15 @@ fn spawn(entry: TimerEntry) {
 pub fn start_at(due: u64, title: String, message: String) -> u64 {
     let entry = {
         let mut timers = TIMERS.lock();
+        // the same timer asked for twice in a row (a phrase heard twice, a double press): one timer
+        let key = format!("timer:{}:{}", title, message);
+        if !crate::guard::first(&key, crate::guard::ACTION_WINDOW) {
+            let window = crate::guard::ACTION_WINDOW.as_secs();
+            if let Some(same) = timers.iter().find(|t| t.title == title && t.message == message && t.due.abs_diff(due) <= window) {
+                info!("Timer #{} already set, the repeat is not a new timer", same.id);
+                return same.id;
+            }
+        }
         let entry = TimerEntry { id: next_id(&timers), due, title, message };
         timers.push(entry.clone());
         save(&timers);

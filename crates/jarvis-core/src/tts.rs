@@ -503,6 +503,12 @@ pub fn speak(text: &str) {
     if text.is_empty() || !is_enabled() {
         return;
     }
+    // the same phrase again while it is still being said (two parts of the program reporting one event):
+    // it is said once, not started over from the beginning
+    let fresh = crate::guard::first(&format!("tts:{}", crate::guard::norm(&text)), crate::guard::NOTIFY_WINDOW);
+    if !fresh && is_speaking() {
+        return;
+    }
     info!("TTS: {}", text.chars().take(120).collect::<String>());
 
     #[cfg(feature = "jarvis_app")]

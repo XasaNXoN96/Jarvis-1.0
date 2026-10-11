@@ -325,6 +325,49 @@ local function excel_command(text)
   return true, cell .. " = " .. table.concat(rest, " ")
 end
 
+-- ---------- "да" / "нет" for an action that cannot be undone (power.lua, windows/actions.lua ask first) ----------
+-- session data: "power:<flag>:<seconds>:<delayed>" or "trash"
+local function confirm_session(text)
+  local tokens = tokens_of(text)
+  local whole = " " .. table.concat(tokens, " ") .. " "
+  local word = function(w) return whole:find(" " .. w .. " ", 1, true) ~= nil end
+  local stem = function(s) return whole:find(s, 1, true) ~= nil end
+  local data = jarvis.session.data()
+  jarvis.session.finish()
+  local negative = word("нет") or word("не") or word("no") or word("not") or stem("отмен") or stem("стоп") or stem("cancel")
+  local positive = not negative and (word("да") or word("yes") or word("конечно") or word("давай") or stem("подтвер") or stem("confirm"))
+
+  local flag, secs, delayed = data:match("^power:(/[sr]):(%d+):([01])$")
+  local title = flag and T("Компьютер", "Computer") or "Windows"
+  if not positive then
+    if flag then say(title, flag == "/r" and T("Перезагрузка отменена", "Restart cancelled") or T("Выключение отменено", "Shutdown cancelled"))
+    else say(title, T("Корзину не очищаю", "Not emptying the recycle bin")) end
+    -- something else was said instead of an answer: it is handled as an ordinary command
+    if not negative then jarvis.app.run_text(text) end
+    return
+  end
+
+  if flag then
+    -- clear a previous schedule first, otherwise Windows refuses with "already in progress"
+    run("shutdown", { "/a" })
+    local r = run("shutdown", { flag, "/t", secs, "/c", "Jarvis" })
+    if not r.success then
+      say(title, T("Не удалось запланировать: ", "Could not schedule: ") .. (r.stderr or ""))
+      return
+    end
+    local what_ru, what_en = "Выключение", "Shutdown"
+    if flag == "/r" then what_ru, what_en = "Перезагрузка", "Restart" end
+    local msg = T(what_ru .. " через " .. fmt_duration(tonumber(secs)), what_en .. " in " .. fmt_duration(tonumber(secs)))
+    if delayed == "0" then
+      msg = msg .. T(". Скажите «отмени выключение», чтобы отменить", ". Say \"cancel shutdown\" to cancel")
+    end
+    say(title, msg, nil, flag == "/s" and "power" or nil)
+  elseif data == "trash" then
+    powershell("Clear-RecycleBin -Force -ErrorAction SilentlyContinue")
+    say(title, T("Корзина очищена", "Recycle bin emptied"))
+  end
+end
+
 -- ---------- what to do with a found file ----------
 local ORDINALS = { ["первый"] = 1, ["первую"] = 1, ["один"] = 1, ["второй"] = 2, ["вторую"] = 2, ["два"] = 2, ["третий"] = 3, ["третью"] = 3, ["три"] = 3,
                    ["четвертый"] = 4, ["четыре"] = 4, ["пятый"] = 5, ["пять"] = 5 }
@@ -990,6 +1033,8 @@ else -- assistant_session: every phrase while a session is open
   local kind = jarvis.session.kind()
   if kind == "file" then
     file_session(phrase)
+  elseif kind == "confirm" then
+    confirm_session(phrase)
   elseif kind == "object" then
     local nm = jarvis.state.get("obj_name")
     local app = jarvis.state.get("obj_app")

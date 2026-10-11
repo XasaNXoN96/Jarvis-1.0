@@ -252,6 +252,8 @@
   .cmdrow .id { color: var(--dim); font-size: 11px; margin-left: 6px; }
 
   body.on-home .bottom { display: none; }
+  /* the home page has its own input; an open session (a question "да / нет", dictation) still shows its bar there */
+  body.on-home .bottom:has(#session-bar.on) { display: block; } body.on-home .bottom #form { display: none; }
   .ai-msg.user .msgtools { justify-content: flex-end; margin-top: 4px; } .ai-msg.user .msgtools button { color: #9fb4e6; }
   .srcb { display: inline-block; margin: 0 8px 4px 0; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); font-size: 11px; letter-spacing: .08em; }
   .ai-msg.streaming::after { content: "▍"; color: var(--accent); animation: blink 1s infinite; margin-left: 2px; }
@@ -469,7 +471,7 @@
   </div>
 
 <div class="bottom" id="bottom">
-  <div id="session-bar"><span class="sdot"></span><div class="st2" id="session-text"></div><button class="btn small" id="session-end" type="button">Закончить</button></div>
+  <div id="session-bar"><span class="sdot"></span><div class="st2" id="session-text"></div><button class="btn small" id="session-yes" type="button" style="display:none">Да</button><button class="btn small" id="session-end" type="button">Закончить</button></div>
   <form id="form" autocomplete="off">
     <input id="input" placeholder="Напишите команду, например: таймер на 5 минут" autofocus>
     <button type="button" id="micbtn" title="Микрофон">🎤</button>
@@ -580,6 +582,8 @@ function connect() {
 // ONE way to send anything the user typed: the same router as the voice (commands first, then the AI), the same
 // conversation. A double press is not a second question.
 let lastAsk = { text: '', at: 0 };
+// every message gets its own request id: Jarvis handles one id once
+const newRid = () => 'w' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
 async function ask(text) {
   text = String(text || '').trim();
   if (!text) return false;
@@ -587,7 +591,7 @@ async function ask(text) {
   lastAsk = { text, at: performance.now() };
   fastUntil = performance.now() + 6000;
   try {
-    const r = await chatApi({ op: 'ask', text });
+    const r = await chatApi({ op: 'ask', text, rid: newRid() });
     if (!r.ok) { setStatus(r.message || 'Не удалось отправить'); add('err', r.message || 'Не удалось отправить'); return false; }
   } catch (e) { setStatus('Нет связи с Джарвисом. Перезапустите программу.'); return false; }
   pollNow();
@@ -656,12 +660,16 @@ function applySession(s) {
   const bar = $('#session-bar'); bar.classList.toggle('on', !!kind);
   if (!kind) return;
   const app = { word: 'Word', excel: 'Excel', notepad: 'Блокнот' }[s.session_data] || '';
-  $('#session-text').innerHTML = kind === 'file'
+  $('#session-yes').style.display = kind === 'confirm' ? '' : 'none';
+  $('#session-text').innerHTML = kind === 'confirm'
+    ? (s.session_data === 'trash' ? '<b>Очистить корзину?</b> Файлы удалятся навсегда.' : '<b>' + (String(s.session_data).startsWith('power:/r') ? 'Перезагрузить' : 'Выключить') + ' компьютер?</b>') + ' Скажите или напишите «да» или «нет».'
+    : kind === 'file'
     ? '<b>Что сделать с файлом?</b> Скажите или напишите: запустить, показать папку, скопировать, удалить (или «второй», «отмена»).'
     : '<b>Диктовка' + (app ? ' в ' + app : '') + '.</b> ' + (s.session_data === 'excel' ? 'Говорите: «ячейка А1 пиши 5», «ячейка C1 сделай А плюс Б». ' : 'Говорите текст, «точка», «запятая», «новая строка». ') + 'Закончить: скажите «заканчивай».';
-  $('#session-end').textContent = kind === 'file' ? 'Отмена' : 'Закончить';
+  $('#session-end').textContent = kind === 'confirm' ? 'Нет' : kind === 'file' ? 'Отмена' : 'Закончить';
 }
-$('#session-end').onclick = () => sendCommand(sessionKind === 'file' ? 'отмена' : 'заканчивай');
+$('#session-end').onclick = () => sendCommand(sessionKind === 'confirm' ? 'нет' : sessionKind === 'file' ? 'отмена' : 'заканчивай');
+$('#session-yes').onclick = () => sendCommand('да');
 let voiceActive = false;
 function hintText() { return (micMuted ? 'Микрофон выключен — режим текста.' : (voiceActive ? 'Голос и текст работают.' : 'Голос не запущен — только текст.')) + '  Enter — отправить.'; }
 function applyVoice(s) {
@@ -943,7 +951,7 @@ function syncMessages(log, chat) {
   if (atBottom || growing) log.scrollTop = log.scrollHeight;
   return msgs.length;
 }
-const EXAMPLES = ['таймер на 5 минут', 'сколько времени', 'громкость 50 процентов', 'найди файл…', 'открой браузер', 'включи удалённое управление', 'что ты умеешь', 'Объясни, что такое Python', 'Сколько будет 2 + 2?'];
+const EXAMPLES = ['Что ты умеешь?', 'Сколько будет 2 + 2?', 'Объясни, что такое Python', 'Открой Word', 'Помоги с моим проектом', 'таймер на 5 минут', 'громкость 50 процентов', 'найди файл…'];
 // the chips only fill the field: nothing is run until the user presses Enter
 (function buildExamples() {
   for (const ex of EXAMPLES) {

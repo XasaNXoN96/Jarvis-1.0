@@ -19,23 +19,17 @@ if not secs then
   secs = 60
 end
 
-local flag, what_ru, what_en
+local flag, ask_ru, ask_en
 if id == "assistant_power_restart" then
-  flag, what_ru, what_en = "/r", "Перезагрузка", "Restart"
+  flag, ask_ru, ask_en = "/r", "Перезагрузить компьютер", "Restart the computer"
 else
-  flag, what_ru, what_en = "/s", "Выключение", "Shutdown"
+  flag, ask_ru, ask_en = "/s", "Выключить компьютер", "Shut down the computer"
 end
 
--- clear a previous schedule first, otherwise Windows refuses with "already in progress"
-run("shutdown", { "/a" })
-local r = run("shutdown", { flag, "/t", tostring(secs), "/c", "Jarvis" })
-if not r.success then
-  say(T("Компьютер", "Computer"), T("Не удалось запланировать: ", "Could not schedule: ") .. (r.stderr or ""))
-  return
-end
-
-local msg = T(what_ru .. " через " .. fmt_duration(secs), what_en .. " in " .. fmt_duration(secs))
-if not delayed then
-  msg = msg .. T(". Скажите «отмени выключение», чтобы отменить", ". Say \"cancel shutdown\" to cancel")
-end
-say(T("Компьютер", "Computer"), msg, nil, id == "assistant_power_off" and "power" or nil)
+-- nothing happens before the user says "да": the answer goes to the session (office.lua, confirm_session),
+-- which schedules the shutdown. A misheard phrase can never turn the computer off by itself.
+jarvis.session.start("confirm", 30)
+jarvis.session.set_data("power:" .. flag .. ":" .. tostring(secs) .. ":" .. (delayed and "1" or "0"))
+say(T("Компьютер", "Computer"),
+  T(ask_ru .. " через " .. fmt_duration(secs) .. "? Скажите «да» или «нет».", ask_en .. " in " .. fmt_duration(secs) .. "? Say yes or no."),
+  T(ask_ru .. " через " .. fmt_duration(secs) .. "? Да или нет?", ask_en .. " in " .. fmt_duration(secs) .. "? Yes or no?"))

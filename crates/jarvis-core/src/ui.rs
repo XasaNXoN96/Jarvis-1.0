@@ -317,6 +317,11 @@ fn chat_action(body: &serde_json::Value) -> serde_json::Value {
             if text.chars().count() > crate::ai::MAX_MESSAGE_CHARS {
                 return json!({ "ok": false, "message": format!("Сообщение слишком длинное (больше {} символов).", crate::ai::MAX_MESSAGE_CHARS) });
             }
+            // the page sends the same request id again when it retries: the message is handled once
+            let rid = body.get("rid").and_then(|v| v.as_str()).unwrap_or("");
+            if crate::guard::request_seen(rid) {
+                return json!({ "ok": true, "id": store.active().unwrap_or_default(), "repeat": true });
+            }
             if crate::remote::push_text(text) {
                 json!({ "ok": true, "id": store.active().unwrap_or_default() })
             } else {

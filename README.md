@@ -31,7 +31,8 @@ Examples (Russian; most have English equivalents). Numbers can be said as words 
 | «поставь таймер на 5 минут», «отмени таймер», «сколько осталось» | timer, notification + sound when it ends |
 | «напомни через 10 минут позвонить маме» | reminder |
 | «скажи мне через 5 минут чтобы я закончил игру», «остановись через 5 минут» | warns you when time is up |
-| «выключи компьютер через 10 минут», «перезагрузи компьютер», «отмени выключение» | power (no time given = 1 minute, so you can cancel) |
+| «выключи компьютер через 10 минут», «перезагрузи компьютер», «отмени выключение» | power: Jarvis asks first and waits for «да» / «нет» (no time given = 1 minute, so you can cancel) |
+| «очисти корзину» | empties the recycle bin after «да» |
 
 | «разбуди меня завтра в 7:30», «напомни в 18:00 про тренировку» | alarm / reminder at a clock time |
 | «я играю, остановись через час», «рабочий режим» | game mode: warns you 5 minutes before the end and when time is up |

@@ -545,7 +545,7 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
             jarvis_core::session::touch();
             // the questions and answers of a dialog (what to do with the file, save / delete / continue) are part of the
             // conversation; the dictated text itself is not (it goes into the document)
-            let record = kind == "file" || (kind == "object" && (jarvis_core::session::data() != "typing" || text.contains("объект")));
+            let record = kind == "file" || kind == "confirm" || (kind == "object" && (jarvis_core::session::data() != "typing" || text.contains("объект")));
             if record {
                 open_request(text, "command");
             }
@@ -747,6 +747,10 @@ fn ask_ai(text: &str) {
         Ok(_) => {
             jarvis_core::uistate::log_action(text, "ИИ-чат", true);
             jarvis_core::uistate::log_event("ai", &format!("Вопрос отправлен: {}", jarvis_core::ai::status_json()["provider"].as_str().unwrap_or("ИИ")));
+        }
+        Err(jarvis_core::ai::AiError::Duplicate) => {
+            // the same question a moment ago: it is already in the conversation and being answered
+            jarvis_core::uistate::log_event("info", &format!("Повтор вопроса пропущен: {}", text.chars().take(80).collect::<String>()));
         }
         Err(e) => {
             // refused before anything was sent (busy, empty, not configured): the question and the reason stay together

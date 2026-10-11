@@ -60,6 +60,7 @@ pub mod secret;
 pub mod voice_install;
 pub mod ai;
 pub mod filesearch;
+pub mod guard;
 
 #[cfg(feature = "lua")]
 pub mod lua;

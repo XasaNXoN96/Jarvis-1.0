@@ -145,6 +145,16 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
         crate::uistate::update_settings(&serde_json::json!({ "city": name }));
         Ok(())
     })?)?;
+    // jarvis.app.once(key, seconds): true the first time, false when the same key was used less than `seconds` ago
+    // (the same program started twice in a row is started once); jarvis.app.forget(key): the action failed, allow it again
+    app.set("once", lua.create_function(|_, (key, seconds): (String, Option<f64>)| {
+        let secs = seconds.unwrap_or(crate::guard::ACTION_WINDOW.as_secs_f64()).clamp(0.1, 60.0);
+        Ok(crate::guard::first(&format!("lua:{}", key), std::time::Duration::from_secs_f64(secs)))
+    })?)?;
+    app.set("forget", lua.create_function(|_, key: String| {
+        crate::guard::forget(&format!("lua:{}", key));
+        Ok(())
+    })?)?;
     // jarvis.app.run_text(text): handle a phrase as an ordinary command (it goes to the queue of typed commands)
     app.set("run_text", lua.create_function(|_, text: String| Ok(crate::remote::push_text(&text)))?)?;
     // jarvis.app.show_page("commands"): switch the Jarvis window to a page

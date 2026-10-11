@@ -3,7 +3,8 @@ name: Build Windows installer
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    # main: installers + release "build-latest"; dev/*: the same build as a check, without a release
+    branches: [main, "dev/**"]
     paths-ignore:
       - "README.md"
 
@@ -11,6 +12,23 @@ permissions:
   contents: write
 
 jobs:
+  # automated tests of jarvis-core on Windows; a failure is shown in red but does not stop the installers
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run tests (jarvis-core)
+        shell: pwsh
+        run: |
+          $env:LIB = "$PWD\lib\windows\amd64;$env:LIB"
+          $env:PATH = "$PWD\lib\windows\amd64;$env:PATH"
+          cargo test -p jarvis-core
+
   build:
     runs-on: windows-latest
     steps:
@@ -143,6 +161,7 @@ jobs:
           path: dist/
 
       - name: Publish to release "build-latest"
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-latest

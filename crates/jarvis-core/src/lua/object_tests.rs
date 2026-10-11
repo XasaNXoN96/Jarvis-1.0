@@ -55,6 +55,8 @@ impl World {
         std::env::set_var("JARVIS_TEST_TYPED", &typed);
         std::env::set_var("JARVIS_TEST_RUNNER", &runner);
         crate::session::end();
+        // every scenario opens its programs anew: a program opened by the previous scenario is not "a repeat"
+        crate::guard::forget_prefix("lua:");
 
         let mut list = Vec::new();
         for e in fs::read_dir(&root).unwrap().flatten() {

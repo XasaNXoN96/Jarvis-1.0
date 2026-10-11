@@ -142,6 +142,8 @@ struct Request {
     method: String,
     path: String,
     token_header: Option<String>,
+    // request id of the phone page: a request that arrives twice is handled once
+    rid: String,
     body: String,
 }
 
@@ -171,6 +173,7 @@ fn read_request<S: Read>(stream: &mut S) -> std::io::Result<Request> {
 
     let mut content_length = 0usize;
     let mut token_header = None;
+    let mut rid = String::new();
     for line in lines {
         if let Some((k, v)) = line.split_once(':') {
             let k = k.trim().to_lowercase();
@@ -179,6 +182,8 @@ fn read_request<S: Read>(stream: &mut S) -> std::io::Result<Request> {
                 content_length = v.parse().unwrap_or(0);
             } else if k == "x-token" {
                 token_header = Some(v.to_string());
+            } else if k == "x-rid" {
+                rid = v.chars().take(64).collect();
             }
         }
     }
@@ -197,6 +202,7 @@ fn read_request<S: Read>(stream: &mut S) -> std::io::Result<Request> {
         method,
         path,
         token_header,
+        rid,
         body: String::from_utf8_lossy(body_bytes).to_string(),
     })
 }
@@ -310,6 +316,8 @@ fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
             let text = req.body.trim().to_string();
             if text.is_empty() || text.chars().count() > 300 {
                 respond(stream, "400 Bad Request", "text/plain", "bad command");
+            } else if crate::guard::request_seen(&req.rid) {
+                respond(stream, "200 OK", "text/plain", "ok");
             } else if let Some(tx) = TX.get() {
                 info!("Remote control command: {}", text);
                 let _ = tx.lock().send(text);
@@ -360,12 +368,13 @@ const PAGE: &str = r#"<!doctype html>
 <script>
 const token = new URLSearchParams(location.search).get('t') || '';
 const quick = ['поставь таймер на 5 минут','отмени таймер','громче','тише','выключи звук','включи звук',
-  'пауза','следующий трек','сколько времени','отмени выключение','выключи компьютер через 10 минут','заблокируй компьютер'];
+  'пауза','следующий трек','сколько времени','отмени выключение','выключи компьютер через 10 минут','заблокируй компьютер',
+  'да','нет'];
 const status = document.getElementById('status');
 async function send(text) {
   status.textContent = '…';
   try {
-    const r = await fetch('/cmd', {method:'POST', headers:{'X-Token':token}, body:text});
+    const r = await fetch('/cmd', {method:'POST', headers:{'X-Token':token, 'X-Rid':'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)}, body:text});
     status.textContent = r.ok ? '✓ ' + text : 'Ошибка: ' + r.status;
   } catch (e) { status.textContent = 'Нет связи с компьютером'; }
 }

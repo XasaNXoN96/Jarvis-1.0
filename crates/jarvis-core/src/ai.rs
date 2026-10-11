@@ -89,6 +89,8 @@ pub enum AiError {
     Empty,
     TooLong,
     Busy,
+    // the same question was asked a moment ago: it is answered once, the repeat is dropped quietly
+    Duplicate,
     Auth(String),
     Quota(String),
     ModelUnknown(String),
@@ -116,6 +118,7 @@ impl AiError {
             AiError::Empty => "Сообщение пустое. Напишите вопрос.".into(),
             AiError::TooLong => format!("Сообщение слишком длинное (больше {} символов). Сократите его.", MAX_MESSAGE_CHARS),
             AiError::Busy => "ИИ ещё отвечает. Дождитесь ответа или нажмите «Стоп».".into(),
+            AiError::Duplicate => "Этот вопрос уже отправлен.".into(),
             AiError::Auth(p) => format!("Провайдер ({}) не принял ключ. Проверьте ключ в Настройках (без пробелов, не просрочен ли) или создайте новый.", p),
             AiError::Quota(p) => format!("Провайдер ({}) сообщает: закончились средства или достигнут лимит запросов. Проверьте баланс и тариф у провайдера или подождите минуту.", p),
             AiError::ModelUnknown(m) => format!("Провайдер не знает модель «{}». Проверьте название модели в Настройках → ИИ-провайдер.", m),
@@ -1026,6 +1029,10 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
         let mut jobs = JOBS.lock();
         if jobs.contains_key(&id) {
             return Err(AiError::Busy);
+        }
+        // the same question right after it was asked (a double press, a phrase heard twice) is asked once
+        if !crate::guard::first(&format!("ai:{}:{}", id, crate::guard::norm(text)), crate::guard::REPEAT_WINDOW) {
+            return Err(AiError::Duplicate);
         }
         jobs.insert(id.clone(), cancel.clone());
     }

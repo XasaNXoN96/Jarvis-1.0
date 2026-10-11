@@ -63,6 +63,10 @@ fn open_target(target: &str) -> bool {
 
 // Show a desktop notification (toast on Windows). Never fails, errors are only logged.
 pub fn show_notification(title: &str, message: &str) {
+    // the same notification twice in a few seconds is shown once
+    if !crate::guard::first(&format!("notify:{}:{}", title, message), crate::guard::NOTIFY_WINDOW) {
+        return;
+    }
     log::info!("[Lua] NOTIFY: {} - {}", title, message);
 
     // platform-specific notification
@@ -466,6 +470,9 @@ pub fn volume_control(action: &str, value: i32) -> Result<i32, String> {
 // A window that stays on top until it is closed (a toast can be hidden by Focus assist / notification settings).
 // Does not block the caller.
 pub fn show_popup(title: &str, message: &str) {
+    if !crate::guard::first(&format!("popup:{}:{}", title, message), crate::guard::NOTIFY_WINDOW) {
+        return;
+    }
     log::info!("[Lua] POPUP: {} - {}", title, message);
     #[cfg(target_os = "windows")]
     {
