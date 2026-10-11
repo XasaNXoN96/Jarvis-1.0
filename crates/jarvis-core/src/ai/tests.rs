@@ -306,3 +306,62 @@ fn spoken_text_has_no_code_or_marks() {
     assert!(s.contains("Готово"));
     assert!(speakable(&"Слово. ".repeat(300)).chars().count() <= 700);
 }
+
+// ---------- plain questions go to the selected provider (Gemini) ----------
+#[test]
+fn gemini_is_configured_with_its_openai_compatible_endpoint_and_a_default_model() {
+    let c = conf_from("gemini", "gemini", "k-123", "").unwrap();
+    assert_eq!(c.base, "https://generativelanguage.googleapis.com/v1beta/openai");
+    assert_eq!(c.model, "gemini-flash-latest");
+    assert!(!format!("{:?}", c).contains("k-123"));
+}
+
+#[test]
+fn a_question_reaches_the_provider_with_the_key_only_in_the_header() {
+    let store = leaked_store();
+    let m = mock(vec![(200, ok_body("Программа — это набор инструкций."), 0)]);
+    let c = Ok(ProviderConf { kind: Kind::OpenAiCompatible, name: "Google Gemini".into(), base: m.base.clone(), model: "gemini-flash-latest".into(), key: KEY.into() });
+    let id = run(store, c, None, "Что такое программа?").unwrap();
+    let msgs = messages(store, &id);
+    assert_eq!(msgs.last().unwrap().content, "Программа — это набор инструкций.");
+    let req = m.requests.lock()[0].clone();
+    assert!(req.starts_with("POST /chat/completions"), "{}", req.lines().next().unwrap_or(""));
+    assert!(req.contains(&format!("Bearer {}", KEY)));
+    assert!(req.contains("Что такое программа?") && req.contains("gemini-flash-latest"));
+    // the key is not in the URL and not in the stored dialog
+    assert!(!req.lines().next().unwrap().contains(KEY));
+    let file = std::fs::read_to_string(store.dir.join(format!("{}.json", id))).unwrap();
+    assert!(!file.contains(KEY));
+}
+
+#[test]
+fn a_failed_answer_calls_the_hook_and_only_outages_allow_a_web_search() {
+    for (status, web) in [(429, true), (500, true), (401, false), (404, false)] {
+        let store = leaked_store();
+        let m = mock(vec![(status, "{\"error\":{\"message\":\"model not found\"}}".to_string(), 0)]);
+        let (tx, rx) = std::sync::mpsc::channel();
+        let out = send_with_hook(store, conf(&m.base), None, "вопрос", false, Some(Box::new(move |e| { let _ = tx.send(e.clone()); }))).unwrap();
+        out.handle.join().unwrap();
+        let err = rx.recv_timeout(Duration::from_secs(3)).expect("the hook must be called");
+        assert_eq!(err.allows_web_search(), web, "{}: {:?}", status, err);
+    }
+    // no internet at all
+    let store = leaked_store();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let (tx, rx) = std::sync::mpsc::channel();
+    let out = send_with_hook(store, conf(&format!("http://127.0.0.1:{}", port)), None, "вопрос", false, Some(Box::new(move |e| { let _ = tx.send(e.clone()); }))).unwrap();
+    out.handle.join().unwrap();
+    assert!(rx.recv_timeout(Duration::from_secs(3)).unwrap().allows_web_search());
+}
+
+#[test]
+fn a_successful_answer_does_not_call_the_error_hook() {
+    let store = leaked_store();
+    let m = mock(vec![(200, ok_body("ответ"), 0)]);
+    let (tx, rx) = std::sync::mpsc::channel::<AiError>();
+    let out = send_with_hook(store, conf(&m.base), None, "вопрос", false, Some(Box::new(move |e| { let _ = tx.send(e.clone()); }))).unwrap();
+    out.handle.join().unwrap();
+    assert!(rx.try_recv().is_err());
+}

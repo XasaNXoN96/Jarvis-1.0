@@ -636,5 +636,12 @@ pub fn type_text(text: &str, class: Option<&str>) -> Result<(), String> {
 #[cfg(not(target_os = "windows"))]
 pub fn type_text(text: &str, class: Option<&str>) -> Result<(), String> {
     log::info!("[not windows, skipped] type into {:?}: {}", class, text);
+    // automated tests read what was "typed" from this file
+    if let Ok(path) = std::env::var("JARVIS_TEST_TYPED") {
+        use std::io::Write;
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+            let _ = writeln!(f, "{}\t{}", class.unwrap_or(""), text.replace('\n', "\\n"));
+        }
+    }
     Ok(())
 }

@@ -21,17 +21,40 @@ local function b64(data)
 end
 
 -- Word / Excel through COM. Returns ok, output, friendly error
+-- BOUND: the name of the document the work mode ("Работа с объектом") is bound to. While it is set, the script
+-- only uses the program and the document that are open: a closed program is not started again and the text never
+-- lands in another document.
+local BOUND = nil
+
 local function office(app, action, a1, a2, a3)
   local args = { "-App", app, "-Action", action }
   if a1 then args[#args + 1] = "-Arg1"; args[#args + 1] = a1 end
   if a2 then args[#args + 1] = "-Arg2"; args[#args + 1] = a2 end
   if a3 then args[#args + 1] = "-Arg3"; args[#args + 1] = a3 end
+  if BOUND ~= nil and (app == "word" or app == "excel") then
+    args[#args + 1] = "-Strict"
+    args[#args + 1] = "-Expect"; args[#args + 1] = b64(BOUND)
+  end
   local r = ps_file("office.ps1", args)
   if r.success then return true, ((r.stdout or ""):gsub("%s+$", "")), nil end
   local err = r.stderr or ""
+  local name = app == "word" and "Word" or (app == "excel" and "Excel" or T("Блокнот", "Notepad"))
   if err:find("NOTINSTALLED") then
     return false, "", app == "word" and T("Microsoft Word не установлен", "Microsoft Word is not installed")
                               or T("Microsoft Excel не установлен", "Microsoft Excel is not installed")
+  elseif err:find("NOAPP") then
+    return false, "", name .. T(" закрыт или недоступен. Текст не записан", " is closed or unavailable. Nothing was written"), "NOAPP"
+  elseif err:find("NODOC") then
+    return false, "", T("В " .. name .. " нет открытого документа. Текст не записан", "No open document in " .. name .. ". Nothing was written"), "NODOC"
+  elseif err:find("DOCCHANGED") then
+    local other = err:match("DOCCHANGED:([^\r\n]*)") or ""
+    return false, "", T("Сейчас активен другой документ «" .. other .. "». Текст не записан: вернитесь к своему документу", "Another document is active now. Nothing was written"), "DOCCHANGED"
+  elseif err:find("NEEDNAME") then
+    return false, "", "NEEDNAME", "NEEDNAME"
+  elseif err:find("EXISTS") then
+    return false, "", "EXISTS", "EXISTS"
+  elseif err:find("NOTSAVED") then
+    return false, "", T("Не удалось подтвердить сохранение: проверьте окно сохранения", "Could not confirm the save: check the save window"), "NOTSAVED"
   end
   return false, "", (err:gsub("%s+$", ""):sub(1, 200))
 end
@@ -383,6 +406,500 @@ local function file_session(text)
   end
 end
 
+-- ---------- "Работа с объектом": a document of Word / Excel / Notepad, dictation until the user finishes ----------
+-- Steps (kept in the session data): app_ask -> doc_ask -> (doc_name) -> typing -> ask_end -> (save_name | overwrite | confirm_delete)
+-- Nothing is saved, closed or deleted without the user's word; text never goes anywhere but the bound document.
+local OBJ_TITLE = T("Работа с объектом", "Object mode")
+local OBJ_NAMES = { word = "Word", excel = "Excel", notepad = T("Блокнот", "Notepad") }
+local OBJ_EXT = { word = "docx", excel = "xlsx", notepad = "txt" }
+local OBJ_FIND_EXT = { word = "docx,doc,rtf", excel = "xlsx,xls,xlsm,csv", notepad = "txt,md,log" }
+
+local function obj_say(text, speech)
+  say(OBJ_TITLE, text, speech or text)
+end
+
+local function stems_in(tokens, stems)
+  for _, w in ipairs(tokens) do
+    for _, s in ipairs(stems) do
+      if w:sub(1, #s) == s then return true end
+    end
+  end
+  return false
+end
+
+local function exact_in(tokens, words)
+  local set = set_of(words)
+  for _, w in ipairs(tokens) do if set[w] then return true end end
+  return false
+end
+
+-- "начинаем работу с объектом" / "заканчиваем работу с объектом"
+local function is_object_start(tokens)
+  return stems_in(tokens, { "объект" }) and stems_in(tokens, { "начин", "начн", "начат", "работ", "режим", "включ", "запуст" })
+         and not stems_in(tokens, { "заканч", "законч", "заверш", "прекрат", "выйд", "выход" })
+end
+local function is_object_end(tokens)
+  local n = #tokens
+  if n == 0 then return false end
+  if stems_in(tokens, { "объект" }) and stems_in(tokens, { "заканч", "законч", "заверш", "прекрат", "выйд", "выход", "конец", "хватит", "стоп" }) then return true end
+  if n <= 4 and stems_in(tokens, { "заканч", "законч", "заверш" }) and (stems_in(tokens, { "работ" }) or n <= 2) then return true end
+  if n == 1 and WEAK_STOP[tokens[1]] and tokens[1] ~= "все" and tokens[1] ~= "всё" then return true end
+  return false
+end
+
+-- the answer to a question of the work mode
+local function answer_of(tokens)
+  local a = {}
+  if stems_in(tokens, { "сохран" }) then a.save = true end
+  if stems_in(tokens, { "удал", "сотр", "выброс", "уничтож" }) then a.delete = true end
+  if stems_in(tokens, { "продолж", "дальше", "редактир", "вернис", "вернём", "вернем" }) then a.continue = true end
+  if stems_in(tokens, { "отмен", "отбой", "назад", "передума" }) then a.cancel = true end
+  if exact_in(tokens, { "да", "ага", "угу", "конечно", "верно", "согласен", "согласна", "окей", "ок", "подтверждаю" }) or stems_in(tokens, { "подтвер", "уверен" }) then a.yes = true end
+  if exact_in(tokens, { "нет", "не", "неа", "ни" }) or stems_in(tokens, { "не над", "не хоч" }) then a.no = true end
+  if stems_in(tokens, { "нов", "созда", "пуст", "чист" }) then a.new = true end
+  if stems_in(tokens, { "существ", "откр", "имеющ", "уже", "стар", "сохранённ", "сохраненн" }) then a.existing = true end
+  return a
+end
+
+local function obj_app() return jarvis.state.get("obj_app") end
+-- a step of the dialog: dictation may go on for a long time, a question is not left open for long
+local function obj_step(s)
+  jarvis.session.start("object", s == "typing" and 900 or 180)
+  jarvis.session.set_data(s)
+  jarvis.state.set("obj_unclear", "0")
+end
+
+local function obj_stop(msg_text, msg_speech)
+  jarvis.session.finish()
+  jarvis.state.set("obj_app", "")
+  jarvis.state.set("obj_name", "")
+  if msg_text then say(OBJ_TITLE, msg_text, msg_speech or msg_text) end
+end
+
+-- an answer that is not understood: ask again; after three misses the mode ends (nothing is saved, closed or deleted)
+local function obj_unclear(text, speech)
+  local n = (tonumber(jarvis.state.get("obj_unclear")) or 0) + 1
+  jarvis.state.set("obj_unclear", tostring(n))
+  jarvis.session.touch()
+  if n >= 3 then
+    return obj_stop(T("Не получил ответа, поэтому режим работы с объектом завершён. Документ остался открытым и не тронут.", "No answer: object mode finished. The document is untouched."),
+                    T("Не получил ответа. Режим работы с объектом завершён, документ остался открытым", "No answer, object mode finished"))
+  end
+  obj_say(text, speech)
+end
+
+
+-- info about the open document: ok, { name=, path=, has_path=, saved=, open= }
+local function obj_info(app)
+  local ok, out, err = office(app, "info")
+  if not ok then return false, nil, err end
+  local f = {}
+  for part in (out .. "|"):gmatch("([^|]*)|") do f[#f + 1] = part end
+  if f[1] ~= "1" then return true, { open = false } end
+  return true, { open = true, name = f[2] or "", path = f[3] or "", saved = f[4] == "1", has_path = f[5] == "1" }
+end
+
+local function obj_enter_typing(app, name)
+  jarvis.state.set("obj_app", app)
+  jarvis.state.set("obj_name", app == "notepad" and "" or (name or ""))
+  jarvis.state.set("dict_last", "")
+  jarvis.state.set("office_app", app)
+  jarvis.session.start("object", 900)
+  obj_step("typing")
+  local what = app == "notepad" and T("Блокнот", "Notepad") or ("«" .. (name or "") .. "»")
+  if app == "excel" then
+    obj_say(T("Работаю с таблицей " .. what .. ". Диктуйте значения: они пойдут в активную ячейку и вниз; или «ячейка А1 пиши 5». Чтобы закончить, скажите «заканчиваем работу с объектом».",
+              "Working with " .. what),
+            T("Работаю с таблицей. Диктуйте. Чтобы закончить, скажите: заканчиваем работу с объектом", "Listening"))
+  else
+    obj_say(T("Работаю с документом " .. what .. ". Диктуйте текст. Знаки: «точка», «запятая», «новая строка»; формат: «включи жирный», «по центру». Чтобы закончить, скажите «заканчиваем работу с объектом».",
+              "Working with " .. what),
+            T("Режим работы с объектом включён. Диктуйте. Чтобы закончить, скажите: заканчиваем работу с объектом", "Listening"))
+  end
+end
+
+local function obj_new_document(app)
+  if app == "notepad" then
+    if not jarvis.system.window_exists("Notepad") then
+      launch("notepad.exe", {})
+      jarvis.sleep(1200)
+    end
+    if WIN and not jarvis.system.window_exists("Notepad") then
+      obj_say(T("Не удалось открыть Блокнот", "Could not open Notepad"))
+      return false
+    end
+    obj_enter_typing(app, "")
+    return true
+  end
+  local ok, _, err = office(app, "new")
+  if not ok then obj_say(tostring(err)); return false end
+  local ok2, info = obj_info(app)
+  obj_enter_typing(app, ok2 and info.name or "")
+  return true
+end
+
+-- the program is open: use its document, or ask which one to use
+local function obj_begin(app)
+  jarvis.state.set("obj_app", app)
+  local ok, info, err = obj_info(app)
+  if not ok then obj_stop(tostring(err)); return end
+  if info.open then
+    obj_enter_typing(app, info.name)
+  else
+    jarvis.session.start("object", 900)
+    obj_step("doc_ask")
+    obj_say(T("С " .. OBJ_NAMES[app] .. " открыт без документа. Создать новый документ или открыть существующий?", "Create a new document or open an existing one?"),
+            T("Создать новый документ или открыть существующий?", "Create a new document or open an existing one?"))
+  end
+end
+
+local function obj_app_from(phrase, tokens)
+  local found = jarvis.apps.resolve(phrase)
+  if found and found.office then return found.office end
+  return target_from(tokens)
+end
+
+-- ---- formatting phrases of Word ----
+local function word_format(tokens)
+  local n = #tokens
+  if n == 0 or n > 5 then return nil end
+  local has = function(stems) return stems_in(tokens, stems) end
+  if has({ "отмени" }) and (has({ "последн", "действ" }) or n <= 2) then return "undo", nil end
+  local on = has({ "включ", "сдела", "поставь", "добавь" })
+  local off = has({ "выключ", "убери", "отключ", "сними" })
+  if has({ "жирн" }) and (on or off) then return off and "bold_off" or "bold_on", nil end
+  if has({ "курсив" }) and (on or off) then return off and "italic_off" or "italic_on", nil end
+  if has({ "подчерк", "подчёрк" }) and (on or off) then return off and "underline_off" or "underline_on", nil end
+  if has({ "по центру", "центр" }) and (on or has({ "выровн" })) then return "center", nil end
+  if (has({ "по лев" }) or (has({ "лев" }) and has({ "край", "кра" }))) and (on or has({ "выровн" })) then return "left", nil end
+  if (has({ "по прав" }) or (has({ "прав" }) and has({ "край", "кра" }))) and (on or has({ "выровн" })) then return "right", nil end
+  if has({ "по ширин" }) and (on or has({ "выровн" })) then return "justify", nil end
+  if has({ "заголов" }) and on then return (has({ "втор", "2" }) and "h2" or "h1"), nil end
+  if has({ "обычн" }) and (on or has({ "текст", "стиль" })) then return "normal", nil end
+  if has({ "нумерован" }) and (on or has({ "список" })) then return "numbers", nil end
+  if has({ "маркиров", "список" }) and on then return "bullets", nil end
+  if has({ "размер" }) and (on or has({ "шрифт" })) then
+    local num = num_at(tokens, 1)
+    for i = 1, n do num = num or (num_at(tokens, i)) end
+    if num and num >= 6 and num <= 96 then return "size", tostring(math.floor(num)) end
+  end
+  return nil
+end
+
+local FORMAT_DONE = { bold_on = "жирный включён", bold_off = "жирный выключен", italic_on = "курсив включён", italic_off = "курсив выключен",
+  underline_on = "подчёркивание включено", underline_off = "подчёркивание выключено", left = "по левому краю", center = "по центру", right = "по правому краю",
+  justify = "по ширине", h1 = "заголовок", h2 = "заголовок 2", normal = "обычный текст", numbers = "нумерованный список", bullets = "маркированный список",
+  undo = "последнее действие отменено", size = "размер шрифта изменён" }
+
+local function looks_like_cell_command(tokens)
+  local first = tokens[1] or ""
+  if first:find("^ячейк") then return true end
+  local col = parse_ref(tokens, 1)
+  if col and tokens[2] then
+    for i = 2, math.min(#tokens, 3) do
+      if WRITE[tokens[i]] or FORMULA[tokens[i]] then return true end
+    end
+  end
+  return false
+end
+
+-- one dictated phrase while the work mode is on
+local function obj_type(phrase)
+  local tokens = tokens_of(phrase)
+  local app = obj_app()
+  if is_object_end(tokens) then
+    obj_step("ask_end")
+    obj_say(T("Сохранить документ, удалить его или продолжить редактирование?", "Save the document, delete it or go on editing?"))
+    return
+  end
+
+  if app == "word" then
+    local cmd, arg = word_format(tokens)
+    if cmd then
+      local ok, _, err = office("word", "format", cmd, arg)
+      say_quiet(ok and ("⚙ " .. (FORMAT_DONE[cmd] or cmd)) or tostring(err))
+      return
+    end
+    local text = format_dictation(phrase)
+    if text == "" then return end
+    local ok, _, err = office("word", "text", b64(text))
+    if ok then jarvis.out("✎ " .. text:gsub("\n", " ↵ ")) else
+      jarvis.state.set("dict_last", "")
+      obj_say(tostring(err), tostring(err))
+    end
+
+  elseif app == "excel" then
+    if looks_like_cell_command(tokens) then
+      local ok, msg = excel_command(phrase)
+      if ok then say_quiet(T("Ячейка: ", "Cell: ") .. msg) else obj_say(tostring(msg), tostring(msg)) end
+      return
+    end
+    local joined = table.concat(tokens, " ")
+    local num = (#tokens > 0) and jarvis.parse.number(joined) or nil
+    local ok, out, err
+    if num ~= nil then
+      ok, out, err = office("excel", "active", b64(fmt_number(num)), "n")
+    else
+      ok, out, err = office("excel", "active", b64(cap_first(joined)), "t")
+    end
+    if ok then say_quiet(T("Ячейка ", "Cell ") .. tostring(out) .. " = " .. joined) else obj_say(tostring(err), tostring(err)) end
+
+  else -- Notepad: only the Notepad window, never another program
+    local text = format_dictation(phrase)
+    if text == "" then return end
+    local ok, err = jarvis.system.type_text(text, "Notepad")
+    if ok then jarvis.out("✎ " .. text:gsub("\n", " ↵ ")) else
+      jarvis.state.set("dict_last", "")
+      local m = T("Блокнот закрыт или не найден. Текст не записан. Откройте Блокнот или завершите работу с объектом.", "Notepad is closed. Nothing was written.")
+      obj_say(m, m)
+    end
+  end
+end
+
+-- ---- saving ----
+local PLACES = { { stems = { "рабоч", "стол" }, dir = "@Desktop", name = "рабочий стол" }, { stems = { "загрузк" }, dir = "@Downloads", name = "Загрузки" } }
+local NAME_NOISE = set_of({ "назови", "назвать", "название", "имя", "как", "пусть", "будет", "файл", "сохрани", "сохранить", "документ", "в", "на", "умолчанию",
+  "папку", "папке", "папка", "папки", "рабочем", "рабочий", "столе", "стол", "загрузки", "загрузках", "документы", "документах", "и", "с", "именем", "под", "названием", "пожалуйста", "там" })
+
+-- "отчёт по информатике на рабочем столе" -> "@Desktop\\Отчёт по информатике.docx", "рабочий стол"
+local function save_target(phrase, app)
+  local tokens = tokens_of(phrase)
+  local dir, where = "@Documents", "Документы"
+  for _, pl in ipairs(PLACES) do
+    if stems_in(tokens, pl.stems) then dir, where = pl.dir, pl.name end
+  end
+  -- the name keeps the letters as spoken ("отчёт", with ё); only the comparison with the noise words is normalized
+  local words = {}
+  for w in phrase:gmatch("%S+") do
+    local bare = (w:gsub("[%.,!%?;:]+", "")):gsub("ё", "е")
+    if bare ~= "" and not NAME_NOISE[bare] and not (bare:sub(1, 6) == "рабоч") and not (bare:sub(1, 7) == "загрузк") then words[#words + 1] = (w:gsub("[%.,!%?;:]+", "")) end
+  end
+  local name = table.concat(words, " ")
+  if name == "" or name == "по" or stems_in(tokens, { "любое", "любой", "неважно", "угодно", "умолчан" }) then
+    local stamp = "Документ"
+    local okd, d = pcall(os.date, "%Y-%m-%d %H-%M")
+    if okd and d then stamp = stamp .. " " .. d end
+    name = stamp
+  else
+    name = cap_first(name)
+  end
+  name = name:gsub('[\\\\/:*?"<>|]', ""):gsub("%s+$", "")
+  return dir .. "\\" .. name .. "." .. OBJ_EXT[app], where, name
+end
+
+local function obj_saved_ok(app, path)
+  obj_stop(T("Документ сохранён: " .. path .. ". Режим работы с объектом завершён.", "Saved: " .. path),
+           T("Документ сохранён. Работа с объектом завершена", "The document is saved. Object mode is finished"))
+end
+
+local function obj_do_save()
+  local app = obj_app()
+  if app == "notepad" then
+    local ok, info = obj_info("notepad")
+    if not ok or not info.open then
+      obj_say(T("Блокнот закрыт: сохранять нечего.", "Notepad is closed."), T("Блокнот закрыт, сохранять нечего", "Notepad is closed"))
+      return
+    end
+    local title = info.name or ""
+    if title:find("Безымянный") or title:find("Untitled") then
+      obj_step("save_name")
+      obj_say(T("Как назвать файл и куда его положить? Например: «заметки на рабочем столе». По умолчанию — папка «Документы».", "Name and place?"),
+              T("Как назвать файл и где сохранить? По умолчанию в документы", "Name and place?"))
+      return
+    end
+    local ok2, out, err = office("notepad", "save", b64(""))
+    if ok2 then obj_saved_ok(app, T("файл в Блокноте", "the file")) else obj_say(tostring(err)) end
+    return
+  end
+  local ok, out, err, code = office(app, "save")
+  if ok then obj_saved_ok(app, out); return end
+  if code == "NEEDNAME" then
+    obj_step("save_name")
+    obj_say(T("Как назвать документ и куда его положить? Например: «отчёт по информатике на рабочем столе». По умолчанию — папка «Документы».", "Name and place?"),
+            T("Как назвать документ и где сохранить? По умолчанию в документы", "Name and place?"))
+  else
+    obj_say(tostring(err), tostring(err))
+    obj_step("ask_end")
+  end
+end
+
+local function obj_save_as(rel, overwrite)
+  local app = obj_app()
+  local action = app == "notepad" and "save" or "saveas"
+  local ok, out, err, code
+  if app == "notepad" then
+    ok, out, err, code = office("notepad", "save", b64(rel), overwrite and "overwrite" or nil)
+  else
+    ok, out, err, code = office(app, "saveas", b64(rel), overwrite and "overwrite" or nil)
+  end
+  if ok then
+    local path = (out ~= "" and out) or rel
+    jarvis.state.set("obj_pending", "")
+    obj_saved_ok(app, path)
+    return
+  end
+  if code == "EXISTS" then
+    jarvis.state.set("obj_pending", rel)
+    obj_step("overwrite")
+    local shown = rel:gsub("^@%w+\\", "")
+    obj_say(T("Файл «" .. shown .. "» уже существует. Заменить его? Скажите да или нет.", "The file exists. Replace it?"),
+            T("Такой файл уже есть. Заменить его? Скажите да или нет", "That file exists. Replace it?"))
+  else
+    obj_say(tostring(err), tostring(err))
+    obj_step("ask_end")
+  end
+end
+
+-- ---- deleting: only after a clear "да" ----
+local function obj_ask_delete()
+  local app = obj_app()
+  local msg
+  if app == "notepad" then
+    msg = T("Окно Блокнота будет закрыто без сохранения: весь несохранённый текст пропадёт. Закрыть без сохранения? Скажите да или нет.", "Notepad will be closed without saving. Sure?")
+  else
+    local ok, info = obj_info(app)
+    local name = ok and info.open and info.name or jarvis.state.get("obj_name") or ""
+    if ok and info.open and info.has_path then
+      msg = T("Документ «" .. name .. "» будет закрыт без сохранения, а его файл «" .. info.path .. "» перемещён в корзину. Несохранённые изменения пропадут. Удалить? Скажите да или нет.", "Delete?")
+    else
+      msg = T("Документ «" .. name .. "» ещё нигде не сохранён: он будет закрыт, и всё написанное пропадёт. Удалить? Скажите да или нет.", "Delete?")
+    end
+  end
+  obj_step("confirm_delete")
+  obj_say(msg, msg)
+end
+
+local function obj_do_delete()
+  local app = obj_app()
+  local ok, out, err = office(app, "discard")
+  if not ok then
+    obj_say(tostring(err), tostring(err))
+    obj_step("ask_end")
+    return
+  end
+  local recycled = false
+  if app ~= "notepad" and out ~= "" then
+    local ok2, res = office("file", "recycle", b64(out))
+    recycled = ok2 and res == "recycled"
+  end
+  local text
+  if app == "notepad" then
+    text = out == "asking" and T("Блокнот спрашивает о сохранении: выберите «Не сохранять» в его окне.", "Notepad asks about saving: choose Don't save.") or T("Блокнот закрыт без сохранения.", "Notepad closed without saving.")
+  else
+    text = recycled and T("Документ закрыт без сохранения, файл перемещён в корзину.", "Closed, the file is in the recycle bin.") or T("Документ закрыт без сохранения.", "Closed without saving.")
+  end
+  obj_stop(text .. T(" Режим работы с объектом завершён.", " Object mode is finished."), text)
+end
+
+-- one phrase in any step of the work mode
+local function obj_handle(phrase)
+  local tokens = tokens_of(phrase)
+  local step = jarvis.session.data()
+  local a = answer_of(tokens)
+  local app = obj_app()
+
+  if step == "typing" then
+    return obj_type(phrase)
+
+  elseif step == "app_ask" then
+    if a.cancel then return obj_stop(T("Хорошо, режим работы с объектом не включён.", "Okay, cancelled.")) end
+    local target = obj_app_from(phrase, tokens)
+    if target ~= "word" and target ~= "excel" and target ~= "notepad" then
+      return obj_say(T("С чем работаем: Word, Excel или Блокнот?", "Word, Excel or Notepad?"))
+    end
+    return obj_begin(target)
+
+  elseif step == "doc_ask" then
+    if a.cancel then return obj_stop(T("Хорошо, режим работы с объектом не включён.", "Okay, cancelled.")) end
+    if a.new and not a.existing then
+      obj_new_document(app)
+    elseif a.existing then
+      obj_step("doc_name")
+      obj_say(T("Как называется файл? Я поищу его в «Документах», на рабочем столе и в загрузках.", "What is the file called?"),
+              T("Как называется файл?", "What is the file called?"))
+    else
+      obj_unclear(T("Скажите: «новый» — создать документ, «существующий» — открыть готовый. Или «отмена».", "New or existing?"))
+    end
+
+  elseif step == "doc_name" then
+    if a.cancel then return obj_stop(T("Хорошо, режим работы с объектом не включён.", "Okay, cancelled.")) end
+    if a.new and #tokens <= 2 then return obj_new_document(app) end
+    local words = {}
+    for _, w in ipairs(tokens) do
+      if not NAME_NOISE[w] and w ~= "открой" and w ~= "найди" and w ~= "называется" and w ~= "файл" then words[#words + 1] = w end
+    end
+    if #words == 0 then return obj_say(T("Назовите имя файла.", "Say the file name.")) end
+    local ok, path, err = office("file", "find", b64(table.concat(words, " ")), OBJ_FIND_EXT[app])
+    if not ok then return obj_say(tostring(err)) end
+    if path == "" then
+      return obj_say(T("Файл «" .. table.concat(words, " ") .. "» не найден. Назовите имя ещё раз, скажите «новый» или «отмена».", "Not found."))
+    end
+    if app == "notepad" then
+      launch("notepad.exe", { path })
+      jarvis.sleep(1200)
+      return obj_enter_typing(app, "")
+    end
+    local ok2, _, err2 = office(app, "open", b64(path))
+    if not ok2 then return obj_say(tostring(err2)) end
+    local ok3, info = obj_info(app)
+    obj_enter_typing(app, ok3 and info.open and info.name or "")
+
+  elseif step == "ask_end" then
+    if a.continue or a.cancel then
+      obj_step("typing")
+      return obj_say(T("Продолжаем редактирование. Диктуйте.", "Go on."), T("Продолжаем. Диктуйте", "Go on"))
+    elseif a.save and not a.delete then
+      return obj_do_save()
+    elseif a.delete and not a.save then
+      return obj_ask_delete()
+    end
+    obj_unclear(T("Скажите: «сохранить», «удалить» или «продолжить». «Отмена» вернёт вас к документу.", "Save, delete or continue?"),
+                T("Сохранить документ, удалить его или продолжить редактирование?", "Save, delete or continue?"))
+
+  elseif step == "save_name" then
+    if a.cancel then
+      obj_step("typing")
+      return obj_say(T("Сохранение отменено. Продолжаем редактирование.", "Cancelled."), T("Отменил. Продолжаем редактирование", "Cancelled"))
+    end
+    local rel, where, name = save_target(phrase, app)
+    obj_say(T("Сохраняю «" .. name .. "» в «" .. where .. "»…", "Saving…"), T("Сохраняю", "Saving"))
+    obj_save_as(rel, false)
+
+  elseif step == "overwrite" then
+    if a.yes and not a.no then
+      return obj_save_as(jarvis.state.get("obj_pending") or "", true)
+    end
+    obj_step("save_name")
+    obj_say(T("Хорошо, не заменяю. Назовите другое имя или скажите «отмена».", "Not replacing. Another name?"), T("Не заменяю. Назовите другое имя", "Another name?"))
+
+  elseif step == "confirm_delete" then
+    if (a.yes or a.delete) and not a.no and not a.cancel then
+      return obj_do_delete()
+    end
+    obj_step("typing")
+    obj_say(T("Хорошо, ничего не удаляю. Продолжаем редактирование.", "Not deleting."), T("Хорошо, ничего не удаляю. Продолжаем редактирование", "Not deleting"))
+
+  else
+    obj_stop()
+  end
+end
+
+-- "начинаем работу с объектом"
+local function obj_start(phrase)
+  local tokens = tokens_of(phrase)
+  local app = obj_app_from(phrase, tokens)
+  if app ~= "word" and app ~= "excel" and app ~= "notepad" then
+    local last = jarvis.state.get("office_app")
+    if last == "word" or last == "excel" or last == "notepad" then app = last end
+  end
+  if app ~= "word" and app ~= "excel" and app ~= "notepad" then
+    jarvis.session.start("object", 300)
+    obj_step("app_ask")
+    return obj_say(T("С каким объектом работаем: Word, Excel или Блокнот?", "Word, Excel or Notepad?"), T("С каким объектом работаем: ворд, эксель или блокнот?", "Word, Excel or Notepad?"))
+  end
+  obj_begin(app)
+end
+
 -- ---------- entry points ----------
 local function finish_session()
   jarvis.session.finish()
@@ -412,7 +929,11 @@ local function start_dictation(target)
   end
 end
 
-if id == "assistant_office_dictate" then
+if id == "assistant_object_start" then
+  jarvis.state.set("obj_name", "")
+  obj_start(phrase)
+
+elseif id == "assistant_office_dictate" then
   local tokens = tokens_of(phrase)
   local target = target_from(tokens) or jarvis.state.get("office_app")
   if target ~= "word" and target ~= "excel" and target ~= "notepad" then
@@ -421,6 +942,22 @@ if id == "assistant_office_dictate" then
     return
   end
   start_dictation(target)
+  -- "пиши: привет, как дела?": the text after the command word is written at once (never run as a command)
+  if target ~= "excel" then
+    local skip = set_of({ "пиши", "пишите", "напиши", "диктуй", "диктуйте", "печатай", "в", "ворде", "ворд", "word", "блокноте", "блокнот", "notepad", "документе", "документ",
+                          "текст", "пожалуйста", "начни", "писать", "диктовку", "диктовать", "буду", "давай", "режим", "диктовки" })
+    -- the words as they were typed (with their commas and question marks)
+    local rest, started = {}, false
+    for w in phrase:gmatch("%S+") do
+      local bare = (w:gsub("[%.,!%?;:]+", ""))
+      if started or not skip[bare] then started = true; rest[#rest + 1] = w end
+    end
+    local text = table.concat(rest, " ")
+    if text ~= "" then
+      local formatted = format_dictation(text)
+      if type_into(target, formatted) then jarvis.out("✎ " .. formatted:gsub("\n", " ↵ ")) end
+    end
+  end
 
 elseif id == "assistant_office_cell" then
   local ok, msg = excel_command(phrase)
@@ -453,9 +990,21 @@ else -- assistant_session: every phrase while a session is open
   local kind = jarvis.session.kind()
   if kind == "file" then
     file_session(phrase)
+  elseif kind == "object" then
+    local nm = jarvis.state.get("obj_name")
+    local app = jarvis.state.get("obj_app")
+    local step = jarvis.session.data()
+    if nm and nm ~= "" and (app == "word" or app == "excel") and step ~= "doc_ask" and step ~= "doc_name" and step ~= "app_ask" then BOUND = nm end
+    obj_handle(phrase)
   elseif kind == "dictation" then
     local tokens = tokens_of(phrase)
     local target = jarvis.session.data()
+    if is_object_start(tokens) then
+      jarvis.session.finish()
+      jarvis.state.set("obj_name", "")
+      obj_start(phrase)
+      return
+    end
     if is_stop(tokens) then finish_session(); return end
     if any_word(tokens, set_of({ "новый", "новая", "новую", "новое" })) and any_word(tokens, set_of({ "документ", "таблица", "таблицу", "книгу", "лист" })) then
       local ok, _, err = office(target == "excel" and "excel" or "word", "new")

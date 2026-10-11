@@ -503,7 +503,21 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
         }
     }
 
-    let cmd_result = if let Some(found) = commands::fetch_by_triggers(text, commands_list) {
+    // a program by its spoken name ("открой ворт", "запусти тотал командер"): before the word triggers,
+    // because the recognizer rarely writes the name the way the trigger list has it
+    let program_cmd = commands::fetch_program(text, commands_list).or_else(|| commands::fetch_dictation(text, commands_list));
+
+    // a question for the AI ("что такое программа", "объясни, как работает Excel"): the commands do not run it
+    if program_cmd.is_none() && jarvis_core::route::decide(text, jarvis_core::ai::is_configured()) == jarvis_core::route::Route::Ai {
+        info!("Knowledge question, sending to the AI: {}", text);
+        ask_ai(text);
+        return false;
+    }
+
+    let cmd_result = if let Some(found) = program_cmd {
+        info!("Program command: {}", found.1.id);
+        Some(found)
+    } else if let Some(found) = commands::fetch_by_triggers(text, commands_list) {
         info!("Keyword trigger matched: {}", found.1.id);
         Some(found)
     } else if let Some((intent_id, confidence)) = 
@@ -571,20 +585,21 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
     } else {
         info!("No command found for: {}", text);
         // not a command: with "answer phrases that are not commands" switched on, the AI answers (only then)
-        if jarvis_core::uistate::settings().ai_fallback && jarvis_core::ai::is_configured() {
-            match jarvis_core::ai::send(None, text, true) {
-                Ok(_) => {
-                    jarvis_core::uistate::log_action(text, "ИИ-чат", true);
-                    ipc::send(IpcEvent::Output { text: "Это не команда: спрашиваю ИИ. Ответ появится на странице «Диалог».".to_string() });
-                    ipc::send(IpcEvent::Idle);
-                    return false;
-                }
-                Err(e) => {
-                    ipc::send(IpcEvent::Output { text: e.user_text() });
-                    ipc::send(IpcEvent::Idle);
-                    return false;
-                }
-            }
+        let ai_ready = jarvis_core::ai::is_configured();
+        let question = jarvis_core::route::is_open_question(text);
+        if ai_ready && (jarvis_core::uistate::settings().ai_fallback || question) {
+            ask_ai(text);
+            return false;
+        }
+        if question {
+            // no AI is connected: say so and look it up on the Internet instead of staying silent
+            let msg = "ИИ не подключён (Настройки → ИИ-провайдер), поэтому ищу ответ в интернете.".to_string();
+            say(&msg);
+            ipc::send(IpcEvent::Output { text: msg });
+            jarvis_core::uistate::log_action(text, "поиск в интернете", true);
+            jarvis_core::remote::push_text(&format!("найди в интернете {}", jarvis_core::route::search_query(text)));
+            ipc::send(IpcEvent::Idle);
+            return false;
         }
         say(&format!("? command not found: {}", text));
         jarvis_core::uistate::log_action(text, "—", false);
@@ -598,6 +613,39 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
     false // no chain on error or not found
 }
 
+
+// sends a phrase to the connected AI; the answer appears on the "Диалог" page and is read aloud. When the AI
+// cannot answer (no internet, limit, server error) the reason is said and, where it makes sense, the Internet is searched.
+fn ask_ai(text: &str) {
+    let query = text.to_string();
+    let hook: jarvis_core::ai::ErrorHook = Box::new(move |e| {
+        let msg = e.user_text();
+        ipc::send(IpcEvent::Output { text: msg.clone() });
+        if jarvis_core::tts::is_enabled() {
+            jarvis_core::tts::speak(msg.split(". ").next().unwrap_or(&msg));
+        }
+        if e.allows_web_search() {
+            let note = "Ищу ответ в интернете.".to_string();
+            ipc::send(IpcEvent::Output { text: note });
+            jarvis_core::remote::push_text(&format!("найди в интернете {}", jarvis_core::route::search_query(&query)));
+        }
+    });
+    match jarvis_core::ai::send_question(text, hook) {
+        Ok(_) => {
+            jarvis_core::uistate::log_action(text, "ИИ-чат", true);
+            ipc::send(IpcEvent::Output { text: "Спрашиваю ИИ. Ответ появится на странице «Диалог».".to_string() });
+        }
+        Err(e) => {
+            jarvis_core::uistate::log_action(text, "ИИ-чат", false);
+            ipc::send(IpcEvent::Output { text: e.user_text() });
+            if jarvis_core::tts::is_enabled() {
+                let m = e.user_text();
+                jarvis_core::tts::speak(m.split(". ").next().unwrap_or(&m));
+            }
+        }
+    }
+    ipc::send(IpcEvent::Idle);
+}
 
 pub fn close(code: i32) {
     info!("Closing application.");

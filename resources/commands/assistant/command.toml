@@ -687,10 +687,10 @@ sandbox = "full"
 timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3"]
 sounds.en = ["ok1", "ok2", "ok3"]
-triggers.ru = ["найд википед", "в википед", "что так", "кто так", "расскаж про", "расскаж о"]
-triggers.en = ["wikipedia", "what is", "who is", "tell me about"]
-phrases.ru = ["найди в википедии Ташкент", "что такое нейросеть"]
-phrases.en = ["wikipedia Tashkent", "what is a neural network"]
+triggers.ru = ["найд википед", "в википед", "википед"]
+triggers.en = ["wikipedia"]
+phrases.ru = ["найди в википедии Ташкент"]
+phrases.en = ["wikipedia Tashkent"]
 
 [[commands]]
 id = "assistant_maps"
@@ -791,6 +791,19 @@ triggers.ru = ["нов документ", "созда документ", "нов
 triggers.en = ["new document", "create document", "new spreadsheet", "new workbook"]
 phrases.ru = ["новый документ", "создай таблицу"]
 phrases.en = ["new document"]
+
+[[commands]]
+id = "assistant_object_start"
+type = "lua"
+script = "office.lua"
+sandbox = "full"
+timeout = 30000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["начина работ объект", "начн работ объект", "начат работ объект", "работ с объект", "работа объект", "режим работ объект", "режим объект", "включ работ объект", "запуст работ объект", "работат с объект", "работат объект"]
+triggers.en = ["start object mode", "object mode"]
+phrases.ru = ["начинаем работу с объектом", "начни работу с объектом", "режим работы с объектом"]
+phrases.en = ["start object mode"]
 
 # used internally: every phrase while a session (dictation, "what to do with the file?") is open; never matched by words
 [[commands]]

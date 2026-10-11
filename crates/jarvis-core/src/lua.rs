@@ -20,6 +20,9 @@ use std::time::Duration;
 #[cfg(test)]
 mod tests;
 
+#[cfg(all(test, unix))]
+mod object_tests;
+
 // Execute a Lua command script
 pub fn execute(
     script_path: &PathBuf,

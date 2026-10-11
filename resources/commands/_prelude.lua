@@ -6,6 +6,10 @@ local phrase = (jarvis.context.phrase or ""):lower()
 
 -- run a program (no shell). On non-Windows systems only logs what would be done.
 local function run(program, args)
+  if not WIN and jarvis.test_runner and program == "powershell" then
+    -- automated tests: the PowerShell scripts are answered by a fake office program
+    return jarvis.system.run(jarvis.test_runner, args or {})
+  end
   if not WIN then
     jarvis.log("info", "[not windows, skipped] " .. program .. " " .. table.concat(args or {}, " "))
     return { success = true, code = 0, stdout = "", stderr = "" }

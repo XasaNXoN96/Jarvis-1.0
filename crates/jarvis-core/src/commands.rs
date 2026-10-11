@@ -88,6 +88,31 @@ pub fn commands_hash(commands: &[JCommandsList]) -> String {
 
 // Look up a command by keyword triggers (see JCommand::triggers).
 // Returns the command whose matching trigger has the most word stems.
+// "открой ворт", "запусти тотал командер": the program command for a phrase that is a verb plus a program name
+pub fn fetch_program<'a>(phrase: &str, commands: &'a [JCommandsList]) -> Option<(&'a PathBuf, &'a JCommand)> {
+    let req = crate::apps::parse_request(phrase)?;
+    // "открой проводник" keeps its own command (it opens the Documents folder, as before)
+    if req.app.id == "explorer" && req.action == crate::apps::Action::Open {
+        return None;
+    }
+    let id = match req.action {
+        crate::apps::Action::Open => "assistant_program_open",
+        crate::apps::Action::Close => "assistant_program_close",
+    };
+    commands.iter().flat_map(|l| l.commands.iter().map(move |c| (&l.path, c))).find(|(_, c)| c.id == id)
+}
+
+// "пиши привет, как дела?": the text after the writing verb is the text to write, never a command.
+// Without this "как дела" (two stems) would beat "пиши" (one stem) and Jarvis would answer instead of typing.
+pub fn fetch_dictation<'a>(phrase: &str, commands: &'a [JCommandsList]) -> Option<(&'a PathBuf, &'a JCommand)> {
+    let first = crate::apps::tokens(phrase).into_iter().next()?;
+    let verb = ["пиши", "пишите", "диктуй", "диктуйте", "печатай", "печатайте"].contains(&first.as_str());
+    if !verb {
+        return None;
+    }
+    commands.iter().flat_map(|l| l.commands.iter().map(move |c| (&l.path, c))).find(|(_, c)| c.id == "assistant_office_dictate")
+}
+
 pub fn fetch_by_triggers<'a>(
     phrase: &str,
     commands: &'a [JCommandsList],

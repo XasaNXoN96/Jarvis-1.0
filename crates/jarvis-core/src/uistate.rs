@@ -161,7 +161,7 @@ pub fn group_key(pack: &str, id: &str) -> &'static str {
     if starts("volume") || starts("brightness") || starts("media") { return "sound"; }
     if starts("timer") || id == "reminder" { return "timers"; }
     if starts("file") || id == "place_open" || id == "disk_open" { return "files"; }
-    if starts("note") || starts("office") || id == "session" { return "text"; }
+    if starts("note") || starts("office") || starts("object") || id == "session" { return "text"; }
     if starts("tts") || starts("read_") || starts("mic_") { return "voice"; }
     if starts("power") || id == "unlock" || pack == "windows" { return "system"; }
     if starts("info") || starts("sys_") { return "info"; }

@@ -50,6 +50,8 @@ pub mod tts;
 pub mod remote;
 pub mod ui;
 pub mod uistate;
+pub mod route;
+pub mod apps;
 pub mod session;
 pub mod secret;
 pub mod voice_install;

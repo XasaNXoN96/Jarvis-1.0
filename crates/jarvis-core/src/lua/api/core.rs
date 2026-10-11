@@ -120,6 +120,30 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
     })?)?;
     jarvis.set("app", app)?;
 
+    // test seam: when JARVIS_TEST_RUNNER is set, scripts run on a non-Windows machine send their PowerShell calls to it
+    // (the automated tests of the document mode use a fake Word / Excel / Notepad); never set in normal use
+    jarvis.set("test_runner", std::env::var("JARVIS_TEST_RUNNER").ok())?;
+
+    // jarvis.apps.resolve(phrase) -> { id, name, start, process, office, path } for a program named in the phrase
+    // (spoken variants, "ворт" = "Word"); `path` is where it is installed when found. nil when no program is named.
+    let apps = lua.create_table()?;
+    apps.set("resolve", lua.create_function(|lua, phrase: String| {
+        match crate::apps::find_in_phrase(&phrase) {
+            Some(m) => {
+                let t = lua.create_table()?;
+                t.set("id", m.app.id)?;
+                t.set("name", m.app.name)?;
+                t.set("start", m.app.start)?;
+                t.set("process", m.app.process)?;
+                t.set("office", m.app.office)?;
+                t.set("path", crate::apps::locate(m.app))?;
+                Ok(mlua::Value::Table(t))
+            }
+            None => Ok(mlua::Value::Nil),
+        }
+    })?)?;
+    jarvis.set("apps", apps)?;
+
     // jarvis.session: a conversation without the wake word (see session.rs)
     let session = lua.create_table()?;
     session.set("start", lua.create_function(|_, (kind, secs): (String, Option<u64>)| { crate::session::start(&kind, secs.unwrap_or(60)); Ok(()) })?)?;

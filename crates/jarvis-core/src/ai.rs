@@ -72,6 +72,11 @@ pub enum AiError {
 }
 
 impl AiError {
+    // errors after which an internet search is a reasonable plan B (the provider cannot answer right now)
+    pub fn allows_web_search(&self) -> bool {
+        matches!(self, AiError::Network(_) | AiError::Timeout | AiError::Server(_) | AiError::Quota(_))
+    }
+
     // what the user sees: what happened and what to do next
     pub fn user_text(&self) -> String {
         match self {
@@ -547,6 +552,13 @@ pub struct SendOutcome {
 // Validates, stores the user message and starts the generation in the background.
 // Validation errors come back at once (nothing is stored, nothing is sent anywhere).
 pub fn send_with(store: &'static Store, conf: Result<ProviderConf, AiError>, chat_id: Option<&str>, text: &str, speak: bool) -> Result<SendOutcome, AiError> {
+    send_with_hook(store, conf, chat_id, text, speak, None)
+}
+
+// The same, and `on_error` is called (in the background thread) when the answer could not be obtained.
+pub type ErrorHook = Box<dyn FnOnce(&AiError) + Send + 'static>;
+
+pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>, chat_id: Option<&str>, text: &str, speak: bool, on_error: Option<ErrorHook>) -> Result<SendOutcome, AiError> {
     let text = text.trim();
     if text.is_empty() {
         return Err(AiError::Empty);
@@ -607,8 +619,18 @@ pub fn send_with(store: &'static Store, conf: Result<ProviderConf, AiError>, cha
             }
         }
         JOBS.lock().remove(&job_id);
+        if let (Err(e), Some(hook)) = (&result, on_error) {
+            if *e != AiError::Cancelled {
+                hook(e);
+            }
+        }
     });
     Ok(SendOutcome { chat_id: id, handle })
+}
+
+// a question from the command line / voice: the answer is shown in the chat and read aloud; `on_error` runs on failure
+pub fn send_question(text: &str, on_error: ErrorHook) -> Result<String, AiError> {
+    send_with_hook(store(), conf_from_settings(), None, text, true, Some(on_error)).map(|o| o.chat_id)
 }
 
 pub fn send(chat_id: Option<&str>, text: &str, speak: bool) -> Result<String, AiError> {
