@@ -786,9 +786,11 @@ function updateAiRows() {
   const p = $('#ai-provider').value;
   $('#ai-url-row').style.display = (p === 'ollama' || p === 'custom' || p === 'anthropic') ? '' : 'none';
   $('#ai-key-row').style.display = (p === 'none' || p === 'ollama') ? 'none' : '';
-  const ph = { anthropic: 'claude-sonnet-5-5', openai: 'gpt-4o-mini', openrouter: 'openai/gpt-4o-mini', gemini: 'gemini-2.0-flash', ollama: 'llama3.1', custom: 'название модели' };
+  const ph = { anthropic: 'claude-sonnet-5-5', openai: 'gpt-4o-mini', openrouter: 'openai/gpt-4o-mini', gemini: 'gemini-flash-latest', ollama: 'llama3.1', custom: 'название модели' };
   $('#ai-url-hint').textContent = p === 'anthropic' ? 'необязательно (по умолчанию api.anthropic.com)' : p === 'custom' ? 'адрес API, например https://host/v1' : 'для Ollama: адрес сервера';
   $('#ai-model').placeholder = ph[p] ? 'например: ' + ph[p] : '';
+  const mv = $('#ai-model').value.trim();
+  if (ph[p] && p !== 'custom' && (!mv || ['gemini', 'openai', 'openrouter', 'anthropic', 'ollama'].includes(mv.toLowerCase()))) $('#ai-model').value = ph[p];
 }
 $('#ai-provider').onchange = updateAiRows;
 async function saveAi() {

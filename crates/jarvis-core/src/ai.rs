@@ -120,10 +120,20 @@ pub fn conf_from(provider: &str, model: &str, key: &str, url: &str) -> Result<Pr
     if key_needed && key.trim().is_empty() {
         return Err(AiError::NoKey(name.to_string()));
     }
-    if model.trim().is_empty() {
-        return Err(AiError::NoModel);
-    }
-    Ok(ProviderConf { kind, name: name.to_string(), base, model: model.trim().to_string(), key: key.trim().to_string() })
+    // an empty field, or just the provider's name typed as a model ("gemini"), gets a sensible default
+    let typed = model.trim();
+    let model = if typed.is_empty() || typed.eq_ignore_ascii_case(provider) || typed.eq_ignore_ascii_case(name) {
+        match provider {
+            "gemini" => "gemini-flash-latest",
+            "openai" => "gpt-4o-mini",
+            "openrouter" => "openai/gpt-4o-mini",
+            "anthropic" => "claude-sonnet-5-5",
+            _ => return Err(AiError::NoModel),
+        }
+    } else {
+        typed
+    };
+    Ok(ProviderConf { kind, name: name.to_string(), base, model: model.to_string(), key: key.trim().to_string() })
 }
 
 pub fn conf_from_settings() -> Result<ProviderConf, AiError> {

@@ -79,7 +79,10 @@ fn messages(store: &Store, id: &str) -> Vec<ChatMsg> {
 fn settings_to_provider() {
     assert_eq!(conf_from("none", "m", "k", "").unwrap_err(), AiError::NoProvider);
     assert_eq!(conf_from("openai", "gpt", "", "").unwrap_err(), AiError::NoKey("OpenAI".into()));
-    assert_eq!(conf_from("openai", "", "k", "").unwrap_err(), AiError::NoModel);
+    assert_eq!(conf_from("ollama", "", "", "").unwrap_err(), AiError::NoModel);
+    assert_eq!(conf_from("openai", "", "k", "").unwrap().model, "gpt-4o-mini");
+    assert_eq!(conf_from("gemini", "gemini", "k", "").unwrap().model, "gemini-flash-latest");
+    assert_eq!(conf_from("gemini", "gemini-2.5-pro", "k", "").unwrap().model, "gemini-2.5-pro");
     assert_eq!(conf_from("custom", "m", "k", "").unwrap_err(), AiError::NoUrl);
     assert!(conf_from("ollama", "llama3", "", "").is_ok()); // no key needed
     assert!(conf_from("custom", "m", "", "http://localhost:8080/v1").is_ok());
