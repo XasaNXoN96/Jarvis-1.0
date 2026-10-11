@@ -7,193 +7,348 @@
 <link rel="icon" type="image/png" href="/icon.png">
 <style>
   :root {
-    --bg1: #060a18; --bg2: #0b1330; --panel: #0d1630cc; --line: #1b2750;
-    --text: #dce6ff; --dim: #7f8db5; --accent: #5ad1ff; --ok: #5be3a1; --err: #ff6b7a; --warn: #ffd166;
+    --bg: #030a1a; --text: #e8f1ff; --dim: #8fb0dd; --faint: #5f7fb0;
+    --line: rgba(80,150,255,.22); --line2: rgba(80,150,255,.42);
+    --blue: #2f8bff; --blue2: #1f6feb; --cyan: #5ad1ff; --ok: #3ddc97; --err: #ff6b7a; --warn: #ffd166;
+    --card: rgba(8,28,64,.62); --card2: rgba(10,36,80,.55);
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body {
-    background: radial-gradient(1200px 700px at 70% -10%, #14224f 0%, var(--bg2) 40%, var(--bg1) 100%);
-    color: var(--text); font: 15px/1.45 "Segoe UI", system-ui, sans-serif;
-    display: flex; flex-direction: column; overflow: hidden;
+    background:
+      radial-gradient(900px 600px at 15% -10%, #0b3a7a66 0%, transparent 60%),
+      radial-gradient(900px 700px at 100% 110%, #0a3f8a55 0%, transparent 60%),
+      var(--bg);
+    color: var(--text); font: 15px/1.45 "Segoe UI", system-ui, sans-serif; overflow: hidden;
   }
-  .main { flex: 1; display: flex; min-height: 0; }
+  .shell { height: 100%; display: flex; gap: 14px; padding: 14px; }
 
   /* sidebar */
-  nav { width: 150px; padding: 18px 10px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
-  .brand { display: flex; align-items: center; gap: 8px; padding: 4px 10px 14px; font-weight: 600; letter-spacing: .06em; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); box-shadow: 0 0 0 0 transparent; transition: .3s; }
+  .side { width: 64px; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 6px 0; }
+  .logo { width: 52px; height: 52px; border-radius: 16px; background: radial-gradient(circle at 35% 30%, #5ad1ff, #1f6feb 55%, #0a2a66); box-shadow: 0 0 22px #2f8bff88; position: relative; }
+  .logo::after { content: ""; position: absolute; inset: 14px; border-radius: 50%; border: 2px solid #ffffffcc; border-top-color: transparent; animation: spin 6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .nb { width: 46px; height: 46px; border-radius: 50%; border: 1px solid var(--line2); cursor: pointer; color: #dcecff; display: grid; place-items: center;
+        background: radial-gradient(circle at 35% 25%, #2f8bff, #0b3a8a 70%); box-shadow: 0 4px 14px #0a3a8a66, inset 0 1px 0 #ffffff33; transition: .2s; }
+  .nb:hover { transform: translateY(-1px); box-shadow: 0 6px 18px #2f8bff66, inset 0 1px 0 #ffffff44; }
+  .nb.active { outline: 2px solid var(--cyan); outline-offset: 2px; }
+  .nb svg { width: 22px; height: 22px; }
+  .side .grow { flex: 1; }
+  .dotline { font-size: 10px; color: var(--faint); text-align: center; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--faint); margin: 0 auto 4px; transition: .3s; }
   .dot.on { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
-  nav button {
-    display: flex; align-items: center; gap: 10px; text-align: left; border: 0; background: transparent; color: var(--dim);
-    padding: 10px 12px; border-radius: 10px; font: inherit; cursor: pointer;
-  }
-  nav button:hover { background: #ffffff0d; color: var(--text); }
-  nav button.active { background: #5ad1ff1f; color: var(--accent); }
-  nav .grow { flex: 1; }
-  nav .small { color: var(--dim); font-size: 12px; padding: 0 12px; }
 
-  /* pages */
-  .pages { flex: 1; position: relative; min-width: 0; }
-  .page { position: absolute; inset: 0; display: none; padding: 16px 18px; overflow: auto; }
+  /* main panel */
+  .panel { flex: 1; min-width: 0; border-radius: 28px; border: 1px solid var(--line); position: relative; overflow: hidden;
+           background: linear-gradient(165deg, #06336e 0%, #052858 22%, #04183a 55%, #030f26 100%); box-shadow: 0 20px 60px #00000066, inset 0 1px 0 #ffffff1a; }
+  .panel::before { content: ""; position: absolute; inset: 0; pointer-events: none;
+                   background: radial-gradient(600px 380px at 50% 8%, #2f8bff40, transparent 70%); }
+  .top { position: absolute; top: 0; left: 0; right: 0; padding: 18px 22px 14px; display: flex; justify-content: space-between; align-items: center; z-index: 5; pointer-events: none;
+         background: linear-gradient(180deg, #06306aee 0%, #06306a99 60%, transparent 100%); }
+  .top .pill { pointer-events: auto; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 999px; border: 1px solid var(--line2); color: var(--text);
+          background: linear-gradient(180deg, #0c3d86aa, #082a60aa); font: inherit; cursor: pointer; backdrop-filter: blur(6px); }
+  .pill:hover { border-color: var(--cyan); }
+  .pill .d { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+  .pill .d.on { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+
+  .page { position: absolute; inset: 0; display: none; padding: 70px 26px 22px; overflow: auto; z-index: 2; }
   .page.active { display: flex; flex-direction: column; }
+  .page::-webkit-scrollbar, #log::-webkit-scrollbar { width: 8px; }
+  .page::-webkit-scrollbar-thumb, #log::-webkit-scrollbar-thumb { background: #2f8bff44; border-radius: 8px; }
 
-  /* orb / hologram */
-  #page-orb { align-items: center; justify-content: center; position: relative; overflow: hidden; }
-  #orb { width: min(100%, 400px); aspect-ratio: 1; position: relative; z-index: 1;
-         filter: drop-shadow(0 0 6px rgba(90,209,255,.85)) drop-shadow(0 0 20px rgba(90,209,255,.35)); }
-  #page-orb::after { /* moving scanlines over the whole hologram page */
-    content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 2;
-    background: repeating-linear-gradient(0deg, rgba(90,209,255,.045) 0 1px, transparent 1px 4px);
-    animation: scan 7s linear infinite;
-  }
-  @keyframes scan { from { background-position-y: 0; } to { background-position-y: 80px; } }
-  .holo-switch { position: absolute; top: 12px; right: 14px; z-index: 3; display: flex; gap: 4px; }
-  .holo-switch button { border: 1px solid var(--line); background: #0d163099; color: var(--dim); padding: 5px 12px; border-radius: 999px; font: inherit; font-size: 13px; cursor: pointer; }
-  .holo-switch button.active { color: var(--accent); border-color: var(--accent); background: #5ad1ff1f; }
-  #status { margin-top: 6px; color: var(--dim); text-align: center; min-height: 24px; max-width: 90%; position: relative; z-index: 3; }
-  #state { margin-top: 10px; font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--accent); position: relative; z-index: 3; text-shadow: 0 0 12px #5ad1ff88; }
-  .avatar-box { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 12px 14px; margin-bottom: 8px; }
-  .avatar-box label { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; color: var(--dim); font-size: 13px; }
-  .avatar-box input[type=range] { width: 55%; }
-  .avatar-box small { color: var(--dim); display: block; margin-top: 6px; }
+  /* home */
+  #page-home { align-items: center; padding-top: 56px; }
+  .hero { display: flex; flex-direction: column; align-items: center; transition: .35s; }
+  #orb { width: min(300px, 36vh); aspect-ratio: 1; transition: width .35s; filter: drop-shadow(0 0 18px #2f8bff66); }
+  #page-home.chatting #orb { width: min(120px, 16vh); }
+  .title { font-size: clamp(30px, 5.2vh, 46px); font-weight: 700; letter-spacing: -.01em; margin: 4px 0 4px; text-align: center;
+           background: linear-gradient(90deg, #2d6fc4 0%, #dbe9ff 45%, #5aa0ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { color: var(--dim); text-align: center; margin: 0; min-height: 22px; max-width: 80%; }
+  #state { font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--cyan); margin-top: 6px; text-shadow: 0 0 10px #5ad1ff77; }
+  #page-home.chatting .title { display: none; }
+  #log { flex: 1; width: min(900px, 100%); overflow-y: auto; display: none; flex-direction: column; gap: 8px; padding: 6px 4px; min-height: 0; }
+  #page-home.chatting #log { display: flex; }
+  #page-home:not(.chatting) .spacer { flex: 1; }
+  .msg { max-width: 82%; padding: 9px 14px; border-radius: 16px; white-space: pre-wrap; word-break: break-word; }
+  .me { align-self: flex-end; background: linear-gradient(180deg, #2f8bff, #1f6feb); border-bottom-right-radius: 5px; }
+  .bot { align-self: flex-start; background: #08275acc; border: 1px solid var(--line); border-bottom-left-radius: 5px; }
+  .err { align-self: flex-start; background: #3a1620cc; color: #ff9aa6; border: 1px solid #ff6b7a44; }
+  .note { align-self: center; color: var(--faint); font-size: 12px; }
 
-  /* chat */
-  #log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
-  .msg { max-width: 88%; padding: 8px 12px; border-radius: 14px; white-space: pre-wrap; word-break: break-word; }
-  .me { align-self: flex-end; background: #1e3a78; border-bottom-right-radius: 4px; }
-  .bot { align-self: flex-start; background: #121c3d; border: 1px solid var(--line); border-bottom-left-radius: 4px; }
-  .err { align-self: flex-start; background: #3a1620; color: var(--err); }
-  .note { align-self: center; color: var(--dim); font-size: 12px; }
+  .composer { width: min(900px, 100%); border-radius: 22px; border: 1px solid var(--line2); padding: 12px 14px 12px 18px;
+              background: linear-gradient(135deg, #07224f 0%, #04173a 60%, #0a2f6a 100%); box-shadow: inset 0 1px 0 #ffffff14, 0 10px 30px #00000044; }
+  .composer:focus-within { border-color: var(--cyan); box-shadow: 0 0 0 3px #5ad1ff22; }
+  #input { width: 100%; background: transparent; border: 0; outline: none; color: var(--text); font: inherit; font-size: 16px; padding: 6px 0 12px; }
+  #input::placeholder { color: var(--faint); }
+  .crow { display: flex; align-items: center; justify-content: space-between; }
+  .cl, .cr { display: flex; gap: 10px; align-items: center; }
+  .rb { width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--line2); background: transparent; color: var(--text); display: grid; place-items: center; cursor: pointer; transition: .2s; }
+  .rb:hover { background: #2f8bff33; }
+  .rb svg { width: 20px; height: 20px; }
+  .rb.off { color: #ff9aa6; border-color: #ff6b7a77; }
+  .send { background: linear-gradient(180deg, #3b95ff, #1f6feb); border: 0; box-shadow: 0 4px 16px #2f8bff77; }
+  .send:hover { filter: brightness(1.12); }
+  .hint { color: var(--faint); font-size: 12px; margin-right: 6px; }
+  .chips { width: min(900px, 100%); display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+  .chip2 { display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: 999px; border: 1px solid var(--line2); background: linear-gradient(180deg, #0a2f6acc, #061f48cc);
+           color: var(--text); font: inherit; cursor: pointer; transition: .2s; }
+  .chip2:hover { border-color: var(--cyan); transform: translateY(-1px); }
+  .chip2 svg { width: 17px; height: 17px; color: var(--cyan); }
 
-  /* commands */
-  .cmd { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; background: var(--panel); }
-  .cmd b { color: var(--accent); font-weight: 600; }
-  .chip { display: inline-block; margin: 4px 6px 0 0; padding: 3px 10px; border-radius: 999px; background: #ffffff10; color: var(--text); cursor: pointer; font-size: 13px; }
+  /* cards, panel page, settings */
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  .lead { color: var(--dim); margin: 0 0 18px; }
+  .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+  @media (max-width: 980px) { .grid4 { grid-template-columns: 1fr 1fr; } .grid2 { grid-template-columns: 1fr; } }
+  .card { border: 1px solid var(--line); border-radius: 18px; background: var(--card); padding: 16px 18px; backdrop-filter: blur(6px); }
+  .card h3 { margin: 0 0 12px; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+  .card h3 svg { width: 18px; height: 18px; color: var(--cyan); }
+  .stat .k { color: var(--dim); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .stat .k svg { width: 16px; height: 16px; color: var(--cyan); }
+  .stat .v { font-size: 28px; font-weight: 700; margin: 4px 0 0; }
+  .stat .s { color: var(--faint); font-size: 12px; }
+  .item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: #ffffff0a; margin-bottom: 8px; }
+  .item .grow { flex: 1; min-width: 0; }
+  .item .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item .m { color: var(--faint); font-size: 12px; }
+  .st { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); flex-shrink: 0; }
+  .st.bad { background: var(--err); } .st.idle { background: var(--cyan); }
+  .empty { color: var(--faint); padding: 8px 2px; }
+  .bar { height: 8px; border-radius: 8px; background: #ffffff14; overflow: hidden; margin: 5px 0 12px; }
+  .bar i { display: block; height: 100%; border-radius: 8px; background: linear-gradient(90deg, #2f8bff, #5ad1ff); transition: width .6s; }
+  .bar.warn i { background: linear-gradient(90deg, #ffb347, #ffd166); } .bar.hot i { background: linear-gradient(90deg, #ff6b7a, #ff9aa6); }
+  .lab { display: flex; justify-content: space-between; color: var(--dim); font-size: 13px; }
+  .qa { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .qa button { text-align: left; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: #ffffff0a; color: var(--text); font: inherit; cursor: pointer; }
+  .qa button:hover { border-color: var(--cyan); background: #2f8bff22; }
+  .qa small { display: block; color: var(--faint); }
+
+  .btn { border: 1px solid var(--line2); background: linear-gradient(180deg, #0c3d86aa, #082a60aa); color: var(--text); padding: 8px 14px; border-radius: 999px; cursor: pointer; font: inherit; }
+  .btn:hover { border-color: var(--cyan); }
+  .btn.primary { background: linear-gradient(180deg, #3b95ff, #1f6feb); border-color: transparent; }
+  .btn.small { padding: 4px 10px; font-size: 13px; }
+  .setrow { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 0; border-top: 1px solid var(--line); flex-wrap: wrap; }
+  .setrow:first-of-type { border-top: 0; }
+  .setrow .l { min-width: 200px; flex: 1; } .setrow .l small { display: block; color: var(--faint); }
+  .setrow .r { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+  select, input[type=text], input[type=password] { background: #04173acc; color: var(--text); border: 1px solid var(--line2); border-radius: 10px; padding: 8px 10px; font: inherit; min-width: 220px; max-width: 100%; outline: none; }
+  select:focus, input[type=text]:focus, input[type=password]:focus { border-color: var(--cyan); }
+  input[type=range] { accent-color: var(--blue); width: 200px; }
+  .meter { width: 220px; height: 12px; border-radius: 8px; background: #ffffff14; overflow: hidden; display: flex; gap: 2px; }
+  .meter i { flex: 1; background: #ffffff1c; transition: background .08s; } .meter i.on { background: linear-gradient(180deg, #5ad1ff, #2f8bff); }
+  .sw { position: relative; width: 46px; height: 26px; flex-shrink: 0; }
+  .sw input { opacity: 0; width: 100%; height: 100%; position: absolute; margin: 0; cursor: pointer; z-index: 1; }
+  .sw span { position: absolute; inset: 0; border-radius: 26px; background: #ffffff22; transition: .2s; }
+  .sw span::after { content: ""; position: absolute; left: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: .2s; }
+  .sw input:checked + span { background: var(--blue); } .sw input:checked + span::after { transform: translateX(20px); }
+  .msgline { font-size: 13px; color: var(--dim); min-height: 18px; } .msgline.ok { color: var(--ok); } .msgline.bad { color: #ff9aa6; }
+  .seg { display: inline-flex; border: 1px solid var(--line2); border-radius: 999px; overflow: hidden; }
+  .seg button { background: transparent; border: 0; color: var(--dim); padding: 7px 14px; font: inherit; cursor: pointer; }
+  .seg button.active { background: #2f8bff44; color: var(--text); }
+  .cmd { border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; margin-bottom: 8px; background: var(--card); }
+  .cmd b { color: var(--cyan); font-weight: 600; }
+  .chip { display: inline-block; margin: 5px 6px 0 0; padding: 3px 11px; border-radius: 999px; background: #ffffff12; cursor: pointer; font-size: 13px; }
   .chip:hover { background: #5ad1ff33; }
-  h2 { margin: 0 0 12px; font-size: 16px; font-weight: 600; }
-
-  /* settings */
-  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; margin-bottom: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
-  .row small { color: var(--dim); display: block; }
-  .btns { display: flex; gap: 6px; flex-shrink: 0; }
-  .btn { border: 1px solid var(--line); background: #ffffff0a; color: var(--text); padding: 7px 12px; border-radius: 9px; cursor: pointer; font: inherit; }
-  .btn:hover { background: #5ad1ff26; border-color: var(--accent); }
-
-  /* input bar */
-  .bar { padding: 12px 14px 14px; border-top: 1px solid var(--line); background: #060a18d9; }
-  form { display: flex; gap: 8px; }
-  #input {
-    flex: 1; padding: 13px 16px; border-radius: 12px; border: 1px solid var(--line); background: #0d1630; color: var(--text);
-    font: inherit; outline: none;
-  }
-  #input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px #5ad1ff22; }
-  #send { padding: 0 18px; border: 0; border-radius: 12px; background: var(--accent); color: #04101f; font-weight: 600; cursor: pointer; font: inherit; font-weight: 600; }
-  #send:hover { filter: brightness(1.1); }
-  #conn { margin-top: 6px; font-size: 12px; color: var(--dim); }
-
-  @media (max-width: 520px) { nav { width: 56px; } nav button span, .brand b, nav .small { display: none; } }
+  small.dim { color: var(--faint); }
 </style>
 </head>
 <body>
-<div class="main">
-  <nav>
-    <div class="brand"><span class="dot" id="dot"></span><b>JARVIS</b></div>
-    <button data-page="orb" class="active">◉ <span>Орб</span></button>
-    <button data-page="chat">💬 <span>Чат</span></button>
-    <button data-page="commands">☰ <span>Команды</span></button>
-    <button data-page="settings">⚙ <span>Настройки</span></button>
+<div class="shell">
+  <aside class="side">
+    <div class="logo" title="Jarvis"></div>
+    <button class="nb active" data-page="home" title="Главная" data-ico="chat"></button>
+    <button class="nb" data-page="panel" title="Панель: задачи, журнал, компьютер" data-ico="grid"></button>
+    <button class="nb" data-page="commands" title="Команды" data-ico="spark"></button>
     <div class="grow"></div>
-    <div class="small">Enter — отправить</div>
-  </nav>
+    <div><div class="dot" id="dot"></div><div class="dotline" id="conn">…</div></div>
+    <button class="nb" data-page="settings" title="Настройки" data-ico="gear"></button>
+  </aside>
 
-  <div class="pages">
-    <section class="page active" id="page-orb">
-      <div class="holo-switch">
-        <button id="mode-orb" class="active">Орб</button>
-        <button id="mode-avatar">Аватар</button>
+  <main class="panel">
+    <div class="top">
+      <span class="pill"><span class="d" id="topdot"></span><b>Jarvis</b></span>
+      <button class="pill" id="goremote" title="Управление с телефона"><span data-ico="phone" style="display:inline-flex;width:16px;height:16px"></span>Пульт</button>
+    </div>
+
+    <section class="page active" id="page-home">
+      <div class="hero">
+        <canvas id="orb" width="760" height="760"></canvas>
+        <div class="title" id="title">С возвращением!</div>
+        <p class="sub" id="status">Чем могу помочь? Скажите «Джарвис» или напишите команду.</p>
+        <div id="state">готов</div>
       </div>
-      <canvas id="orb" width="760" height="760"></canvas>
-      <div id="state">готов</div>
-      <div id="status">Скажите «Джарвис» или напишите команду внизу</div>
+      <div id="log"></div>
+      <div class="spacer"></div>
+      <form class="composer" id="form" autocomplete="off">
+        <input id="input" placeholder="Напишите команду, например: таймер на 5 минут" autofocus>
+        <div class="crow">
+          <div class="cl"><span class="hint" id="hint">Enter — отправить</span></div>
+          <div class="cr">
+            <button type="button" class="rb" id="micbtn" title="Микрофон" data-ico="mic"></button>
+            <button type="submit" class="rb send" title="Отправить" data-ico="send"></button>
+          </div>
+        </div>
+      </form>
+      <div class="chips" id="chips"></div>
     </section>
 
-    <section class="page" id="page-chat">
-      <div id="log"></div>
+    <section class="page" id="page-panel">
+      <h1>Панель управления</h1>
+      <p class="lead">Задачи, напоминания, журнал действий и состояние компьютера.</p>
+      <div class="grid4">
+        <div class="card stat"><div class="k"><span data-ico="clock"></span>Таймеры</div><div class="v" id="s-timers">0</div><div class="s" id="s-timers2">активных</div></div>
+        <div class="card stat"><div class="k"><span data-ico="cpu"></span>Процессор</div><div class="v" id="s-cpu">—</div><div class="s">загрузка</div></div>
+        <div class="card stat"><div class="k"><span data-ico="ram"></span>Память</div><div class="v" id="s-ram">—</div><div class="s" id="s-ram2"></div></div>
+        <div class="card stat"><div class="k"><span data-ico="shield"></span>Jarvis</div><div class="v" id="s-jarvis" style="color:var(--ok)">Онлайн</div><div class="s" id="s-jarvis2"></div></div>
+      </div>
+      <div class="grid2">
+        <div class="card"><h3><span data-ico="clock"></span>Задачи и напоминания</h3><div id="timers"><div class="empty">Нет активных. Скажите «таймер на 5 минут» или «напомни через 10 минут позвонить маме».</div></div></div>
+        <div class="card"><h3><span data-ico="pulse"></span>Журнал действий</h3><div id="actions"><div class="empty">Пока пусто.</div></div></div>
+      </div>
+      <div class="grid2">
+        <div class="card"><h3><span data-ico="pulse"></span>Состояние компьютера</h3>
+          <div class="lab"><span>Процессор</span><span id="b-cpu-t">—</span></div><div class="bar" id="b-cpu"><i style="width:0"></i></div>
+          <div class="lab"><span>Память</span><span id="b-ram-t">—</span></div><div class="bar" id="b-ram"><i style="width:0"></i></div>
+          <div class="lab"><span>Диск C:</span><span id="b-disk-t">—</span></div><div class="bar" id="b-disk"><i style="width:0"></i></div>
+        </div>
+        <div class="card"><h3><span data-ico="spark"></span>Быстрые действия</h3>
+          <div class="qa">
+            <button data-cmd="таймер на 5 минут">Таймер 5 минут<small>запустить сразу</small></button>
+            <button data-cmd="диагностика">Диагностика<small>проверить всё</small></button>
+            <button data-cmd="заблокируй компьютер">Блокировка<small>заблокировать ПК</small></button>
+            <button data-cmd="что ты умеешь">Все команды<small>список с примерами</small></button>
+          </div>
+        </div>
+      </div>
+      <div class="card"><h3><span data-ico="grid"></span>Подключённые модули</h3><div id="modules"><div class="empty">Загрузка…</div></div>
+        <small class="dim">Отключённый модуль перестаёт отвечать на свои команды. Основной модуль отключить нельзя.</small></div>
     </section>
 
     <section class="page" id="page-commands">
-      <h2>Что я умею <span style="color:var(--dim);font-weight:400">— нажмите на фразу, чтобы вставить её</span></h2>
+      <h1>Что я умею</h1>
+      <p class="lead">Нажмите на фразу, чтобы вставить её в поле ввода.</p>
       <div id="commands">Загрузка…</div>
     </section>
 
     <section class="page" id="page-settings">
-      <h2>Настройки</h2>
-      <div class="row"><div>Микрофон<small>выключите, чтобы управлять только текстом</small></div>
-        <div class="btns"><button class="btn" data-cmd="режим голоса">Включить</button><button class="btn" data-cmd="режим текста">Выключить</button></div></div>
-      <div class="row"><div>Голос Jarvis<small>озвучка ответов</small></div>
-        <div class="btns"><button class="btn" data-cmd="включи озвучку">Включить</button><button class="btn" data-cmd="выключи озвучку">Выключить</button></div></div>
-      <div class="row"><div>Пульт для телефона<small>включите, и появится QR-код: наведите на него камеру телефона (телефон и компьютер в одной Wi-Fi сети)</small></div>
-        <div class="btns"><button class="btn" data-cmd="включи удалённое управление">Включить</button><button class="btn" data-cmd="выключи удалённое управление">Выключить</button></div></div>
-      <div class="avatar-box" id="remote-box" style="display:none;text-align:center">
-        <div style="background:#fff;border-radius:14px;padding:10px;display:inline-block"><img id="remote-qr" alt="QR" style="width:240px;height:240px;display:block"></div>
-        <small>Откройте камеру телефона и наведите на код. Ссылка секретная: не показывайте её другим. Чтобы закрыть доступ, нажмите «Выключить».</small>
-        <small id="remote-url" style="word-break:break-all;user-select:all"></small>
+      <h1>Центр настроек</h1>
+      <p class="lead">Микрофон, голос, ИИ-провайдер и внешний вид. Изменения сохраняются сами.</p>
+
+      <div class="card" style="margin-bottom:14px"><h3><span data-ico="mic"></span>Микрофон и звук</h3>
+        <div class="setrow"><div class="l">Микрофон<small>применится после перезапуска Jarvis</small></div>
+          <div class="r"><select id="mic-select"><option value="-1">Системный по умолчанию</option></select></div></div>
+        <div class="setrow"><div class="l">Режим<small>выключите микрофон, чтобы управлять только текстом</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="mic-on"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Проверка микрофона<small>скажите что-нибудь: полоска должна двигаться (показывает микрофон Windows по умолчанию)</small></div>
+          <div class="r"><div class="meter" id="meter"></div><button class="btn small" id="mic-test">Проверить</button></div></div>
+        <div class="msgline" id="mic-msg"></div>
       </div>
-      <div class="avatar-box">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-          <div>Аватар-голограмма<small>ваше фото превращается в голограмму (фото остаётся на этом компьютере)</small></div>
-          <div class="btns"><button class="btn" id="avatar-pick">Выбрать фото</button><button class="btn" id="avatar-clear">Убрать</button></div>
+
+      <div class="card" style="margin-bottom:14px"><h3><span data-ico="speaker"></span>Голос</h3>
+        <div class="setrow"><div class="l">Голос<small id="voice-hint">Jarvis (Piper) — нейросетевой голос, работает без интернета</small></div>
+          <div class="r"><select id="voice-select"><option value="">Автоматически</option></select></div></div>
+        <div class="setrow"><div class="l">Скорость речи</div>
+          <div class="r"><input type="range" id="rate" min="0.6" max="1.6" step="0.05" value="1"><b id="rate-v" style="min-width:42px;text-align:right">1.0×</b></div></div>
+        <div class="setrow"><div class="l">Озвучка ответов</div>
+          <div class="r"><label class="sw"><input type="checkbox" id="tts-on"><span></span></label><button class="btn primary" id="tts-test">Проверить звук</button></div></div>
+      </div>
+
+      <div class="card" style="margin-bottom:14px"><h3><span data-ico="spark"></span>ИИ-провайдер</h3>
+        <div class="setrow"><div class="l">Провайдер</div>
+          <div class="r"><select id="ai-provider">
+            <option value="none">Не использовать</option><option value="anthropic">Anthropic (Claude)</option>
+            <option value="openai">OpenAI</option><option value="ollama">Ollama (на этом компьютере)</option><option value="custom">Другой (совместимый с OpenAI)</option></select></div></div>
+        <div class="setrow" id="ai-url-row"><div class="l">Адрес сервера<small>для Ollama и других</small></div><div class="r"><input type="text" id="ai-url" placeholder="http://127.0.0.1:11434"></div></div>
+        <div class="setrow"><div class="l">Модель</div><div class="r"><input type="text" id="ai-model" placeholder="например: claude-sonnet-5-5"></div></div>
+        <div class="setrow" id="ai-key-row"><div class="l">Ключ API<small id="ai-key-hint">хранится только на этом компьютере</small></div><div class="r"><input type="password" id="ai-key" placeholder="вставьте ключ" autocomplete="off"></div></div>
+        <div class="setrow"><div class="l"><span class="msgline" id="ai-msg"></span></div>
+          <div class="r"><button class="btn" id="ai-save">Сохранить</button><button class="btn primary" id="ai-test">Проверить соединение</button></div></div>
+        <small class="dim">Сейчас Jarvis использует это только для проверки связи. Ответы нейросети в диалогах появятся в одной из следующих версий.</small>
+      </div>
+
+      <div class="card" style="margin-bottom:14px" id="remote-card"><h3><span data-ico="phone"></span>Пульт для телефона</h3>
+        <div class="setrow"><div class="l">Управление с телефона<small>телефон и компьютер в одной Wi-Fi сети; наведите камеру на QR-код</small></div>
+          <div class="r"><button class="btn" data-cmd="включи удалённое управление" data-stay="1">Включить</button><button class="btn" data-cmd="выключи удалённое управление" data-stay="1">Выключить</button></div></div>
+        <div id="remote-box" style="display:none;text-align:center;padding-top:10px">
+          <div style="background:#fff;border-radius:16px;padding:10px;display:inline-block"><img id="remote-qr" alt="QR" style="width:220px;height:220px;display:block"></div>
+          <div><small class="dim">Ссылка секретная: не показывайте её другим. В браузере телефона нажмите «Дополнительно → Продолжить» (свой сертификат), затем разрешите микрофон.</small></div>
+          <div><small class="dim" id="remote-url" style="word-break:break-all;user-select:all"></small></div>
         </div>
-        <input type="file" id="avatar-file" accept="image/png,image/jpeg,image/webp" style="display:none">
-        <label>Прозрачность фона <input type="range" id="avatar-thr" min="0" max="200" value="45"></label>
-        <label>Фон светлый (инвертировать) <input type="checkbox" id="avatar-inv"></label>
-        <small>Лучше всего подходит фото на тёмном однотонном фоне. Если вокруг фигуры светлый фон, включите «инвертировать».</small>
       </div>
-      <div class="row"><div>Таймеры<small>отменить все таймеры и напоминания</small></div>
-        <div class="btns"><button class="btn" data-cmd="отмени таймер">Отменить</button></div></div>
-      <div class="row"><div>Остановить чтение<small>если Jarvis читает длинный текст</small></div>
-        <div class="btns"><button class="btn" data-cmd="хватит читать">Стоп</button></div></div>
+
+      <div class="card"><h3><span data-ico="grid"></span>Внешний вид</h3>
+        <div class="setrow"><div class="l">Шар<small>что показывать на главном экране</small></div>
+          <div class="r"><div class="seg"><button data-mode="plasma">Плазма</button><button data-mode="wire">Голограмма</button><button data-mode="avatar">Фото</button></div></div></div>
+        <div class="setrow"><div class="l">Фото-голограмма<small>фото остаётся на этом компьютере</small></div>
+          <div class="r"><button class="btn" id="avatar-pick">Выбрать фото</button><button class="btn" id="avatar-clear">Убрать</button></div></div>
+        <input type="file" id="avatar-file" accept="image/png,image/jpeg,image/webp" style="display:none">
+        <div class="setrow"><div class="l">Прозрачность фона фото</div><div class="r"><input type="range" id="avatar-thr" min="0" max="200" value="45"></div></div>
+        <div class="setrow"><div class="l">Светлый фон на фото (инвертировать)</div><div class="r"><label class="sw"><input type="checkbox" id="avatar-inv"><span></span></label></div></div>
+      </div>
     </section>
-  </div>
+  </main>
 </div>
-
-<div class="bar">
-  <form id="form" autocomplete="off">
-    <input id="input" placeholder="Напишите команду…" autofocus>
-    <button id="send" type="submit">Отправить</button>
-  </form>
-  <div id="conn">Подключение…</div>
-</div>
-
 <script>
 const $ = s => document.querySelector(s);
 const WS_URL = 'ws://127.0.0.1:9712';
 let ws = null, connected = false;
 let state = 'idle', stateUntil = 0;
+let lastSettings = null;
+
+// ---------- icons ----------
+const ICONS = {
+  chat: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.4A8 8 0 1 1 21 12z"/>',
+  grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+  spark: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M18.5 16l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/>',
+  gear: '<circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.5a7.5 7.5 0 0 0 0-3l2-1.5-2-3.4-2.3.9a7.5 7.5 0 0 0-2.6-1.5L14 2.5h-4l-.5 2.5a7.5 7.5 0 0 0-2.6 1.5l-2.3-.9-2 3.4 2 1.5a7.5 7.5 0 0 0 0 3l-2 1.5 2 3.4 2.3-.9a7.5 7.5 0 0 0 2.6 1.5l.5 2.5h4l.5-2.5a7.5 7.5 0 0 0 2.6-1.5l2.3.9 2-3.4z"/>',
+  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+  micoff: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M4 4l16 16"/>',
+  send: '<path d="M21 3L10 14M21 3l-7 18-4-7-7-4z"/>',
+  phone: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/>',
+  cpu: '<rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/>',
+  ram: '<rect x="3" y="6" width="18" height="7" rx="1.5"/><rect x="3" y="15" width="18" height="4" rx="1.5"/>',
+  shield: '<path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/>',
+  pulse: '<path d="M3 12h4l2-6 4 12 2-6h6"/>',
+  speaker: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/>',
+  vol: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6"/>',
+  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7M12 17h.01"/>',
+};
+function ico(name) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + (ICONS[name] || '') + '</svg>'; }
+document.querySelectorAll('[data-ico]').forEach(el => { el.innerHTML = ico(el.dataset.ico); });
 
 // ---------- navigation ----------
+const PAGES = ['home', 'panel', 'commands', 'settings'];
+let currentPage = 'home';
 function show(name) {
-  document.querySelectorAll('nav button[data-page]').forEach(b => b.classList.toggle('active', b.dataset.page === name));
+  if (name === 'orb' || name === 'chat') name = 'home';
+  if (!PAGES.includes(name)) name = 'home';
+  currentPage = name;
+  document.querySelectorAll('.nb[data-page]').forEach(b => b.classList.toggle('active', b.dataset.page === name));
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + name));
   if (name === 'commands') loadCommands();
-  if (name === 'settings') refreshRemote();
-  if (name === 'chat') { const l = $('#log'); l.scrollTop = l.scrollHeight; }
-  $('#input').focus();
+  if (name === 'panel') { refreshState(); loadModules(); }
+  if (name === 'settings') { loadSettings(); refreshRemote(); }
+  if (name === 'home') { const l = $('#log'); l.scrollTop = l.scrollHeight; $('#input').focus(); }
 }
-document.querySelectorAll('nav button[data-page]').forEach(b => b.onclick = () => show(b.dataset.page));
+document.querySelectorAll('.nb[data-page]').forEach(b => b.onclick = () => show(b.dataset.page));
+$('#goremote').onclick = () => { show('settings'); setTimeout(() => $('#remote-card').scrollIntoView({ behavior: 'smooth' }), 80); };
 
 // ---------- chat ----------
 function add(kind, text) {
   const d = document.createElement('div');
   d.className = 'msg ' + kind;
   d.textContent = String(text).trim();
-  $('#log').appendChild(d);
-  $('#log').scrollTop = $('#log').scrollHeight;
-  while ($('#log').children.length > 300) $('#log').removeChild($('#log').firstChild);
+  const log = $('#log');
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+  while (log.children.length > 300) log.removeChild(log.firstChild);
+  $('#page-home').classList.add('chatting');
 }
 function note(text) { const d = document.createElement('div'); d.className = 'note'; d.textContent = text; $('#log').appendChild(d); }
-
 function setStatus(text) { $('#status').textContent = text; }
 function setState(name, ms) {
   state = name; stateUntil = ms ? performance.now() + ms : 0;
@@ -205,11 +360,11 @@ function setState(name, ms) {
 function connect() {
   try { ws = new WebSocket(WS_URL); } catch (e) { setTimeout(connect, 2000); return; }
   ws.onopen = () => {
-    connected = true; $('#dot').classList.add('on'); $('#conn').textContent = 'Подключено к Jarvis';
-    setState('idle'); note('— подключено —');
+    connected = true; $('#dot').classList.add('on'); $('#topdot').classList.add('on'); $('#conn').textContent = 'онлайн';
+    setState('idle');
   };
   ws.onclose = () => {
-    connected = false; $('#dot').classList.remove('on'); $('#conn').textContent = 'Нет связи с Jarvis… переподключаюсь';
+    connected = false; $('#dot').classList.remove('on'); $('#topdot').classList.remove('on'); $('#conn').textContent = 'нет связи';
     setState('off'); setTimeout(connect, 2000);
   };
   ws.onmessage = ev => {
@@ -218,7 +373,7 @@ function connect() {
       case 'wake_word_detected': setState('wake', 1500); setStatus('Слушаю…'); break;
       case 'listening': setState('listening'); setStatus('Слушаю…'); break;
       case 'speech_recognized': add('me', m.text); setStatus(m.text); setState('busy', 2500); break;
-      case 'command_executed': if (!m.success) add('err', 'Не получилось выполнить: ' + m.id); break;
+      case 'command_executed': if (!m.success) add('err', 'Не получилось выполнить: ' + m.id); if (currentPage === 'panel') setTimeout(refreshState, 400); break;
       case 'output': add('bot', m.text); setStatus(m.text); setState('speaking', 2500); break;
       case 'speaking': setState('speaking', 3500); break;
       case 'error': add('err', m.message); setStatus(m.message); setState('error', 2500); break;
@@ -237,9 +392,188 @@ function sendCommand(text) {
 $('#form').onsubmit = e => { e.preventDefault(); sendCommand($('#input').value); $('#input').value = ''; };
 document.querySelectorAll('[data-cmd]').forEach(b => b.onclick = () => {
   sendCommand(b.dataset.cmd);
-  if (b.dataset.cmd.includes('удалённое управление')) { setTimeout(refreshRemote, 700); setTimeout(refreshRemote, 1800); }   // stay on Settings, the QR code appears here
-  else show('chat');
+  if (b.dataset.cmd.includes('удалённое управление')) { setTimeout(refreshRemote, 700); setTimeout(refreshRemote, 1800); }
+  else if (!b.dataset.stay) show('home');
 });
+
+// quick chips on the home screen
+const CHIPS = [
+  ['clock', 'Таймер 5 минут', 'таймер на 5 минут'], ['vol', 'Громкость 50', 'громкость 50 процентов'],
+  ['folder', 'Найти файл', null, 'найди на моём компьютере файл '], ['phone', 'Пульт', 'включи удалённое управление'],
+  ['help', 'Что умеешь', 'что ты умеешь'],
+];
+for (const [ic, label, cmd, fill] of CHIPS) {
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'chip2'; b.innerHTML = ico(ic) + '<span>' + label + '</span>';
+  b.onclick = () => { if (cmd) sendCommand(cmd); else { $('#input').value = fill; $('#input').focus(); } };
+  $('#chips').appendChild(b);
+}
+
+// ---------- api helpers ----------
+async function api(path, body) {
+  const r = await fetch(path, { method: 'POST', headers: { 'X-Jarvis': '1' }, body: JSON.stringify(body) });
+  return r.json();
+}
+const action = (name, extra) => api('/action', Object.assign({ name }, extra || {}));
+let saveTimer = null;
+function saveSettings(patch) { clearTimeout(saveTimer); saveTimer = setTimeout(() => api('/settings', patch).catch(() => {}), 250); }
+
+// ---------- microphone button (voice <-> text mode) ----------
+let micMuted = false;
+function renderMic() {
+  const b = $('#micbtn');
+  b.innerHTML = ico(micMuted ? 'micoff' : 'mic');
+  b.classList.toggle('off', micMuted);
+  b.title = micMuted ? 'Микрофон выключен (только текст). Нажмите, чтобы включить' : 'Микрофон включён. Нажмите, чтобы выключить';
+  $('#hint').textContent = micMuted ? 'Режим текста' : 'Голос и текст';
+  const sw = $('#mic-on'); if (sw) sw.checked = !micMuted;
+}
+$('#micbtn').onclick = async () => { micMuted = !micMuted; renderMic(); await action('mic_muted', { value: micMuted }); };
+$('#mic-on').onchange = async e => { micMuted = !e.target.checked; renderMic(); await action('mic_muted', { value: micMuted }); };
+
+// ---------- panel: computer state, timers, log, modules ----------
+let timers = [], timersAt = 0;
+const fmtDur = s => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
+const fmtAgo = s => s < 10 ? 'только что' : s < 60 ? s + ' с назад' : s < 3600 ? Math.floor(s / 60) + ' мин назад' : Math.floor(s / 3600) + ' ч назад';
+function setBar(id, pct, text) {
+  const el = $('#b-' + id); el.firstElementChild.style.width = Math.max(0, Math.min(100, pct)) + '%';
+  el.classList.toggle('warn', pct >= 70 && pct < 90); el.classList.toggle('hot', pct >= 90);
+  $('#b-' + id + '-t').textContent = text;
+}
+async function refreshState() {
+  try {
+    const s = await (await fetch('/state')).json();
+    micMuted = !!s.mic_muted; renderMic();
+    $('#tts-on').checked = !!s.tts_enabled;
+    $('#s-cpu').textContent = Math.round(s.cpu) + '%';
+    $('#s-ram').textContent = s.mem_used.toFixed(1) + ' ГБ'; $('#s-ram2').textContent = 'из ' + s.mem_total.toFixed(0) + ' ГБ';
+    setBar('cpu', s.cpu, Math.round(s.cpu) + '%');
+    const rp = s.mem_total ? s.mem_used / s.mem_total * 100 : 0; setBar('ram', rp, Math.round(rp) + '%  ·  ' + s.mem_used.toFixed(1) + ' / ' + s.mem_total.toFixed(0) + ' ГБ');
+    if (s.disk_total) { const used = s.disk_total - s.disk_free; setBar('disk', used / s.disk_total * 100, 'свободно ' + s.disk_free.toFixed(0) + ' из ' + s.disk_total.toFixed(0) + ' ГБ'); }
+    else { setBar('disk', 0, 'нет данных'); }
+    $('#s-jarvis2').textContent = (s.mic_muted ? 'режим текста' : 'голос включён') + (s.remote ? ' · пульт включён' : '');
+    timers = s.timers || []; timersAt = performance.now(); renderTimers();
+    const box = $('#actions'); box.textContent = '';
+    if (!s.actions.length) { box.innerHTML = '<div class="empty">Пока пусто.</div>'; }
+    for (const a of s.actions) {
+      const d = document.createElement('div'); d.className = 'item';
+      d.innerHTML = '<span class="st ' + (a.ok ? '' : 'bad') + '"></span><div class="grow"><div class="t"></div><div class="m"></div></div>';
+      d.querySelector('.t').textContent = a.text; d.querySelector('.m').textContent = a.command + ' · ' + fmtAgo(a.ago);
+      box.appendChild(d);
+    }
+  } catch (e) {}
+}
+function renderTimers() {
+  const box = $('#timers'); const el = (performance.now() - timersAt) / 1000;
+  $('#s-timers').textContent = timers.length; $('#s-timers2').textContent = timers.length ? 'ближайший через ' + fmtDur(timers[0].remaining - el) : 'активных нет';
+  if (!timers.length) { box.innerHTML = '<div class="empty">Нет активных. Скажите «таймер на 5 минут» или «напомни через 10 минут позвонить маме».</div>'; return; }
+  if (box.children.length === timers.length && box.dataset.ids === timers.map(t => t.id).join()) {
+    timers.forEach((t, i) => { box.children[i].querySelector('.m').textContent = 'осталось ' + fmtDur(t.remaining - el); });
+    return;
+  }
+  box.textContent = ''; box.dataset.ids = timers.map(t => t.id).join();
+  for (const t of timers) {
+    const d = document.createElement('div'); d.className = 'item';
+    d.innerHTML = '<span class="st idle"></span><div class="grow"><div class="t"></div><div class="m"></div></div><button class="btn small">Отмена</button>';
+    d.querySelector('.t').textContent = t.title + (t.message ? ' · ' + t.message.replace(/^Время вышло:\s*/, '') : ''); d.querySelector('.m').textContent = 'осталось ' + fmtDur(t.remaining - el);
+    d.querySelector('button').onclick = async () => { await action('cancel_timer', { id: t.id }); refreshState(); };
+    box.appendChild(d);
+  }
+}
+const MODULE_NAMES = { assistant: 'Основной помощник', browser: 'Браузер', steam: 'Steam и игры', windows: 'Окна Windows', weather: 'Погода', jarvis: 'Разговор', counter: 'Счётчик', stop: 'Стоп', terminate: 'Выключение Jarvis', calculator: 'Калькулятор' };
+async function loadModules() {
+  try {
+    const list = await (await fetch('/modules')).json();
+    const box = $('#modules'); box.textContent = '';
+    for (const m of list) {
+      const d = document.createElement('div'); d.className = 'item';
+      d.innerHTML = '<span class="st ' + (m.disabled ? 'bad' : '') + '"></span><div class="grow"><div class="t"></div><div class="m"></div></div><label class="sw"><input type="checkbox"><span></span></label>';
+      d.querySelector('.t').textContent = MODULE_NAMES[m.name] || m.name; d.querySelector('.m').textContent = m.commands + ' ' + (m.commands % 10 === 1 && m.commands !== 11 ? 'команда' : 'команд(ы)');
+      const cb = d.querySelector('input'); cb.checked = !m.disabled; if (m.name === 'assistant') cb.disabled = true;
+      cb.onchange = async () => { await action('module', { pack: m.name, disabled: !cb.checked }); loadModules(); };
+      box.appendChild(d);
+    }
+  } catch (e) { $('#modules').textContent = 'Не удалось загрузить модули'; }
+}
+setInterval(() => { if (currentPage === 'panel') refreshState(); }, 2500);
+setInterval(() => { if (currentPage === 'panel') renderTimers(); }, 1000);
+setInterval(() => { if (currentPage !== 'panel') refreshMicState(); }, 4000);
+async function refreshMicState() { try { const s = await (await fetch('/state')).json(); if (micMuted !== !!s.mic_muted) { micMuted = !!s.mic_muted; renderMic(); } } catch (e) {} }
+
+// ---------- settings center ----------
+let voicesLoaded = false;
+async function loadSettings() {
+  try {
+    const s = await (await fetch('/settings')).json(); lastSettings = s;
+    const sel = $('#mic-select'); sel.textContent = '';
+    sel.add(new Option('Системный по умолчанию', -1));
+    (s.mic_devices || []).forEach((n, i) => sel.add(new Option(n, i)));
+    sel.value = String(s.mic_selected ?? -1);
+    $('#rate').value = s.voice_rate; $('#rate-v').textContent = (+s.voice_rate).toFixed(2).replace(/0$/, '') + '×';
+    $('#tts-on').checked = !!s.tts_enabled;
+    $('#ai-provider').value = s.ai_provider || 'none'; $('#ai-model').value = s.ai_model || ''; $('#ai-url').value = s.ai_url || '';
+    $('#ai-key').value = ''; $('#ai-key-hint').textContent = s.ai_key_saved ? 'ключ сохранён (оставьте поле пустым, чтобы не менять)' : 'хранится только на этом компьютере';
+    updateAiRows();
+    $('#voice-hint').textContent = s.piper ? 'Jarvis (Piper) — нейросетевой голос, работает без интернета' : 'Piper не установлен: говорит голос Windows (в большом установщике есть Piper)';
+    if (!voicesLoaded) {
+      voicesLoaded = true;
+      const vs = await (await fetch('/voices')).json();
+      const vsel = $('#voice-select'); vsel.textContent = '';
+      for (const v of vs) vsel.add(new Option(v.name, v.id));
+      vsel.value = s.voice_name || '';
+    } else { $('#voice-select').value = s.voice_name || ''; }
+  } catch (e) {}
+}
+$('#mic-select').onchange = e => { saveSettings({ mic_device: +e.target.value }); $('#mic-msg').className = 'msgline ok'; $('#mic-msg').textContent = 'Сохранено. Перезапустите Jarvis, чтобы микрофон сменился.'; };
+$('#voice-select').onchange = e => saveSettings({ voice_name: e.target.value });
+$('#rate').oninput = e => { $('#rate-v').textContent = (+e.target.value).toFixed(2).replace(/0$/, '') + '×'; saveSettings({ voice_rate: +e.target.value }); };
+$('#tts-on').onchange = e => action('tts_toggle', { value: e.target.checked });
+$('#tts-test').onclick = async () => { await new Promise(r => setTimeout(r, 350)); await action('tts_test'); };
+function updateAiRows() {
+  const p = $('#ai-provider').value;
+  $('#ai-url-row').style.display = (p === 'ollama' || p === 'custom') ? '' : 'none';
+  $('#ai-key-row').style.display = (p === 'none' || p === 'ollama') ? 'none' : '';
+  const ph = { anthropic: 'claude-sonnet-5-5', openai: 'gpt-4o-mini', ollama: 'llama3.1', custom: 'название модели' };
+  $('#ai-model').placeholder = ph[p] ? 'например: ' + ph[p] : '';
+}
+$('#ai-provider').onchange = updateAiRows;
+async function saveAi() {
+  const patch = { ai_provider: $('#ai-provider').value, ai_model: $('#ai-model').value.trim(), ai_url: $('#ai-url').value.trim() };
+  const key = $('#ai-key').value.trim(); if (key) patch.ai_key = key;
+  await api('/settings', patch); $('#ai-key').value = ''; if (key) $('#ai-key-hint').textContent = 'ключ сохранён (оставьте поле пустым, чтобы не менять)';
+}
+$('#ai-save').onclick = async () => { await saveAi(); $('#ai-msg').className = 'msgline ok'; $('#ai-msg').textContent = 'Сохранено'; };
+$('#ai-test').onclick = async () => {
+  const m = $('#ai-msg'); m.className = 'msgline'; m.textContent = 'Проверяю…';
+  await saveAi();
+  try { const r = await action('ai_test'); m.className = 'msgline ' + (r.ok ? 'ok' : 'bad'); m.textContent = (r.ok ? '✓ ' : '✗ ') + r.message; }
+  catch (e) { m.className = 'msgline bad'; m.textContent = '✗ Не удалось выполнить проверку'; }
+};
+
+// microphone test: live level meter (the browser asks for permission once)
+const meter = $('#meter'); for (let i = 0; i < 24; i++) meter.appendChild(document.createElement('i'));
+let micStream = null, micCtx = null, micRaf = 0;
+async function stopMicTest() {
+  cancelAnimationFrame(micRaf); if (micStream) micStream.getTracks().forEach(t => t.stop()); if (micCtx) micCtx.close();
+  micStream = micCtx = null; meter.querySelectorAll('i').forEach(i => i.classList.remove('on')); $('#mic-test').textContent = 'Проверить';
+}
+$('#mic-test').onclick = async () => {
+  if (micStream) { stopMicTest(); return; }
+  const msg = $('#mic-msg'); msg.className = 'msgline'; msg.textContent = '';
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    micCtx = new AudioContext(); const an = micCtx.createAnalyser(); an.fftSize = 512;
+    micCtx.createMediaStreamSource(micStream).connect(an);
+    const buf = new Uint8Array(an.fftSize); $('#mic-test').textContent = 'Остановить';
+    const bars = meter.querySelectorAll('i');
+    const tick = () => {
+      an.getByteTimeDomainData(buf); let peak = 0; for (const v of buf) peak = Math.max(peak, Math.abs(v - 128));
+      const lvl = Math.min(1, peak / 70); bars.forEach((b, i) => b.classList.toggle('on', i / bars.length < lvl));
+      micRaf = requestAnimationFrame(tick);
+    };
+    tick();
+  } catch (e) { stopMicTest(); msg.className = 'msgline bad'; msg.textContent = 'Нет доступа к микрофону: разрешите его для окна Jarvis (значок замка в адресной строке) или проверьте настройки конфиденциальности Windows.'; }
+};
 
 // ---------- phone remote: QR code ----------
 let remoteShown = '';
@@ -253,7 +587,7 @@ async function refreshRemote() {
     } else { box.style.display = 'none'; remoteShown = ''; }
   } catch (e) {}
 }
-setInterval(() => { if ($('#page-settings').classList.contains('active')) refreshRemote(); }, 1500);
+setInterval(() => { if (currentPage === 'settings') refreshRemote(); }, 1500);
 
 // ---------- commands page ----------
 let commandsLoaded = false;
@@ -265,10 +599,10 @@ async function loadCommands() {
     const box = $('#commands'); box.textContent = '';
     for (const c of data.commands) {
       const d = document.createElement('div'); d.className = 'cmd';
-      const t = document.createElement('b'); t.textContent = c.pack + ' · ' + c.id; d.appendChild(t); d.appendChild(document.createElement('br'));
+      const t = document.createElement('b'); t.textContent = (MODULE_NAMES[c.pack] || c.pack) + ' · ' + c.id; d.appendChild(t); d.appendChild(document.createElement('br'));
       for (const p of c.phrases) {
         const chip = document.createElement('span'); chip.className = 'chip'; chip.textContent = p;
-        chip.onclick = () => { $('#input').value = p.replace(/\{[^}]*\}/g, '').trim(); $('#input').focus(); };
+        chip.onclick = () => { $('#input').value = p.replace(/\{[^}]*\}/g, '').trim(); show('home'); $('#input').focus(); };
         d.appendChild(chip);
       }
       box.appendChild(d);
@@ -286,15 +620,13 @@ for (let i = 0; i < N; i++) {           // fibonacci sphere
   const y = 1 - (i / (N - 1)) * 2, r = Math.sqrt(1 - y * y), th = Math.PI * (3 - Math.sqrt(5)) * i;
   pts.push([Math.cos(th) * r, y, Math.sin(th) * r]);
 }
-let mode = 'orb';
-try { mode = localStorage.getItem('jarvis-mode') || 'orb'; } catch (e) {}
+let mode = 'plasma';
+try { mode = localStorage.getItem('jarvis-mode') || 'plasma'; if (mode === 'orb') mode = 'wire'; } catch (e) {}
 function setMode(m) {
   mode = m; try { localStorage.setItem('jarvis-mode', m); } catch (e) {}
-  $('#mode-orb').classList.toggle('active', m === 'orb');
-  $('#mode-avatar').classList.toggle('active', m === 'avatar');
+  document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
 }
-$('#mode-orb').onclick = () => setMode('orb');
-$('#mode-avatar').onclick = () => setMode('avatar');
+document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => setMode(b.dataset.mode));
 
 let yaw = 0, level = 0, glitchUntil = 0, nextGlitch = performance.now() + 3000;
 
@@ -447,12 +779,12 @@ $('#avatar-file').onchange = async e => {
   c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
   const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9));
   const r = await fetch('/avatar', { method: 'POST', headers: { 'X-Jarvis': '1' }, body: blob });
-  if (r.ok) { loadAvatar(); setMode('avatar'); show('orb'); } else { add('err', 'Не удалось сохранить фото'); }
+  if (r.ok) { loadAvatar(); setMode('avatar'); show('home'); } else { add('err', 'Не удалось сохранить фото'); }
   e.target.value = '';
 };
 $('#avatar-clear').onclick = async () => {
   await fetch('/avatar', { method: 'POST', headers: { 'X-Jarvis': '1' }, body: new Blob([]) });
-  avatarImg = null; avatarCanvas = null; setMode('orb');
+  avatarImg = null; avatarCanvas = null; setMode('plasma');
 };
 
 function drawAvatar(t) {
@@ -461,7 +793,7 @@ function drawAvatar(t) {
   drawEmitter(cx, baseY, W * 0.3, hue, sat, t);
   if (!avatarCanvas) {
     ctx.fillStyle = `hsla(${hue},${sat}%,75%,.85)`; ctx.font = '22px Segoe UI, sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('Выберите фото: Настройки → Аватар', cx, H * 0.45);
+    ctx.fillText('Выберите фото: Настройки → Внешний вид', cx, H * 0.45);
     return;
   }
   const maxW = W * 0.8, maxH = H * 0.78;
@@ -509,6 +841,54 @@ function avatarLayer(w, h) {
   return _layer;
 }
 
+// ---------- plasma orb (glass sphere with swirling light) ----------
+const stars = Array.from({ length: 70 }, () => { const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()); return [Math.cos(a) * r, Math.sin(a) * r, Math.random()]; });
+function drawPlasma(t) {
+  const hue = state === 'error' ? 350 : state === 'listening' || state === 'wake' ? 175 : 218;
+  const cx = W / 2, cy = H / 2, R = W * 0.36 * (1 + Math.sin(t / 330) * 0.025 * level);
+  // outer glow
+  let g = ctx.createRadialGradient(cx, cy, R * 0.9, cx, cy, R * 1.45);
+  g.addColorStop(0, `hsla(${hue},100%,55%,${0.28 + level * 0.25})`); g.addColorStop(1, `hsla(${hue},100%,50%,0)`);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, R * 1.45, 0, Math.PI * 2); ctx.fill();
+  ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.clip();
+  // body
+  g = ctx.createRadialGradient(cx - R * 0.3, cy - R * 0.35, R * 0.1, cx, cy, R);
+  g.addColorStop(0, `hsla(${hue},85%,22%,.95)`); g.addColorStop(0.7, `hsla(${hue + 10},90%,9%,.95)`); g.addColorStop(1, `hsla(${hue},100%,18%,.95)`);
+  ctx.fillStyle = g; ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
+  // stars
+  for (const [sx, sy, s] of stars) {
+    const tw = 0.4 + 0.6 * Math.abs(Math.sin(t / 900 + s * 20));
+    ctx.fillStyle = `rgba(190,220,255,${tw * 0.7})`; ctx.fillRect(cx + sx * R * 0.95, cy + sy * R * 0.95, 1 + s * 1.6, 1 + s * 1.6);
+  }
+  // swirling ribbons
+  const speed = 1 + level * 2.2;
+  for (let k = 0; k < 5; k++) {
+    const ang = t / 5200 * speed * (k % 2 ? 1 : -1) + k * 1.25;
+    const h2 = hue + (k % 3) * 28 - 10;
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(ang);
+    for (const [w, a] of [[16, 0.10], [6, 0.35], [2, 0.95]]) {
+      ctx.lineWidth = w * (0.8 + level * 0.5); ctx.lineCap = 'round';
+      ctx.strokeStyle = `hsla(${h2},100%,${62 + (k % 2) * 12}%,${a})`;
+      ctx.beginPath();
+      for (let i = 0; i <= 40; i++) {
+        const u = i / 40 * 2 - 1;
+        const x = u * R * 1.05;
+        const y = Math.sin(u * 3.2 + t / 1400 * speed + k * 2) * R * (0.28 + 0.1 * Math.sin(t / 2100 + k)) * (1 - u * u * 0.5);
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+  // rim light (fresnel) + specular
+  g = ctx.createRadialGradient(cx, cy, R * 0.78, cx, cy, R);
+  g.addColorStop(0, `hsla(${hue},100%,60%,0)`); g.addColorStop(1, `hsla(${hue + 15},100%,62%,.65)`);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+  ctx.lineWidth = 5; ctx.strokeStyle = `hsla(${hue + 10},100%,62%,.95)`; ctx.beginPath(); ctx.arc(cx, cy, R - 2, 0, Math.PI * 2); ctx.stroke();
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.beginPath(); ctx.arc(cx, cy, R - 9, Math.PI * 1.08, Math.PI * 1.45); ctx.stroke();
+}
+
 // ---------- main loop ----------
 function frame(t) {
   if (stateUntil && performance.now() > stateUntil) setState(connected ? 'idle' : 'off');
@@ -518,16 +898,17 @@ function frame(t) {
   if (t > nextGlitch) { glitchUntil = t + rnd(90, 220); nextGlitch = t + rnd(3500, 9000); }
   ctx.clearRect(0, 0, W, H);
   ctx.globalCompositeOperation = 'lighter';
-  if (mode === 'avatar') drawAvatar(t); else drawOrb(t);
+  if (mode === 'avatar') drawAvatar(t); else if (mode === 'wire') drawOrb(t); else drawPlasma(t);
   ctx.globalCompositeOperation = 'source-over';
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 loadAvatar();
 setMode(mode);
-
+renderMic();
 connect();
-show('orb');
+show('home');
+refreshMicState();
 </script>
 </body>
 </html>

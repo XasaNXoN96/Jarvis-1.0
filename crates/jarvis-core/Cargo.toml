@@ -53,7 +53,7 @@ tokenizers = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["shellapi", "winuser", "combaseapi", "objbase", "mmdeviceapi", "endpointvolume", "winerror", "objidl", "unknwnbase", "handleapi", "winbase", "minwindef"] }
+winapi = { version = "0.3", features = ["shellapi", "winuser", "sysinfoapi", "fileapi", "processthreadsapi", "winnt", "combaseapi", "objbase", "mmdeviceapi", "endpointvolume", "winerror", "objidl", "unknwnbase", "handleapi", "winbase", "minwindef"] }
 winrt-notification = { workspace = true, optional = true }
 
 [features]

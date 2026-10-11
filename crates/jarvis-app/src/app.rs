@@ -450,6 +450,17 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
     if let Some((cmd_path, cmd_config)) = cmd_result {
         info!("Command found: {:?}", cmd_path);
         say(&format!("> {}", cmd_config.id));
+
+        // a module switched off in the Jarvis window
+        let pack = cmd_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        if jarvis_core::uistate::is_pack_disabled(&pack) {
+            let msg = format!("Модуль «{}» отключён (включить: окно Jarvis → Панель → Модули)", pack);
+            say(&msg);
+            ipc::send(IpcEvent::Output { text: msg });
+            jarvis_core::uistate::log_action(text, &cmd_config.id, false);
+            ipc::send(IpcEvent::Idle);
+            return false;
+        }
         
         // extract slots if needed
         let extracted_slots = if !cmd_config.slots.is_empty() {
@@ -465,6 +476,7 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
         match commands::execute_command(&cmd_path, &cmd_config, Some(&text), extracted_slots.as_ref()) {
             Ok(chain) => {
                 info!("Command executed successfully");
+                jarvis_core::uistate::log_action(text, &cmd_config.id, true);
                 // voices::play_ok();
                 voices::play_random_from(cmd_config.get_sounds(&i18n::get_language()).as_slice());
                 ipc::send(IpcEvent::CommandExecuted {
@@ -476,6 +488,7 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
             }
             Err(msg) => {
                 error!("Error executing command: {}", msg);
+                jarvis_core::uistate::log_action(text, &cmd_config.id, false);
                 say(&format!("! error: {}", msg));
                 voices::play_error();
                 ipc::send(IpcEvent::CommandExecuted {
@@ -488,6 +501,7 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
     } else {
         info!("No command found for: {}", text);
         say(&format!("? command not found: {}", text));
+        jarvis_core::uistate::log_action(text, "—", false);
         voices::play_not_found();
         ipc::send(IpcEvent::Error { 
             message: format!("Command not found: {}", text) 

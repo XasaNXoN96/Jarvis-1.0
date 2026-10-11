@@ -161,6 +161,8 @@ fn speak_piper(exe: &Path, model: &Path, text: &str, generation: u64) -> bool {
         .arg(model)
         .arg("--output_file")
         .arg(&wav)
+        .arg("--length_scale")
+        .arg(format!("{:.2}", 1.0 / crate::uistate::voice_rate()))
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(std::fs::File::create(&err_file).map(Stdio::from).unwrap_or_else(|_| Stdio::null()));
@@ -227,9 +229,12 @@ fn speak_piper(exe: &Path, model: &Path, text: &str, generation: u64) -> bool {
 const SAPI_SCRIPT: &str = r#"
 Add-Type -AssemblyName System.Speech
 $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
+$s.Rate = [int]$env:JARVIS_TTS_RATE
 $lang = $env:JARVIS_TTS_LANG
 $voices = @($s.GetInstalledVoices() | Where-Object { $_.Enabled })
-$pick = $voices | Where-Object { $_.VoiceInfo.Culture.TwoLetterISOLanguageName -eq $lang -and $_.VoiceInfo.Gender -eq 'Female' } | Select-Object -First 1
+$pick = $null
+if ($env:JARVIS_TTS_VOICE) { $pick = $voices | Where-Object { $_.VoiceInfo.Name -eq $env:JARVIS_TTS_VOICE } | Select-Object -First 1 }
+if (-not $pick) { $pick = $voices | Where-Object { $_.VoiceInfo.Culture.TwoLetterISOLanguageName -eq $lang -and $_.VoiceInfo.Gender -eq 'Female' } | Select-Object -First 1 }
 if (-not $pick) { $pick = $voices | Where-Object { $_.VoiceInfo.Culture.TwoLetterISOLanguageName -eq $lang } | Select-Object -First 1 }
 if (-not $pick) {
     # no voice for this language: Windows would stay silent on foreign text, tell Jarvis
@@ -250,6 +255,8 @@ fn speak_sapi(text: &str, lang: &str, generation: u64) {
             .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", SAPI_SCRIPT])
             .env("JARVIS_TTS_TEXT", text)
             .env("JARVIS_TTS_LANG", lang)
+            .env("JARVIS_TTS_RATE", ((crate::uistate::voice_rate() - 1.0) * 10.0).round().clamp(-10.0, 10.0).to_string())
+            .env("JARVIS_TTS_VOICE", crate::uistate::voice_name().strip_prefix("win:").unwrap_or(""))
             .env("JARVIS_TTS_NOTE", &note)
             .stdout(Stdio::null())
             .stderr(Stdio::null());
@@ -369,12 +376,47 @@ pub fn speak(text: &str) {
     let lang = tts_lang();
 
     std::thread::spawn(move || {
-        if let Some((exe, model)) = piper_voice(&lang) {
-            if speak_piper(&exe, &model, &text, generation) {
-                return;
+        // voice choice from the settings: "" = automatic, "piper", "win:<name>"
+        let choice = crate::uistate::voice_name();
+        if !choice.starts_with("win:") {
+            if let Some((exe, model)) = piper_voice(&lang) {
+                if speak_piper(&exe, &model, &text, generation) {
+                    return;
+                }
+                warn!("TTS: Piper produced no sound, falling back to the Windows voice");
             }
-            warn!("TTS: Piper produced no sound, falling back to the Windows voice");
         }
         speak_sapi(&text, &lang, generation);
     });
+}
+
+pub fn piper_available() -> bool {
+    piper_voice(&tts_lang()).is_some()
+}
+
+// voices to choose from in the settings: ("", automatic), ("piper", ...), ("win:<name>", ...)
+pub fn list_voices() -> Vec<(String, String)> {
+    let mut list = vec![(String::new(), "Автоматически (лучший доступный)".to_string())];
+    if piper_available() {
+        list.push(("piper".to_string(), "Jarvis (Piper, нейросеть)".to_string()));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let mut command = Command::new("powershell");
+        command
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+                "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).GetInstalledVoices() | Where-Object { $_.Enabled } | ForEach-Object { $_.VoiceInfo.Name + '|' + $_.VoiceInfo.Culture.Name + '|' + $_.VoiceInfo.Gender }"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        hide_window(&mut command);
+        if let Ok(out) = command.output() {
+            for line in String::from_utf8_lossy(&out.stdout).lines() {
+                let parts: Vec<&str> = line.trim().split('|').collect();
+                if parts.len() == 3 && !parts[0].is_empty() {
+                    list.push((format!("win:{}", parts[0]), format!("Windows: {} ({}, {})", parts[0], parts[1], parts[2])));
+                }
+            }
+        }
+    }
+    list
 }

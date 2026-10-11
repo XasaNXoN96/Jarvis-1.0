@@ -124,6 +124,28 @@ pub fn start_timer(seconds: u64, title: String, message: String) -> u64 {
 }
 
 // restore timers saved by the previous run; call once after the config dir is known
+// for the Jarvis window: active timers as JSON rows
+pub fn list_json() -> Vec<serde_json::Value> {
+    let now = now_unix();
+    let mut timers = TIMERS.lock().clone();
+    timers.sort_by_key(|t| t.due);
+    timers
+        .iter()
+        .map(|t| serde_json::json!({ "id": t.id, "remaining": t.due.saturating_sub(now), "title": t.title, "message": t.message }))
+        .collect()
+}
+
+pub fn cancel_one(id: u64) -> bool {
+    let mut timers = TIMERS.lock();
+    let before = timers.len();
+    timers.retain(|t| t.id != id);
+    let changed = timers.len() != before;
+    if changed {
+        save(&timers);
+    }
+    changed
+}
+
 pub fn init() {
     let path = match file_path() {
         Some(p) => p,
