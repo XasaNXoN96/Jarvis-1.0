@@ -739,3 +739,16 @@ triggers.ru = ["диагностик","самопроверк","проверь �
 triggers.en = ["diagnostics","self test","selftest","check system","what is not working"]
 phrases.ru = ["диагностика","самопроверка","проверь систему"]
 phrases.en = ["diagnostics","self test"]
+
+[[commands]]
+id = "assistant_unlock"
+type = "lua"
+script = "unlock.lua"
+sandbox = "full"
+timeout = 10000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["разблокир", "сними блокиров", "снять блокиров", "открой замок"]
+triggers.en = ["unlock", "unlock computer", "unlock pc"]
+phrases.ru = ["разблокируй компьютер", "разблокируй"]
+phrases.en = ["unlock the computer"]
