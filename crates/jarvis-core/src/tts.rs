@@ -23,6 +23,23 @@ static ENABLED: AtomicBool = AtomicBool::new(true);
 
 const MAX_CHARS: usize = 30_000;
 
+// tell the user once per run about a voice problem (console + Jarvis window + log)
+static NOTE_SENT: AtomicBool = AtomicBool::new(false);
+
+fn tell(text: &str) {
+    use std::io::Write;
+    let _ = writeln!(std::io::stdout(), "{}", text);
+    #[cfg(feature = "jarvis_app")]
+    crate::ipc::send(crate::ipc::IpcEvent::Output { text: text.to_string() });
+}
+
+fn tell_once(text: &str) {
+    warn!("TTS: {}", text);
+    if !NOTE_SENT.swap(true, Ordering::SeqCst) {
+        tell(text);
+    }
+}
+
 fn off_flag_path() -> Option<PathBuf> {
     APP_CONFIG_DIR.get().map(|d| d.join("tts_off"))
 }
@@ -199,7 +216,11 @@ $lang = $env:JARVIS_TTS_LANG
 $voices = @($s.GetInstalledVoices() | Where-Object { $_.Enabled })
 $pick = $voices | Where-Object { $_.VoiceInfo.Culture.TwoLetterISOLanguageName -eq $lang -and $_.VoiceInfo.Gender -eq 'Female' } | Select-Object -First 1
 if (-not $pick) { $pick = $voices | Where-Object { $_.VoiceInfo.Culture.TwoLetterISOLanguageName -eq $lang } | Select-Object -First 1 }
-if (-not $pick) { $pick = $voices | Where-Object { $_.VoiceInfo.Gender -eq 'Female' } | Select-Object -First 1 }
+if (-not $pick) {
+    # no voice for this language: Windows would stay silent on foreign text, tell Jarvis
+    Set-Content -Path $env:JARVIS_TTS_NOTE -Value "NOVOICE"
+    $pick = $voices | Where-Object { $_.VoiceInfo.Gender -eq 'Female' } | Select-Object -First 1
+}
 if ($pick) { $s.SelectVoice($pick.VoiceInfo.Name) }
 $s.Speak($env:JARVIS_TTS_TEXT)
 "#;
@@ -207,11 +228,14 @@ $s.Speak($env:JARVIS_TTS_TEXT)
 fn speak_sapi(text: &str, lang: &str, generation: u64) {
     #[cfg(target_os = "windows")]
     {
+        let note = std::env::temp_dir().join(format!("jarvis_tts_note_{}.txt", generation));
+        let _ = std::fs::remove_file(&note);
         let mut command = Command::new("powershell");
         command
             .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", SAPI_SCRIPT])
             .env("JARVIS_TTS_TEXT", text)
             .env("JARVIS_TTS_LANG", lang)
+            .env("JARVIS_TTS_NOTE", &note)
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         hide_window(&mut command);
@@ -221,7 +245,18 @@ fn speak_sapi(text: &str, lang: &str, generation: u64) {
                     wait_current(generation);
                 }
             }
-            Err(e) => warn!("TTS: cannot start PowerShell: {}", e),
+            Err(e) => {
+                tell_once(&format!("Не удалось запустить озвучку Windows (PowerShell): {}", e));
+                return;
+            }
+        }
+        if note.exists() {
+            let _ = std::fs::remove_file(&note);
+            if i18n::get_language() != "en" {
+                tell_once("В Windows нет голоса для вашего языка, поэтому озвучка молчит. Установите голос: Параметры → Время и язык → Речь → Добавить голоса, или поставьте полную версию Jarvis с голосом Piper. Проверить: скажите «проверь голос».");
+            } else {
+                tell_once("Windows has no voice for your language, so speech stays silent. Install one: Settings > Time & language > Speech > Add voices, or use the full Jarvis installer with the Piper voice. Check: say \"test voice\".");
+            }
         }
     }
     #[cfg(not(target_os = "windows"))]
@@ -229,6 +264,47 @@ fn speak_sapi(text: &str, lang: &str, generation: u64) {
         let _ = (text, lang, generation, SAPI_SCRIPT);
         info!("TTS (not Windows, skipped)");
     }
+}
+
+// "проверь голос": what can speak on this computer, and a spoken test
+pub fn diagnose() {
+    std::thread::spawn(|| {
+        let lang = tts_lang();
+        tell(&format!("Проверка голоса. Язык Jarvis: {}", lang));
+        match piper_voice(&lang) {
+            Some((exe, model)) => tell(&format!("Piper: найден ({}), голос {}", exe.display(), model.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default())),
+            None => tell("Piper: не установлен (в лёгкой версии его нет)"),
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let mut command = Command::new("powershell");
+            command
+                .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+                    "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).GetInstalledVoices() | Where-Object { $_.Enabled } | ForEach-Object { $_.VoiceInfo.Name + ' | ' + $_.VoiceInfo.Culture.Name + ' | ' + $_.VoiceInfo.Gender }"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null());
+            hide_window(&mut command);
+            match command.output() {
+                Ok(out) => {
+                    let list = String::from_utf8_lossy(&out.stdout).to_string();
+                    let lines: Vec<&str> = list.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+                    if lines.is_empty() {
+                        tell("Голоса Windows: не найдено ни одного");
+                    }
+                    for l in &lines {
+                        tell(&format!("Голос Windows: {}", l));
+                    }
+                    let has_lang = lines.iter().any(|l| l.split('|').nth(1).map(|c| c.trim().to_lowercase().starts_with(&lang)).unwrap_or(false));
+                    if !has_lang && piper_voice(&lang).is_none() {
+                        tell(&format!("Нет ни одного голоса для языка «{}». Установите голос Windows (Параметры → Время и язык → Речь) или полную версию Jarvis с Piper.", lang));
+                    }
+                }
+                Err(e) => tell(&format!("Не удалось опросить голоса Windows: {}", e)),
+            }
+        }
+        NOTE_SENT.store(false, Ordering::SeqCst);
+        speak("Проверка голоса. Раз, два, три.");
+    });
 }
 
 pub fn speak(text: &str) {
@@ -252,6 +328,7 @@ pub fn speak(text: &str) {
             if speak_piper(&exe, &model, &text, generation) {
                 return;
             }
+            warn!("TTS: Piper produced no sound, falling back to the Windows voice");
         }
         speak_sapi(&text, &lang, generation);
     });

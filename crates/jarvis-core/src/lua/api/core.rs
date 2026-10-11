@@ -62,6 +62,7 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
     let tts = lua.create_table()?;
     tts.set("stop", lua.create_function(|_, ()| { crate::tts::stop(); Ok(()) })?)?;
     tts.set("set_enabled", lua.create_function(|_, on: bool| { crate::tts::set_enabled(on); Ok(()) })?)?;
+    tts.set("diagnose", lua.create_function(|_, ()| { crate::tts::diagnose(); Ok(()) })?)?;
     tts.set("is_enabled", lua.create_function(|_, ()| Ok(crate::tts::is_enabled()))?)?;
     jarvis.set("tts", tts)?;
 

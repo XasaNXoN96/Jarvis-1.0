@@ -50,6 +50,7 @@ tokenizers = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
 
 [target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["shellapi", "winuser"] }
 winrt-notification = { workspace = true, optional = true }
 
 [features]

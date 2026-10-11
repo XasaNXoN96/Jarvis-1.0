@@ -3,6 +3,13 @@
 
 local id = jarvis.context.command_id
 
+if id == "assistant_tts_test" then
+  -- lists what can speak on this computer in the Jarvis window and says a test phrase
+  jarvis.tts.set_enabled(true)
+  jarvis.tts.diagnose()
+  return
+end
+
 if id == "assistant_tts_stop" then
   jarvis.tts.stop()
   jarvis.out(T("Чтение остановлено", "Reading stopped"))

@@ -717,3 +717,14 @@ triggers.ru = ["включ песн", "включ клип", "включ тре�
 triggers.en = ["play song", "play music", "play track", "play the song"]
 phrases.ru = ["включи песню Imagine Dragons", "поставь клип"]
 phrases.en = ["play the song Imagine Dragons"]
+
+[[commands]]
+id = "assistant_tts_test"
+type = "lua"
+script = "speech.lua"
+sandbox = "full"
+timeout = 20000
+triggers.ru = ["проверь голос","проверк голос","тест голос","тест озвучк","проверь озвучк","проверк озвучк","почему не говор","почему молчи","не слышу голос"]
+triggers.en = ["test voice","voice test","check voice","test speech","check speech","why no voice"]
+phrases.ru = ["проверь голос","тест озвучки","почему не говоришь"]
+phrases.en = ["test voice","voice test"]

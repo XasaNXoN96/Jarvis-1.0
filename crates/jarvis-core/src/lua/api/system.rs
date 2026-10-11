@@ -6,6 +6,62 @@ use std::process::Command;
 use crate::lua::sandbox::SandboxLevel;
 
 
+// Opens a URL / file / program the way a double click does (ShellExecute). Returns the real result:
+// rundll32 "succeeds" even when nothing opens, ShellExecute reports an error code.
+#[cfg(target_os = "windows")]
+pub fn shell_open(target: &str) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    use winapi::um::shellapi::ShellExecuteW;
+    use winapi::um::winuser::SW_SHOWNORMAL;
+
+    let wide = |s: &str| -> Vec<u16> { std::ffi::OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect() };
+    let verb = wide("open");
+    let file = wide(target);
+    let code = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            verb.as_ptr(),
+            file.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    } as isize;
+    if code > 32 {
+        Ok(())
+    } else {
+        Err(format!("ShellExecute returned {}", code))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn open_target(target: &str) -> bool {
+    match shell_open(target) {
+        Ok(()) => true,
+        Err(e) => {
+            log::warn!("[Lua] open '{}' failed: {}; trying cmd start", target, e);
+            // second chance: cmd /C start "" target
+            use std::os::windows::process::CommandExt;
+            Command::new("cmd")
+                .args(["/C", "start", "", target])
+                .creation_flags(0x0800_0000)
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn open_target(target: &str) -> bool {
+    let result = if cfg!(target_os = "macos") {
+        Command::new("open").arg(target).spawn()
+    } else {
+        Command::new("xdg-open").arg(target).spawn()
+    };
+    result.is_ok()
+}
+
 // Show a desktop notification (toast on Windows). Never fails, errors are only logged.
 pub fn show_notification(title: &str, message: &str) {
     log::info!("[Lua] NOTIFY: {} - {}", title, message);
@@ -53,30 +109,13 @@ pub fn show_notification(title: &str, message: &str) {
 pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Result<()> {
     let system = lua.create_table()?;
     
-    // jarvis.system.open(url_or_path) - always available
+    // jarvis.system.open(url_or_path) - always available; returns true only when Windows accepted it
     let open_fn = lua.create_function(|_, target: String| {
-        let result = if cfg!(target_os = "windows") {
-            // ShellExecute via rundll32: no cmd.exe parsing, so `&` in URLs is safe
-            Command::new("rundll32")
-                .args(["url.dll,FileProtocolHandler", &target])
-                .spawn()
-        } else if cfg!(target_os = "macos") {
-            Command::new("open")
-                .arg(&target)
-                .spawn()
-        } else {
-            Command::new("xdg-open")
-                .arg(&target)
-                .spawn()
-        };
-        
-        match result {
-            Ok(_) => Ok(true),
-            Err(e) => {
-                log::warn!("[Lua] Failed to open {}: {}", target, e);
-                Ok(false)
-            }
+        let ok = open_target(&target);
+        if !ok {
+            log::warn!("[Lua] Failed to open {}", target);
         }
+        Ok(ok)
     })?;
     system.set("open", open_fn)?;
     

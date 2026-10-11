@@ -19,7 +19,11 @@ local function open(target)
     jarvis.log("info", "[not windows, skipped] open " .. target)
     return true
   end
-  return jarvis.system.open(target)
+  if not jarvis.system.open(target) then
+    -- stop the script: do not announce "opening" when Windows could not open it
+    error(T("Не удалось открыть: ", "Could not open: ") .. target)
+  end
+  return true
 end
 
 -- a little Jarvis humour: now and then (about 1 in 5) a dry remark is added to the answer.
