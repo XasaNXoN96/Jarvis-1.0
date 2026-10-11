@@ -381,8 +381,11 @@ local function result_number(w)
   if FILE_NUM[w] then return FILE_NUM[w] end
   local d = tonumber(w)
   if d and d >= 1 and d == math.floor(d) then return d end
+  -- an ordinal ending ("второй", "седьмую", "четвёртый"), not another word ("вторник", "пятница")
+  local ENDINGS = { ["ой"] = true, ["ая"] = true, ["ую"] = true, ["ое"] = true, ["ый"] = true, ["ий"] = true, ["ья"] = true, ["ью"] = true,
+                    ["ье"] = true, ["ого"] = true, ["ому"] = true, ["ертый"] = true, ["ертую"] = true, ["ертая"] = true, ["ертое"] = true, ["ётый"] = true, ["ётую"] = true }
   for _, o in ipairs(FILE_ORD) do
-    if w:sub(1, #o[1]) == o[1] and jarvis.text.len(w) - jarvis.text.len(o[1]) <= 3 then return o[2] end
+    if w:sub(1, #o[1]) == o[1] and ENDINGS[w:sub(#o[1] + 1)] then return o[2] end
   end
   return nil
 end
@@ -417,7 +420,6 @@ local function file_session(text)
   end
   if not n and #list == 1 then n = 1 end
   local item = n and list[n] or nil
-  if n and item then jarvis.files.select(n) end
 
   -- waiting for "да" / "нет" after "удалить?"
   if data:find("^confirm_delete") then
@@ -479,6 +481,9 @@ local function file_session(text)
     jarvis.app.run_text(text)
     return
   end
+  -- an answer about this file ("открой второй", "второй"): it is the chosen one from now on; a number inside another
+  -- phrase ("таймер на 2 минуты") changes nothing
+  if n and item and (wants_action or (said and #tokens <= 2)) then jarvis.files.select(n) end
   if has("запуск") or has("запуст") or has("открой") or has("открыв") or has("открыть") or has("включ") or has("играй") or has("воспроизв") or has("смотр") or has("слуша") then
     jarvis.session.finish()
     local ok = pcall(open, item.path)

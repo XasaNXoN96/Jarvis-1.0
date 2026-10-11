@@ -138,6 +138,10 @@ pub fn fetch_indexed_program<'a>(phrase: &str, commands: &'a [JCommandsList]) ->
     if !crate::appindex::index_pending() && crate::appindex::find_now(&words) == crate::appindex::Found::Nothing {
         return None;
     }
+    // "закрой" only for an exact name: "закрой окно браузера" or "закрой документ" belong to other commands
+    if action != crate::apps::Action::Open && !crate::appindex::has_exact(&words) {
+        return None;
+    }
     // "закрой" an installed program: the program command answers that only the main list can be closed
     commands.iter().flat_map(|l| l.commands.iter().map(move |c| (&l.path, c))).find(|(_, c)| c.id == id)
 }

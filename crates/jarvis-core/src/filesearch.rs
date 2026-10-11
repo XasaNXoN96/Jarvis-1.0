@@ -118,6 +118,7 @@ const KINDS: &[(&str, &str, &[&str])] = &[
     ("фильм", "видео", &["mp4", "mkv", "avi", "mov", "wmv", "webm", "m4v"]),
     ("ролик", "видео", &["mp4", "mkv", "avi", "mov", "webm"]),
     ("музык", "музыка", &["mp3", "wav", "flac", "ogg", "m4a", "aac", "wma", "opus"]),
+    ("музыкальн", "музыка", &["mp3", "wav", "flac", "ogg", "m4a", "aac", "wma", "opus"]),
     ("песн", "музыка", &["mp3", "wav", "flac", "ogg", "m4a", "aac", "wma", "opus"]),
     ("аудио", "аудио", &["mp3", "wav", "flac", "ogg", "m4a", "aac", "wma", "opus"]),
     ("таблиц", "таблицы", &["xls", "xlsx", "xlsm", "csv", "ods"]),
@@ -178,10 +179,12 @@ fn kind_of(t: &str) -> Option<&'static (&'static str, &'static str, &'static [&'
             return false;
         }
         let extra = t.chars().count() - s.chars().count();
+        let rest = &t[s.len()..];
         match *s {
-            "фото" | "видео" | "аудио" => extra == 0,
+            // "видео", "видеофайлы", "аудиозаписи", "фото", "фотки" — not "фотошоп", "видеокарта"
+            "фото" | "видео" | "аудио" => extra == 0 || ["файл", "запис", "ролик", "клип", "снимк"].iter().any(|x| rest.starts_with(x)),
             _ if s.is_ascii() => extra <= 1,
-            _ => extra <= 3,
+            _ => extra <= 4,
         }
     })
 }
@@ -517,11 +520,7 @@ fn file_text(path: &Path, ext: &str) -> Option<String> {
             let u: Vec<u16> = bytes[2..].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
             return Some(String::from_utf16_lossy(&u));
         }
-        return Some(match String::from_utf8(bytes) {
-            Ok(t) => t,
-            // old Notepad files are in the Windows Cyrillic code page
-            Err(e) => cp1251(e.as_bytes()),
-        });
+        return Some(decode_text(bytes));
     }
     if ZIP_DOCS.contains(&ext) {
         let bytes = std::fs::read(path).ok()?;
@@ -555,6 +554,20 @@ fn cloud_only(meta: &std::fs::Metadata) -> bool {
 #[cfg(not(target_os = "windows"))]
 fn cloud_only(_meta: &std::fs::Metadata) -> bool {
     false
+}
+
+// text bytes of an unknown encoding: UTF-8, or the Windows Cyrillic code page of old Notepad files. A UTF-8 file
+// with one broken byte stays UTF-8 (most of its Cyrillic letters are valid two-byte sequences).
+pub fn decode_text(bytes: Vec<u8>) -> String {
+    match String::from_utf8(bytes) {
+        Ok(t) => t,
+        Err(e) => {
+            let b = e.as_bytes();
+            let pairs = b.windows(2).filter(|w| (0xC2..=0xDF).contains(&w[0]) && (0x80..=0xBF).contains(&w[1])).count();
+            let high = b.iter().filter(|&&x| x >= 0x80).count();
+            if pairs * 2 * 10 >= high * 8 { String::from_utf8_lossy(b).to_string() } else { cp1251(b) }
+        }
+    }
 }
 
 // Windows-1251 -> text (Cyrillic letters, Ё/ё, the usual punctuation; anything else becomes "?")
@@ -1032,7 +1045,7 @@ pub fn more() -> String {
     lines.join("\n")
 }
 
-fn announce(q: &Query, items: &[FoundItem], s: &Search, voice: bool) {
+fn announce(q: &Query, items: &[FoundItem], s: &Search, voice: bool, generation: u64) {
     let what = describe(q);
     let mut notes = Vec::new();
     if s.timed_out {
@@ -1046,6 +1059,9 @@ fn announce(q: &Query, items: &[FoundItem], s: &Search, voice: bool) {
     }
     let notes_text = if notes.is_empty() { String::new() } else { format!("\n{}", notes.join("\n")) };
     let mut st = STATE.lock();
+    if GENERATION.load(Ordering::SeqCst) != generation {
+        return; // a newer search started meanwhile: its answer, not this one
+    }
     if items.is_empty() {
         let hint = match q.scope {
             Scope::User => " Скажите «ищи везде», чтобы искать на всех дисках, или «найди … на диске D».",
@@ -1156,7 +1172,7 @@ fn start_with(q: Query, voice: bool) -> Result<String, String> {
                 st.busy = false;
                 drop(st);
                 remember("search", &describe(&q), &format!("найдено {} за {} с", found.len(), started.elapsed().as_secs()));
-                announce(&q, &found, &s, voice);
+                announce(&q, &found, &s, voice, generation);
             }
             Err(e) => {
                 st.busy = false;
@@ -1315,8 +1331,9 @@ pub(crate) fn run_for_tests(q: &Query) -> Result<Vec<FoundItem>, String> {
 
 #[cfg(test)]
 pub(crate) fn set_results_for_tests(items: Vec<PathBuf>) {
+    let n = items.len();
     *RESULTS.lock() = items.into_iter().map(|p| FoundItem { is_dir: p.is_dir(), path: p, size: 0, modified: 0, score: 0 }).collect();
-    STATE.lock().shown = PAGE.min(RESULTS.lock().len());
+    STATE.lock().shown = PAGE.min(n);
     *SELECTED.lock() = None;
 }
 

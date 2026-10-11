@@ -251,10 +251,11 @@ impl<T> OneOrMany<T> {
 // no defaults: an object of another shape is an error to report, not an empty program
 #[derive(Deserialize)]
 struct StartApp {
+    // a null name or id is one entry to skip, not a reason to lose the whole list
     #[serde(rename = "Name")]
-    name: String,
+    name: Option<String>,
     #[serde(rename = "AppID")]
-    app_id: String,
+    app_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -274,9 +275,13 @@ pub(crate) fn try_parse_registered(json: &str) -> Result<Vec<IndexedApp>, String
     let text = text.replace("\"start\":null", "\"start\":[]").replace("\"paths\":null", "\"paths\":[]");
     let r = serde_json::from_str::<Registered>(&text).map_err(|e| format!("непонятный ответ PowerShell ({})", e))?;
     let mut out = Vec::new();
-    for s in r.start.into_vec() {
-        let name = s.name.trim().to_string();
-        let id = s.app_id.trim().to_string();
+    let starts = r.start.into_vec();
+    if !starts.is_empty() && starts.iter().all(|s| s.name.is_none() && s.app_id.is_none()) {
+        return Err("непонятный ответ PowerShell (нет имён приложений)".into());
+    }
+    for s in starts {
+        let name = s.name.unwrap_or_default().trim().to_string();
+        let id = s.app_id.unwrap_or_default().trim().to_string();
         // web links and empty ids are not programs; an id with a space or a quote is not a safe AppsFolder name
         if name.is_empty() || id.is_empty() || is_junk(&name) || id.contains('"') || id.to_lowercase().starts_with("http") {
             continue;
@@ -507,6 +512,12 @@ pub fn find_in(list: &[IndexedApp], words: &[String]) -> Found {
 // for the routing of a phrase: never waits (the first scan may still run)
 pub fn find_now(words: &[String]) -> Found {
     find_in(&apps(), words)
+}
+
+// a program of the index has exactly this name (for "закрой": a loose match must not take "закрой окно браузера")
+pub fn has_exact(words: &[String]) -> bool {
+    let qk: Vec<String> = words.iter().map(|w| akey(w)).filter(|k| !k.is_empty()).collect();
+    apps().iter().any(|a| score(&qk, a) == Some(0))
 }
 
 pub fn index_pending() -> bool {

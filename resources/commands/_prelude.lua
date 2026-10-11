@@ -167,13 +167,19 @@ local PS = { "-NoProfile", "-ExecutionPolicy", "Bypass" }
 -- files of the user (tasks, notes): read and written by Jarvis itself, so a Cyrillic user name or a folder moved
 -- to OneDrive works (Lua's io.open cannot open such paths on Windows)
 local function docs_path(name)
+  local old = (jarvis.system.env("USERPROFILE") or jarvis.system.env("HOME") or ".") .. "/Documents/" .. name
   local dir = jarvis.system.folder and jarvis.system.folder("documents")
-  if not dir then dir = (jarvis.system.env("USERPROFILE") or jarvis.system.env("HOME") or ".") .. "/Documents" end
-  return dir .. "/" .. name
+  if not dir then return old end
+  local path = dir .. "/" .. name
+  -- a file written before Documents was moved (to OneDrive or another drive) keeps being used
+  if not jarvis.fs.exists(path) and jarvis.fs.exists(old) then return old end
+  return path
 end
+-- the lines of a text file: {} when there is no file, nil when it exists but cannot be read
 local function read_lines(path)
-  local ok, text = pcall(jarvis.fs.read, path)
-  if not ok or not text then return nil end
+  local ok, text = pcall(jarvis.fs.read_text, path)
+  if not ok then return nil end
+  if not text then return {} end
   local list = {}
   for raw in (text:gsub("\r", "") .. "\n"):gmatch("([^\n]*)\n") do list[#list + 1] = raw end
   if list[#list] == "" then list[#list] = nil end

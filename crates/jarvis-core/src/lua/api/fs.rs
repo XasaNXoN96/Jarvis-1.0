@@ -26,6 +26,19 @@ pub fn register(
             .map_err(|e| mlua::Error::runtime(format!("Read error: {}", e)))
     })?;
     fs_table.set("read", read_fn)?;
+
+    // jarvis.fs.read_text(path) -> text | nil when there is no such file; an error when it cannot be read.
+    // UTF-8 or the Windows Cyrillic code page of old Notepad files, never refused because of the encoding.
+    let cmd_path_text = cmd_path.clone();
+    let read_text_fn = lua.create_function(move |_, path: String| {
+        let full_path = resolve_path(&cmd_path_text, &path, sandbox_level)?;
+        if !full_path.exists() {
+            return Ok(None);
+        }
+        let bytes = fs::read(&full_path).map_err(|e| mlua::Error::runtime(format!("Read error: {}", e)))?;
+        Ok(Some(crate::filesearch::decode_text(bytes)))
+    })?;
+    fs_table.set("read_text", read_text_fn)?;
     
     // jarvis.fs.read_bytes(path)
     let cmd_path_read_bytes = cmd_path.clone();

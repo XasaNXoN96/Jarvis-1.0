@@ -528,6 +528,17 @@ mod tests {
         assert!(r.contains("3. отчёт 3.txt"), "{}", r);
         let r = run("assistant_file_folder", "files.lua", "покажи где находится этот файл");
         assert!(r.contains(&tmp.path().display().to_string()), "the folder of the chosen one: {}", r);
+        // a number inside another phrase does not choose a file; "четвёртый" does
+        crate::filesearch::set_results_for_tests(paths.clone());
+        crate::session::start("file", 60);
+        crate::session::set_data("");
+        run("assistant_session", "office.lua", "таймер на 2 минуты");
+        assert_eq!(crate::filesearch::selected(), None, "a timer phrase chose a file");
+        crate::session::start("file", 60);
+        let r = run("assistant_session", "office.lua", "четвёртый");
+        assert!(r.contains("отчёт 4.txt"), "{}", r);
+        let r = run("assistant_session", "office.lua", "вторник");
+        assert!(!r.contains("отчёт 2.txt"), "«вторник» is not «второй»: {}", r);
         let r = run("assistant_file_open", "files.lua", "открой пятый файл");
         assert!(r.contains("отчёт 5.txt"), "{}", r);
         let r = run("assistant_file_more", "files.lua", "покажи ещё результаты");
@@ -545,5 +556,22 @@ mod tests {
         assert!(r.contains("ничего не ищу") || r.contains("остановлен"), "{}", r);
         crate::session::end();
         crate::filesearch::set_results_for_tests(Vec::new());
+    }
+
+    // a tasks file in the old Windows encoding is read, never overwritten with only the new task
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn an_old_ansi_tasks_file_is_kept_when_a_task_is_added() {
+        let _s = crate::session::TEST_LOCK.lock();
+        let home = tempdir().unwrap();
+        std::fs::create_dir_all(home.path().join("Documents")).unwrap();
+        std::fs::write(home.path().join("Documents/Jarvis-tasks.txt"), [0xEC, 0xEE, 0xEB, 0xEE, 0xEA, 0xEE, b'\r', b'\n']).unwrap(); // "молоко" in cp1251
+        std::env::set_var("HOME", home.path());
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../resources/commands/assistant");
+        crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow_mut().clear());
+        let ctx = CommandContext { phrase: "добавь задачу купить хлеб".into(), command_id: "assistant_task_add".into(), command_path: dir.clone(), language: "ru".into(), slots: None };
+        assert!(execute(&dir.join("tasks.lua"), ctx, SandboxLevel::Full, Duration::from_secs(5)).is_ok());
+        let text = std::fs::read_to_string(home.path().join("Documents/Jarvis-tasks.txt")).unwrap();
+        assert_eq!(text, "молоко\nкупить хлеб\n");
     }
 }

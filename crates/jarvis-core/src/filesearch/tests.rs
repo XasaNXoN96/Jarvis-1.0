@@ -69,6 +69,10 @@ fn the_phrase_becomes_a_query_name_kind_place_time_and_text() {
     let q = p("найди папку фото");
     assert!(q.folders_only && q.exts.is_empty());
     assert_eq!(q.name, "фото");
+    for (phrase, ext) in [("найди аудиофайлы", "mp3"), ("найди видеозаписи", "mp4"), ("найди музыкальные файлы", "mp3"), ("найди файлы с фотографиями", "jpg"), ("найди видео", "mp4")] {
+        assert!(p(phrase).exts.contains(&ext.to_string()), "{}", phrase);
+    }
+    assert!(p("найди файл видеокарта").exts.is_empty(), "a word that only begins like «видео» is a name");
     // the text marker as whole words
     assert_eq!(p("найди файл в котором содержится слово ключ").content, "ключ");
     // "в папке видео" is the folder
@@ -269,3 +273,13 @@ fn folders_of_users_are_not_skipped_on_windows_and_system_ones_are() {
     assert!(skip_dir("windows") && skip_dir("appdata") && skip_dir("node_modules"));
     assert_eq!(skip_dir("dev"), cfg!(not(target_os = "windows")), "\\Documents\\dev is an ordinary folder on Windows");
 }
+
+#[test]
+fn text_of_an_unknown_encoding_is_decoded_sensibly() {
+    let mut utf8 = "Привет, это документ про экзамен".as_bytes().to_vec();
+    utf8.push(0xFF); // one broken byte
+    assert!(decode_text(utf8).contains("документ про экзамен"), "a UTF-8 file with one bad byte stays UTF-8");
+    assert_eq!(decode_text(vec![0xEC, 0xEE, 0xEB, 0xEE, 0xEA, 0xEE]), "молоко", "Windows-1251");
+    assert_eq!(decode_text(b"plain".to_vec()), "plain");
+}
+

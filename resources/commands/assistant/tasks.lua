@@ -5,14 +5,19 @@ local id = jarvis.context.command_id
 local path = docs_path("Jarvis-tasks.txt")
 local TITLE = T("Задачи", "Tasks")
 
+-- nil when the file exists but cannot be read: then nothing is written over it
 local function read_tasks()
+  local lines = read_lines(path)
+  if not lines then return nil end
   local list = {}
-  for _, raw in ipairs(read_lines(path) or {}) do
+  for _, raw in ipairs(lines) do
     local line = raw:gsub("^%s+", ""):gsub("%s+$", "")
     if line ~= "" then list[#list + 1] = line end
   end
   return list
 end
+
+local unreadable = T("Не удалось прочитать файл задач (он открыт в другой программе или нет доступа): ", "Cannot read the tasks file: ") .. path
 
 local function write_tasks(list)
   local lines = {}
@@ -29,6 +34,7 @@ end
 
 if id == "assistant_task_read" then
   local list = read_tasks()
+  if not list then say(TITLE, unreadable); return end
   if #list == 0 then
     say(TITLE, T("Задач нет", "No tasks"))
     return
@@ -45,6 +51,7 @@ end
 
 if id == "assistant_task_done" then
   local list = read_tasks()
+  if not list then say(TITLE, unreadable); return end
   local n = jarvis.parse.number(phrase)
   if not n or n < 1 or n > #list then
     say(TITLE, T("Скажите номер задачи, например: выполнил задачу 2. Задач сейчас: ", "Say the task number, e.g. task 2 done. Tasks now: ") .. #list)
@@ -60,7 +67,9 @@ if id == "assistant_task_done" then
 end
 
 if id == "assistant_task_clear" then
-  if #read_tasks() == 0 then
+  local current = read_tasks()
+  if not current then say(TITLE, unreadable); return end
+  if #current == 0 then
     say(TITLE, T("Задач нет", "No tasks"))
     return
   end
@@ -80,6 +89,7 @@ if text == "" then
   return
 end
 local list = read_tasks()
+if not list then say(TITLE, unreadable); return end
 list[#list + 1] = text
 if not write_tasks(list) then
   say(TITLE, T("Не удалось записать в ", "Cannot write to ") .. path)
