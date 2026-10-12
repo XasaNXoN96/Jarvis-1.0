@@ -9,7 +9,7 @@ const STATE_FILE: &str = ".state.json";
 
 pub fn register(lua: &Lua, jarvis: &Table, command_path: &PathBuf) -> mlua::Result<()> {
     let state = lua.create_table()?;
-    let state_path = command_path.join(STATE_FILE);
+    let state_path = state_file_for(command_path);
     
     // jarvis.state.get(key)
     let state_path_get = state_path.clone();
@@ -90,6 +90,26 @@ pub fn register(lua: &Lua, jarvis: &Table, command_path: &PathBuf) -> mlua::Resu
     Ok(())
 }
 
+// The state of a command pack lives with the user's data (it survives an update and an uninstall of the program),
+// not in the program folder. A state from an older version (in the program folder) is taken over on first use.
+pub fn state_file_for(command_path: &std::path::Path) -> PathBuf {
+    state_file_in(crate::APP_CONFIG_DIR.get().map(|d| d.as_path()), command_path)
+}
+
+fn state_file_in(config_dir: Option<&std::path::Path>, command_path: &std::path::Path) -> PathBuf {
+    let old = command_path.join(STATE_FILE);
+    let Some(dir) = config_dir else { return old };
+    let pack = command_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "commands".into());
+    let new = dir.join("command_state").join(format!("{}.json", pack));
+    if !new.exists() && old.exists() {
+        if let Some(parent) = new.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = fs::copy(&old, &new);
+    }
+    new
+}
+
 fn load_state(path: &PathBuf) -> HashMap<String, serde_json::Value> {
     if !path.exists() {
         return HashMap::new();
@@ -105,6 +125,9 @@ fn save_state(path: &PathBuf, data: &HashMap<String, serde_json::Value>) -> mlua
     let json = serde_json::to_string_pretty(data)
         .map_err(|e| mlua::Error::runtime(e.to_string()))?;
     
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
     crate::write_atomic(path, json)
         .map_err(|e| mlua::Error::runtime(e.to_string()))?;
     
@@ -182,3 +205,24 @@ fn json_to_lua_value(lua: &Lua, json: serde_json::Value) -> mlua::Result<Value> 
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_state_of_an_older_version_moves_to_the_user_data_and_is_kept_there() {
+        let program = tempfile::tempdir().unwrap();
+        let data = tempfile::tempdir().unwrap();
+        let pack = program.path().join("assistant");
+        std::fs::create_dir_all(&pack).unwrap();
+        std::fs::write(pack.join(".state.json"), r#"{"office_app":"word"}"#).unwrap();
+        let p = super::state_file_in(Some(data.path()), &pack);
+        assert!(p.starts_with(data.path()), "{}", p.display());
+        assert!(std::fs::read_to_string(&p).unwrap().contains("office_app"), "taken over from the program folder");
+        // the program folder is replaced by an update / removed by the uninstaller: the state stays
+        std::fs::remove_dir_all(&pack).unwrap();
+        assert!(super::state_file_in(Some(data.path()), &pack).exists());
+        // without a config folder (the tests): next to the commands, as before
+        assert_eq!(super::state_file_in(None, &pack), pack.join(".state.json"));
+    }
+}
+
