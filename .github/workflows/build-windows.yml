@@ -274,6 +274,26 @@ jobs:
           Write-Host "hide_window: $($r | ConvertTo-Json -Compress)"
           Start-Sleep 2
           if ($app.HasExited) { throw "Jarvis ended after the window requests" }
+          # the pages added later, on the installed Jarvis: tasks (a real file in Documents), messages, Telegram
+          $t = Invoke-RestMethod http://127.0.0.1:9714/tasks -TimeoutSec 5
+          $before = @($t.tasks).Count
+          $mark = "ci-проверка $(Get-Random)"
+          $r = Invoke-RestMethod http://127.0.0.1:9714/tasks -Method Post -Headers $h -Body ([Text.Encoding]::UTF8.GetBytes((@{ op = "add"; text = $mark } | ConvertTo-Json -Compress))) -ContentType "application/json; charset=utf-8"
+          if (-not $r.ok) { throw "tasks add failed: $($r.message)" }
+          $t = Invoke-RestMethod http://127.0.0.1:9714/tasks -TimeoutSec 5
+          if (@($t.tasks) -notcontains $mark) { throw "the added task is not in the list" }
+          $file = Get-Content -LiteralPath $t.path -Encoding UTF8 -Raw
+          if ($file -notlike "*$mark*") { throw "the task is not in the file $($t.path)" }
+          $i = [array]::IndexOf(@($t.tasks), $mark)
+          $r = Invoke-RestMethod http://127.0.0.1:9714/tasks -Method Post -Headers $h -Body ([Text.Encoding]::UTF8.GetBytes((@{ op = "remove"; index = $i; old = $mark } | ConvertTo-Json -Compress))) -ContentType "application/json; charset=utf-8"
+          if (-not $r.ok -or @((Invoke-RestMethod http://127.0.0.1:9714/tasks).tasks).Count -ne $before) { throw "tasks remove failed" }
+          Write-Host "tasks: added and removed in $($t.path)"
+          try { Invoke-RestMethod http://127.0.0.1:9714/tasks -Method Post -Body '{"op":"clear"}' | Out-Null; throw "tasks clear without the header was accepted" } catch { if ($_.Exception.Message -like "*without the header*") { throw } }
+          $m = Invoke-RestMethod http://127.0.0.1:9714/messages -TimeoutSec 5
+          if (@($m.networks).Count -ne 11) { throw "expected 11 networks, got $(@($m.networks).Count)" }
+          $tg = Invoke-RestMethod http://127.0.0.1:9714/telegram -TimeoutSec 5
+          Write-Host "messages: $(@($m.messages).Count), networks: $(@($m.networks).Count); telegram: enabled=$($tg.enabled) available=$($tg.available)"
+          if ($tg.enabled) { throw "the Telegram bot must be off by default" }
           # without the X-Jarvis header nothing is done (a web page cannot close Jarvis)
           try { Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Body '{"name":"app_exit"}' | Out-Null; throw "app_exit without the header was accepted" } catch { if ($_.Exception.Message -like "*without the header*") { throw } }
           Start-Sleep 1
