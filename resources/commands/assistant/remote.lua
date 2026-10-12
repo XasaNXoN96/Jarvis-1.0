@@ -12,8 +12,9 @@ if not url then
   return
 end
 
-jarvis.out(url)
+-- the link holds the secret of the remote: it is shown only in the window (QR code), never written into the
+-- conversation history or the clipboard (Windows keeps clipboard history and may sync it)
 jarvis.app.show_page("settings")   -- the QR code is shown there
-if jarvis.system.clipboard.set then pcall(jarvis.system.clipboard.set, url) end
-say(T("Пульт", "Remote"), T("Ссылка для телефона скопирована в буфер обмена: ", "Phone link copied to the clipboard: ") .. url,
+say(T("Пульт", "Remote"), T("Пульт включён. QR-код и ссылка — в окне Jarvis: Настройки → Пульт для телефона.",
+    "Remote control is on. The QR code and the link are in the Jarvis window: Settings → Phone remote."),
     T("Пульт включён. Наведите камеру телефона на QR-код в настройках.", "Remote control is on. Point the phone camera at the QR code in Settings."))

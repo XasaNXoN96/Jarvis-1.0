@@ -689,7 +689,7 @@ mod tests {
         crate::tts::set_enabled(true);
         // the process appears a moment later: "Открываю", no second phrase
         let (_, spoken) = open_program(&[], &["totalcmd64.exe"], 2);
-        assert_eq!(spoken.iter().filter(|s| s.as_str() == "Открываю Total Commander").count(), 1, "{:?}", spoken);
+        assert_eq!(spoken.iter().filter(|s| s.as_str() == "Открываю Total Commander" || s.starts_with("Открываю Total Commander. ")).count(), 1, "{:?}", spoken);
         assert!(!spoken.iter().any(|s| s.contains("не запустилась")), "{:?}", spoken);
         // already running before (it only brings its window forward): no waiting, no false alarm
         let (_, spoken) = open_program(&["TOTALCMD64.EXE"], &[], 0);

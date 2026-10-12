@@ -292,6 +292,11 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             Ok(url) => json!({ "ok": true, "enabled": true, "url": url }),
             Err(e) => json!({ "ok": false, "enabled": crate::remote::is_running(), "message": format!("Не удалось включить пульт: {}", e) }),
         },
+        // "Новая ссылка": every phone with the old link loses access (a lost phone, a link shown to someone)
+        "remote_new_link" => {
+            crate::remote::renew_token();
+            json!({ "ok": true, "url": if crate::remote::is_running() { crate::remote::url() } else { String::new() } })
+        }
         "remote_off" => {
             crate::remote::stop();
             // the listener closes within a fraction of a second
@@ -686,11 +691,23 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
             respond(&mut stream, "200 OK", "application/json", &crate::filesearch::state_json().to_string());
         }
         ("GET", "/remote") => {
-            // phone remote state for the Settings page (the secret link is shown only to this window)
+            // phone remote state for the window (the secret link is shown only to this window): every address of
+            // this PC a phone can reach, best first (home Wi-Fi, the hotspot of this PC, a VPN for other networks)
+            let on = crate::remote::is_running();
+            let addrs: Vec<serde_json::Value> = if on {
+                crate::remote::addresses()
+                    .into_iter()
+                    .map(|a| json!({ "ip": a.ip, "kind": a.kind, "label": a.label, "url": crate::remote::url_for(&a.ip, false), "url_https": crate::remote::url_for(&a.ip, true) }))
+                    .collect()
+            } else {
+                Vec::new()
+            };
             let body = serde_json::json!({
-                "enabled": crate::remote::is_running(),
-                "url": if crate::remote::is_running() { crate::remote::url() } else { String::new() },
-                "url_https": if crate::remote::is_running() { crate::remote::url_https() } else { String::new() },
+                "enabled": on,
+                "url": if on { crate::remote::url() } else { String::new() },
+                "url_https": if on { crate::remote::url_https() } else { String::new() },
+                "addresses": addrs,
+                "last_client": crate::remote::last_client(),
             })
             .to_string();
             respond(&mut stream, "200 OK", "application/json", &body);
@@ -699,7 +716,13 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
             if !crate::remote::is_running() {
                 respond(&mut stream, "404 Not Found", "text/plain", "remote control is off");
             } else {
-                let link = if req.path == "/remote-qr-https" { crate::remote::url_https() } else { crate::remote::url() };
+                let https = req.path == "/remote-qr-https";
+                // ?ip=… : only an address of this PC (never a link to somewhere else)
+                let ip = req.query.split('&').find_map(|kv| kv.strip_prefix("ip=")).map(|v| v.to_string());
+                let link = match ip {
+                    Some(ip) if crate::remote::addresses().iter().any(|a| a.ip == ip) => crate::remote::url_for(&ip, https),
+                    _ => if https { crate::remote::url_https() } else { crate::remote::url() },
+                };
                 match qr_svg(&link) {
                     Some(svg) => respond_bytes(&mut stream, "200 OK", "image/svg+xml", svg.as_bytes()),
                     None => respond(&mut stream, "500 Internal Server Error", "text/plain", "qr failed"),

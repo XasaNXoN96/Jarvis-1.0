@@ -83,6 +83,7 @@
   .rmrow { display: flex; align-items: center; gap: 12px; margin: 10px 0 8px; font-size: 14px; }
   .rmoff { color: var(--dim); font-size: 13px; padding: 8px 0 4px; }
   .qrbox { background: #fff; border-radius: 14px; padding: 8px; width: 176px; margin: 8px auto 8px; } .qrbox img { width: 160px; height: 160px; display: block; }
+  .rmaddrs { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 2px 0 8px; } .rmaddrs .btn.on { border-color: var(--accent); color: var(--accent); }
   .rmlink { word-break: break-all; user-select: all; font-size: 12px; color: var(--accent); text-align: center; margin-bottom: 8px; }
   #rm-on { text-align: center; }
   .rmerr { color: #ff9aa6 !important; } .rmhelp { margin-top: 8px; display: block; color: var(--dim); font-size: 11.5px; line-height: 1.4; }
@@ -418,7 +419,10 @@
             <div id="rm-on" style="display:none">
               <div class="qrbox"><img id="rm-qr" alt="QR-код пульта"></div>
               <div class="rmlink" id="rm-url"></div>
+              <div class="rmaddrs" id="rm-addrs"></div>
               <button class="btn small" id="rm-copy" type="button">Копировать ссылку</button>
+              <button class="btn small" id="rm-renew" type="button" title="Старая ссылка перестанет работать на всех телефонах">Новая ссылка</button>
+              <div class="rmoff" id="rm-hint"></div>
               <div class="hrow" style="margin-top:10px"><span>ТЕЛЕФОН</span><b id="ph-state">не подключён</b></div>
               <div class="hrow"><span>ПОСЛЕДНЯЯ СВЯЗЬ</span><b id="ph-last">—</b></div>
               <div class="hrow"><span>ЗАРЯД</span><b id="ph-bat">—</b></div>
@@ -1009,21 +1013,48 @@ $('#fs-form').onsubmit = async e => {
 $('#fs-stop').onclick = async () => { await action('file_cancel'); filesLoad(); };
 
 // ---------- phone remote card: the same server as the voice command ----------
-let remoteBusy = false, remoteLink = '';
+// The addresses of the PC are asked again every few seconds while the remote is on: after another Wi-Fi, a new
+// address from the router or a VPN switched on, the QR code and the link follow (an old QR would point nowhere).
+let remoteBusy = false, remoteLink = '', remoteIp = '', remoteSeen = '', remoteAt = 0;
+function remoteHint(r) {
+  const kinds = (r.addresses || []).map(a => a.kind);
+  let h = '';
+  if (!kinds.length) h = 'Компьютер сейчас не в сети (Wi-Fi или кабель): телефону не к чему подключиться.';
+  else if (!kinds.includes('vpn')) h = 'Телефон должен быть в той же сети, что и компьютер. Для телефона на мобильном интернете или в другой сети установите на компьютер и телефон бесплатный VPN Tailscale (один аккаунт) — здесь появится его адрес.';
+  else h = 'Адрес VPN работает, когда телефон тоже подключён к этому VPN — из любой сети, трафик зашифрован.';
+  return h + ' Не открывается? Брандмауэр Windows должен разрешать Jarvis для частных сетей.';
+}
 async function remoteCard(s) {
   const on = !!s.remote, sw = $('#rm-switch');
   if (!remoteBusy) { sw.checked = on; sw.disabled = false; }
   $('#rm-pill').textContent = on ? 'ВКЛЮЧЁН' : 'ВЫКЛЮЧЕН'; $('#rm-pill').className = 'pill ' + (on ? 'ok' : '');
   $('#rm-label').textContent = on ? 'Пульт включён' : 'Пульт выключен';
   $('#rm-off').style.display = on ? 'none' : 'block'; $('#rm-on').style.display = on ? 'block' : 'none';
-  if (!on) { remoteLink = ''; return; }
-  if (!remoteLink) {
-    try {
-      const r = await (await fetch('/remote')).json();
-      if (r.enabled && r.url) { remoteLink = r.url; $('#rm-url').textContent = r.url; $('#rm-qr').src = '/remote-qr?' + Date.now(); $('#rm-err').textContent = ''; }
-      else { $('#rm-err').textContent = 'Адрес пульта недоступен'; }
-    } catch (e) { $('#rm-err').textContent = 'Адрес пульта недоступен'; }
-  }
+  if (!on) { remoteLink = ''; remoteSeen = ''; return; }
+  if (remoteLink && performance.now() - remoteAt < 5000) return;
+  remoteAt = performance.now();
+  try {
+    const r = await (await fetch('/remote')).json();
+    if (!r.enabled || !r.url) { $('#rm-err').textContent = 'Адрес пульта недоступен'; return; }
+    const addrs = r.addresses || [];
+    if (!addrs.some(a => a.ip === remoteIp)) remoteIp = addrs.length ? addrs[0].ip : '';
+    const cur = addrs.find(a => a.ip === remoteIp);
+    const link = cur ? cur.url : r.url;
+    const seen = JSON.stringify(addrs) + link;
+    if (seen !== remoteSeen) {
+      remoteSeen = seen; remoteLink = link;
+      $('#rm-url').textContent = link; $('#rm-err').textContent = '';
+      $('#rm-qr').src = '/remote-qr?ip=' + encodeURIComponent(remoteIp) + '&t=' + Date.now();
+      const box = $('#rm-addrs'); box.textContent = '';
+      if (addrs.length > 1) for (const a of addrs) {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'btn small' + (a.ip === remoteIp ? ' on' : '');
+        b.textContent = a.kind === 'vpn' ? 'VPN ' + a.ip : a.kind === 'hotspot' ? 'Хот-спот ' + a.ip : a.ip; b.title = a.label;
+        b.onclick = () => { remoteIp = a.ip; remoteSeen = ''; remoteAt = 0; remoteCard(lastState || { remote: true }); };
+        box.appendChild(b);
+      }
+      $('#rm-hint').textContent = remoteHint(r);
+    }
+  } catch (e) { $('#rm-err').textContent = 'Адрес пульта недоступен'; }
 }
 $('#rm-switch').onchange = async e => {
   if (remoteBusy) return;
@@ -1032,7 +1063,12 @@ $('#rm-switch').onchange = async e => {
     const r = await action(want ? 'remote_on' : 'remote_off');
     if (!r.ok) { $('#rm-err').textContent = r.message || 'Не удалось выполнить'; $('#rm-pill').textContent = 'ОШИБКА'; $('#rm-pill').className = 'pill bad'; }
   } catch (err) { $('#rm-err').textContent = 'Нет связи с Джарвисом'; }
-  remoteBusy = false; remoteLink = ''; await pollNow();
+  remoteBusy = false; remoteLink = ''; remoteSeen = ''; await pollNow();
+};
+$('#rm-renew').onclick = async () => {
+  if (!confirm('Сделать новую ссылку? Старая ссылка и QR-код перестанут работать на всех телефонах — их нужно будет подключить заново.')) return;
+  try { await action('remote_new_link'); } catch (e) {}
+  remoteLink = ''; remoteSeen = ''; remoteAt = 0; await pollNow();
 };
 $('#rm-copy').onclick = () => { if (remoteLink) copyText(remoteLink, $('#rm-copy')); };
 // what the phone page reports: only what it really told us (nothing is shown as known when it is not)
