@@ -57,8 +57,8 @@ english.LaunchJarvis=Launch JARVIS
 russian.LaunchJarvisText=Запустить JARVIS в текстовом режиме (без микрофона)
 english.LaunchJarvisText=Launch JARVIS in text mode (no microphone)
 #if OutName == "Jarvis-Setup-Lite"
-russian.EditionNote=Это облегчённая версия: в ней нет модели распознавания речи и голоса Piper, поэтому Джарвис работает с командами текстом и говорит голосом Windows. Для голосового управления установите полную версию (Jarvis-Setup.exe).
-english.EditionNote=This is the Lite edition: it has no speech recognition model and no Piper voice, so Jarvis takes commands as text and speaks with a Windows voice. For voice control install the full edition (Jarvis-Setup.exe).
+russian.EditionNote=Это облегчённая версия: в ней нет модели распознавания речи и голоса Джарвиса (Piper), поэтому команды вводятся текстом, а ответы показываются в окне без звука. Озвучку можно включить в Настройки → Голос («Установить голос Джарвиса» или голос Windows). Для голосового управления установите полную версию (Jarvis-Setup.exe).
+english.EditionNote=This is the Lite edition: it has no speech recognition model and no Jarvis voice (Piper), so commands are typed and answers are shown in the window without sound. Speech can be turned on in Settings → Voice ("Install the Jarvis voice" or a Windows voice). For voice control install the full edition (Jarvis-Setup.exe).
 #else
 russian.EditionNote=Скажите «Джарвис», затем команду, или напишите её в окне. Окно можно свернуть в трей — Джарвис продолжит слушать.
 english.EditionNote=Say "Jarvis", then a command, or type it in the window. The window can be minimized to the tray — Jarvis keeps listening.
