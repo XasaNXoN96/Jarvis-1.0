@@ -175,7 +175,12 @@ fn deliver(kind: &str, title: &str, text: &str, source: &str, critical: bool, p:
         display(&note);
     }
     if p.speak {
-        crate::tts::speak(say);
+        if kind == "external" {
+            // a message from another program waits for the current speech (an AI answer is not cut off)
+            crate::tts::speak_queued(say);
+        } else {
+            crate::tts::speak(say);
+        }
     } else if p.sound {
         beep();
     }

@@ -362,7 +362,11 @@ pub fn execute_command(cmd_path: &PathBuf, cmd_config: &JCommand, phrase: Option
         }
         
         // STOP CHANING
-        "stop_chaining" => Ok(false),
+        // "хватит", "стоп", "всё": also silences what Jarvis is reading
+        "stop_chaining" => {
+            crate::tts::stop();
+            Ok(false)
+        }
 
         // other
         _ => {

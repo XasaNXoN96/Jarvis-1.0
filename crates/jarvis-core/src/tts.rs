@@ -97,6 +97,10 @@ pub fn stop() {
 static QUEUE: Lazy<Mutex<std::collections::VecDeque<(u64, String)>>> = Lazy::new(|| Mutex::new(std::collections::VecDeque::new()));
 static EPOCH: AtomicU64 = AtomicU64::new(0);
 static WORKER: AtomicBool = AtomicBool::new(false);
+// one phrase at a time: a plain speak() and the queue never play together
+static SPEAKING: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+// unique names of the sound files (two phrases never write the same file)
+static WAV_SEQ: AtomicU64 = AtomicU64::new(0);
 // when the voice began to work on the latest phrase (for the timing report)
 static SPEECH_STARTED: Lazy<Mutex<Option<std::time::Instant>>> = Lazy::new(|| Mutex::new(None));
 
@@ -111,7 +115,8 @@ pub fn speak_queued(text: &str) {
     if text.is_empty() || !is_enabled() {
         return;
     }
-    info!("TTS (queued): {}", text.chars().take(120).collect::<String>());
+    // what is said can be private (a message, a note): only its size goes to the log
+    info!("TTS (queued): {} chars", text.chars().count());
     BUSY.fetch_add(1, Ordering::SeqCst);
     QUEUE.lock().push_back((EPOCH.load(Ordering::SeqCst), text));
     if !WORKER.swap(true, Ordering::SeqCst) {
@@ -131,6 +136,7 @@ fn queue_worker() {
                 }
             }
             Some((epoch, text)) => {
+                let _one = SPEAKING.lock();
                 if epoch == EPOCH.load(Ordering::SeqCst) && is_enabled() {
                     #[cfg(feature = "jarvis_app")]
                     crate::ipc::send(crate::ipc::IpcEvent::Speaking);
@@ -189,7 +195,10 @@ fn store(child: Child, generation: u64) -> bool {
         let _ = child.kill();
         return false;
     }
-    *slot = Some(child);
+    // never two players: a previous one that is still there is stopped, not forgotten
+    if let Some(mut old) = slot.replace(child) {
+        let _ = old.kill();
+    }
     true
 }
 
@@ -501,7 +510,8 @@ fn speak_piper(exe: &Path, model: &Path, text: &str, generation: u64) -> bool {
     if chunks.is_empty() {
         return true;
     }
-    let wav_of = |i: usize| std::env::temp_dir().join(format!("jarvis_tts_{}_{}.wav", generation, i));
+    let seq = WAV_SEQ.fetch_add(1, Ordering::SeqCst);
+    let wav_of = |i: usize| std::env::temp_dir().join(format!("jarvis_tts_{}_{}_{}_{}.wav", std::process::id(), generation, seq, i));
 
     match piper_synth(exe, model, &chunks[0], &wav_of(0), generation) {
         Synth::Done => {}
@@ -582,8 +592,10 @@ fn speak_sapi(text: &str, lang: &str, generation: u64) {
         hide_window(&mut command);
         match command.spawn() {
             Ok(child) => {
-                if store(child, generation) {
-                    wait_current(generation);
+                if store(child, generation) && wait_current(generation) == Some(false) {
+                    // PowerShell / System.Speech failed (no output device, a broken voice): said, not hidden
+                    note_play(Err("голос Windows не смог произнести фразу".into()));
+                    tell_once("Голос Windows не смог произнести фразу (нет устройства вывода звука или голос повреждён). Проверьте звук или выберите голос Jarvis (Piper) в Настройки → Голос.");
                 }
             }
             Err(e) => {
@@ -690,7 +702,7 @@ pub fn speak(text: &str) {
     if !fresh && is_speaking() {
         return;
     }
-    info!("TTS: {}", text.chars().take(120).collect::<String>());
+    info!("TTS: {} chars", text.chars().count());
 
     #[cfg(feature = "jarvis_app")]
     crate::ipc::send(crate::ipc::IpcEvent::Speaking);
@@ -709,7 +721,11 @@ pub fn speak(text: &str) {
             }
         }
         let _done = Done;
-        speak_blocking(&text, &lang, generation);
+        // the interrupted phrase ends at once (stop() killed its player); then this one plays alone
+        let _one = SPEAKING.lock();
+        if GENERATION.load(Ordering::SeqCst) == generation {
+            speak_blocking(&text, &lang, generation);
+        }
     });
 }
 

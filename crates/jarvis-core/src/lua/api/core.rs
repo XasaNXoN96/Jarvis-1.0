@@ -77,7 +77,7 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
     // @ jarvis.speak(text)
     // @TODO: update when TTS will be implemented
     let speak_fn = lua.create_function(|_, text: String| {
-        log::info!("[Lua] SPEAK: {}", text);
+        log::info!("[Lua] SPEAK: {} chars", text.chars().count());
         crate::tts::speak(&text);
         Ok(())
     })?;

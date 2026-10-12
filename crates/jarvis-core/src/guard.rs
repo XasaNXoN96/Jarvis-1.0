@@ -40,7 +40,8 @@ pub fn first(key: &str, window: Duration) -> bool {
     let mut recent = RECENT.lock();
     if let Some(at) = recent.get(key) {
         if now.duration_since(*at) < window {
-            info!("Repeat skipped: {}", key.chars().take(120).collect::<String>());
+            // the key can hold private text (a notification): only its kind goes to the log
+            info!("Repeat skipped: {}", key.split(':').next().unwrap_or(""));
             return false;
         }
     }
