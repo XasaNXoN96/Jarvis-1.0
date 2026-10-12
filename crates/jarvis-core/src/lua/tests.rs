@@ -625,4 +625,46 @@ mod tests {
         assert!(run("assistant_task_read", "tasks.lua", "озвучь задачи").contains("купить хлеб"));
         assert!(run("assistant_note_read", "notes.lua", "что я записывал").contains("Последние"));
     }
+
+    // ---- the answer of a command is shown AND said (once), or only shown when speech is off ----
+    fn answer(id: &str, script: &str, phrase: &str) -> (String, Vec<String>) {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../resources/commands/assistant").join(script);
+        crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow_mut().clear());
+        let before = crate::tts::TEST_SPOKEN.lock().len();
+        let ctx = CommandContext { phrase: phrase.into(), command_id: id.into(), command_path: path.parent().unwrap().to_path_buf(), language: "ru".into(), slots: None };
+        execute(&path, ctx, SandboxLevel::Full, Duration::from_secs(10)).unwrap();
+        let reply = crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow().last().cloned().unwrap_or_default());
+        // (other tests may speak at the same time: only the phrases of this command are counted)
+        let spoken: Vec<String> = crate::tts::TEST_SPOKEN.lock()[before..].to_vec();
+        (reply, spoken)
+    }
+
+    #[test]
+    fn time_date_battery_and_help_are_said_aloud_once_and_shown() {
+        let _g = crate::tts::TEST_TTS_LOCK.lock();
+        crate::tts::set_enabled(true);
+        let (shown, spoken) = answer("assistant_info_time", "info.lua", "сколько времени");
+        assert!(shown.contains(':'), "the time is shown: {}", shown);
+        assert_eq!(spoken.iter().filter(|s| s.starts_with("Сейчас ")).count(), 1, "said exactly once: {:?}", spoken);
+        let (shown, spoken) = answer("assistant_info_date", "info.lua", "какое сегодня число");
+        assert!(shown.contains("Сегодня"), "{}", shown);
+        assert_eq!(spoken.iter().filter(|s| s.starts_with("Сегодня") && shown.ends_with(s.as_str())).count(), 1, "the date is said once: {:?}", spoken);
+        let (shown, spoken) = answer("assistant_info_battery", "info.lua", "какой заряд батареи");
+        assert!(!shown.is_empty());
+        assert_eq!(spoken.iter().filter(|s| s.contains("Батарея") || s.contains("Заряд")).count(), 1, "{:?}", spoken);
+        let (shown, spoken) = answer("assistant_help", "smalltalk.lua", "что ты умеешь");
+        assert!(shown.contains("команд"));
+        assert_eq!(spoken.iter().filter(|s| s.starts_with("Показываю все команды")).count(), 1, "{:?}", spoken);
+    }
+
+    #[test]
+    fn with_speech_off_the_answer_is_only_shown() {
+        let _g = crate::tts::TEST_TTS_LOCK.lock();
+        crate::tts::set_enabled(false);
+        let (shown, spoken) = answer("assistant_info_date", "info.lua", "какое сегодня число");
+        crate::tts::set_enabled(true);
+        assert!(shown.contains("Сегодня"), "the answer stays in the window: {}", shown);
+        assert!(!spoken.iter().any(|s| s.starts_with("Сегодня")), "nothing is said: {:?}", spoken);
+    }
 }
+

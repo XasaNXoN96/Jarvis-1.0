@@ -288,6 +288,7 @@ fn a_second_message_waits_and_stop_cancels() {
 fn text_chat_does_not_need_the_microphone_or_the_voice() {
     // voice mode is not running (no microphone) and speech is off: the answer still appears in the chat
     assert!(!crate::VOICE_ACTIVE.load(Ordering::SeqCst));
+    let _g = crate::tts::TEST_TTS_LOCK.lock();
     crate::tts::set_enabled(false);
     let store = leaked_store();
     let m = mock(vec![(200, ok_body("ответ без голоса"), 0)]);
@@ -297,6 +298,20 @@ fn text_chat_does_not_need_the_microphone_or_the_voice() {
     // the answer is not a command: nothing was pushed into the queue of typed commands
     assert!(!crate::remote::push_text_would_work_for_tests());
     crate::tts::set_enabled(true);
+}
+
+#[test]
+fn the_answer_of_the_ai_is_read_aloud_when_speech_is_on() {
+    let _g = crate::tts::TEST_TTS_LOCK.lock();
+    crate::tts::set_enabled(true);
+    let store = leaked_store();
+    let m = mock(vec![(200, ok_body("Столица Франции — Париж."), 0)]);
+    let before = crate::tts::TEST_SPOKEN.lock().len();
+    let out = send_with(store, conf(&m.base), None, "столица франции", true).unwrap();
+    out.handle.join().unwrap();
+    assert_eq!(messages(store, &out.chat_id).last().unwrap().content, "Столица Франции — Париж.");
+    let spoken: Vec<String> = crate::tts::TEST_SPOKEN.lock()[before..].to_vec();
+    assert_eq!(spoken.iter().filter(|s| s.contains("Париж")).count(), 1, "said once: {:?}", spoken);
 }
 
 #[test]

@@ -1100,6 +1100,8 @@ function applySpeech(s) {
   let html = '';
   if (!sp.enabled) html = '<b>Озвучка выключена:</b> Джарвис отвечает только текстом. <button class="btn small" data-speech="on" type="button">Включить голос Джарвиса</button>';
   else if (!sp.piper && !sp.windows_voice) html = '<b>Голос Джарвиса не установлен</b>, поэтому ответы пока не звучат (чужой голос Windows не подставляется). <button class="btn small" data-speech="install" type="button">Установить голос Джарвиса</button> <span id="speech-prog"></span>';
+  // the voice is set up, but the last answer was not heard: the reason stays here until a phrase plays again
+  else if (sp.problem) html = '<b>Ответ показан, но не озвучен.</b> ' + esc(sp.problem);
   if (b.dataset.html === html) return;
   b.dataset.html = html; b.innerHTML = html; b.style.display = html ? 'block' : 'none';
   const on = b.querySelector('[data-speech=on]'); if (on) on.onclick = async () => { await action('tts_toggle', { value: true }); pollNow(); };

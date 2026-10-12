@@ -39,11 +39,28 @@ fn tell(text: &str) {
     crate::ipc::send(crate::ipc::IpcEvent::Output { text: text.to_string() });
 }
 
+// A phrase could not be said. The reason stays visible (the window shows it until a phrase is heard again) and is
+// told again after a while: a voice that fails on every answer is never silent about it after the first time.
+static PROBLEM: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
+const PROBLEM_REPEAT: std::time::Duration = std::time::Duration::from_secs(600);
+
 fn tell_once(text: &str) {
     warn!("TTS: {}", text);
-    if !NOTE_SENT.swap(true, Ordering::SeqCst) {
+    *PROBLEM.lock() = Some(text.to_string());
+    if crate::guard::first(&format!("tts-problem:{}", crate::guard::norm(text)), PROBLEM_REPEAT) {
+        NOTE_SENT.store(true, Ordering::SeqCst);
         tell(text);
     }
+}
+
+// why the last answer was not heard (None: the last phrase was played, or nothing failed yet)
+pub fn speech_problem() -> Option<String> {
+    PROBLEM.lock().clone()
+}
+
+// a player is running right now: only then the window says "SPEAKING" (making a sound file is not speaking)
+pub fn is_playing() -> bool {
+    CURRENT.lock().is_some()
 }
 
 fn off_flag_path() -> Option<PathBuf> {
@@ -117,6 +134,9 @@ pub fn speak_queued(text: &str) {
     }
     // what is said can be private (a message, a note): only its size goes to the log
     info!("TTS (queued): {} chars", text.chars().count());
+    if test_capture(&text) {
+        return;
+    }
     BUSY.fetch_add(1, Ordering::SeqCst);
     QUEUE.lock().push_back((EPOCH.load(Ordering::SeqCst), text));
     if !WORKER.swap(true, Ordering::SeqCst) {
@@ -272,8 +292,12 @@ fn note_synth(result: Result<(), String>) {
 static LAST_PLAY: Lazy<Mutex<Option<(u64, Result<(), String>)>>> = Lazy::new(|| Mutex::new(None));
 
 fn note_play(result: Result<(), String>) {
-    if let Err(e) = &result {
-        warn!("TTS: playback failed: {}", e);
+    match &result {
+        Err(e) => {
+            warn!("TTS: playback failed: {}", e);
+            *PROBLEM.lock() = Some(format!("Ответ не озвучен: {}", e));
+        }
+        Ok(()) => *PROBLEM.lock() = None,
     }
     let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     *LAST_PLAY.lock() = Some((t, result));
@@ -290,6 +314,40 @@ pub fn last_play_json() -> serde_json::Value {
         Some((t, Err(e))) => serde_json::json!({ "at": t, "ok": false, "error": e }),
     }
 }
+
+#[cfg(test)]
+fn test_capture(text: &str) -> bool {
+    TEST_SPOKEN.lock().push(text.to_string());
+    true
+}
+#[cfg(not(test))]
+fn test_capture(_text: &str) -> bool {
+    false
+}
+
+#[cfg(test)]
+mod speech_problem_tests {
+    use super::*;
+
+    #[test]
+    fn a_failed_phrase_stays_visible_until_a_phrase_is_heard_again() {
+        let _g = TEST_TTS_LOCK.lock();
+        tell_once("Голос Jarvis (Piper) не создал звук (тест), поэтому ответ не озвучен.");
+        assert!(speech_problem().unwrap().contains("не озвучен"));
+        // a second failure of another kind replaces the reason, it is not lost after the first one
+        note_play(Err("проигрыватель не запустился".into()));
+        assert!(speech_problem().unwrap().contains("проигрыватель не запустился"));
+        note_play(Ok(()));
+        assert_eq!(speech_problem(), None, "a phrase that was heard clears the reason");
+        assert!(!is_playing(), "nothing plays in the tests: the window never says SPEAKING");
+    }
+}
+
+// what reached the voice in the tests (speak and speak_queued), and the lock of the tests that switch speech on/off
+#[cfg(test)]
+pub static TEST_SPOKEN: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(Vec::new()));
+#[cfg(test)]
+pub static TEST_TTS_LOCK: Mutex<()> = parking_lot::const_mutex(());
 
 // the tests decide whether a voice "is installed" (the test machine has no Piper)
 #[cfg(test)]
@@ -517,7 +575,7 @@ fn speak_piper(exe: &Path, model: &Path, text: &str, generation: u64) -> bool {
         Synth::Done => {}
         Synth::Cancelled => return true,
         Synth::Failed(why) => {
-            tell_once(&format!("Голос Piper не создал звук ({}). Пока говорит голос Windows. Скажите «проверь голос» и пришлите вывод.", why));
+            tell_once(&format!("Голос Jarvis (Piper) не создал звук ({}), поэтому ответ не озвучен. Скажите «проверь голос» или откройте Настройки → Голос.", why));
             return false;
         }
     }
@@ -544,7 +602,7 @@ fn speak_piper(exe: &Path, model: &Path, text: &str, generation: u64) -> bool {
                 Ok(Synth::Done) => {}
                 Ok(Synth::Cancelled) | Err(_) => return true,
                 Ok(Synth::Failed(why)) => {
-                    tell_once(&format!("Голос Piper остановился: {}", why));
+                    tell_once(&format!("Голос Jarvis (Piper) остановился посреди ответа: {}", why));
                     return true;
                 }
             }
@@ -592,7 +650,11 @@ fn speak_sapi(text: &str, lang: &str, generation: u64) {
         hide_window(&mut command);
         match command.spawn() {
             Ok(child) => {
-                if store(child, generation) && wait_current(generation) == Some(false) {
+                let result = if store(child, generation) { wait_current(generation) } else { None };
+                if result == Some(true) && !note.exists() {
+                    note_play(Ok(()));
+                }
+                if result == Some(false) {
                     // PowerShell / System.Speech failed (no output device, a broken voice): said, not hidden
                     note_play(Err("голос Windows не смог произнести фразу".into()));
                     tell_once("Голос Windows не смог произнести фразу (нет устройства вывода звука или голос повреждён). Проверьте звук или выберите голос Jarvis (Piper) в Настройки → Голос.");
@@ -703,6 +765,10 @@ pub fn speak(text: &str) {
         return;
     }
     info!("TTS: {} chars", text.chars().count());
+    // the tests see what reached the voice (the test machine has no sound to play it)
+    if test_capture(&text) {
+        return;
+    }
 
     #[cfg(feature = "jarvis_app")]
     crate::ipc::send(crate::ipc::IpcEvent::Speaking);
@@ -743,11 +809,13 @@ fn speak_blocking(text: &str, lang: &str, generation: u64) {
     }
     match piper_voice(&lang) {
         Some((exe, model)) => {
-            if !speak_piper(&exe, &model, &text, generation) {
-                tell_once("Голос Jarvis (Piper) не смог произнести фразу. Windows-голос не подставляется. Скажите «проверь голос» или откройте Настройки → Голос.");
-            }
+            // (speak_piper reports the reason of a failure itself)
+            let _ = speak_piper(&exe, &model, &text, generation);
         }
-        None => tell_once("Голос Jarvis (Piper) не установлен на этом компьютере, поэтому Jarvis молчит: чужой голос Windows не используется. Откройте Настройки → Голос и нажмите «Установить голос Jarvis»."),
+        None => {
+            note_play(Err("голос Jarvis (Piper) не установлен".into()));
+            tell_once("Голос Jarvis (Piper) не установлен на этом компьютере, поэтому ответы не озвучиваются (голос Windows сам не подставляется). Откройте Настройки → Голос: «Установить голос Jarvis» или выберите голос Windows.");
+        }
     }
 }
 

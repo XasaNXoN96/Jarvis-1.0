@@ -677,7 +677,7 @@ pub fn state_json() -> Value {
         "ai": crate::ai::status_json(),
         "active_chat": crate::ai::store().active().unwrap_or_default(),
         "piper": crate::tts::piper_available(),
-        "speech": json!({ "enabled": crate::tts::is_enabled(), "piper": crate::tts::piper_available(), "windows_voice": voice_name().starts_with("win:") }),
+        "speech": json!({ "enabled": crate::tts::is_enabled(), "piper": crate::tts::piper_available(), "windows_voice": voice_name().starts_with("win:"), "problem": crate::tts::speech_problem() }),
         "ai_busy": crate::ai::store().active().map(|id| crate::ai::is_busy(&id)).unwrap_or(false),
         "health": crate::health::json(),
         "weather": crate::weather::json(),
@@ -694,7 +694,8 @@ pub fn state_json() -> Value {
 pub fn voice_state() -> Value {
     use std::sync::atomic::Ordering::SeqCst;
     let err = crate::VOICE_ERROR.lock().clone();
-    let (state, detail): (&str, String) = if crate::tts::is_speaking() {
+    // SPEAKING only while a sound is really being played (not while Piper prepares it, not when it failed)
+    let (state, detail): (&str, String) = if crate::tts::is_playing() {
         ("SPEAKING", "Jarvis говорит".into())
     } else if crate::VOICE_LISTENING.load(SeqCst) {
         ("LISTENING", "слушаю команду".into())
