@@ -424,6 +424,25 @@ fn scenarios_json() -> serde_json::Value {
     json!({ "scenarios": crate::scenario::list(), "kinds": crate::scenario::kinds_json(), "templates": crate::scenario::templates(), "running": crate::scenario::running_json() })
 }
 
+// the page "Сообщения": clear the list (memory only), read one message aloud
+fn messages_action(body: &serde_json::Value) -> serde_json::Value {
+    match body["op"].as_str().unwrap_or("") {
+        "clear" => json!({ "ok": true, "message": format!("Список очищен ({})", crate::social::clear()) }),
+        "speak" => match crate::social::get(body["id"].as_u64().unwrap_or(0)) {
+            None => json!({ "ok": false, "message": "Сообщения уже нет в списке" }),
+            Some(m) => match crate::tts::can_speak() {
+                Ok(()) => {
+                    crate::tts::stop();
+                    crate::tts::speak(&format!("{}: {}", m.title.replace(" · ", ", "), m.text));
+                    json!({ "ok": true })
+                }
+                Err(e) => json!({ "ok": false, "message": format!("Не могу озвучить: {}", e) }),
+            },
+        },
+        _ => json!({ "ok": false, "message": "unknown op" }),
+    }
+}
+
 // the panel "Задачи": the same file as the voice commands (tasks.rs)
 fn tasks_action(body: &serde_json::Value) -> serde_json::Value {
     let op = body["op"].as_str().unwrap_or("");
@@ -822,6 +841,15 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
         ("GET", "/chats") => respond(&mut stream, "200 OK", "application/json", &chats_json().to_string()),
         ("GET", "/scenarios") => respond(&mut stream, "200 OK", "application/json", &scenarios_json().to_string()),
         ("GET", "/tasks") => respond(&mut stream, "200 OK", "application/json", &crate::tasks::json().to_string()),
+        ("GET", "/messages") => respond(&mut stream, "200 OK", "application/json", &crate::social::json().to_string()),
+        ("POST", "/messages") => {
+            if !req.custom_header {
+                respond(&mut stream, "403 Forbidden", "text/plain", "forbidden");
+                return Ok(());
+            }
+            let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap_or(json!({}));
+            respond(&mut stream, "200 OK", "application/json", &messages_action(&body).to_string());
+        }
         ("GET", "/telegram") => respond(&mut stream, "200 OK", "application/json", &crate::telegram::json().to_string()),
         ("POST", "/telegram") => {
             if !req.custom_header {

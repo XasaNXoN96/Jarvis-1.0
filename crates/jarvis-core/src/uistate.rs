@@ -96,6 +96,9 @@ pub struct UiSettings {
     pub ext_allowed: Vec<String>,
     pub ext_blocked: Vec<String>,
     pub ext_seen: Vec<String>,  // names of programs that sent a notification (never their text): to pick from
+    // social networks (social.rs) whose notifications are let through, also from a browser, and those read aloud
+    pub ext_social: Vec<String>,
+    pub ext_social_speak: Vec<String>,
     // interface choices of the window (sphere mode, photo settings): the page keeps a copy in its browser storage
     pub ui: std::collections::BTreeMap<String, String>,
     // loudness of Jarvis' voice, 0..100 (the Windows volume is not touched)
@@ -146,6 +149,7 @@ impl Default for UiSettings {
             ai_enabled: true, mic_off: false,
             notify_show: true, notify_speak: true, notify_sound: true, dnd: false,
             ext_enabled: false, ext_show: true, ext_speak: false, ext_strict: true, ext_allowed: Vec::new(), ext_blocked: Vec::new(), ext_seen: Vec::new(),
+            ext_social: Vec::new(), ext_social_speak: Vec::new(),
             ui: Default::default(),
             tts_volume: 100, browser: String::new(), mic_sensitivity: 50, ai_screen: false,
         }
@@ -377,6 +381,10 @@ pub fn update_settings(patch: &Value) {
     if let Some(v) = flag("ext_strict") { s.ext_strict = v; }
     if let Some(v) = patch.get("ext_allowed").and_then(str_list) { s.ext_allowed = v; }
     if let Some(v) = patch.get("ext_blocked").and_then(str_list) { s.ext_blocked = v; }
+    // only the keys of known networks are kept
+    let nets = |v: Vec<String>| -> Vec<String> { crate::social::NETWORKS.iter().filter(|n| v.iter().any(|x| x == n.key)).map(|n| n.key.to_string()).collect() };
+    if let Some(v) = patch.get("ext_social").and_then(str_list) { s.ext_social = nets(v); }
+    if let Some(v) = patch.get("ext_social_speak").and_then(str_list) { s.ext_social_speak = nets(v); }
     if let Some(v) = flag("ai_screen") { s.ai_screen = v; }
     if let Some(v) = patch.get("tts_volume").and_then(|v| v.as_u64()) { s.tts_volume = v.min(100) as u8; }
     if let Some(v) = patch.get("mic_sensitivity").and_then(|v| v.as_u64()) { s.mic_sensitivity = v.min(100) as u8; apply_mic_threshold(&s); }
@@ -411,6 +419,8 @@ pub fn settings_json() -> Value {
         "notify_show": s.notify_show, "notify_speak": s.notify_speak, "notify_sound": s.notify_sound, "dnd": s.dnd,
         "ext_enabled": s.ext_enabled, "ext_show": s.ext_show, "ext_speak": s.ext_speak, "ext_strict": s.ext_strict,
         "ext_allowed": s.ext_allowed, "ext_blocked": s.ext_blocked, "ext_seen": s.ext_seen,
+        "ext_social": s.ext_social, "ext_social_speak": s.ext_social_speak,
+        "social_networks": crate::social::NETWORKS.iter().map(|n| json!({ "key": n.key, "title": n.title })).collect::<Vec<_>>(),
         "ext_status": crate::notify::ext_status_json(),
         "ui": s.ui,
         "ai_screen": s.ai_screen,
@@ -660,6 +670,7 @@ pub fn state_json() -> Value {
         "cpu": st.cpu, "mem_used": st.mem_used_gb, "mem_total": st.mem_total_gb,
         "disk_free": st.disk_free_gb, "disk_total": st.disk_total_gb,
         "timers": timers, "actions": actions,
+        "messages_last": crate::social::last_id(),
         "session": crate::session::kind().unwrap_or_default(),
         "session_data": crate::session::data(),
         "mic_muted": crate::MIC_MUTED.load(std::sync::atomic::Ordering::SeqCst),

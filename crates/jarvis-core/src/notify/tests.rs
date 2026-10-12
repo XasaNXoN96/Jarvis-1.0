@@ -291,3 +291,70 @@ fn only_a_timer_alarm_or_reminder_interrupts_what_jarvis_is_saying() {
         assert!(!interrupts_speech(kind), "{}", kind);
     }
 }
+
+#[test]
+fn chosen_social_networks_come_through_from_their_programs_and_from_the_browser_each_with_its_own_voice() {
+    let _g = uistate::TEST_LOCK.lock();
+    let r = || rand::random::<u32>();
+    // nothing on the allowed list: the networks are chosen with their own buttons
+    uistate::set_for_tests(UiSettings {
+        ext_enabled: true, ext_strict: true, ext_speak: false,
+        ext_social: vec!["telegram".into(), "whatsapp".into(), "instagram".into()],
+        ext_social_speak: vec!["telegram".into(), "whatsapp".into()],
+        ext_blocked: vec!["Instagram".into()],
+        ..UiSettings::default()
+    });
+    *crate::tts::TEST_CAN_SPEAK.lock() = Some(Ok(()));
+    crate::social::clear_for_tests();
+
+    // the Telegram program: shown as "Telegram", read aloud (its own switch), on the page "Сообщения"
+    let t = format!("привет из телеграма {}", r());
+    assert!(on_external(&format!("a{}", r()), "Telegram Desktop", "", &["Иван".into(), t.clone()], false).is_some());
+    let n = recent(10).into_iter().find(|n| n.text == t).unwrap();
+    assert_eq!((n.title.as_str(), n.source.as_str()), ("Telegram · Иван", "Telegram"));
+    assert!(n.spoken, "Telegram is read aloud");
+    let m = crate::social::get(crate::social::last_id()).unwrap();
+    assert_eq!((m.net.as_str(), m.title.as_str(), m.text.as_str()), ("telegram", "Telegram · Иван", t.as_str()));
+
+    // WhatsApp Web in Chrome: the network of the site, the line with the site dropped
+    let w = format!("встречаемся в 6 {}", r());
+    assert!(on_external(&format!("b{}", r()), "Google Chrome", "Chrome", &["Мария".into(), w.clone(), "web.whatsapp.com".into()], false).is_some());
+    let n = recent(10).into_iter().find(|n| n.text == w).unwrap();
+    assert_eq!((n.title.as_str(), n.source.as_str()), ("WhatsApp · Мария", "WhatsApp"));
+    assert!(n.spoken);
+
+    // an ordinary notification of the browser is not let through (the browser itself is not allowed)
+    let d = format!("загрузка завершена {}", r());
+    assert!(on_external(&format!("c{}", r()), "Google Chrome", "Chrome", &[d.clone(), "file.zip".into()], false).is_none());
+
+    // a network chosen but excluded by name: the exclusion wins
+    assert!(on_external(&format!("d{}", r()), "Instagram", "", &["новый лайк".into()], false).is_none());
+
+    // a network that is not chosen: nothing
+    assert!(on_external(&format!("e{}", r()), "Discord", "", &["сервер".into(), format!("пинг {}", r())], false).is_none());
+
+    // switched off as a whole: nothing at all, even for a chosen network
+    uistate::set_for_tests(UiSettings { ext_enabled: false, ext_social: vec!["telegram".into()], ..UiSettings::default() });
+    let x = format!("тихо {}", r());
+    assert!(on_external(&format!("f{}", r()), "Telegram Desktop", "", &[x.clone()], false).is_none());
+
+    // the text never reaches the event log or the settings
+    assert!(uistate::recent_events(80).iter().all(|e| !e.text.contains(&t) && !e.text.contains(&w)));
+    assert!(!serde_json::to_string(&uistate::settings_json()).unwrap().contains(&t));
+    *crate::tts::TEST_CAN_SPEAK.lock() = None;
+    crate::social::clear_for_tests();
+    uistate::set_for_tests(UiSettings::default());
+}
+
+#[test]
+fn a_network_without_its_own_voice_is_shown_silently() {
+    let _g = uistate::TEST_LOCK.lock();
+    uistate::set_for_tests(UiSettings { ext_enabled: true, ext_speak: true, ext_social: vec!["discord".into()], ext_social_speak: vec![], ..UiSettings::default() });
+    *crate::tts::TEST_CAN_SPEAK.lock() = Some(Ok(()));
+    let t = format!("тихое сообщение {}", rand::random::<u32>());
+    assert!(on_external(&format!("g{}", rand::random::<u32>()), "Discord", "", &["Олег".into(), t.clone()], false).is_some());
+    let n = recent(10).into_iter().find(|n| n.text == t).unwrap();
+    assert!(!n.spoken, "Discord is only shown: its own switch is off even though the common one is on");
+    *crate::tts::TEST_CAN_SPEAK.lock() = None;
+    uistate::set_for_tests(UiSettings::default());
+}

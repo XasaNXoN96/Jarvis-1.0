@@ -365,23 +365,44 @@ pub fn on_external(id: &str, app: &str, aumid: &str, texts: &[String], initial: 
     }
     stage(&label, "уведомление получено, программа распознана", |s| s.received += 1);
     let s = crate::uistate::settings();
-    if !ext_allowed_id(&s, &label, aumid) {
+    // a social network: by its program, or a browser notification of its site (social.rs)
+    let net = crate::social::detect(&label, aumid, texts);
+    let from_browser = crate::social::is_browser(&label, aumid);
+    let social_on = |n: &crate::social::Network| s.ext_enabled && s.ext_social.iter().any(|k| k == n.key) && !s.ext_blocked.iter().any(|b| app_matches(b, n.title, ""));
+    let allowed = match net {
+        Some(n) if social_on(n) => true,
+        // a browser lets its own notifications through only when the browser itself is allowed
+        _ => ext_allowed_id(&s, &label, aumid),
+    };
+    if !allowed {
         stage(&label, "программа не в списке разрешённых или исключена — не показано", |s| s.not_allowed += 1);
         return None; // not allowed: the content is dropped here, it goes nowhere
     }
-    let (title, text) = ext_texts(&label, texts);
+    let texts: Vec<String> = match net {
+        Some(n) if from_browser => crate::social::without_site_lines(n, texts),
+        _ => texts.to_vec(),
+    };
+    // the network's name instead of "Google Chrome" / "Telegram Desktop"
+    let shown = net.filter(|n| social_on(n)).map(|n| n.title.to_string()).unwrap_or_else(|| label.clone());
+    let (title, text) = ext_texts(&shown, &texts);
     // a program that posts the same text twice with two ids
     if !crate::guard::first(&format!("ext:{}:{}", crate::guard::norm(&title), crate::guard::norm(&text)), crate::guard::NOTIFY_WINDOW) {
         stage(&label, "тот же текст повторно — пропущено", |s| s.repeats += 1);
         return None;
     }
-    let has_text = !ext_parts(texts).is_empty();
-    let mut p = plan(&prefs_external(&s), false, false);
+    let has_text = !ext_parts(&texts).is_empty();
+    let mut prefs = prefs_external(&s);
+    // each network has its own "read aloud"; other programs follow the common switch
+    if let Some(n) = net.filter(|n| social_on(n)) {
+        prefs.speak = s.ext_social_speak.iter().any(|k| k == n.key);
+    }
+    let want_speak = prefs.speak;
+    let mut p = plan(&prefs, false, false);
     if !has_text {
         // empty or hidden by the program ("show text" off in Telegram): shown, never spoken
         p.speak = false;
         stage(&label, "текст недоступен (пустой или скрыт программой) — показано без озвучки", |s| s.no_text += 1);
-    } else if s.ext_speak && !p.speak {
+    } else if want_speak && !p.speak {
         let why = if s.dnd { "включён режим «Не беспокоить» — не озвучено" } else if !crate::tts::is_enabled() { "озвучка выключена — не озвучено" } else { "озвучивание уведомлений выключено" };
         stage(&label, why, |s| s.not_spoken += 1);
     } else if p.speak {
@@ -396,8 +417,18 @@ pub fn on_external(id: &str, app: &str, aumid: &str, texts: &[String], initial: 
     if p.show {
         EXT_STATS.lock().shown += 1;
     }
-    let say: String = format!("Уведомление от {}. {}", label, text).chars().take(220).collect();
-    Some(deliver("external", &title, &text, &label, false, p, &say))
+    // the page "Сообщения" (memory only)
+    crate::social::push(net.filter(|n| social_on(n)).map(|n| n.key).unwrap_or(""), &shown, &title, &text);
+    let say: String = if net.filter(|n| social_on(n)).is_some() {
+        // "Telegram, Иван: привет, как дела?"
+        format!("{}: {}", title.replace(" · ", ", "), text)
+    } else {
+        format!("Уведомление от {}. {}", shown, text)
+    }
+    .chars()
+    .take(220)
+    .collect();
+    Some(deliver("external", &title, &text, &shown, false, p, &say))
 }
 
 // ---- the watcher process (Windows): PowerShell with the official WinRT API, only while the switch is on ----

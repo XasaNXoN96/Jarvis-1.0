@@ -155,6 +155,20 @@
   .cat-side .ei, .card h3 .ei, .tabs button, .quick button { filter: grayscale(1) brightness(1.25); }
   .sw input:checked + span::after { background: #0a0a0b; }
   .tg-code { font-size: 20px; letter-spacing: .25em; font-variant-numeric: tabular-nums; }
+  /* social networks: settings and the page "Сообщения" */
+  .soc-box { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 6px 0 10px; background: #ffffff03; }
+  .soc-head small { display: block; margin-top: 4px; line-height: 1.45; }
+  .soc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin: 12px 0 8px; }
+  .soc-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; }
+  .soc-item.on { border-color: var(--line2); background: #ffffff08; }
+  .soc-item .nm { flex: 1; min-width: 0; } .soc-item .nm b { display: block; font-weight: 500; overflow-wrap: anywhere; } .soc-item .ck { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 3px; } .soc-item label { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--dim); cursor: pointer; white-space: nowrap; }
+  .soc-item input { accent-color: #e9e9ec; } .soc-item input:disabled + span { opacity: .4; }
+  .soc-av { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line2); display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; flex-shrink: 0; color: var(--text); background: #ffffff0a; }
+  .msg-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+  .msg-row { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .msg-row .b { flex: 1; min-width: 0; } .msg-row .t { display: flex; gap: 10px; align-items: baseline; } .msg-row .t b { min-width: 0; overflow-wrap: anywhere; } .msg-row time { color: var(--dim); font-size: 12px; margin-left: auto; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+  .msg-row .x { color: #d6d6da; margin-top: 3px; overflow-wrap: anywhere; white-space: pre-wrap; } .msg-row .btn { flex-shrink: 0; }
+  .msg-row.new { border-color: var(--line2); box-shadow: inset 2px 0 0 #e9e9ec; }
   /* tasks */
   .tk-box { max-width: 760px; width: 100%; margin: 0 auto; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
   .tk-head { display: flex; justify-content: space-between; align-items: baseline; } .tk-brand { letter-spacing: .28em; font-size: 13px; color: var(--dim); } .tk-head b { font-weight: 400; font-variant-numeric: tabular-nums; color: var(--text); }
@@ -364,6 +378,7 @@
     <button data-page="home" class="active" title="Главная"><span class="ei" data-ico="orb"></span><span>Главная</span></button>
     <button data-page="chat" title="Диалоги"><span class="ei" data-ico="chat"></span><span>Диалоги</span></button>
     <button data-page="tasks" title="Задачи"><span class="ei" data-ico="check"></span><span>Задачи</span><small class="nb" id="nav-tasks"></small></button>
+    <button data-page="messages" title="Сообщения"><span class="ei" data-ico="inbox"></span><span>Сообщения</span><small class="nb" id="nav-msgs"></small></button>
     <button data-page="commands" title="Команды"><span class="ei" data-ico="list"></span><span>Команды</span></button>
     <button data-page="builder" title="Конструктор"><span class="ei" data-ico="flow"></span><span>Конструктор</span></button>
     <button data-page="apps" title="Программы"><span class="ei" data-ico="apps"></span><span>Программы</span></button>
@@ -503,6 +518,14 @@
         </div>
         <small class="dim tk-help">Голосом: «Джарвис, добавь задачу купить хлеб», «озвучь задачи», «выполнил задачу 2», «стереть все задачи». Задачи хранятся в файле в «Документах» — тот же список, что и у голосовых команд.</small>
       </div>
+    </section>
+
+    <section class="page" id="page-messages">
+      <div class="cat-head"><div><h1>Сообщения</h1><p class="lead" style="margin:0">Сообщения из соцсетей и мессенджеров, о которых сообщили уведомления Windows. Список хранится только в памяти: на диск не пишется и пропадает, когда Джарвис закрывается.</p></div>
+        <button class="btn" id="msg-clear" type="button">Очистить</button></div>
+      <div class="banner" id="msg-off" style="display:none;margin:0 0 12px"><span id="msg-off-t"></span> <button class="btn small" id="msg-setup" type="button">Открыть настройки</button></div>
+      <div class="chips" id="msg-filter"></div>
+      <div class="msg-list" id="msg-list"><div class="empty">Загрузка…</div></div>
     </section>
 
 <section class="page" id="page-commands">
@@ -649,8 +672,13 @@
         <small class="dim">Джарвис может показывать и читать уведомления мессенджеров, почты и других программ — только с вашего разрешения и разрешения Windows (Windows 10 1809+ и Windows 11). При включении Windows может спросить разрешение; без него ничего не читается. Не все программы отправляют уведомления так, чтобы их можно было прочитать, а обычным (не из Microsoft Store) программам Windows иногда не даёт доступ совсем — тогда это будет видно в статусе. Тексты уведомлений остаются на этом компьютере: не сохраняются на диск, не попадают в историю и не отправляются в ИИ или в интернет.</small>
         <div class="setrow"><div class="l">Читать уведомления других программ<small id="ext-status">выключено</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="ext-on"><span></span></label></div></div>
+        <div class="soc-box" id="soc-box">
+          <div class="soc-head"><b>Соцсети и мессенджеры</b><small class="dim">Отметьте, откуда показывать сообщения, и какие читать вслух. Работает с программами для ПК и с сайтами, открытыми в браузере (Chrome, Edge и др.) с разрешёнными уведомлениями — например, web.whatsapp.com или instagram.com. Вход в аккаунты и ники не нужны: Джарвис видит только то, что сама соцсеть показала в уведомлении Windows.</small></div>
+          <div class="soc-grid" id="soc-grid"></div>
+          <small class="dim" id="soc-hint"></small>
+        </div>
         <div class="setrow"><div class="l">Показывать в окне уведомлений</div><div class="r"><label class="sw"><input type="checkbox" id="ext-show"><span></span></label></div></div>
-        <div class="setrow"><div class="l">Озвучивать<small>Джарвис прочитает вслух программу и текст уведомления</small></div><div class="r"><label class="sw"><input type="checkbox" id="ext-speak"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Озвучивать остальные программы<small>Джарвис прочитает вслух программу и текст уведомления; у соцсетей — свой переключатель «Читать вслух» выше</small></div><div class="r"><label class="sw"><input type="checkbox" id="ext-speak"><span></span></label></div></div>
         <div class="setrow"><div class="l">Только разрешённые программы<small>неизвестные программы не пропускаются</small></div><div class="r"><label class="sw"><input type="checkbox" id="ext-strict"><span></span></label></div></div>
         <div style="margin-top:8px"><b>Разрешённые программы</b> <small class="dim">(нажмите, чтобы убрать)</small><div class="chips" id="ext-allowed"></div></div>
         <div><b>Исключённые программы</b> <small class="dim">(никогда не показываются; нажмите, чтобы убрать)</small><div class="chips" id="ext-blocked"></div></div>
@@ -810,6 +838,7 @@ const ICONS = {
   power: '<path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/>',
   fold: '<rect x="3.5" y="4" width="17" height="16" rx="2.5"/><path d="M9 4v16M15.5 10l-2 2 2 2"/>',
   wave: '<path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/>',
+  inbox: '<path d="M4 13l2.5-7.5A2 2 0 0 1 8.4 4h7.2a2 2 0 0 1 1.9 1.5L20 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M4 13h4.5l1.5 2.5h4l1.5-2.5H20"/>',
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>',
   edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
 };
@@ -817,8 +846,8 @@ function ico(name) { return '<svg viewBox="0 0 24 24" fill="none" stroke="curren
 document.querySelectorAll('[data-ico]').forEach(el => { el.innerHTML = ico(el.dataset.ico); });
 
 // ---------- navigation ----------
-const PAGES = ['home', 'chat', 'tasks', 'commands', 'builder', 'apps', 'files', 'system', 'diag', 'settings'];
-const TITLES = { home: ['Главная', 'Neural Interface'], chat: ['Диалоги', 'Conversations'], tasks: ['Задачи', 'Tasks'], system: ['Система', 'System'], commands: ['Команды', 'Command Library'], diag: ['Диагностика', 'Diagnostics'], builder: ['Конструктор', 'Scenario Builder'], apps: ['Программы', 'Applications'], files: ['Файлы', 'File Search'], settings: ['Настройки', 'Settings'] };
+const PAGES = ['home', 'chat', 'tasks', 'messages', 'commands', 'builder', 'apps', 'files', 'system', 'diag', 'settings'];
+const TITLES = { home: ['Главная', 'Neural Interface'], chat: ['Диалоги', 'Conversations'], tasks: ['Задачи', 'Tasks'], messages: ['Сообщения', 'Messages'], system: ['Система', 'System'], commands: ['Команды', 'Command Library'], diag: ['Диагностика', 'Diagnostics'], builder: ['Конструктор', 'Scenario Builder'], apps: ['Программы', 'Applications'], files: ['Файлы', 'File Search'], settings: ['Настройки', 'Settings'] };
 let currentPage = 'home';
 const curInput = () => currentPage === 'home' ? $('#h-input') : $('#input');
 function show(name) {
@@ -836,6 +865,7 @@ function show(name) {
   if (name === 'files') filesLoad();
   if (name === 'settings') { loadSettings(); refreshRemote(); tgLoad(); }
   if (name === 'tasks') tasksLoad();
+  if (name === 'messages') msgsLoad(true);
   if (name === 'chat') { chatTab === 'ai' ? aiOpen() : ($('#log').scrollTop = $('#log').scrollHeight); }
   renderChatViews();
   if (name === 'home' || name === 'chat') curInput().focus();
@@ -1241,7 +1271,7 @@ function applyState(s) {
   applyVoice(s); voiceChip(s.voice_state); healthCard(s.health); aiCard(s.ai);
   timers = s.timers || []; timersAt = performance.now(); if (currentPage === 'commands') { renderTimers(); commandActions(s.actions); }
   if (currentPage === 'settings') notesList(s.notes);
-  weatherBox(s.weather); remoteCard(s); phoneCard(s.phone);
+  weatherBox(s.weather); remoteCard(s); phoneCard(s.phone); msgBadge();
 }
 
 // ---------- panel: computer state, timers, log, modules ----------
@@ -1693,6 +1723,7 @@ function applyPrivacy(s) {
   const pb = st.playback; if (pb && st.state !== 'off') extTxt += pb.ok ? ' Последнее воспроизведение звука: без ошибок.' : ' Ошибка воспроизведения звука: ' + pb.error + '.';
   $('#ext-status').textContent = extTxt;
   extLists = { allowed: s.ext_allowed || [], blocked: s.ext_blocked || [], seen: s.ext_seen || [] }; renderExtLists();
+  renderSocial(s);
   if (s.ui && s.ui['jarvis-mode'] && s.ui['jarvis-mode'] !== mode) setMode(s.ui['jarvis-mode'], true);
   if (s.ui && s.ui['jarvis-perf']) setPerf(s.ui['jarvis-perf'] === 'low', true);
 }
@@ -2040,6 +2071,79 @@ function commandActions(list) {
     r.append(tm, sp); box.appendChild(r);
   }
 }
+
+// ---------- social networks: which ones come through (also from a browser) and which are read aloud ----------
+let socNets = [], socOn = [], socSpeak = [];
+function socInitial(t) { return (String(t).match(/[A-Za-zА-Яа-яЁё]/) || ['?'])[0].toUpperCase(); }
+function renderSocial(s) {
+  socNets = s.social_networks || []; socOn = s.ext_social || []; socSpeak = s.ext_social_speak || [];
+  const g = $('#soc-grid'); g.textContent = '';
+  for (const n of socNets) {
+    const on = socOn.includes(n.key), sp = socSpeak.includes(n.key);
+    const d = document.createElement('div'); d.className = 'soc-item' + (on ? ' on' : '');
+    d.innerHTML = '<span class="soc-av"></span><div class="nm"><b></b><div class="ck"><label><input type="checkbox" data-k="show"><span>Показывать</span></label><label><input type="checkbox" data-k="speak"><span>Читать вслух</span></label></div></div>';
+    d.querySelector('.soc-av').textContent = socInitial(n.title); d.querySelector('.nm b').textContent = n.title;
+    const cs = d.querySelector('[data-k=show]'), cv = d.querySelector('[data-k=speak]');
+    cs.checked = on; cv.checked = on && sp; cv.disabled = !on;
+    cs.onchange = () => {
+      const list = cs.checked ? socOn.concat([n.key]) : socOn.filter(k => k !== n.key);
+      saveExt({ ext_social: list, ext_social_speak: cs.checked ? socSpeak : socSpeak.filter(k => k !== n.key) });
+    };
+    cv.onchange = () => saveExt({ ext_social_speak: cv.checked ? socSpeak.concat([n.key]) : socSpeak.filter(k => k !== n.key) });
+    g.appendChild(d);
+  }
+  $('#soc-hint').textContent = !s.ext_enabled ? 'Сначала включите «Читать уведомления других программ» выше — без него ничего не читается.'
+    : !socOn.length ? 'Отметьте хотя бы одну соцсеть.' : 'Выбрано: ' + socNets.filter(n => socOn.includes(n.key)).map(n => n.title).join(', ') + '. Сообщения появятся на странице «Сообщения».';
+}
+
+// ---------- "Сообщения": the notifications of the networks, memory only ----------
+let msgData = { messages: [], counts: {}, networks: [] }, msgFilter = '', msgSeen = 0, msgTimer = 0;
+try { msgSeen = +(sessionStorage.getItem('jarvis-msg-seen') || 0); } catch (e) {}
+function msgMark(id) { msgSeen = Math.max(msgSeen, id || 0); try { sessionStorage.setItem('jarvis-msg-seen', String(msgSeen)); } catch (e) {} msgBadge(); }
+function msgBadge() {
+  const last = lastState ? (lastState.messages_last || 0) : 0;
+  // (a restarted Jarvis counts from one again)
+  if (last < msgSeen) msgSeen = 0;
+  const n = currentPage === 'messages' ? 0 : Math.min(99, last - msgSeen);
+  $('#nav-msgs').textContent = n > 0 ? String(n) : '';
+}
+async function msgsLoad(first) {
+  clearTimeout(msgTimer);
+  try { msgData = await (await fetch('/messages')).json(); } catch (e) { return; }
+  if (first) {
+    try {
+      const s = await (await fetch('/settings')).json();
+      const off = !s.ext_enabled ? 'Чтение уведомлений других программ выключено — сообщения сюда не приходят.'
+        : !(s.ext_social || []).length ? 'Не выбрано ни одной соцсети. Отметьте нужные в настройках.' : '';
+      $('#msg-off').style.display = off ? 'block' : 'none'; $('#msg-off-t').textContent = off;
+    } catch (e) {}
+  }
+  msgsRender();
+  msgMark(msgData.last_id);
+  if (currentPage === 'messages' && !document.hidden) msgTimer = setTimeout(() => msgsLoad(false), 3000);
+}
+function msgsRender() {
+  const f = $('#msg-filter'); f.textContent = '';
+  const all = msgData.messages || [], counts = msgData.counts || {};
+  const add = (key, title, n) => f.appendChild(chip(title + ' ' + n, msgFilter === key ? 'on' : '', () => { msgFilter = key; msgsRender(); }));
+  add('', 'Все', all.length);
+  for (const n of msgData.networks || []) if (counts[n.key]) add(n.key, n.title, counts[n.key]);
+  if (counts.other) add('other', 'Другие программы', counts.other);
+  const box = $('#msg-list'); box.textContent = '';
+  const shown = all.filter(m => !msgFilter || (msgFilter === 'other' ? !m.net : m.net === msgFilter));
+  if (!shown.length) { box.innerHTML = '<div class="empty">' + (all.length ? 'Здесь пока пусто.' : 'Сообщений пока нет. Когда кто-то напишет вам в выбранной соцсети, сообщение появится здесь.') + '</div>'; return; }
+  for (const m of shown) {
+    const r = document.createElement('div'); r.className = 'msg-row' + (m.id > msgSeen ? ' new' : '');
+    r.innerHTML = '<span class="soc-av"></span><div class="b"><div class="t"><b></b><time></time></div><div class="x"></div></div><button class="btn small" type="button" title="Прочитать вслух">🔊</button>';
+    r.querySelector('.soc-av').textContent = socInitial(m.app); r.querySelector('b').textContent = m.title;
+    const d = new Date(m.at * 1000); r.querySelector('time').textContent = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }); r.querySelector('time').title = d.toLocaleString('ru-RU');
+    r.querySelector('.x').textContent = m.text;
+    r.querySelector('button').onclick = async () => { const x = await api('/messages', { op: 'speak', id: m.id }); if (!x.ok) showToast(x.message || 'Не удалось озвучить'); };
+    box.appendChild(r);
+  }
+}
+$('#msg-clear').onclick = async () => { const r = await api('/messages', { op: 'clear' }); showToast(r.message || 'Очищено'); msgFilter = ''; msgsLoad(false); };
+$('#msg-setup').onclick = () => { show('settings'); setTimeout(() => { const el = $('#soc-box'); if (el) el.scrollIntoView({ block: 'center' }); }, 200); };
 
 // ---------- Telegram: the user's own bot, paired with one account ----------
 const tgApi = body => api('/telegram', body);

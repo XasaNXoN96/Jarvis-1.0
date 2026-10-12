@@ -71,6 +71,7 @@ pub mod autostart;
 pub mod screen;
 pub mod sites;
 pub mod notify;
+pub mod social;
 #[cfg(target_os = "windows")]
 pub mod notify_win;
 pub mod diag;
