@@ -474,7 +474,8 @@ fn run_step_in(s: &Step, grid: &mut Vec<isize>) -> Result<(), String> {
     }
     if opened && s.window == "grid" {
         // the window of this step is remembered; two links in one browser window are one cell
-        if let Some(h) = crate::input::opened_window(before, Duration::from_secs(5)) {
+        let link = matches!(s.kind.as_str(), "link" | "search");
+        if let Some(h) = crate::input::opened_window(before, link, Duration::from_secs(10)) {
             if !grid.contains(&h) {
                 grid.push(h);
             }

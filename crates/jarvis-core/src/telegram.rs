@@ -41,6 +41,19 @@ pub struct Incoming {
     pub private: bool,
     pub name: String,
     pub text: String,
+    // when Telegram got it (unix seconds): messages written while Jarvis was off are not run later
+    pub date: i64,
+}
+
+// older than this when Jarvis reads it: skipped (Telegram keeps unread messages for a day)
+pub const MAX_AGE_SECS: i64 = 120;
+
+pub fn too_old(date: i64, now: i64) -> bool {
+    date > 0 && now - date > MAX_AGE_SECS
+}
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
 
 #[derive(Debug, PartialEq)]
@@ -104,11 +117,11 @@ pub fn parse_updates(v: &Value) -> Vec<Incoming> {
         let m = &u["message"];
         let (Some(from_id), Some(chat_id), Some(text)) = (m["from"]["id"].as_i64(), m["chat"]["id"].as_i64(), m["text"].as_str()) else {
             // still counted as read: the next request starts after it
-            out.push(Incoming { update_id, from_id: 0, chat_id: 0, private: false, name: String::new(), text: String::new() });
+            out.push(Incoming { update_id, from_id: 0, chat_id: 0, private: false, name: String::new(), text: String::new(), date: 0 });
             continue;
         };
         let name = m["from"]["first_name"].as_str().or(m["from"]["username"].as_str()).unwrap_or("").chars().take(60).collect();
-        out.push(Incoming { update_id, from_id, chat_id, private: m["chat"]["type"] == "private", name, text: text.trim().to_string() });
+        out.push(Incoming { update_id, from_id, chat_id, private: m["chat"]["type"] == "private", name, text: text.trim().to_string(), date: m["date"].as_i64().unwrap_or(0) });
     }
     out
 }
@@ -193,6 +206,12 @@ pub fn action(body: &Value) -> Value {
                 }
                 c.token = t;
                 save(&c);
+                let running = c.enabled;
+                drop(c);
+                // a running bot switches to the new token at once (the old one is not polled any more)
+                if running {
+                    start();
+                }
                 Ok("Токен сохранён (в зашифрованном виде)".into())
             }
         }
@@ -268,46 +287,65 @@ fn alive(gen: u64) -> bool {
     GEN.load(std::sync::atomic::Ordering::SeqCst) == gen
 }
 
+// what the conversation looked like just before a phrase was sent: its chat, the request ids of its last messages and
+// the time (a count of messages would not do: a long conversation is cut to its last messages when it is saved)
+pub struct Snapshot {
+    chat: String,
+    rids: Vec<String>,
+    at: u64,
+}
+
+fn chat_snapshot() -> Snapshot {
+    let store = crate::ai::store();
+    let at = now_secs().max(0) as u64;
+    match store.active().and_then(|id| store.load(&id)) {
+        Some(c) => Snapshot { rids: c.messages.iter().rev().take(20).map(|m| m.rid.clone()).collect(), chat: c.id, at },
+        None => Snapshot { chat: String::new(), rids: Vec::new(), at },
+    }
+}
+
+// the question of the phrase just sent: the newest user message that was not there before
+pub fn new_question<'a>(msgs: &'a [crate::ai::ChatMsg], same_chat: bool, snap_rids: &[String], at: u64) -> Option<usize> {
+    msgs.iter().enumerate().rev().find(|(_, m)| m.role == "user" && m.ts + 1 >= at && !(same_chat && !m.rid.is_empty() && snap_rids.contains(&m.rid))).map(|(i, _)| i)
+}
+
 // the answer of Jarvis to the phrase that was just sent: the replies stored with its request id
 // (the same conversation as in the window), when nothing new has come for a moment
-fn collect_answer(chat_before: Option<(String, usize)>, max: Duration) -> String {
+fn collect_answer(snap: Snapshot, max: Duration, gen: u64) -> String {
     let store = crate::ai::store();
     let start = Instant::now();
     let mut last_len = 0usize;
     let mut last_change = Instant::now();
-    loop {
+    let mut found: Vec<crate::ai::ChatMsg> = Vec::new();
+    while alive(gen) {
         std::thread::sleep(Duration::from_millis(400));
         let Some(id) = store.active() else { continue };
         let Some(chat) = store.load_with_live(&id) else { continue };
-        let base = match &chat_before {
-            Some((cid, n)) if *cid == chat.id => *n,
-            _ => 0,
-        };
         let msgs = &chat.messages;
-        let replies: Vec<&crate::ai::ChatMsg> = match msgs.iter().enumerate().skip(base).find(|(_, m)| m.role == "user") {
-            Some((i, q)) => msgs[i + 1..].iter().filter(|m| m.role != "user" && (q.rid.is_empty() || m.rid == q.rid)).collect(),
+        found = match new_question(msgs, chat.id == snap.chat, &snap.rids, snap.at) {
+            Some(i) => {
+                let q = &msgs[i];
+                msgs[i + 1..].iter().filter(|m| m.role != "user" && (q.rid.is_empty() || m.rid == q.rid)).cloned().collect()
+            }
             None => Vec::new(),
         };
-        let len: usize = replies.iter().map(|m| m.content.len()).sum::<usize>() + replies.len();
+        let len: usize = found.iter().map(|m| m.content.len()).sum::<usize>() + found.len();
         if len != last_len {
             last_len = len;
             last_change = Instant::now();
         }
-        let streaming = replies.iter().any(|m| m.streaming) || crate::ai::is_busy(&chat.id);
-        if !replies.is_empty() && !streaming && last_change.elapsed() > Duration::from_millis(1800) {
-            let text: Vec<String> = replies.iter().map(|m| if m.role == "error" { format!("⚠ {}", m.content) } else { m.content.clone() }).collect();
-            return text.join("\n\n");
+        let streaming = found.iter().any(|m| m.streaming) || crate::ai::is_busy(&chat.id);
+        if !found.is_empty() && !streaming && last_change.elapsed() > Duration::from_millis(1800) {
+            break;
         }
         if start.elapsed() > max {
-            return if replies.is_empty() { "Команда передана Джарвису, ответа пока нет.".into() } else { replies.iter().map(|m| m.content.clone()).collect::<Vec<_>>().join("\n\n") };
+            break;
         }
     }
-}
-
-fn chat_snapshot() -> Option<(String, usize)> {
-    let store = crate::ai::store();
-    let id = store.active()?;
-    store.load(&id).map(|c| (c.id, c.messages.len()))
+    if found.is_empty() {
+        return "Команда передана Джарвису, ответа пока нет.".into();
+    }
+    found.iter().map(|m| if m.role == "error" { format!("⚠ {}", m.content) } else { m.content.clone() }).collect::<Vec<_>>().join("\n\n")
 }
 
 #[cfg(feature = "lua")]
@@ -388,7 +426,15 @@ mod net {
                 }
             };
             for m in parse_updates(&v) {
+                // switched off (or another token) in the middle of a batch: the rest is not run
+                if !alive(gen) {
+                    break;
+                }
                 offset = offset.max(m.update_id + 1);
+                if too_old(m.date, now_secs()) {
+                    log::info!("Telegram: an old message is skipped");
+                    continue;
+                }
                 let owner = CONFIG.lock().owner_id;
                 let code = CODE.lock().as_ref().filter(|(_, at)| at.elapsed() < CODE_TTL).map(|(c, _)| c.clone());
                 match decide(owner, code.as_deref(), &m) {
@@ -424,7 +470,10 @@ mod net {
                             continue;
                         }
                         log::info!("Telegram command: {} chars", text.chars().count());
-                        let answer = collect_answer(before, Duration::from_secs(45));
+                        let answer = collect_answer(before, Duration::from_secs(45), gen);
+                        if !alive(gen) {
+                            break;
+                        }
                         send(&c, &token, m.chat_id, &answer);
                     }
                 }
@@ -446,7 +495,7 @@ mod tests {
     use super::*;
 
     fn msg(from: i64, text: &str, private: bool) -> Incoming {
-        Incoming { update_id: 1, from_id: from, chat_id: from, private, name: "Хасан".into(), text: text.into() }
+        Incoming { update_id: 1, from_id: from, chat_id: from, private, name: "Хасан".into(), text: text.into(), date: 0 }
     }
 
     #[test]
@@ -494,6 +543,26 @@ mod tests {
         assert_eq!((u[1].update_id, u[1].text.as_str()), (11, ""));
         assert!(!u[2].private);
         assert!(parse_updates(&json!({ "ok": false })).is_empty());
+    }
+
+    #[test]
+    fn messages_written_while_jarvis_was_off_are_not_run() {
+        assert!(too_old(1_000, 1_000 + MAX_AGE_SECS + 1));
+        assert!(!too_old(1_000, 1_030));
+        assert!(!too_old(0, 1_000_000), "no date: not judged by age");
+    }
+
+    #[test]
+    fn the_new_question_is_found_by_its_id_even_in_a_cut_conversation() {
+        let m = |role: &str, rid: &str, ts: u64| crate::ai::ChatMsg { role: role.into(), content: "x".into(), ts, rid: rid.into(), src: String::new(), streaming: false };
+        // the stored conversation keeps its last messages: the count did not grow, the new question is still found
+        let msgs = vec![m("user", "old1", 90), m("assistant", "old1", 90), m("user", "new", 100), m("assistant", "new", 101)];
+        let snap = vec!["old1".to_string()];
+        assert_eq!(new_question(&msgs, true, &snap, 100), Some(2));
+        // an old question of the same chat is not taken for the new one
+        assert_eq!(new_question(&msgs[..2], true, &snap, 100), None);
+        // another chat became active: its question counts
+        assert_eq!(new_question(&msgs, false, &snap, 100), Some(2));
     }
 
     #[test]

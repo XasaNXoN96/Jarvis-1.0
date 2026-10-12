@@ -283,6 +283,9 @@ mod tests {
         assert!(run("assistant_task_add", "добавь задачу купить хлеб").contains("купить хлеб"));
         run("assistant_task_add", "новая задача позвонить врачу 😀");
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "купить хлеб\nпозвонить врачу 😀\n");
+        // the limits of the panel "Задачи" hold for the voice too: 200 characters, 30 tasks
+        assert!(run("assistant_task_add", &format!("добавь задачу {}", "я".repeat(201))).contains("200"));
+        assert_eq!(std::fs::read_to_string(&file).unwrap().lines().count(), 2, "a too long task is not added");
         let read = run("assistant_task_read", "озвучь задачи");
         assert!(read.contains("1. купить хлеб") && read.contains("2. позвонить врачу"), "{}", read);
         assert!(run("assistant_task_done", "выполнил задачу 1").contains("купить хлеб"));

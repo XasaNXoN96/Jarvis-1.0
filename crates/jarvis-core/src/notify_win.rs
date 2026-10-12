@@ -177,7 +177,7 @@ unsafe fn tick(hwnd: HWND) {
                 match next {
                     Some(p) => {
                         layout(&mut ui, p);
-                        Act::Show { x: ui.x, y: ui.y + (SLIDE * ui.scale) as i32, w: ui.w, h: ui.h, radius: (16.0 * ui.scale) as i32 }
+                        Act::Show { x: ui.x, y: ui.y - (SLIDE * ui.scale) as i32, w: ui.w, h: ui.h, radius: (16.0 * ui.scale) as i32 }
                     }
                     None => Act::Nothing,
                 }
@@ -189,7 +189,8 @@ unsafe fn tick(hwnd: HWND) {
                     let hold = ui.current.as_ref().map(hold_time).unwrap_or(Duration::from_secs(6));
                     ui.phase = Phase::Hold(Instant::now() + hold);
                 }
-                Act::Frame { alpha: (ALPHA * ease) as u8, x: ui.x, y: ui.y + (SLIDE * ui.scale * (1.0 - ease)) as i32, w: ui.w, h: ui.h }
+                // (it comes down from the top edge of the screen)
+                Act::Frame { alpha: (ALPHA * ease) as u8, x: ui.x, y: ui.y - (SLIDE * ui.scale * (1.0 - ease)) as i32, w: ui.w, h: ui.h }
             }
             Phase::Hold(until) => {
                 if over {
@@ -207,7 +208,7 @@ unsafe fn tick(hwnd: HWND) {
                     ui.phase = Phase::Idle;
                     Act::Hide
                 } else {
-                    Act::Frame { alpha: (ALPHA * (1.0 - k)) as u8, x: ui.x, y: ui.y + (SLIDE * ui.scale * k * 0.6) as i32, w: ui.w, h: ui.h }
+                    Act::Frame { alpha: (ALPHA * (1.0 - k)) as u8, x: ui.x, y: ui.y - (SLIDE * ui.scale * k * 0.6) as i32, w: ui.w, h: ui.h }
                 }
             }
         }

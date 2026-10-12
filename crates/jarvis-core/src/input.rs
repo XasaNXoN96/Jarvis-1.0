@@ -331,8 +331,10 @@ pub fn grid_cells(n: usize, area: (i32, i32, i32, i32)) -> Vec<(i32, i32, i32, i
 }
 
 // the window just opened by a step: the new window in front (not Jarvis, not the one in front before), waited for
-// up to `max`; a link opened in a browser that was already in front gives that browser window
-pub fn opened_window(before: Option<isize>, max: std::time::Duration) -> Option<isize> {
+// up to `max`. Only a link (`same_ok`) may give the window that was already in front — a browser that was in front
+// opens the page in itself; a program that did not come to the front gives no window, so a window of the user that
+// has nothing to do with the chain is never moved
+pub fn opened_window(before: Option<isize>, same_ok: bool, max: std::time::Duration) -> Option<isize> {
     #[cfg(target_os = "windows")]
     {
         let start = std::time::Instant::now();
@@ -341,15 +343,18 @@ pub fn opened_window(before: Option<isize>, max: std::time::Duration) -> Option<
             if fg.is_some() && fg != before {
                 return fg;
             }
-            if start.elapsed() >= max {
+            if same_ok && fg.is_some() && start.elapsed() >= std::time::Duration::from_millis(1500) {
                 return fg;
+            }
+            if start.elapsed() >= max {
+                return None;
             }
             std::thread::sleep(std::time::Duration::from_millis(150));
         }
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (before, max);
+        let _ = (before, same_ok, max);
         None
     }
 }

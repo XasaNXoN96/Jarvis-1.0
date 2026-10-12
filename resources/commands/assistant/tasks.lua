@@ -90,7 +90,12 @@ if text == "" then
 end
 local list = read_tasks()
 if not list then say(TITLE, unreadable); return end
--- the same limit as the panel "Задачи" of the window
+-- the same limits as the panel "Задачи" of the window
+local text_len = (utf8 and utf8.len(text)) or #text
+if text_len > 200 then
+  say(TITLE, T("Задача длиннее 200 символов. Скажите короче.", "The task is longer than 200 characters."))
+  return
+end
 if #list >= 30 then
   say(TITLE, T("Список полон: 30 задач. Удалите выполненные, например: выполнил задачу 1", "The list is full: 30 tasks. Remove done ones, e.g. task 1 done"))
   return
