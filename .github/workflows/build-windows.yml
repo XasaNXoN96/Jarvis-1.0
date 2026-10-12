@@ -184,33 +184,54 @@ jobs:
       - name: Check installer languages
         shell: pwsh
         run: |
-          foreach ($log in Get-ChildItem iscc-*.log) {
+          $logs = @(Get-ChildItem iscc-*.log)
+          if ($logs.Count -eq 0) { Write-Output "::error title=installer::no ISCC output to check"; exit 1 }
+          foreach ($log in $logs) {
             $text = Get-Content $log -Raw
-            foreach ($isl in "Languages\Russian.isl", "Default.isl") {
-              if ($text -notmatch [regex]::Escape($isl)) { Write-Output "::error title=installer::$($log.Name): $isl is not compiled in"; exit 1 }
+            # the [Languages] entries as ISCC reads them ("Reading file: ...\Default.isl" is the English entry; the line
+            # "Reading default messages from Default.isl" is printed always and does not count)
+            foreach ($isl in "Reading file:.*\\Languages\\Russian\.isl", "Reading file:.*\\Default\.isl") {
+              if ($text -notmatch $isl) { Write-Output "::error title=installer::$($log.Name): $isl is not compiled in"; exit 1 }
             }
             if ($text -notmatch "Successful compile") { Write-Output "::error title=installer::$($log.Name): no successful compile"; exit 1 }
             Write-Host "$($log.Name): Russian.isl and Default.isl compiled in"
             Select-String -Path $log -Pattern "\[Languages\]|\.isl" | Select-Object -First 8 | ForEach-Object { "  " + $_.Line }
           }
 
-      # an extra look inside the installers (languages, the files); innoextract may not know the newest Inno Setup
-      # format, so this step only informs
-      - name: Look inside the installers (innoextract)
-        continue-on-error: true
+      # The full installer into a folder with spaces and Cyrillic letters (in English): the program, the Piper voice and
+      # the speech model are really installed; then the uninstaller removes the program folder.
+      # (innoextract 1.9 does not read the Inno Setup 6.7 format, so the contents are checked by installing.)
+      - name: Full installer - install into a Cyrillic path and uninstall
+        if: steps.piper.outcome == 'success'
+        timeout-minutes: 10
         shell: pwsh
         run: |
-          choco install innoextract -y --no-progress
-          foreach ($exe in "dist\Jarvis-Setup-Lite.exe", "dist\Jarvis-Setup.exe") {
-            Write-Host "=== $exe"
-            innoextract --list-languages $exe
-            innoextract -l $exe | Select-String -Pattern "jarvis-app.exe|piper.exe|vosk-model|ru.onnx" | Select-Object -First 10
+          $ErrorActionPreference = "Stop"
+          $dir = "C:\Jarvis Тест Full"
+          $p = Start-Process dist\Jarvis-Setup.exe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LANG=english", "/DIR=`"$dir`"", "/LOG=$PWD\install-full.log" -PassThru -Wait
+          Write-Host "installer exit code: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { Get-Content install-full.log -Tail 30; throw "silent install failed" }
+          $need = @("jarvis-app.exe", "piper\piper.exe", "piper\voices\ru.onnx", "piper\voices\en.onnx", "resources\commands", "resources\vosk\vosk-model-small-ru-0.22", "unins000.exe")
+          if ("${{ steps.vosk.outcome }}" -ne "success") { $need = $need | Where-Object { $_ -notlike "*vosk-model*" }; Write-Host "::warning::the full installer was built without the Vosk model" }
+          foreach ($f in $need) {
+            if (-not (Test-Path -LiteralPath (Join-Path $dir $f))) { throw "not installed: $f" }
+            Write-Host "installed: $f"
           }
+          $lnk = Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Jarvis" -Filter *.lnk | ForEach-Object { $_.Name }
+          Write-Host "Start menu: $($lnk -join ', ')"
+          if (@($lnk).Count -lt 2) { throw "the Start menu shortcuts are missing" }
+          $u = Start-Process (Join-Path $dir "unins000.exe") -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -PassThru -Wait
+          Write-Host "uninstaller exit code: $($u.ExitCode)"
+          # the uninstaller finishes in a copy of itself: a few seconds
+          for ($i = 0; $i -lt 30 -and (Test-Path -LiteralPath (Join-Path $dir "jarvis-app.exe")); $i++) { Start-Sleep 1 }
+          if (Test-Path -LiteralPath (Join-Path $dir "jarvis-app.exe")) { throw "the uninstaller left jarvis-app.exe" }
+          Write-Host "uninstalled: the program is removed"
 
       # The Lite installer is installed silently and the installed Jarvis is started on the CI machine: its page server
       # answers, a second start does not leave a second process, the window is asked to show, and the full exit ends the
       # process. (The CI machine has no microphone and no user at the screen: the voice is not checked here.)
       - name: Smoke test of the installed Jarvis
+        timeout-minutes: 10
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -240,6 +261,7 @@ jobs:
           if ($count -ne 1) { throw "expected one jarvis-app process, found $count" }
           $r = Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $h -Body '{"name":"show_window"}'
           Write-Host "show_window: $($r | ConvertTo-Json -Compress)"
+          # "Свернуть в трей" (the same way as the tray menu): Jarvis keeps running
           $r = Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $h -Body '{"name":"hide_window"}'
           Write-Host "hide_window: $($r | ConvertTo-Json -Compress)"
           Start-Sleep 2
@@ -253,6 +275,14 @@ jobs:
           if (-not $app.WaitForExit(15000)) { throw "Jarvis did not end after the full exit" }
           Write-Host "Jarvis ended after the full exit, exit code $($app.ExitCode)"
           if (@(Get-Process jarvis-app -ErrorAction SilentlyContinue).Count -ne 0) { throw "a jarvis-app process is still running" }
+          # an update over a running Jarvis (it may sit hidden in the tray): the installer closes it and installs
+          $app = Start-Process "$dir\jarvis-app.exe" -ArgumentList "--background" -WorkingDirectory $dir -PassThru
+          for ($i = 0; $i -lt 90; $i++) { Start-Sleep 1; try { Invoke-RestMethod http://127.0.0.1:9714/state -TimeoutSec 3 | Out-Null; break } catch {} }
+          $p = Start-Process dist\Jarvis-Setup-Lite.exe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=$dir", "/LOG=$PWD\update.log" -PassThru -Wait
+          Write-Host "update over the running Jarvis: installer exit code $($p.ExitCode); old Jarvis ended: $($app.HasExited)"
+          Select-String -Path update.log -Pattern "Closing|close|Restart Manager|in use" | Select-Object -First 10 | ForEach-Object { "  " + $_.Line }
+          if (-not $app.HasExited) { $app.Kill(); throw "the installer did not close the running Jarvis" }
+          if ($p.ExitCode -ne 0) { throw "the update over the running Jarvis failed" }
           $log = Get-ChildItem "$env:APPDATA", "$env:LOCALAPPDATA" -Recurse -Depth 3 -Filter log.txt -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*jarvis*" } | Sort-Object LastWriteTime | Select-Object -Last 1
           if ($log) {
             Write-Host "=== $($log.FullName)"
