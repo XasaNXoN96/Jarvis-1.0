@@ -45,7 +45,7 @@ fn save(timers: &[TimerEntry]) {
     if let Some(p) = file_path() {
         match serde_json::to_string_pretty(timers) {
             Ok(json) => {
-                if let Err(e) = std::fs::write(&p, json) {
+                if let Err(e) = crate::write_atomic(&p, json) {
                     warn!("Cannot save timers to {}: {}", p.display(), e);
                 }
             }
@@ -159,7 +159,11 @@ pub fn init() {
     let saved: Vec<TimerEntry> = match serde_json::from_str(&content) {
         Ok(v) => v,
         Err(e) => {
+            // the file is kept (not overwritten by the next save) and the user is told, instead of losing the
+            // timers silently
             warn!("Cannot read {}: {}", path.display(), e);
+            let _ = std::fs::rename(&path, path.with_extension(format!("json.broken-{}", now_unix())));
+            crate::uistate::log_event("error", "Сохранённые таймеры не прочитались (файл повреждён): их копия оставлена рядом, новые таймеры работают");
             return;
         }
     };

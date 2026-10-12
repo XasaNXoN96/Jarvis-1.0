@@ -116,3 +116,31 @@ pub use db::SettingsManager;
 
 #[cfg(test)]
 mod installer_tests;
+
+// Writes a file so that a crash or a power cut in the middle never leaves it cut off: the content goes to a
+// temporary file next to it, which then replaces the old one in one step (settings, timers, tasks, notes).
+pub fn write_atomic(path: &std::path::Path, data: impl AsRef<[u8]>) -> std::io::Result<()> {
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let tmp = std::path::PathBuf::from(tmp);
+    std::fs::write(&tmp, data)?;
+    std::fs::rename(&tmp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        e
+    })
+}
+
+#[cfg(test)]
+mod write_atomic_tests {
+    #[test]
+    fn a_file_is_replaced_whole_and_no_temporary_file_stays() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("Таймеры пользователя.json");
+        super::write_atomic(&p, "[1]").unwrap();
+        super::write_atomic(&p, "[1, 2]").unwrap();
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "[1, 2]");
+        let names: Vec<String> = std::fs::read_dir(dir.path()).unwrap().flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect();
+        assert_eq!(names, ["Таймеры пользователя.json"], "no .tmp left behind");
+    }
+}
+

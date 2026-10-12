@@ -105,7 +105,7 @@ fn save_state(path: &PathBuf, data: &HashMap<String, serde_json::Value>) -> mlua
     let json = serde_json::to_string_pretty(data)
         .map_err(|e| mlua::Error::runtime(e.to_string()))?;
     
-    fs::write(path, json)
+    crate::write_atomic(path, json)
         .map_err(|e| mlua::Error::runtime(e.to_string()))?;
     
     Ok(())

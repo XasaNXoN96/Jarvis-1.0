@@ -67,7 +67,7 @@ pub fn register(
                 .map_err(|e| mlua::Error::runtime(format!("Create dir error: {}", e)))?;
         }
         
-        fs::write(&full_path, content)
+        crate::write_atomic(&full_path, content)
             .map_err(|e| mlua::Error::runtime(format!("Write error: {}", e)))?;
         
         Ok(true)

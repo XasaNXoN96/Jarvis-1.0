@@ -543,7 +543,7 @@ pub fn set_group_disabled(group: &str, disabled: bool) {
     if disabled { set.insert(group.to_string()); } else { set.remove(group); }
     if let Some(p) = file("disabled_groups.json") {
         let list: Vec<&String> = set.iter().collect();
-        let _ = std::fs::write(p, serde_json::to_string(&list).unwrap_or_default());
+        let _ = crate::write_atomic(&p, serde_json::to_string(&list).unwrap_or_default());
     }
 }
 

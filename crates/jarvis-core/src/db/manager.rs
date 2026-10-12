@@ -31,6 +31,8 @@ impl SettingsManager {
 
     // write a setting by key, auto-saves to disk
     pub fn write(&self, key: &str, val: &str) -> Result<(), String> {
+        // one save at a time, in the order of the changes: two saves at once could write the older state last
+        let _save = SAVE_LOCK.lock();
         let snapshot = {
             let mut settings = self.inner.write();
             settings.set(key, val)?;
@@ -45,6 +47,7 @@ impl SettingsManager {
 
     // write multiple settings at once, single save
     pub fn write_many(&self, pairs: &[(&str, &str)]) -> Result<(), String> {
+        let _save = SAVE_LOCK.lock();
         let snapshot = {
             let mut settings = self.inner.write();
             for (key, val) in pairs {
@@ -85,3 +88,5 @@ impl SettingsManager {
             .collect()
     }
 }
+
+static SAVE_LOCK: parking_lot::Mutex<()> = parking_lot::const_mutex(());
