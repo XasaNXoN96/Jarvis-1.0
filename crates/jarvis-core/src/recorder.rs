@@ -85,16 +85,27 @@ const RECOVER_EVERY: std::time::Duration = std::time::Duration::from_secs(5);
 // what to do on one attempt (kept apart for the tests): stop trying, wait, or open the microphone again
 #[derive(Debug, PartialEq)]
 pub enum Recover {
+    // Jarvis exits: the attempts end
     Stop,
+    // the user switched the microphone off: nothing is opened, the attempts wait (after "включи микрофон" the voice
+    // loop finds the dead stream again otherwise)
+    Wait,
     Try,
 }
 
 pub fn recover_step(shut_down: bool, muted: bool) -> Recover {
-    if shut_down || muted {
+    if shut_down {
         Recover::Stop
+    } else if muted {
+        Recover::Wait
     } else {
         Recover::Try
     }
+}
+
+// 5 s, 10 s, 20 s, 40 s, then once a minute: a microphone that stays unplugged does not flood the log
+pub fn recover_delay(attempt: u32) -> std::time::Duration {
+    RECOVER_EVERY.saturating_mul(1 << attempt.min(4)).min(std::time::Duration::from_secs(60))
 }
 
 pub fn recover_in_background() {
@@ -103,13 +114,22 @@ pub fn recover_in_background() {
         return;
     }
     std::thread::spawn(|| {
+        let mut attempt = 0u32;
         loop {
-            std::thread::sleep(RECOVER_EVERY);
-            if recover_step(SHUT_DOWN.load(Ordering::SeqCst), crate::MIC_MUTED.load(Ordering::SeqCst)) == Recover::Stop {
-                break;
+            std::thread::sleep(recover_delay(attempt));
+            match recover_step(SHUT_DOWN.load(Ordering::SeqCst), crate::MIC_MUTED.load(Ordering::SeqCst)) {
+                Recover::Stop => break,
+                Recover::Wait => continue,
+                Recover::Try => {}
             }
+            attempt += 1;
             release();
             if start_recording().is_ok() {
+                // switched off or exiting while it was opening: it is closed again at once
+                if crate::MIC_MUTED.load(Ordering::SeqCst) || SHUT_DOWN.load(Ordering::SeqCst) {
+                    release();
+                    continue;
+                }
                 info!("Microphone is back: recording again");
                 let mut err = crate::VOICE_ERROR.lock();
                 if err.starts_with("микрофон перестал") {
@@ -257,8 +277,11 @@ mod recover_tests {
     #[test]
     fn the_microphone_is_never_reopened_against_the_settings_or_after_exit() {
         assert_eq!(recover_step(false, false), Recover::Try);
-        assert_eq!(recover_step(false, true), Recover::Stop, "switched off by the user: stays off");
+        assert_eq!(recover_step(false, true), Recover::Wait, "switched off by the user: stays off, the attempts wait");
         assert_eq!(recover_step(true, false), Recover::Stop, "Jarvis exits: nothing is opened");
+        assert_eq!(recover_step(true, true), Recover::Stop);
+        let delays: Vec<u64> = (0..7).map(|a| recover_delay(a).as_secs()).collect();
+        assert_eq!(delays, [5, 10, 20, 40, 60, 60, 60], "a missing microphone is not tried every 5 s forever");
     }
 }
 
