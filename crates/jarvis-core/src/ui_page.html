@@ -1338,7 +1338,10 @@ async function closeAnswer(answer) {
   if (ownWindow) { window.ipc.postMessage('close:' + answer); return; }
   if (answer === 'tray') closeBrowserWindow();
   else if (answer === 'exit') {
-    try { await action('app_exit'); } catch (e) {}
+    let r = null;
+    try { r = await action('app_exit'); } catch (e) {}
+    // Jarvis did not take the request (it is still starting, or it does not answer): it is not called closed
+    if (!r || !r.ok) { showToast('Не удалось закрыть JARVIS. Используйте пункт «Выход» в меню значка в трее.'); return; }
     browserExited = true;
     $('#status').textContent = closeTexts().exited || 'JARVIS закрыт. Это окно можно закрыть.';
     window.close();
@@ -1373,7 +1376,8 @@ if (!ownWindow) {
 function applyCloseRequest(s) {
   if (ownWindow || typeof s.close_req !== 'number') return;
   if (s.close_dialog && s.close_dialog.open) $('#close-open-t').textContent = s.close_dialog.open;
-  if (closeReqSeen === null) { closeReqSeen = s.close_req; return; }
+  // (a restarted Jarvis counts from zero again: the page follows it instead of waiting for the old number)
+  if (closeReqSeen === null || s.close_req < closeReqSeen) { closeReqSeen = s.close_req; return; }
   if (s.close_req > closeReqSeen) { closeReqSeen = s.close_req; closeBrowserWindow(); }
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#close-dlg').classList.contains('on')) closeAnswer('cancel'); });

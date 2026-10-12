@@ -300,6 +300,8 @@ mod recover_tests {
         assert_eq!(recover_step(false, true), Recover::Wait, "switched off by the user: stays off, the attempts wait");
         assert_eq!(recover_step(true, false), Recover::Stop, "Jarvis exits: nothing is opened");
         assert_eq!(recover_step(true, true), Recover::Stop);
+        let delays: Vec<u64> = (0..7).map(|a| recover_delay(a).as_secs()).collect();
+        assert_eq!(delays, [5, 10, 20, 40, 60, 60, 60], "a missing microphone is not tried every 5 s forever");
     }
 
     #[test]
@@ -310,8 +312,6 @@ mod recover_tests {
         assert!(!notice_due(&last, t0 + std::time::Duration::from_secs(60)), "a second loss a minute later is not");
         assert!(!notice_due(&last, t0 + std::time::Duration::from_secs(599)));
         assert!(notice_due(&last, t0 + LOST_NOTICE_EVERY), "after ten minutes it is told again");
-        let delays: Vec<u64> = (0..7).map(|a| recover_delay(a).as_secs()).collect();
-        assert_eq!(delays, [5, 10, 20, 40, 60, 60, 60], "a missing microphone is not tried every 5 s forever");
     }
 }
 
