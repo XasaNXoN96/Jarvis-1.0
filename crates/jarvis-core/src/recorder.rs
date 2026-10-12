@@ -74,6 +74,62 @@ pub fn init() -> Result<(), ()> {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------------------------
+// the microphone came back: after the sleep of Windows or a reconnected device the stream is dead, it is opened
+// again every few seconds until it works. Never when the user switched the microphone off (privacy) or Jarvis exits.
+// ---------------------------------------------------------------------------------------------
+static RECOVERING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static SHUT_DOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+const RECOVER_EVERY: std::time::Duration = std::time::Duration::from_secs(5);
+
+// what to do on one attempt (kept apart for the tests): stop trying, wait, or open the microphone again
+#[derive(Debug, PartialEq)]
+pub enum Recover {
+    Stop,
+    Try,
+}
+
+pub fn recover_step(shut_down: bool, muted: bool) -> Recover {
+    if shut_down || muted {
+        Recover::Stop
+    } else {
+        Recover::Try
+    }
+}
+
+pub fn recover_in_background() {
+    use std::sync::atomic::Ordering;
+    if RECOVERING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    std::thread::spawn(|| {
+        loop {
+            std::thread::sleep(RECOVER_EVERY);
+            if recover_step(SHUT_DOWN.load(Ordering::SeqCst), crate::MIC_MUTED.load(Ordering::SeqCst)) == Recover::Stop {
+                break;
+            }
+            release();
+            if start_recording().is_ok() {
+                info!("Microphone is back: recording again");
+                let mut err = crate::VOICE_ERROR.lock();
+                if err.starts_with("микрофон перестал") {
+                    err.clear();
+                }
+                drop(err);
+                crate::uistate::log_event("voice", "Микрофон снова работает");
+                break;
+            }
+        }
+        RECOVERING.store(false, Ordering::SeqCst);
+    });
+}
+
+// "Полностью закрыть JARVIS": the microphone is released and never opened again by this process
+pub fn shutdown() {
+    SHUT_DOWN.store(true, std::sync::atomic::Ordering::SeqCst);
+    release();
+}
+
 pub fn read_microphone(frame_buffer: &mut [i16]) {
     match RECORDER_TYPE.get().unwrap() {
         RecorderType::PvRecorder => {
@@ -192,3 +248,17 @@ pub fn get_audio_device_name(idx: i32) -> String {
         }
     }
 }
+
+#[cfg(test)]
+mod recover_tests {
+    use super::*;
+
+    // the microphone is opened again only when the user wants the voice and Jarvis is not exiting
+    #[test]
+    fn the_microphone_is_never_reopened_against_the_settings_or_after_exit() {
+        assert_eq!(recover_step(false, false), Recover::Try);
+        assert_eq!(recover_step(false, true), Recover::Stop, "switched off by the user: stays off");
+        assert_eq!(recover_step(true, false), Recover::Stop, "Jarvis exits: nothing is opened");
+    }
+}
+
