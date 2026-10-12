@@ -156,6 +156,33 @@ pub fn piper_check_play(tts_on: bool, windows_voice: bool, test: PiperFacts, las
     }
 }
 
+// the reserve voice of Windows (PowerShell + System.Speech): judged only by its own playbacks, never by Piper's
+pub fn windows_voice_check(selected: bool, tts_on: bool, last: Option<(u64, Result<(), String>)>) -> Check {
+    let (name, key) = ("Голос Windows (резервный)", "winvoice");
+    match (selected, last) {
+        (false, None) => check(key, name, Status::Unchecked, "Не выбран: Jarvis говорит голосом Piper. Голос Windows нужен только как запасной.", "Настройки → Голос → «Windows: …», если Piper не подходит."),
+        (false, Some((t, Err(e)))) => check(key, name, Status::Warn, format!("Сейчас не выбран; его последняя попытка {} закончилась ошибкой: {}.", ago(t), e), "Если хотите пользоваться голосом Windows — исправьте причину; иначе оставьте голос Piper."),
+        (false, Some((t, Ok(())))) => check(key, name, Status::Unchecked, format!("Сейчас не выбран; последняя попытка {} прошла без ошибок.", ago(t)), ""),
+        (true, None) => check(key, name, Status::Unchecked, "Выбран, но в этом запуске ещё ничего не произносил.", "Нажмите «Проверить звук» в Настройках → Голос."),
+        (true, Some((t, Ok(())))) => check(key, name, if tts_on { Status::Ok } else { Status::Warn }, format!("Последняя фраза {} прошла без ошибок (PowerShell запустился и System.Speech отработал).{}", ago(t), if tts_on { "" } else { " Озвучка выключена пользователем." }), ""),
+        (true, Some((t, Err(e)))) => check(key, name, Status::Error, format!("Голос Windows не сработал ({}): {}.", ago(t), e), "Выберите голос Jarvis (Piper): Настройки → Голос → «Автоматически». Проверьте звук Windows и что PowerShell не заблокирован политикой или антивирусом."),
+    }
+}
+
+// which program this is: the commit it was built from, and where it lies (a report of a problem must name the build)
+pub fn build_check() -> Check {
+    let exe = std::env::current_exe().ok();
+    let when = exe
+        .as_ref()
+        .and_then(|p| std::fs::metadata(p).ok())
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| ago(d.as_secs()))
+        .unwrap_or_else(|| "?".into());
+    let (status, hint) = if crate::config::BUILD_SHA.is_some() { (Status::Ok, "") } else { (Status::Unchecked, "Сборка без метки коммита (локальная): сверить её с CI нельзя.") };
+    check("build", "Установленная сборка", status, format!("Версия {}. Файл {} изменён {}.", crate::config::build_id(), exe.map(|p| p.display().to_string()).unwrap_or_default(), when), hint)
+}
+
 pub fn ai_check(ai_enabled: bool, status: &Value) -> Check {
     let (name, key) = ("ИИ-провайдер", "ai");
     if !ai_enabled {
@@ -513,7 +540,9 @@ pub fn run() -> Vec<Check> {
         crate::tts::SynthCheck::Failed(e) => PiperFacts::Failed(e),
         crate::tts::SynthCheck::Interrupted => PiperFacts::Interrupted,
     };
-    let piper = piper_check_play(crate::tts::is_enabled(), crate::uistate::voice_name().starts_with("win:"), test, crate::tts::last_synth(), crate::tts::last_play());
+    let piper = piper_check_play(crate::tts::is_enabled(), crate::uistate::voice_name().starts_with("win:"), test, crate::tts::last_synth(), crate::tts::last_play_for(crate::tts::Engine::Piper));
+    let windows_voice = windows_voice_check(crate::uistate::voice_name().starts_with("win:"), crate::tts::is_enabled(), crate::tts::last_play_for(crate::tts::Engine::Windows));
+    let build = build_check();
     let ai_status = crate::ai::status_json();
     let ai = ai_check(crate::uistate::settings().ai_enabled, &ai_status);
     let latency = latency_check(ai_status.get("timing").filter(|t| !t.is_null()));
@@ -521,7 +550,7 @@ pub fn run() -> Vec<Check> {
     let remote = measure_remote();
     let st = crate::uistate::stats();
     let monitor = monitor_check(st.mem_total_gb, st.cpu, st.disk_total_gb);
-    let checks = vec![mic, audio, piper, ai, latency, internet, remote, measure_tunnel(), measure_telegram(), measure_notify(), monitor, measure_resources(), measure_syscmds(), measure_lifecycle()];
+    let checks = vec![build, mic, audio, piper, windows_voice, ai, latency, internet, remote, measure_tunnel(), measure_telegram(), measure_notify(), monitor, measure_resources(), measure_syscmds(), measure_lifecycle()];
     *LAST.lock() = Some(Run { at: now(), checks: checks.clone(), os: os_version() });
     checks
 }

@@ -80,6 +80,15 @@ pub const BUNDLE_IDENTIFIER: &str = "com.priler.jarvis";
 pub const DB_FILE_NAME: &str = "app.db";
 pub const LOG_FILE_NAME: &str = "log.txt";
 pub const APP_VERSION: Option<&str> = option_env!("CARGO_PKG_VERSION");
+
+// the commit this program was built from (the CI sets it); a local build has none
+pub const BUILD_SHA: Option<&str> = option_env!("JARVIS_BUILD_SHA");
+
+// "1.0.0 (3770a2f)" — what a report of a problem says about the program
+pub fn build_id() -> String {
+    let sha = BUILD_SHA.map(|s| s.chars().take(7).collect::<String>()).filter(|s| !s.is_empty()).unwrap_or_else(|| "локальная".into());
+    format!("{} {}", APP_VERSION.unwrap_or("?"), sha)
+}
 pub const AUTHOR_NAME: Option<&str> = option_env!("CARGO_PKG_AUTHORS");
 pub const REPOSITORY_LINK: Option<&str> = option_env!("CARGO_PKG_REPOSITORY");
 pub const TG_OFFICIAL_LINK: Option<&str> = Some("https://t.me/howdyho_official");

@@ -331,16 +331,52 @@ fn note_synth(result: Result<(), String>) {
 // the last real playback (unix time, Ok or the error): making a sound file is not the same as hearing it
 static LAST_PLAY: Lazy<Mutex<Option<(u64, Result<(), String>)>>> = Lazy::new(|| Mutex::new(None));
 
+// which voice engine played (or failed): a failure of one engine is never written down as a failure of the other
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Engine {
+    Piper,
+    Windows,
+}
+
+impl Engine {
+    fn label(self) -> &'static str {
+        match self {
+            Engine::Piper => "голос Jarvis (Piper)",
+            Engine::Windows => "голос Windows",
+        }
+    }
+}
+
+static LAST_PLAY_PIPER: Lazy<Mutex<Option<(u64, Result<(), String>)>>> = Lazy::new(|| Mutex::new(None));
+static LAST_PLAY_WINDOWS: Lazy<Mutex<Option<(u64, Result<(), String>)>>> = Lazy::new(|| Mutex::new(None));
+
 fn note_play(result: Result<(), String>) {
+    note_play_for(Engine::Piper, result)
+}
+
+fn note_play_for(engine: Engine, result: Result<(), String>) {
     match &result {
         Err(e) => {
-            warn!("TTS: playback failed: {}", e);
-            *PROBLEM.lock() = Some(format!("Ответ не озвучен: {}", e));
+            warn!("TTS ({}): playback failed: {}", engine.label(), e);
+            *PROBLEM.lock() = Some(format!("Ответ не озвучен ({}): {}", engine.label(), e));
         }
         Ok(()) => *PROBLEM.lock() = None,
     }
     let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let slot = match engine {
+        Engine::Piper => &LAST_PLAY_PIPER,
+        Engine::Windows => &LAST_PLAY_WINDOWS,
+    };
+    *slot.lock() = Some((t, result.clone()));
     *LAST_PLAY.lock() = Some((t, result));
+}
+
+// the last playback of one engine
+pub fn last_play_for(engine: Engine) -> Option<(u64, Result<(), String>)> {
+    match engine {
+        Engine::Piper => LAST_PLAY_PIPER.lock().clone(),
+        Engine::Windows => LAST_PLAY_WINDOWS.lock().clone(),
+    }
 }
 
 pub fn last_play() -> Option<(u64, Result<(), String>)> {
@@ -739,6 +775,19 @@ if ($pick) { $s.SelectVoice($pick.VoiceInfo.Name) }
 $s.Speak($env:JARVIS_TTS_TEXT)
 "#;
 
+// PowerShell could not be started for the Windows voice: the reason of THIS engine (never of Piper), the way out that
+// really exists, and the build (so that a report of it names the program)
+fn sapi_start_failed(e: &std::io::Error) {
+    let way_out = if piper_available() {
+        "Выберите голос Jarvis (Piper): Настройки → Голос → «Автоматически»."
+    } else {
+        "Установите голос Jarvis (Piper): Настройки → Голос → «Установить голос Джарвиса»."
+    };
+    let msg = format!("Не удалось запустить озвучку Windows (PowerShell): {} [сборка {}]. {}", e, crate::config::build_id(), way_out);
+    note_play_for(Engine::Windows, Err(format!("PowerShell не запустился: {} [сборка {}]", e, crate::config::build_id())));
+    tell_once(&msg);
+}
+
 fn speak_sapi(text: &str, lang: &str, generation: u64) {
     #[cfg(target_os = "windows")]
     {
@@ -759,16 +808,16 @@ fn speak_sapi(text: &str, lang: &str, generation: u64) {
             Ok(child) => {
                 let result = if store(child, generation) { wait_current(generation) } else { None };
                 if result == Some(true) && !note.exists() {
-                    note_play(Ok(()));
+                    note_play_for(Engine::Windows, Ok(()));
                 }
                 if result == Some(false) {
                     // PowerShell / System.Speech failed (no output device, a broken voice): said, not hidden
-                    note_play(Err("голос Windows не смог произнести фразу".into()));
+                    note_play_for(Engine::Windows, Err("голос Windows не смог произнести фразу".into()));
                     tell_once("Голос Windows не смог произнести фразу (нет устройства вывода звука или голос повреждён). Проверьте звук или выберите голос Jarvis (Piper) в Настройки → Голос.");
                 }
             }
             Err(e) => {
-                tell_once(&format!("Не удалось запустить озвучку Windows (PowerShell): {}", e));
+                sapi_start_failed(&e);
                 return;
             }
         }
@@ -1090,6 +1139,67 @@ mod volume_tests {
         let mut junk = b"not a wav at all".to_vec();
         scale_wav(&mut junk, 10);
         assert_eq!(junk, b"not a wav at all".to_vec());
+    }
+}
+
+#[cfg(test)]
+mod engine_tests {
+    use super::*;
+
+    // the message of the user's screenshot: «Не удалось запустить озвучку Windows (PowerShell): … (os error 50)»
+    #[test]
+    fn a_powershell_start_failure_is_the_windows_voice_failure_and_never_piper() {
+        let _g = crate::uistate::TEST_LOCK.lock();
+        note_play_for(Engine::Piper, Ok(()));
+        let piper_before = last_play_for(Engine::Piper);
+        let e = std::io::Error::from_raw_os_error(50);
+        sapi_start_failed(&e);
+        let problem = speech_problem().unwrap();
+        assert!(problem.contains("Не удалось запустить озвучку Windows (PowerShell)"), "{}", problem);
+        assert!(problem.contains("os error 50"), "the real reason is shown, not hidden: {}", problem);
+        assert!(problem.contains("[сборка "), "the build is named: {}", problem);
+        assert!(problem.contains("Piper"), "a way out is offered: {}", problem);
+        // the failure belongs to the Windows voice only
+        assert!(matches!(last_play_for(Engine::Windows), Some((_, Err(_)))));
+        assert_eq!(last_play_for(Engine::Piper), piper_before, "Piper's own record is untouched");
+        let win = crate::diag::windows_voice_check(true, true, last_play_for(Engine::Windows));
+        assert_eq!(win.status, crate::diag::Status::Error);
+        assert!(win.detail.contains("os error 50"), "{}", win.detail);
+        let piper = crate::diag::piper_check_play(true, true, crate::diag::PiperFacts::Ok(30_000), None, last_play_for(Engine::Piper));
+        assert_ne!(piper.status, crate::diag::Status::Error, "the Piper card does not blame Piper: {}", piper.detail);
+        assert!(!piper.detail.contains("os error"), "{}", piper.detail);
+        note_play_for(Engine::Windows, Ok(()));
+    }
+
+    #[test]
+    fn a_failure_of_piper_is_never_written_down_for_the_windows_voice() {
+        let _g = crate::uistate::TEST_LOCK.lock();
+        note_play_for(Engine::Windows, Ok(()));
+        let win_before = last_play_for(Engine::Windows);
+        note_play_for(Engine::Piper, Err("Windows не смогла воспроизвести звук".into()));
+        assert_eq!(last_play_for(Engine::Windows), win_before);
+        assert!(speech_problem().unwrap().contains("голос Jarvis (Piper)"));
+        let win = crate::diag::windows_voice_check(true, true, last_play_for(Engine::Windows));
+        assert_eq!(win.status, crate::diag::Status::Ok, "{}", win.detail);
+        note_play_for(Engine::Piper, Ok(()));
+    }
+
+    // every program that is started for the voice has its three standard handles set (an inherited invalid one was
+    // the cause of «os error 50» before): a spawn() with none of them set is a regression
+    #[test]
+    fn every_spawn_of_the_voice_sets_its_standard_handles() {
+        let src = include_str!("tts.rs");
+        let body = &src[..src.find("#[cfg(test)]\nmod speech_problem_tests").unwrap()];
+        let lines: Vec<&str> = body.lines().collect();
+        for (i, l) in lines.iter().enumerate() {
+            if l.contains("Command::new(") && !l.trim_start().starts_with("//") {
+                let window = lines[i..(i + 25).min(lines.len())].join("\n");
+                let sets_all = window.contains("null_stdio") || (window.contains(".stdin(") && window.contains(".stdout(") && window.contains(".stderr("));
+                // (output() gives the child no stdin of the parent by itself)
+                let captured = window.contains(".output()");
+                assert!(sets_all || captured, "line {}: a process of the voice is started without its standard handles: {}", i + 1, l.trim());
+            }
+        }
     }
 }
 

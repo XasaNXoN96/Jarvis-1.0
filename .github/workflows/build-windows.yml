@@ -52,6 +52,8 @@ jobs:
         shell: pwsh
         run: |
           $env:LIB = "$PWD\lib\windows\amd64;$env:LIB"
+          # the commit is written into the program: a report of a problem (diagnostics, the speech message) names the build
+          $env:JARVIS_BUILD_SHA = "${{ github.sha }}"
           cargo build --release -p jarvis-app
 
       - name: Assemble program folder
@@ -260,6 +262,17 @@ jobs:
           Write-Host "PIPER playback on this runner (it has no sound card, so a failure here is expected): [$($piper.status)] $($piper.detail)"
           Add-Content evidence.txt "PIPER synthesis in the install folder with Cyrillic: made a phrase (the diagnostics card said so before playback)"
           Add-Content evidence.txt "PIPER playback on this runner (no sound card): [$($piper.status)] $($piper.detail)"
+          # the Windows voice (PowerShell + System.Speech) started by a Jarvis that was started like the autostart does
+          # (--background: no console, so no valid standard handles). The error «os error 50» must not come back.
+          Invoke-RestMethod http://127.0.0.1:9714/settings -Method Post -Headers $hh -ContentType "application/json" -Body '{"voice_name":"win:"}' | Out-Null
+          Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $hh -Body '{"name":"tts_test"}' | Out-Null
+          Start-Sleep 12
+          $sj = Invoke-RestMethod http://127.0.0.1:9714/state -TimeoutSec 5
+          $prob = "$($sj.speech.problem)"
+          Write-Host "WINDOWS VOICE after a --background start: windows_voice=$($sj.speech.windows_voice); problem='$prob'"
+          Add-Content evidence.txt "WINDOWS VOICE (PowerShell spawn from a --background Jarvis): problem='$prob'"
+          if ($prob -like "*os error*" -or $prob -like "*Не удалось запустить озвучку*") { Write-Output "::error title=windows voice::$prob"; throw "the Windows voice could not be started: $prob" }
+          Invoke-RestMethod http://127.0.0.1:9714/settings -Method Post -Headers $hh -ContentType "application/json" -Body '{"voice_name":""}' | Out-Null
           # the voice of the Telegram bot with the REAL engines: Piper -> voice message (Opus) -> Vosk, in the Cyrillic folder
           $st = Join-Path $PWD "selftest-speech.txt"
           $sp = Start-Process "$dir\jarvis-app.exe" -ArgumentList "--selftest-speech", "`"$st`"" -WorkingDirectory $dir -PassThru -Wait -WindowStyle Hidden
@@ -301,6 +314,34 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "silent install failed" }
           foreach ($f in "jarvis-app.exe", "resources\commands", "unins000.exe") {
             if (-not (Test-Path "$dir\$f")) { throw "not installed: $f" }
+          }
+          # The Windows voice (PowerShell + System.Speech) when Jarvis is started the ways a user starts it: like the
+          # autostart (--background, no console), through cmd start, through the shell (Explorer, like a shortcut).
+          # «os error 50» when PowerShell is started must not appear in any of them. (This runner has no sound card:
+          # whether the sound is HEARD is NOT TESTED here; only that PowerShell starts and the engine reports honestly.)
+          foreach ($mode in "background", "cmdstart", "explorer") {
+            $exe = "$dir\jarvis-app.exe"
+            switch ($mode) {
+              "background" { $null = Start-Process $exe -ArgumentList "--background" -WorkingDirectory $dir }
+              "cmdstart" { $null = Start-Process cmd -ArgumentList "/c", "start", '""', "`"$exe`"" -WindowStyle Hidden -WorkingDirectory $dir }
+              "explorer" { $null = Start-Process explorer.exe -ArgumentList "`"$exe`"" }
+            }
+            $upm = $false
+            for ($i = 0; $i -lt 90 -and -not $upm; $i++) { Start-Sleep 1; try { Invoke-RestMethod http://127.0.0.1:9714/state -TimeoutSec 3 | Out-Null; $upm = $true } catch {} }
+            if (-not $upm) { Write-Host "WINDOWS VOICE [$mode]: Jarvis did not start this way"; Add-Content evidence.txt "WINDOWS VOICE [$mode]: Jarvis did not start this way (not tested)"; continue }
+            $hm = @{ "X-Jarvis" = "1" }
+            Invoke-RestMethod http://127.0.0.1:9714/settings -Method Post -Headers $hm -ContentType "application/json" -Body '{"voice_name":"win:"}' | Out-Null
+            Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $hm -Body '{"name":"tts_test"}' | Out-Null
+            Start-Sleep 12
+            $sm = Invoke-RestMethod http://127.0.0.1:9714/state -TimeoutSec 5
+            $pm = "$($sm.speech.problem)"
+            $dj2 = Invoke-RestMethod http://127.0.0.1:9714/diag -TimeoutSec 5
+            Write-Host "WINDOWS VOICE [$mode]: problem='$pm'"
+            Add-Content evidence.txt "WINDOWS VOICE [$mode] (PowerShell start): problem='$pm'"
+            Invoke-RestMethod http://127.0.0.1:9714/settings -Method Post -Headers $hm -ContentType "application/json" -Body '{"voice_name":""}' | Out-Null
+            Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $hm -Body '{"name":"app_exit"}' | Out-Null
+            for ($i = 0; $i -lt 30 -and @(Get-Process jarvis-app -ErrorAction SilentlyContinue).Count -gt 0; $i++) { Start-Sleep 1 }
+            if ($pm -like "*os error 50*" -or $pm -like "*Не удалось запустить озвучку*") { throw "the Windows voice could not start PowerShell when Jarvis was started by '$mode': $pm" }
           }
           # the debugging port of the WebView2 window for this one run (the interface is checked in the real window below)
           $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9333"
