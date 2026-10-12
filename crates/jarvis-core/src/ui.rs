@@ -306,6 +306,18 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             Ok(url) => json!({ "ok": true, "enabled": true, "url": url }),
             Err(e) => json!({ "ok": false, "enabled": crate::remote::is_running(), "message": format!("Не удалось включить пульт: {}", e) }),
         },
+        // the access from any network, without a VPN (a Cloudflare quick tunnel): only by the user's switch
+        "remote_tunnel" => {
+            if body["value"].as_bool().unwrap_or(false) {
+                match crate::tunnel::enable() {
+                    Ok(()) => json!({ "ok": true, "tunnel": crate::tunnel::json() }),
+                    Err(e) => json!({ "ok": false, "message": e }),
+                }
+            } else {
+                crate::tunnel::disable();
+                json!({ "ok": true, "tunnel": crate::tunnel::json() })
+            }
+        }
         // "Новая ссылка": every phone with the old link loses access (a lost phone, a link shown to someone)
         "remote_new_link" => match crate::remote::renew_token() {
             Ok(_) => json!({ "ok": true, "url": if crate::remote::is_running() { crate::remote::url() } else { String::new() } }),
@@ -773,10 +785,19 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
                 "url_https": if on { crate::remote::url_https() } else { String::new() },
                 "addresses": addrs,
                 "last_client": crate::remote::last_client(),
+                "tunnel": crate::tunnel::json(),
             })
             .to_string();
             respond(&mut stream, "200 OK", "application/json", &body);
         }
+        // the QR code of the link from any network (the tunnel address with the secret)
+        ("GET", "/remote-qr-net") => match crate::tunnel::public_link() {
+            None => respond(&mut stream, "404 Not Found", "text/plain", "the internet access is off"),
+            Some(link) => match qr_svg(&link) {
+                Some(svg) => respond_bytes(&mut stream, "200 OK", "image/svg+xml", svg.as_bytes()),
+                None => respond(&mut stream, "500 Internal Server Error", "text/plain", "qr failed"),
+            },
+        },
         ("GET", "/remote-qr") | ("GET", "/remote-qr-https") => {
             if !crate::remote::is_running() {
                 respond(&mut stream, "404 Not Found", "text/plain", "remote control is off");

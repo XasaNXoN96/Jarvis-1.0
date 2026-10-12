@@ -54,7 +54,7 @@ tokenizers = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["shellapi", "winuser", "sysinfoapi", "fileapi", "processthreadsapi", "winnt", "combaseapi", "objbase", "mmdeviceapi", "endpointvolume", "winerror", "objidl", "unknwnbase", "handleapi", "winbase", "minwindef", "dpapi", "wincrypt", "wingdi", "libloaderapi", "synchapi", "errhandlingapi", "winreg", "shlobj", "knownfolders", "fileapi", "tlhelp32", "iphlpapi", "iptypes", "ws2def", "inaddr", "ifdef", "nldef", "ipifcons", "psapi"] }
+winapi = { version = "0.3", features = ["shellapi", "winuser", "sysinfoapi", "fileapi", "processthreadsapi", "winnt", "combaseapi", "objbase", "mmdeviceapi", "endpointvolume", "winerror", "objidl", "unknwnbase", "handleapi", "winbase", "minwindef", "dpapi", "wincrypt", "wingdi", "libloaderapi", "synchapi", "errhandlingapi", "winreg", "shlobj", "knownfolders", "fileapi", "tlhelp32", "iphlpapi", "iptypes", "ws2def", "inaddr", "ifdef", "nldef", "ipifcons", "psapi", "jobapi2"] }
 winrt-notification = { workspace = true, optional = true }
 
 [features]

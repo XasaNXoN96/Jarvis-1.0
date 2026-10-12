@@ -303,6 +303,56 @@ jobs:
           $tg = Invoke-RestMethod http://127.0.0.1:9714/telegram -TimeoutSec 5
           Write-Host "messages: $(@($m.messages).Count), networks: $(@($m.networks).Count); telegram: enabled=$($tg.enabled) available=$($tg.available)"
           if ($tg.enabled) { throw "the Telegram bot must be off by default" }
+          # The access from any network: a REAL Cloudflare quick tunnel from this machine (download, hash and signature of
+          # cloudflared, the process, the public address, the page, the secret and the throttle through it). The network
+          # of the runner can fail, so a failure here is a loud warning and "TUNNEL E2E: FAIL" in the log, not a stop.
+          $tun = "FAIL"; $why = ""; $tunOn = $false
+          function Get-Tunnel { (Invoke-RestMethod http://127.0.0.1:9714/remote -TimeoutSec 5).tunnel }
+          function Wait-Tunnel($secs) {
+            $t0 = Get-Date
+            while (((Get-Date) - $t0).TotalSeconds -lt $secs) {
+              Start-Sleep 3
+              $tn = Get-Tunnel
+              if ($tn.state -eq "error") { throw "tunnel error: $($tn.error)" }
+              if ($tn.state -eq "on") { Write-Host "tunnel address ready after $([int]((Get-Date) - $t0).TotalSeconds) s"; return $tn.url }
+            }
+            throw "no public address in $secs s"
+          }
+          try {
+            Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $h -Body '{"name":"remote_on"}' | Out-Null
+            Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $h -Body '{"name":"remote_tunnel","value":true}' | Out-Null
+            $url = Wait-Tunnel 300
+            $base = $url.Split('?')[0]; $tok = $url.Split('=')[-1]
+            $page = $null
+            for ($i = 0; $i -lt 20 -and -not $page; $i++) { try { $page = Invoke-WebRequest $base -TimeoutSec 15 -UseBasicParsing } catch { Start-Sleep 3 } }
+            if (-not $page -or $page.StatusCode -ne 200 -or $page.Content -notlike "*<html*") { throw "the page did not open through the tunnel" }
+            Write-Host "the page opens through the tunnel"
+            $refused = $false
+            try { Invoke-WebRequest "$base/poll?after=0" -TimeoutSec 15 -UseBasicParsing | Out-Null } catch { $refused = $true }
+            if (-not $refused) { throw "a request without the secret was accepted through the tunnel" }
+            $pr = Invoke-WebRequest "$base/poll?after=0" -Headers @{ "X-Token" = $tok } -TimeoutSec 15 -UseBasicParsing
+            if ($pr.StatusCode -ne 200) { throw "the request with the secret failed through the tunnel" }
+            Write-Host "without the secret: refused; with the secret: answered"
+            $codes = @()
+            1..12 | ForEach-Object { try { Invoke-WebRequest "$base/poll?after=0" -Headers @{ "X-Token" = "0000000000000000" } -TimeoutSec 15 -UseBasicParsing | Out-Null } catch { $codes += [int]$_.Exception.Response.StatusCode } }
+            Write-Host "wrong secrets: $($codes -join ',')"
+            if ($codes -notcontains 429) { throw "ten wrong secrets did not close the door (no 429)" }
+            # switched off: the address stops and cloudflared ends
+            Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $h -Body '{"name":"remote_tunnel","value":false}' | Out-Null
+            Start-Sleep 2
+            if ((Get-Tunnel).state -ne "off") { throw "the tunnel did not switch off" }
+            if (@(Get-Process cloudflared -ErrorAction SilentlyContinue).Count -ne 0) { throw "cloudflared stayed after the switch" }
+            Write-Host "switched off: cloudflared ended"
+            $tun = "PASS"
+          } catch { $why = $_.Exception.Message }
+          Write-Host "TUNNEL E2E: $tun $why"
+          if ($tun -ne "PASS") { Write-Output "::warning title=tunnel e2e::$why" }
+          # on again, and left ON for the exit below: the full exit must end cloudflared too (checked after it)
+          try {
+            Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $h -Body '{"name":"remote_tunnel","value":true}' | Out-Null
+            Wait-Tunnel 300 | Out-Null; $tunOn = $true
+          } catch { Write-Host "the tunnel could not be switched on again: $($_.Exception.Message)" }
+          Write-Host "cloudflared processes before the exit: $(@(Get-Process cloudflared -ErrorAction SilentlyContinue).Count)"
           # without the X-Jarvis header nothing is done (a web page cannot close Jarvis)
           try { Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Body '{"name":"app_exit"}' | Out-Null; throw "app_exit without the header was accepted" } catch { if ($_.Exception.Message -like "*without the header*") { throw } }
           Start-Sleep 1
@@ -314,6 +364,10 @@ jobs:
           Write-Host "Jarvis ended after the full exit in $([int]$sw.Elapsed.TotalMilliseconds) ms, exit code $($app.ExitCode)"
           if ($sw.Elapsed.TotalSeconds -gt 5) { Write-Output "::warning title=exit::the full exit took $([int]$sw.Elapsed.TotalSeconds) s" }
           if (@(Get-Process jarvis-app -ErrorAction SilentlyContinue).Count -ne 0) { throw "a jarvis-app process is still running" }
+          Start-Sleep 2
+          $left = @(Get-Process cloudflared -ErrorAction SilentlyContinue).Count
+          Write-Host "cloudflared processes after the full exit (tunnel was on: $tunOn): $left"
+          if ($left -ne 0) { throw "the full exit left cloudflared running" }
           # an update over a running Jarvis (it may sit hidden in the tray): the installer closes it and installs
           $app = Start-Process "$dir\jarvis-app.exe" -ArgumentList "--background" -WorkingDirectory $dir -PassThru
           for ($i = 0; $i -lt 90; $i++) { Start-Sleep 1; try { Invoke-RestMethod http://127.0.0.1:9714/state -TimeoutSec 3 | Out-Null; break } catch {} }

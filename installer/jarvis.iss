@@ -145,6 +145,8 @@ begin
   DeleteFile(dir + '\remote_key.der');
   DeleteFile(dir + '\remote_cert.der');
   DeleteFile(dir + '\remote_cert.ip');
+  // the downloaded program of the access from any network (about 55 MB): it is not the user's data
+  DelTree(dir + '\cloudflared', True, True, True);
   if (not UninstallSilent) and (SuppressibleMsgBox(CustomMessage('UninstallDataAsk'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES) then
     DelTree(dir, True, True, True);
 end;

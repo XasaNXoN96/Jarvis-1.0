@@ -90,6 +90,7 @@
   .rmaddrs { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 2px 0 8px; } .rmaddrs .btn.on { border-color: var(--accent); color: var(--accent); }
   .rmlink { word-break: break-all; user-select: all; font-size: 12px; color: var(--accent); text-align: center; margin-bottom: 8px; }
   #rm-on { text-align: center; }
+  .net-box { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 10px; }
   .rmerr { color: #ff9aa6 !important; } .rmhelp { margin-top: 8px; display: block; color: var(--dim); font-size: 11.5px; line-height: 1.4; }
   #timers-card .scroll { max-height: 220px; overflow-y: auto; }
   .hero { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; align-items: center; justify-content: safe center; text-align: center; padding: 0 8px 6px; }
@@ -462,6 +463,17 @@
               <button class="btn small" id="rm-copy" type="button">Копировать ссылку</button>
               <button class="btn small" id="rm-renew" type="button" title="Старая ссылка перестанет работать на всех телефонах">Новая ссылка</button>
               <div class="rmoff" id="rm-hint"></div>
+              <div class="net-box" id="net-box">
+                <div class="hrow"><span>ИЗ ЛЮБОЙ СЕТИ</span><b><span class="pill" id="net-pill">ВЫКЛЮЧЕНО</span></b></div>
+                <div class="rmrow"><label class="sw"><input type="checkbox" id="net-switch"><span></span></label><span id="net-label">Доступ без VPN выключен</span></div>
+                <div id="net-on" style="display:none">
+                  <div class="qrbox"><img id="net-qr" alt="QR-код ссылки из любой сети"></div>
+                  <div class="rmlink" id="net-url"></div>
+                  <button class="btn small" id="net-copy" type="button">Копировать ссылку</button>
+                </div>
+                <small class="rmerr" id="net-err"></small>
+                <small class="rmhelp" id="net-hint">Пульт откроется с мобильного интернета и из чужой Wi-Fi сети, VPN не нужен. Порты на компьютере не открываются: Джарвис сам подключается к бесплатному туннелю Cloudflare.</small>
+              </div>
               <div class="hrow" style="margin-top:10px"><span>ТЕЛЕФОН</span><b id="ph-state">не подключён</b></div>
               <div class="hrow"><span>ПОСЛЕДНЯЯ СВЯЗЬ</span><b id="ph-last">—</b></div>
               <div class="hrow"><span>ЗАРЯД</span><b id="ph-bat">—</b></div>
@@ -475,7 +487,7 @@
               <small id="ph-msg"></small>
             </div>
             <small class="rmerr" id="rm-err"></small>
-            <small class="rmhelp">Телефон и компьютер должны быть в одной Wi-Fi сети. Наведите камеру телефона на QR-код или откройте ссылку. Пульт работает в локальной сети, не через интернет. Ссылка секретная.</small>
+            <small class="rmhelp">По Wi-Fi телефон и компьютер должны быть в одной сети; из любой другой сети — переключатель «Из любой сети» (по умолчанию выключен). Наведите камеру телефона на QR-код или откройте ссылку. Ссылка секретная.</small>
           </div>
         </div>
     </section>
@@ -739,7 +751,7 @@
         <div class="msgline" id="city-msg"></div>
       </div>
       <div class="card" style="margin-bottom:14px" id="remote-card"><h3><span class="ei">📱</span>Пульт для телефона</h3>
-        <div class="setrow"><div class="l">Управление с телефона<small>телефон и компьютер в одной Wi-Fi сети; наведите камеру на QR-код</small></div>
+        <div class="setrow"><div class="l">Управление с телефона<small>по Wi-Fi — в одной сети, из любой другой — с включённым «Из любой сети»; наведите камеру на QR-код</small></div>
           <div class="r"><button class="btn" data-cmd="включи удалённое управление" data-stay="1">Включить</button><button class="btn" data-cmd="выключи удалённое управление" data-stay="1">Выключить</button></div></div>
         <div id="remote-box" style="display:none;text-align:center;padding-top:10px">
           <div style="background:#fff;border-radius:16px;padding:10px;display:inline-block"><img id="remote-qr" alt="QR" style="width:220px;height:220px;display:block"></div>
@@ -1127,9 +1139,9 @@ function remoteHint(r) {
   const kinds = (r.addresses || []).map(a => a.kind);
   let h = '';
   if (!kinds.length) h = 'Компьютер сейчас не в сети (Wi-Fi или кабель): телефону не к чему подключиться.';
-  else if (!kinds.includes('vpn')) h = 'Телефон должен быть в той же сети, что и компьютер. Для телефона на мобильном интернете или в другой сети установите на компьютер и телефон бесплатный VPN Tailscale (один аккаунт) — здесь появится его адрес.';
-  else h = 'Адрес VPN работает, когда телефон тоже подключён к этому VPN — из любой сети, трафик зашифрован.';
-  return h + ' Не открывается? Брандмауэр Windows должен разрешать Jarvis для частных сетей.';
+  else if (!kinds.includes('vpn')) h = 'Эти ссылки работают, когда телефон в той же сети, что и компьютер. Из другой сети или с мобильного интернета включите «Из любой сети» ниже (VPN не нужен) или установите бесплатный VPN Tailscale на компьютер и телефон.';
+  else h = 'Адрес VPN работает, когда телефон тоже подключён к этому VPN — из любой сети, трафик зашифрован. Без VPN — переключатель «Из любой сети» ниже.';
+  return h + ' Не открывается по Wi-Fi? Брандмауэр Windows должен разрешать Jarvis для частных сетей.';
 }
 async function remoteCard(s) {
   const on = !!s.remote, sw = $('#rm-switch');
@@ -1204,6 +1216,36 @@ $('#ph-form').onsubmit = e => {
   e.preventDefault(); const v = $('#ph-text').value.trim(); if (!v) return;
   phoneSend(/^https?:\/\/\S+$/i.test(v) ? 'link' : 'text', v); $('#ph-text').value = '';
 };
+
+// ---------- the access from any network (a Cloudflare tunnel), only by the switch ----------
+let netUrl = '';
+function netRender(t) {
+  if (!t) return;
+  const st = t.state, sw = $('#net-switch');
+  const busy = st === 'downloading' || st === 'starting';
+  sw.checked = busy || st === 'on';
+  const pill = $('#net-pill');
+  pill.textContent = { off: 'ВЫКЛЮЧЕНО', downloading: 'ЗАГРУЗКА ' + t.percent + '%', starting: 'ЗАПУСК…', on: 'РАБОТАЕТ', error: 'ОШИБКА' }[st] || st;
+  pill.className = 'pill ' + (st === 'on' ? 'ok' : st === 'error' ? 'bad' : busy ? 'info' : '');
+  $('#net-label').textContent = st === 'on' ? 'Доступ из любой сети включён' : busy ? (st === 'downloading' ? 'Загружаю cloudflared (один раз, около 55 МБ)…' : 'Получаю адрес от Cloudflare…') : 'Доступ без VPN выключен';
+  $('#net-err').textContent = st === 'error' ? t.error : (t.available === false ? 'Доступно только в Windows' : '');
+  $('#net-on').style.display = st === 'on' && t.url ? 'block' : 'none';
+  if (st === 'on' && t.url && t.url !== netUrl) {
+    netUrl = t.url; $('#net-url').textContent = t.url; $('#net-qr').src = '/remote-qr-net?t=' + Date.now();
+  }
+  if (st !== 'on') netUrl = '';
+}
+async function netPoll() {
+  if (!lastState || !lastState.remote) return;
+  try { netRender((await (await fetch('/remote')).json()).tunnel); } catch (e) {}
+}
+setInterval(() => { if (currentPage === 'system' && !document.hidden) netPoll(); }, 2000);
+$('#net-switch').onchange = async e => {
+  const on = e.target.checked;
+  if (on && !confirm('Включить доступ к пульту из любой сети?\n\n• Трафик пульта пойдёт через серверы Cloudflare (они технически могут его видеть).\n• Ссылка секретная: у кого она есть, тот управляет компьютером. Никому её не показывайте.\n• Адрес новый при каждом включении, старый перестаёт работать.\n• Один раз скачается программа cloudflared (около 55 МБ) с github.com, её контрольная сумма и подпись Cloudflare проверяются.\n\nВыключить можно в любой момент; при выходе из Джарвиса доступ закрывается.')) { e.target.checked = false; return; }
+  try { const r = await action('remote_tunnel', { value: on }); if (!r.ok) { $('#net-err').textContent = r.message || 'Не удалось'; e.target.checked = false; return; } netRender(r.tunnel); } catch (err) { $('#net-err').textContent = 'Нет связи с Джарвисом'; e.target.checked = false; }
+};
+$('#net-copy').onclick = () => { if (netUrl) copyText(netUrl, $('#net-copy')); };
 
 // ---------- the cards of the home page: only what the program really knows ----------
 const fmtTime = ts => { const d = new Date(ts * 1000); return [d.getHours(), d.getMinutes(), d.getSeconds()].map(x => String(x).padStart(2, '0')).join(':'); };

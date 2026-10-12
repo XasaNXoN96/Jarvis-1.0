@@ -528,6 +528,45 @@ pub fn start() -> Result<String, String> {
 
 pub fn stop() {
     RUNNING.store(false, Ordering::SeqCst);
+    // the access from the internet does not outlive the remote
+    crate::tunnel::disable();
+}
+
+// wrong secrets from one address of the internet (a request through the tunnel names it in Cf-Connecting-Ip): ten in a
+// minute close the door to that address for a minute. The secret has 128 bits, this only keeps a guesser away.
+const THROTTLE_TRIES: u32 = 10;
+const THROTTLE_WINDOW: Duration = Duration::from_secs(60);
+static FAILS: Lazy<Mutex<std::collections::HashMap<String, (u32, std::time::Instant)>>> = Lazy::new(|| Mutex::new(std::collections::HashMap::new()));
+
+pub fn throttled(ip: &str, now: std::time::Instant) -> bool {
+    let mut m = FAILS.lock();
+    match m.get(ip) {
+        Some((n, since)) if now.duration_since(*since) < THROTTLE_WINDOW => *n >= THROTTLE_TRIES,
+        Some(_) => {
+            m.remove(ip);
+            false
+        }
+        None => false,
+    }
+}
+
+pub fn note_failure(ip: &str, now: std::time::Instant) {
+    let mut m = FAILS.lock();
+    if m.len() > 2000 {
+        m.retain(|_, (_, since)| now.duration_since(*since) < THROTTLE_WINDOW);
+        if m.len() > 2000 {
+            m.clear();
+        }
+    }
+    let e = m.entry(ip.to_string()).or_insert((0, now));
+    if now.duration_since(e.1) >= THROTTLE_WINDOW {
+        *e = (0, now);
+    }
+    e.0 += 1;
+}
+
+pub fn note_success(ip: &str) {
+    FAILS.lock().remove(ip);
 }
 
 static ACTIVE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -567,6 +606,8 @@ struct Request {
     token_header: Option<String>,
     // request id of the phone page: a request that arrives twice is handled once
     rid: String,
+    // the address of the phone from Cloudflare (empty for a connection from the home network)
+    client_ip: String,
     body: String,
 }
 
@@ -604,6 +645,7 @@ fn read_request<S: Read>(stream: &mut S) -> std::io::Result<Request> {
     let mut content_length = 0usize;
     let mut token_header = None;
     let mut rid = String::new();
+    let mut client_ip = String::new();
     for line in lines {
         if let Some((k, v)) = line.split_once(':') {
             let k = k.trim().to_lowercase();
@@ -614,6 +656,9 @@ fn read_request<S: Read>(stream: &mut S) -> std::io::Result<Request> {
                 token_header = Some(v.to_string());
             } else if k == "x-rid" {
                 rid = v.chars().take(64).collect();
+            } else if k == "cf-connecting-ip" {
+                // the address of the phone as Cloudflare saw it (only a request through the tunnel has it)
+                client_ip = v.chars().take(64).collect();
             }
         }
     }
@@ -637,6 +682,7 @@ fn read_request<S: Read>(stream: &mut S) -> std::io::Result<Request> {
         path,
         token_header,
         rid,
+        client_ip,
         body: String::from_utf8_lossy(body_bytes).to_string(),
     })
 }
@@ -785,7 +831,15 @@ fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
         return Ok(());
     }
     let supplied = req.token_header.clone().or_else(|| token_in_path(&req.path));
+    let net_ip = req.client_ip.as_str();
+    if !net_ip.is_empty() && throttled(net_ip, std::time::Instant::now()) {
+        respond(stream, "429 Too Many Requests", "text/plain", "too many wrong tries, wait a minute");
+        return Ok(());
+    }
     if !token_matches(supplied.as_deref(), &token()) {
+        if !net_ip.is_empty() {
+            note_failure(net_ip, std::time::Instant::now());
+        }
         // a flood of wrong requests does not flood the log: one line a minute
         if crate::guard::first("remote:wrong-token", Duration::from_secs(60)) {
             warn!("Remote control: request with a wrong token rejected");
@@ -794,6 +848,9 @@ fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
         return Ok(());
     }
 
+    if !net_ip.is_empty() {
+        note_success(net_ip);
+    }
     LAST_CLIENT.store(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(1), Ordering::SeqCst);
     let route = req.path.split('?').next().unwrap_or("/");
     match (req.method.as_str(), route) {
@@ -1139,6 +1196,33 @@ mod tests {
         assert_eq!(new.len(), 32);
         assert!(!token_matches(Some(&old), &token()), "the old link no longer works");
         assert!(url_for("192.168.1.42", false).ends_with(&format!("?t={}", new)));
+    }
+
+    #[test]
+    fn ten_wrong_secrets_from_one_internet_address_close_the_door_to_it_for_a_minute() {
+        let now = std::time::Instant::now();
+        let ip = "203.0.113.77";
+        note_success(ip);
+        for _ in 0..THROTTLE_TRIES - 1 {
+            note_failure(ip, now);
+        }
+        assert!(!throttled(ip, now), "nine tries are still allowed");
+        note_failure(ip, now);
+        assert!(throttled(ip, now), "the tenth closes the door");
+        assert!(!throttled("203.0.113.78", now), "another address is not affected");
+        assert!(throttled(ip, now + Duration::from_secs(30)));
+        assert!(!throttled(ip, now + Duration::from_secs(61)), "a minute later it is open again");
+        note_failure(ip, now);
+        note_success(ip);
+        assert!(!throttled(ip, now), "the owner who got the secret right starts from zero");
+    }
+
+    #[test]
+    fn the_address_of_the_phone_is_read_from_the_header_of_cloudflare() {
+        let raw = "GET /poll?after=0 HTTP/1.1\r\nHost: x.trycloudflare.com\r\nCf-Connecting-Ip: 198.51.100.9\r\n\r\n";
+        assert_eq!(read_request(&mut std::io::Cursor::new(raw.as_bytes().to_vec())).unwrap().client_ip, "198.51.100.9");
+        let lan = "GET / HTTP/1.1\r\nHost: 192.168.1.5:9713\r\n\r\n";
+        assert_eq!(read_request(&mut std::io::Cursor::new(lan.as_bytes().to_vec())).unwrap().client_ip, "");
     }
 
     #[test]
