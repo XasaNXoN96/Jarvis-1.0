@@ -56,6 +56,8 @@ russian.LaunchJarvis=Запустить JARVIS
 english.LaunchJarvis=Launch JARVIS
 russian.LaunchJarvisText=Запустить JARVIS в текстовом режиме (без микрофона)
 english.LaunchJarvisText=Launch JARVIS in text mode (no microphone)
+russian.UninstallDataAsk=Удалить также ваши данные JARVIS на этом компьютере: настройки, историю диалогов, сценарии и журналы?%n%nСекреты (токен Telegram-бота и ссылка пульта телефона) удаляются в любом случае. Выберите «Нет», если собираетесь установить JARVIS снова и сохранить настройки.
+english.UninstallDataAsk=Also delete your JARVIS data on this computer: settings, conversation history, scenarios and logs?%n%nThe secrets (the Telegram bot token and the phone remote link) are deleted in any case. Choose "No" if you plan to install JARVIS again and keep your settings.
 #if OutName == "Jarvis-Setup-Lite"
 russian.EditionNote=Это облегчённая версия: в ней нет модели распознавания речи и голоса Джарвиса (Piper), поэтому команды вводятся текстом, а ответы показываются в окне без звука. Озвучку можно включить в Настройки → Голос («Установить голос Джарвиса» или голос Windows). Для голосового управления установите полную версию (Jarvis-Setup.exe).
 english.EditionNote=This is the Lite edition: it has no speech recognition model and no Jarvis voice (Piper), so commands are typed and answers are shown in the window without sound. Speech can be turned on in Settings → Voice ("Install the Jarvis voice" or a Windows voice). For voice control install the full edition (Jarvis-Setup.exe).
@@ -123,4 +125,26 @@ begin
     WizardForm.RunList.Top := WizardForm.RunList.Top + grown;
     WizardForm.RunList.OnClickCheck := @RunListClickCheck;
   end;
+end;
+
+// The data of Jarvis lives outside the program folder (%APPDATA%\com.priler.jarvis, config.rs BUNDLE_IDENTIFIER).
+// After the uninstall the secrets are always removed (the token of the Telegram bot, the secret of the phone remote
+// and its certificate); the rest — settings, conversations, scenarios, logs — only when the user says so (a silent
+// uninstall keeps them: the user did not answer). The tasks file in Documents belongs to the user and stays.
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  dir: String;
+begin
+  if CurUninstallStep <> usPostUninstall then
+    Exit;
+  dir := ExpandConstant('{userappdata}\com.priler.jarvis');
+  if not DirExists(dir) then
+    Exit;
+  DeleteFile(dir + '\telegram.json');
+  DeleteFile(dir + '\remote_token');
+  DeleteFile(dir + '\remote_key.der');
+  DeleteFile(dir + '\remote_cert.der');
+  DeleteFile(dir + '\remote_cert.ip');
+  if (not UninstallSilent) and (SuppressibleMsgBox(CustomMessage('UninstallDataAsk'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES) then
+    DelTree(dir, True, True, True);
 end;

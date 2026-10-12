@@ -225,6 +225,12 @@ jobs:
           Set-ItemProperty -Path $runKey -Name "Jarvis" -Value "`"$dir\jarvis-app.exe`" --background"
           $app = Start-Process (Join-Path $dir "jarvis-app.exe") -ArgumentList "--background" -WorkingDirectory $dir -PassThru
           Start-Sleep 8
+          # the secrets of the user (the Telegram token, the phone link) must go with the program; the rest stays
+          $data = Join-Path $env:APPDATA "com.priler.jarvis"
+          New-Item -ItemType Directory -Force -Path $data | Out-Null
+          Set-Content -LiteralPath (Join-Path $data "telegram.json") -Value '{"token":"dpapi:00"}'
+          Set-Content -LiteralPath (Join-Path $data "remote_token") -Value "0123456789abcdef0123456789abcdef"
+          Set-Content -LiteralPath (Join-Path $data "ci-keep.txt") -Value "kept"
           $u = Start-Process (Join-Path $dir "unins000.exe") -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -PassThru -Wait
           Write-Host "uninstaller exit code: $($u.ExitCode)"
           # the uninstaller finishes in a copy of itself: a few seconds
@@ -234,6 +240,9 @@ jobs:
           if (-not $app.WaitForExit(10000)) { $app.Kill(); throw "the uninstaller left Jarvis running" }
           if ((Get-ItemProperty -Path $runKey -ErrorAction SilentlyContinue).PSObject.Properties.Name -contains "Jarvis") { throw "the autostart entry stayed after uninstall" }
           Write-Host "uninstalled: Jarvis was ended and the autostart entry removed"
+          foreach ($f in "telegram.json", "remote_token") { if (Test-Path -LiteralPath (Join-Path $data $f)) { throw "the uninstaller left the secret $f" } }
+          if (-not (Test-Path -LiteralPath (Join-Path $data "ci-keep.txt"))) { throw "a silent uninstall deleted the user's data without asking" }
+          Write-Host "uninstalled: the secrets are removed, the other data of the user is kept (silent uninstall)"
 
       # The Lite installer is installed silently and the installed Jarvis is started on the CI machine: its page server
       # answers, a second start does not leave a second process, the window is asked to show, and the full exit ends the
