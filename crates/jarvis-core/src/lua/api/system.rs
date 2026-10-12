@@ -101,8 +101,10 @@ fn open_target(target: &str) -> bool {
 pub static TEST_CLIPBOARD: once_cell::sync::Lazy<parking_lot::Mutex<Option<String>>> = once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(None));
 
 pub fn show_notification(title: &str, message: &str) {
-    log::info!("[Lua] NOTIFY: {} - {}", title, message);
+    // the text of a notification is private: only its size goes to the log
+    log::info!("[Lua] NOTIFY: {} ({} chars)", title, message.chars().count());
     crate::notify::push("command", title, message, true);
+    crate::dialog::mark_notified();
 }
 
 pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Result<()> {
@@ -493,7 +495,7 @@ pub fn show_popup(title: &str, message: &str) {
     if !crate::guard::first(&format!("popup:{}:{}", title, message), crate::guard::NOTIFY_WINDOW) {
         return;
     }
-    log::info!("[Lua] POPUP: {} - {}", title, message);
+    log::info!("[Lua] POPUP: {} ({} chars)", title, message.chars().count());
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::ffi::OsStrExt;

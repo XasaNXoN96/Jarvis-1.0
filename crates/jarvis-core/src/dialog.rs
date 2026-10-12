@@ -17,6 +17,8 @@ struct Req {
     chat_id: String,
     replies: usize,
     at: Instant,
+    // a notification about this request was already shown (an error, a command's own toast): end() adds no second one
+    notified: bool,
 }
 
 static CUR: Lazy<Mutex<Option<Req>>> = Lazy::new(|| Mutex::new(None));
@@ -34,7 +36,7 @@ pub fn begin(text: &str, src: &str) -> String {
     let chat = store.active_or_new();
     let rid = ai::new_rid();
     store.append_with(&chat.id, "user", text.trim(), &rid, src);
-    *CUR.lock() = Some(Req { rid: rid.clone(), chat_id: chat.id, replies: 0, at: Instant::now() });
+    *CUR.lock() = Some(Req { rid: rid.clone(), chat_id: chat.id, replies: 0, at: Instant::now(), notified: false });
     rid
 }
 
@@ -44,7 +46,7 @@ pub fn continue_last() -> bool {
     let last = LAST.lock().take();
     match last {
         Some(r) if r.at.elapsed() < LATE_REPLY => {
-            *CUR.lock() = Some(Req { at: Instant::now(), ..r });
+            *CUR.lock() = Some(Req { at: Instant::now(), notified: false, ..r });
             true
         }
         _ => false,
@@ -96,6 +98,14 @@ pub fn fail(text: &str, src: &str) {
     // an error of a computer function (the AI reports its own errors in ai.rs)
     if src != "ai" {
         crate::notify::push("system_error", "Ошибка", text, true);
+        mark_notified();
+    }
+}
+
+// the current request already showed its notification: the end of the request shows no second one
+pub fn mark_notified() {
+    if let Some(r) = CUR.lock().as_mut() {
+        r.notified = true;
     }
 }
 
@@ -123,12 +133,16 @@ pub fn end(ok: bool) {
                 store.append_with(&r.chat_id, "assistant", "Выполнено.", &r.rid, "command");
             } else {
                 store.append_with(&r.chat_id, "error", "Не получилось выполнить команду.", &r.rid, "command");
-                crate::notify::push("system_error", "Ошибка", "Не получилось выполнить команду.", true);
+                if !r.notified {
+                    crate::notify::push("system_error", "Ошибка", "Не получилось выполнить команду.", true);
+                    r.notified = true;
+                }
             }
         }
-        // the result of a command when nobody looks at the window (a voice command with the window hidden)
+        // the result of a command when nobody looks at the window (a voice command with the window hidden);
+        // once per request: an error or a command's own notification was already shown
         let last = LAST_OUTPUT.lock().clone();
-        if r.replies > 0 && !last.is_empty() {
+        if r.replies > 0 && !last.is_empty() && !r.notified {
             if !ok {
                 // a command that failed and said why: the error is a notification too (shown, not said again)
                 crate::notify::push("system_error", "Команда не выполнена", &last, true);
@@ -152,7 +166,7 @@ pub fn note_output(text: &str) {
 // the request of the AI (it keeps its own messages) becomes the "last" one: the replies of a follow-up join it
 pub fn adopt_ai_request() {
     if let Some((chat_id, rid)) = ai::last_request() {
-        *LAST.lock() = Some(Req { rid, chat_id, replies: 1, at: Instant::now() });
+        *LAST.lock() = Some(Req { rid, chat_id, replies: 1, at: Instant::now(), notified: false });
     }
 }
 
@@ -245,4 +259,27 @@ mod tests {
         assert_eq!(last_messages(1)[0].content, before, "no request: nothing is added to the history");
         assert_eq!(last_output(), "Потерянная реплика", "but the status line still shows it");
     }
+
+    // one failed command: one error notification, not "Ошибка" and "Команда не выполнена" with the same text
+    #[test]
+    fn a_failed_command_gives_one_notification_and_a_toast_is_not_repeated() {
+        let _g = LOCK.lock();
+        let tag = format!("нет файла {}", rand::random::<u32>());
+        begin("открой файл", "command");
+        fail(&tag, "command");
+        end(false);
+        let n = crate::notify::recent(50).iter().filter(|x| x.text.contains(&tag)).count();
+        assert_eq!(n, 1, "one error, one notification");
+
+        // a command that showed its own notification: the end of the request adds no second one
+        let tag2 = format!("озвучка выключена {}", rand::random::<u32>());
+        begin("выключи озвучку", "command");
+        crate::notify::push("command", "Озвучка", &tag2, true);
+        mark_notified();
+        reply(&tag2, "command");
+        end(true);
+        let n2 = crate::notify::recent(50).iter().filter(|x| x.text.contains(&tag2)).count();
+        assert_eq!(n2, 1);
+    }
 }
+
