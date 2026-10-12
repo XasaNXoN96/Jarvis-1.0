@@ -143,3 +143,22 @@ fn new_programs_vs_code_snipping_tool_and_the_kind_word_before_a_name() {
     assert_eq!(split_request("запусти браузер Firefox").unwrap().1, ["firefox"]);
     assert_eq!(split_request("открой программу Total Commander").unwrap().1, ["total", "commander"]);
 }
+
+#[test]
+fn whole_english_phrases_open_and_close_programs() {
+    for (t, id) in [("open notepad", "notepad"), ("Open Notepad", "notepad"), ("open calculator", "calc"), ("open snipping tool", "snipping"), ("open task manager", "taskmgr"),
+        ("open control panel", "control"), ("open cmd", "cmd"), ("open device manager", "devmgmt"), ("open explorer", "explorer"), ("launch vs code", "vscode"),
+        ("run photoshop", "photoshop"), ("start steam", "steam")] {
+        assert_eq!(id_of(t), Some(id), "{}", t);
+    }
+    let r = parse_request("close notepad").unwrap();
+    assert_eq!((r.action, r.app.id), (Action::Close, "notepad"));
+    // English words that are not a verb + a program stay with their commands
+    for t in ["open downloads", "close the tab", "open browser", "opera", "running late", "start timer"] {
+        assert!(parse_request(t).map(|r| r.app.id) != Some("notepad"), "{}", t);
+    }
+    assert_eq!(id_of("open downloads"), None);
+    assert_eq!(id_of("close the tab"), None);
+    assert_eq!(id_of("открой диспетчер устройств"), None, "the Russian phrase keeps its place command");
+}
+

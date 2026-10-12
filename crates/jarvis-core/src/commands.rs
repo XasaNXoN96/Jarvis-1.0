@@ -91,8 +91,8 @@ pub fn commands_hash(commands: &[JCommandsList]) -> String {
 // "открой ворт", "запусти тотал командер": the program command for a phrase that is a verb plus a program name
 pub fn fetch_program<'a>(phrase: &str, commands: &'a [JCommandsList]) -> Option<(&'a PathBuf, &'a JCommand)> {
     let req = crate::apps::parse_request(phrase)?;
-    // "открой проводник" keeps its own command (it opens the Documents folder, as before)
-    if req.app.id == "explorer" && req.action == crate::apps::Action::Open {
+    // "открой проводник", "этот компьютер" keep their own command (places.lua); in English "open explorer" starts it
+    if req.app.id == "explorer" && req.action == crate::apps::Action::Open && !phrase.to_lowercase().contains("explorer") {
         return None;
     }
     let id = match req.action {

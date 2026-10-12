@@ -22,6 +22,7 @@ pub const APPS: &[AppDef] = &[
     AppDef { id: "calc", name: "Калькулятор", aliases: &["калькулятор", "calculator", "calc", "калькулятор виндовс"], start: "calc.exe", process: Some("CalculatorApp.exe"), paths: &[], office: None },
     AppDef { id: "paint", name: "Paint", aliases: &["пейнт", "пеинт", "paint", "mspaint", "рисовалка", "пэйнт"], start: "mspaint.exe", process: Some("mspaint.exe"), paths: &[], office: None },
     AppDef { id: "explorer", name: "Проводник", aliases: &["проводник", "explorer", "эксплорер", "файловый менеджер", "мой компьютер", "этот компьютер"], start: "explorer.exe", process: None, paths: &[], office: None },
+    AppDef { id: "devmgmt", name: "Диспетчер устройств", aliases: &["device manager", "devmgmt"], start: "devmgmt.msc", process: None, paths: &[], office: None },
     AppDef { id: "taskmgr", name: "Диспетчер задач", aliases: &["диспетчер задач", "диспетчер", "task manager", "таск менеджер", "taskmgr"], start: "taskmgr.exe", process: Some("taskmgr.exe"), paths: &[], office: None },
     AppDef { id: "cmd", name: "Командная строка", aliases: &["командная строка", "командную строку", "командную", "cmd", "сиэмди", "терминал", "terminal", "консоль"], start: "cmd.exe", process: None, paths: &[], office: None },
     AppDef { id: "powershell", name: "PowerShell", aliases: &["powershell", "пауэршелл", "паувершелл", "повершелл", "павершел", "пауэр шелл", "power shell"], start: "powershell.exe", process: None, paths: &[], office: None },
@@ -277,9 +278,9 @@ pub struct Request {
     pub exact: bool,
 }
 
-const OPEN_STEMS: &[&str] = &["откр", "запуст", "запуск", "включ", "стартуй", "старт", "вызов", "покаж"];
-const CLOSE_STEMS: &[&str] = &["закр", "зактр"];
-const FILLERS: &[&str] = &["пожалуйста", "мне", "программу", "программа", "приложение", "приложения", "ка", "быстро", "джарвис", "плиз", "мою", "нам", "пожалуста", "давай", "окно", "в"];
+const OPEN_STEMS: &[&str] = &["откр", "запуст", "запуск", "включ", "стартуй", "старт", "вызов", "покаж", "open", "launch", "run", "start"];
+const CLOSE_STEMS: &[&str] = &["закр", "зактр", "close", "quit"];
+const FILLERS: &[&str] = &["пожалуйста", "мне", "программу", "программа", "приложение", "приложения", "ка", "быстро", "джарвис", "плиз", "мою", "нам", "пожалуста", "давай", "окно", "в", "the", "please", "app", "program"];
 
 // "открой тотал командер" -> Open Total Commander. Only a short phrase that is nothing but a verb and a program
 // name counts: "открой сайт ворд", "открой файл word.docx" or a whole sentence are left to the normal commands.
