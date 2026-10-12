@@ -275,15 +275,17 @@ fn load_or_create_token() -> String {
 }
 
 // "Новая ссылка": the old link stops working on every phone at once (a lost phone, a link shown to someone)
-pub fn renew_token() -> String {
+// The new secret is written first: a link that is revoked only in memory would work again after a restart, so a
+// failed write keeps the old link and says so.
+pub fn renew_token() -> Result<String, String> {
     let token = new_secret();
     if let Some(p) = token_path() {
-        let _ = std::fs::write(p, &token);
+        crate::write_atomic(&p, &token).map_err(|e| format!("не удалось сохранить новую ссылку ({}), старая продолжает работать", e))?;
     }
     *TOKEN.lock() = token.clone();
     PHONE.lock().last_seen = 0;
     info!("Remote control: a new link was made, the old one no longer works");
-    token
+    Ok(token)
 }
 
 // the secret is compared in constant time (the answer time does not tell how many characters were right)
@@ -624,7 +626,8 @@ fn read_request<S: Read>(stream: &mut S) -> std::io::Result<Request> {
         }
         let n = stream.read(&mut chunk)?;
         if n == 0 {
-            break;
+            // the connection ended in the middle of the body: a part of a phrase is never run as a command
+            return Err(std::io::ErrorKind::UnexpectedEof.into());
         }
         buf.extend_from_slice(&chunk[..n]);
     }
@@ -650,6 +653,39 @@ fn respond<S: Write>(stream: &mut S, status: &str, content_type: &str, body: &st
 }
 
 // one port, two protocols: a TLS ClientHello starts with byte 0x16, plain http starts with a letter
+const CONNECTION_LIMIT: Duration = Duration::from_secs(15);
+
+// closes the socket when the connection lasts longer than the limit; ends with the connection
+struct Watchdog {
+    done: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Watchdog {
+    fn new(stream: &TcpStream, limit: Duration) -> Watchdog {
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        if let Ok(s) = stream.try_clone() {
+            let d = done.clone();
+            std::thread::spawn(move || {
+                let start = std::time::Instant::now();
+                while !d.load(Ordering::SeqCst) {
+                    if start.elapsed() >= limit {
+                        let _ = s.shutdown(std::net::Shutdown::Both);
+                        return;
+                    }
+                    std::thread::sleep(Duration::from_millis(200));
+                }
+            });
+        }
+        Watchdog { done }
+    }
+}
+
+impl Drop for Watchdog {
+    fn drop(&mut self) {
+        self.done.store(true, Ordering::SeqCst);
+    }
+}
+
 fn serve(stream: TcpStream) -> std::io::Result<()> {
     if !is_running() {
         return Ok(()); // switched off: the connection is dropped without an answer
@@ -659,6 +695,9 @@ fn serve(stream: TcpStream) -> std::io::Result<()> {
     stream.set_nonblocking(false)?;
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+    // a hard limit for the whole connection: a client sending one byte of the TLS handshake now and then (the
+    // handshake happens inside the first read, where the 10 s request deadline is not looked at) is cut off
+    let _watchdog = Watchdog::new(&stream, CONNECTION_LIMIT);
     let mut first = [0u8; 1];
     let n = stream.peek(&mut first)?;
     if n == 1 && first[0] == 0x16 {
@@ -1093,11 +1132,35 @@ mod tests {
         assert!(!token_matches(Some(""), ""));
         let _g = PHONE_TEST_LOCK.lock();
         let old = token();
-        let new = renew_token();
+        let new = renew_token().unwrap();
         assert_ne!(old, new);
         assert_eq!(new.len(), 32);
         assert!(!token_matches(Some(&old), &token()), "the old link no longer works");
         assert!(url_for("192.168.1.42", false).ends_with(&format!("?t={}", new)));
+    }
+
+    #[test]
+    fn a_body_cut_off_in_the_middle_is_not_a_command() {
+        let req = "POST /cmd HTTP/1.1\r\nHost: x\r\nContent-Length: 20\r\n\r\nвыкл".as_bytes().to_vec();
+        let mut cur = std::io::Cursor::new(req);
+        assert!(read_request(&mut cur).is_err(), "the phrase arrived only in part");
+        let full = "POST /cmd HTTP/1.1\r\nHost: x\r\nContent-Length: 8\r\n\r\nвыкл".as_bytes().to_vec();
+        assert_eq!(read_request(&mut std::io::Cursor::new(full)).unwrap().body, "выкл");
+    }
+
+    #[test]
+    fn a_slow_client_is_cut_off_by_the_watchdog() {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = l.local_addr().unwrap();
+        let _client = std::net::TcpStream::connect(addr).unwrap();
+        let (server, _) = l.accept().unwrap();
+        server.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let t0 = std::time::Instant::now();
+        let _w = Watchdog::new(&server, Duration::from_millis(400));
+        let mut b = [0u8; 1];
+        // the client sends nothing: the read ends because the watchdog closed the socket, not after 5 s
+        let _ = (&server).read(&mut b);
+        assert!(t0.elapsed() < Duration::from_secs(3), "{:?}", t0.elapsed());
     }
 
     // the page opens without the secret (a reload, a home-screen shortcut); news and commands never do

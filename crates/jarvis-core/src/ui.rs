@@ -308,10 +308,10 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             Err(e) => json!({ "ok": false, "enabled": crate::remote::is_running(), "message": format!("Не удалось включить пульт: {}", e) }),
         },
         // "Новая ссылка": every phone with the old link loses access (a lost phone, a link shown to someone)
-        "remote_new_link" => {
-            crate::remote::renew_token();
-            json!({ "ok": true, "url": if crate::remote::is_running() { crate::remote::url() } else { String::new() } })
-        }
+        "remote_new_link" => match crate::remote::renew_token() {
+            Ok(_) => json!({ "ok": true, "url": if crate::remote::is_running() { crate::remote::url() } else { String::new() } }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
         "remote_off" => {
             crate::remote::stop();
             // the listener closes within a fraction of a second

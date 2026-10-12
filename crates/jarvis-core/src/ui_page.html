@@ -1174,7 +1174,7 @@ $('#rm-switch').onchange = async e => {
 };
 $('#rm-renew').onclick = async () => {
   if (!confirm('Сделать новую ссылку? Старая ссылка и QR-код перестанут работать на всех телефонах — их нужно будет подключить заново.')) return;
-  try { await action('remote_new_link'); } catch (e) {}
+  try { const r = await action('remote_new_link'); $('#rm-err').textContent = r.ok ? '' : (r.message || 'Не удалось сделать новую ссылку'); } catch (e) { $('#rm-err').textContent = 'Нет связи с Джарвисом'; }
   remoteLink = ''; remoteSeen = ''; remoteAt = 0; await pollNow();
 };
 $('#rm-copy').onclick = () => { if (remoteLink) copyText(remoteLink, $('#rm-copy')); };
