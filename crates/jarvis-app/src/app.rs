@@ -711,8 +711,14 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
                 error!("Error executing command: {}", msg);
                 jarvis_core::uistate::log_action(text, &cmd_config.id, false);
                 say(&format!("! error: {}", msg));
+                // a failure is heard, not only shown (the voice packs have no error sound of their own);
+                // a command that already said why stays the only voice
                 if !jarvis_core::tts::is_speaking() {
-                    voices::play_error();
+                    if jarvis_core::tts::is_enabled() {
+                        jarvis_core::tts::speak("Не получилось выполнить команду. Подробности в окне.");
+                    } else {
+                        voices::play_error();
+                    }
                 }
                 ipc::send(IpcEvent::CommandExecuted {
                     id: cmd_config.id.clone(),
