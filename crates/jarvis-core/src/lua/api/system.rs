@@ -55,6 +55,12 @@ fn shell_execute(target: &str, params: Option<&str>) -> Result<(), String> {
     }
 }
 
+// cmd would read & | < > ^ % ! ( ) " in a file name as its own syntax ("x&calc" would start calc): such a target
+// is never given to the "cmd /C start" fallback
+pub fn cmd_fallback_allowed(target: &str) -> bool {
+    !target.chars().any(|c| matches!(c, '&' | '|' | '<' | '>' | '^' | '%' | '!' | '(' | ')' | '"' | '\n' | '\r'))
+}
+
 #[cfg(target_os = "windows")]
 fn open_target(target: &str) -> bool {
     match shell_open(target) {
@@ -62,7 +68,7 @@ fn open_target(target: &str) -> bool {
         Err(e) => {
             // cmd would read & | < > ^ % ! ( ) " in a file name as its own syntax ("x&calc" would start calc):
             // such a target is never given to it
-            if target.chars().any(|c| matches!(c, '&' | '|' | '<' | '>' | '^' | '%' | '!' | '(' | ')' | '"' | '\n' | '\r')) {
+            if !cmd_fallback_allowed(target) {
                 log::warn!("[Lua] open '{}' failed: {}", target, e);
                 return false;
             }

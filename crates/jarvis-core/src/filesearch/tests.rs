@@ -283,3 +283,18 @@ fn text_of_an_unknown_encoding_is_decoded_sensibly() {
     assert_eq!(decode_text(b"plain".to_vec()), "plain");
 }
 
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn names_with_ampersand_spaces_and_mixed_case_are_found_and_never_reach_cmd() {
+    let _s = crate::session::TEST_LOCK.lock();
+    let _g = TEST_LOCK.lock();
+    let h = home_with_files();
+    std::fs::write(h.dir.join("Documents/Отчёт & План 2024.DOCX"), b"x").unwrap();
+    std::fs::write(h.dir.join("Desktop/  двойной   пробел.txt"), b"x").unwrap();
+    assert_eq!(names(&p("найди файл отчёт & план")), ["Отчёт & План 2024.DOCX"]);
+    assert_eq!(names(&p("найди файл ПЛАН 2024")), ["Отчёт & План 2024.DOCX"]);
+    assert_eq!(names(&p("найди файл двойной пробел")), ["  двойной   пробел.txt"]);
+    assert_eq!(names(&p("найди файл с расширением .docx")).iter().filter(|n| n.contains('&')).count(), 1);
+    drop(h);
+}
+

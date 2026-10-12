@@ -590,4 +590,15 @@ mod tests {
         assert!(!ids.contains(&id_game), "the game mode reminder stays");
         timer::cancel_titled("Напоминание");
     }
+
+    // a file name with cmd syntax never goes to the "cmd /C start" fallback of opening
+    #[test]
+    fn names_with_cmd_syntax_never_reach_cmd() {
+        use crate::lua::api::system::cmd_fallback_allowed;
+        for bad in ["C:\\Docs\\Отчёт & План.docx", "x&calc", "a|b", "100%.txt", "(1).pdf", "say \"hi\".txt", "a^b", "wow!.txt"] {
+            assert!(!cmd_fallback_allowed(bad), "{}", bad);
+        }
+        assert!(cmd_fallback_allowed("C:\\Users\\Сергей\\Documents\\отчёт 2024.docx"));
+        assert!(cmd_fallback_allowed("https://www.youtube.com/"));
+    }
 }
