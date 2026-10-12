@@ -316,7 +316,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         },
         // the tray asks the browser window to close itself ("Свернуть в трей" when there is no WebView2 window)
         "hide_window" => {
-            request_browser_close();
+            hide_window();
             json!({ "ok": true })
         }
         // the "Программы" page: rebuild the index, start a program of the index (never a path from the page itself)
@@ -870,6 +870,23 @@ pub fn request_browser_close() {
 
 pub fn browser_close_counter() -> u64 {
     CLOSE_REQ.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+// "Свернуть в трей" from outside the window loop: the own window hides itself (jarvis-app sets the hook; it asks the
+// browser window to close when there is no own window); without the hook only the browser window exists
+static WINDOW_HIDE: once_cell::sync::OnceCell<Box<dyn Fn() -> bool + Send + Sync>> = once_cell::sync::OnceCell::new();
+
+pub fn set_window_hide(hide: Box<dyn Fn() -> bool + Send + Sync>) {
+    let _ = WINDOW_HIDE.set(hide);
+}
+
+pub fn hide_window() {
+    if let Some(hide) = WINDOW_HIDE.get() {
+        if hide() {
+            return;
+        }
+    }
+    request_browser_close();
 }
 
 static LAST_STATE_POLL: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);

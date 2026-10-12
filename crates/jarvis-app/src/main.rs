@@ -225,6 +225,13 @@ fn main() -> Result<(), String> {
     
     // "Полностью закрыть JARVIS" of the browser window goes the same way as the tray and the own window
     jarvis_core::ui::set_exit_hook(Box::new(|| shutdown_and_exit()));
+    // Windows: the own window of Jarvis (window.rs) answers "show" / "hide" from the first request of the page server
+    // on (a request before its loop runs is done at its start), so no browser window opens next to it
+    #[cfg(target_os = "windows")]
+    {
+        jarvis_core::ui::set_window_host(Box::new(|| window::send(window::UserEvent::Show)));
+        jarvis_core::ui::set_window_hide(Box::new(|| window::send(window::UserEvent::Hide)));
+    }
     // the Jarvis window (chat, orb, commands): a local page shown in an app-style Edge/Chrome window.
     // `--background`: no window at start (tray menu "Open window"), `--no-ui`: no window at all,
     // `--console`: keep the console window open

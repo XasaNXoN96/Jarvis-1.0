@@ -85,7 +85,6 @@ pub fn init_blocking(settings: SettingsManager) {
                 }
             }),
         };
-        jarvis_core::ui::set_window_host(Box::new(|| crate::window::send(crate::window::UserEvent::Show)));
         info!("Tray initialized.");
         crate::window::run(hooks);
     }

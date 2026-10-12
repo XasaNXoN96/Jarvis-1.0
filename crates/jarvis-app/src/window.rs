@@ -28,9 +28,26 @@ pub enum UserEvent {
 }
 
 static PROXY: OnceCell<Mutex<EventLoopProxy<UserEvent>>> = OnceCell::new();
+// asked before the window loop runs (a second start while Jarvis is still starting): "show" / "hide" is remembered
+// and done when the loop starts, instead of opening a browser window next to the own one
+static EARLY: Mutex<Option<bool>> = parking_lot::const_mutex(None);
 
 pub fn send(e: UserEvent) -> bool {
-    PROXY.get().map(|p| p.lock().send_event(e).is_ok()).unwrap_or(false)
+    let mut early = EARLY.lock();
+    if let Some(p) = PROXY.get() {
+        return p.lock().send_event(e).is_ok();
+    }
+    match e {
+        UserEvent::Show => *early = Some(true),
+        UserEvent::Hide => *early = Some(false),
+        _ => return false,
+    }
+    true
+}
+
+// what the window does at start: the start flag, changed by a show/hide asked before the loop ran
+pub fn start_visible(show_at_start: bool, early: Option<bool>) -> bool {
+    early.unwrap_or(show_at_start)
 }
 
 use jarvis_core::ui::{close_action, CloseAction};
@@ -144,7 +161,12 @@ fn hide_any(win: &Option<Win>) {
 pub fn run(h: Hooks) -> ! {
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
-    let _ = PROXY.set(Mutex::new(proxy.clone()));
+    let early = {
+        // (under the lock: a request is either remembered before this point or sent to the loop after it)
+        let mut early = EARLY.lock();
+        let _ = PROXY.set(Mutex::new(proxy.clone()));
+        early.take()
+    };
 
     let menu_proxy = proxy.clone();
     MenuEvent::set_event_handler(Some(move |e: MenuEvent| {
@@ -163,7 +185,7 @@ pub fn run(h: Hooks) -> ! {
     let mut first_show_done = false;
     // the cross was pressed and the page has not answered yet
     let mut close_asked: Option<Instant> = None;
-    let start_shown = h.show_at_start;
+    let start_shown = start_visible(h.show_at_start, early);
 
     event_loop.run(move |event, target, control_flow| {
         *control_flow = match close_asked {
@@ -276,4 +298,17 @@ pub fn run(h: Hooks) -> ! {
             }
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_show_or_hide_asked_before_the_loop_decides_the_start() {
+        assert!(start_visible(true, None));
+        assert!(!start_visible(false, None), "--background stays hidden");
+        assert!(start_visible(false, Some(true)), "a second start during the start shows the window");
+        assert!(!start_visible(true, Some(false)), "hidden to the tray during the start stays hidden");
+    }
 }
