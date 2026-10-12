@@ -160,3 +160,17 @@ fn an_app_step_waits_for_the_process_the_program_really_runs_as() {
     assert_eq!(app_process("какая-то программа"), None);
 }
 
+#[test]
+fn the_auto_grid_is_kept_on_save_and_an_unknown_window_mode_is_dropped() {
+    let _g = LOCK.lock();
+    reset_for_tests();
+    let mut a = step("link", "https://www.youtube.com");
+    a.window = "grid".into();
+    let mut b = step("link", "https://example.com/x");
+    b.window = "fullscreen-please".into();
+    let sc = Scenario { name: "Дома".into(), phrase: "я дома тест".into(), enabled: true, steps: vec![a, b], ..Default::default() };
+    let saved = upsert(sc).unwrap();
+    assert_eq!(saved.steps[0].window, "grid");
+    assert_eq!(saved.steps[1].window, "", "an unknown mode is not stored");
+    assert!(templates().as_array().unwrap().iter().any(|t| t["steps"].as_array().unwrap().iter().any(|s| s["window"] == "grid")));
+}

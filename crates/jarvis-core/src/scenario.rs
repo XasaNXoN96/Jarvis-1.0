@@ -36,7 +36,8 @@ const MAX_PAUSE_MS: u64 = 60_000;
 pub struct Step {
     pub kind: String,
     pub param: String,
-    // after opening a link / program / file: "" (as it is) | "max" (the window on the whole screen)
+    // after opening a link / program / file: "" (as it is) | "max" (the window on the whole screen) |
+    // "grid" (the windows of the chain marked so are laid out side by side when the chain ends)
     pub window: String,
 }
 
@@ -190,7 +191,7 @@ pub fn upsert(mut sc: Scenario) -> Result<Scenario, String> {
     sc.phrase = sc.phrase.trim().chars().take(120).collect();
     for s in sc.steps.iter_mut() {
         s.param = s.param.trim().to_string();
-        if s.window != "max" {
+        if s.window != "max" && s.window != "grid" {
             s.window.clear();
         }
     }
@@ -309,6 +310,7 @@ pub fn templates() -> Value {
         t("Режим кино", "режим кино", vec![("volume", "70", ""), ("link", "https://www.youtube.com", "max")]),
         t("Режим учёбы", "режим учёбы", vec![("volume", "20", ""), ("app", "ворд", "max"), ("link", "https://translate.google.com", "")]),
         t("Игровой режим", "игровой вечер", vec![("app", "стим", ""), ("volume", "60", "")]),
+        t("Я дома", "я дома", vec![("link", "https://www.youtube.com", "grid"), ("app", "телеграм", "grid"), ("app", "стим", "grid")]),
     ])
 }
 
@@ -397,9 +399,18 @@ fn wait_process(exe: &str, max: Duration) -> bool {
     }
 }
 
+// one step on its own ("Тест шага"): a window marked "Авто сетка" takes the whole working area
 pub fn run_step(s: &Step) -> Result<(), String> {
+    let mut grid = Vec::new();
+    let r = run_step_in(s, &mut grid);
+    crate::input::arrange(&grid);
+    r
+}
+
+fn run_step_in(s: &Step, grid: &mut Vec<isize>) -> Result<(), String> {
     check_step(s)?;
     let p = s.param.trim();
+    let before = if s.window == "grid" { crate::input::foreground_window() } else { None };
     let opened = match s.kind.as_str() {
         "link" => open(p).map(|_| true),
         "search" => open(&format!("https://www.google.com/search?q={}", url_encode(p))).map(|_| true),
@@ -461,6 +472,14 @@ pub fn run_step(s: &Step) -> Result<(), String> {
         std::thread::sleep(Duration::from_millis(1500));
         let _ = crate::input::window("maximize");
     }
+    if opened && s.window == "grid" {
+        // the window of this step is remembered; two links in one browser window are one cell
+        if let Some(h) = crate::input::opened_window(before, Duration::from_secs(5)) {
+            if !grid.contains(&h) {
+                grid.push(h);
+            }
+        }
+    }
     Ok(())
 }
 
@@ -519,12 +538,13 @@ fn run_inner(sc: &Scenario, remember: bool) -> RunResult {
 
     let mut done = 0;
     let mut message = String::new();
+    let mut grid: Vec<isize> = Vec::new();
     if let Err(e) = preflight(sc) {
         message = e;
     } else {
         for (i, s) in sc.steps.iter().enumerate() {
             *RUNNING.lock() = Some((sc.id.clone(), i + 1, total, step_title(&s.kind).to_string()));
-            match run_step(s) {
+            match run_step_in(s, &mut grid) {
                 Ok(()) => done += 1,
                 Err(e) => {
                     message = format!("Шаг {} ({}): {}", i + 1, step_title(&s.kind), e);
@@ -533,6 +553,8 @@ fn run_inner(sc: &Scenario, remember: bool) -> RunResult {
             }
         }
     }
+    // the windows marked "Авто сетка" side by side (also those opened before a step failed)
+    crate::input::arrange(&grid);
     let ok = done == total;
     if ok {
         message = format!("Сценарий «{}» выполнен: шагов {}", sc.name, total);

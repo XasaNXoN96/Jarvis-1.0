@@ -176,6 +176,55 @@ mod win {
         }
     }
 
+    fn usable(h: HWND) -> bool {
+        unsafe {
+            if h.is_null() || IsWindowVisible(h) == 0 {
+                return false;
+            }
+            let ex = GetWindowLongW(h, GWL_EXSTYLE) as u32;
+            let t = title(h);
+            ex & WS_EX_TOOLWINDOW == 0 && !t.trim().is_empty() && !is_jarvis(h) && t != "Program Manager"
+        }
+    }
+
+    // the window in front, when it is a normal window of another program (not Jarvis, not the desktop)
+    pub fn foreground() -> Option<isize> {
+        let h = unsafe { GetForegroundWindow() };
+        if usable(h) {
+            Some(h as isize)
+        } else {
+            None
+        }
+    }
+
+    // the working area (without the taskbar) of the monitor of the first window
+    pub fn work_area(first: isize) -> Option<(i32, i32, i32, i32)> {
+        use winapi::shared::windef::HMONITOR;
+        unsafe {
+            let mon: HMONITOR = MonitorFromWindow(first as HWND, MONITOR_DEFAULTTOPRIMARY);
+            let mut mi: MONITORINFO = std::mem::zeroed();
+            mi.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+            if GetMonitorInfoW(mon, &mut mi) == 0 {
+                return None;
+            }
+            let r = mi.rcWork;
+            Some((r.left, r.top, r.right - r.left, r.bottom - r.top))
+        }
+    }
+
+    // puts a window into its cell; false when the window is gone
+    pub fn place(h: isize, x: i32, y: i32, w: i32, hh: i32) -> bool {
+        let h = h as HWND;
+        unsafe {
+            if IsWindow(h) == 0 {
+                return false;
+            }
+            // a maximized window ignores a new size until it is restored
+            ShowWindow(h, SW_RESTORE);
+            SetWindowPos(h, std::ptr::null_mut(), x, y, w, hh, SWP_NOZORDER | SWP_NOACTIVATE) != 0
+        }
+    }
+
     pub const MAXIMIZE: i32 = SW_MAXIMIZE;
     pub const MINIMIZE: i32 = SW_MINIMIZE;
     pub const RESTORE: i32 = SW_RESTORE;
@@ -256,9 +305,93 @@ pub fn window(action: &str) -> Outcome {
     }
 }
 
+// "Авто сетка" of the scenarios: the cells of `n` windows on a working area (x, y, w, h): up to three side by side,
+// four as 2×2, then three columns in rows
+pub fn grid_cells(n: usize, area: (i32, i32, i32, i32)) -> Vec<(i32, i32, i32, i32)> {
+    if n == 0 {
+        return Vec::new();
+    }
+    let (x0, y0, w, h) = area;
+    let cols = match n {
+        1..=3 => n,
+        4 => 2,
+        _ => 3,
+    };
+    let rows = (n + cols - 1) / cols;
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        let (r, c) = (i / cols, i % cols);
+        // the last row with fewer windows shares its width among them
+        let in_row = if r == rows - 1 { n - r * cols } else { cols };
+        let cw = w / in_row as i32;
+        let ch = h / rows as i32;
+        out.push((x0 + c as i32 * cw, y0 + r as i32 * ch, cw, ch));
+    }
+    out
+}
+
+// the window just opened by a step: the new window in front (not Jarvis, not the one in front before), waited for
+// up to `max`; a link opened in a browser that was already in front gives that browser window
+pub fn opened_window(before: Option<isize>, max: std::time::Duration) -> Option<isize> {
+    #[cfg(target_os = "windows")]
+    {
+        let start = std::time::Instant::now();
+        loop {
+            let fg = win::foreground();
+            if fg.is_some() && fg != before {
+                return fg;
+            }
+            if start.elapsed() >= max {
+                return fg;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(150));
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (before, max);
+        None
+    }
+}
+
+pub fn foreground_window() -> Option<isize> {
+    #[cfg(target_os = "windows")]
+    {
+        win::foreground()
+    }
+    #[cfg(not(target_os = "windows"))]
+    None
+}
+
+// lays the windows out in the grid; the number of windows that were placed
+pub fn arrange(windows: &[isize]) -> usize {
+    #[cfg(target_os = "windows")]
+    {
+        let Some(first) = windows.first() else { return 0 };
+        let Some(area) = win::work_area(*first) else { return 0 };
+        grid_cells(windows.len(), area).into_iter().zip(windows).filter(|((x, y, w, h), hw)| win::place(**hw, *x, *y, *w, *h)).count()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        windows.len()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_auto_grid_puts_three_windows_side_by_side_and_four_in_two_rows() {
+        let area = (0, 0, 1920, 1040);
+        assert_eq!(grid_cells(1, area), vec![(0, 0, 1920, 1040)]);
+        assert_eq!(grid_cells(3, area), vec![(0, 0, 640, 1040), (640, 0, 640, 1040), (1280, 0, 640, 1040)]);
+        assert_eq!(grid_cells(4, area), vec![(0, 0, 960, 520), (960, 0, 960, 520), (0, 520, 960, 520), (960, 520, 960, 520)]);
+        let five = grid_cells(5, (100, 50, 1800, 1000));
+        assert_eq!(five.len(), 5);
+        assert_eq!(five[3], (100, 550, 900, 500), "the short last row shares its width");
+        assert!(grid_cells(0, area).is_empty());
+    }
 
     #[test]
     fn shortcuts_are_parsed_to_real_key_codes() {
