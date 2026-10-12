@@ -94,6 +94,29 @@ pub fn network() -> (bool, Option<String>) {
     }
 }
 
+// the memory Jarvis itself uses (the working set), in megabytes: shown honestly next to "Слабый ноут / Обычный ПК"
+#[cfg(target_os = "windows")]
+pub fn self_memory_mb() -> Option<f64> {
+    use winapi::um::psapi::{K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+    unsafe {
+        let mut pmc: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
+        pmc.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+        if K32GetProcessMemoryInfo(winapi::um::processthreadsapi::GetCurrentProcess(), &mut pmc, pmc.cb) != 0 {
+            Some(pmc.WorkingSetSize as f64 / 1_048_576.0)
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn self_memory_mb() -> Option<f64> {
+    // /proc/self/statm: the second number is the resident pages
+    let text = std::fs::read_to_string("/proc/self/statm").ok()?;
+    let pages: f64 = text.split_whitespace().nth(1)?.parse().ok()?;
+    Some(pages * 4096.0 / 1_048_576.0)
+}
+
 pub fn json() -> Value {
     start_sampler();
     let st = crate::uistate::stats();
@@ -109,12 +132,19 @@ pub fn json() -> Value {
         "temperature": temp,
         "network": if online { "ONLINE" } else { "OFFLINE" }, "ip": ip,
         "pc_status": pc_status(st.cpu, ram_pct, if disk_known { disk_pct } else { 0.0 }),
+        "self_mb": self_memory_mb().map(|m| m.round()),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_memory_of_jarvis_itself_is_measured() {
+        let mb = self_memory_mb().expect("the working set of this process");
+        assert!(mb > 1.0 && mb < 100_000.0, "{}", mb);
+    }
 
     #[test]
     fn pc_status_follows_the_readings() {

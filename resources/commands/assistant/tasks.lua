@@ -90,6 +90,11 @@ if text == "" then
 end
 local list = read_tasks()
 if not list then say(TITLE, unreadable); return end
+-- the same limit as the panel "Задачи" of the window
+if #list >= 30 then
+  say(TITLE, T("Список полон: 30 задач. Удалите выполненные, например: выполнил задачу 1", "The list is full: 30 tasks. Remove done ones, e.g. task 1 done"))
+  return
+end
 list[#list + 1] = text
 if not write_tasks(list) then
   say(TITLE, T("Не удалось записать в ", "Cannot write to ") .. path)

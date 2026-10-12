@@ -24,6 +24,8 @@ pub enum UserEvent {
     Exit,
     // the answer of the page to the cross: "ack" (the dialog is shown), "tray", "exit", "cancel"
     Close(String),
+    // the button / F11 of the page: the window covers the whole screen without its frame, or comes back
+    Fullscreen(bool),
     Menu(MenuEvent),
 }
 
@@ -109,9 +111,12 @@ fn make_window(target: &tao::event_loop::EventLoopWindowTarget<UserEvent>, h: &H
     let webview = WebViewBuilder::new_with_web_context(ctx)
         .with_url(&h.url)
         .with_ipc_handler(move |req| {
-            // only the close dialog talks to the window: "close:<answer>"
-            if let Some(answer) = req.body().strip_prefix("close:") {
+            // the close dialog ("close:<answer>") and the full screen button ("full:on" / "full:off") talk to the window
+            let body = req.body();
+            if let Some(answer) = body.strip_prefix("close:") {
                 let _ = ipc_proxy.send_event(UserEvent::Close(answer.to_string()));
+            } else if let Some(on) = full_request(body) {
+                let _ = ipc_proxy.send_event(UserEvent::Fullscreen(on));
             }
         })
         // the page of Jarvis stays in the window; any other address opens in the browser
@@ -131,6 +136,15 @@ fn make_window(target: &tao::event_loop::EventLoopWindowTarget<UserEvent>, h: &H
         .build(&window)
         .map_err(|e| e.to_string())?;
     Ok(Win { window, webview })
+}
+
+// "full:on" / "full:off" of the page; anything else is not a full screen request
+pub fn full_request(body: &str) -> Option<bool> {
+    match body {
+        "full:on" => Some(true),
+        "full:off" => Some(false),
+        _ => None,
+    }
 }
 
 fn show(w: &Win) {
@@ -252,6 +266,11 @@ pub fn run(h: Hooks) -> ! {
                 want_show = true;
             }
             Event::UserEvent(UserEvent::Hide) => hide_any(&win),
+            Event::UserEvent(UserEvent::Fullscreen(on)) => {
+                if let Some(w) = &win {
+                    w.window.set_fullscreen(if on { Some(tao::window::Fullscreen::Borderless(None)) } else { None });
+                }
+            }
             // the Windows session ends or the installer asks Jarvis to close (Restart Manager): a full, clean exit
             Event::LoopDestroyed => {
                 (h.on_exit)();
@@ -313,5 +332,13 @@ mod tests {
         assert!(!start_visible(false, None), "--background stays hidden");
         assert!(start_visible(false, Some(true)), "a second start during the start shows the window");
         assert!(!start_visible(true, Some(false)), "hidden to the tray during the start stays hidden");
+    }
+
+    #[test]
+    fn only_the_two_full_screen_words_change_the_window() {
+        assert_eq!(full_request("full:on"), Some(true));
+        assert_eq!(full_request("full:off"), Some(false));
+        assert_eq!(full_request("full:yes"), None);
+        assert_eq!(full_request("close:tray"), None);
     }
 }

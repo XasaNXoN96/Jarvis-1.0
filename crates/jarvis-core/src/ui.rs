@@ -203,6 +203,21 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             crate::voices::play_preview(&id);
             json!({ "ok": true })
         }
+        // "Озвучить" under an answer of the conversation: read aloud by the voice of Jarvis, the setting is not changed
+        "speak_text" => {
+            let text = crate::ai::speakable(body["text"].as_str().unwrap_or(""));
+            if text.trim().is_empty() {
+                return json!({ "ok": false, "message": "Нечего озвучивать" });
+            }
+            match crate::tts::can_speak() {
+                Ok(()) => {
+                    crate::tts::stop();
+                    crate::tts::speak(&text);
+                    json!({ "ok": true })
+                }
+                Err(e) => json!({ "ok": false, "message": format!("Не могу озвучить: {}", e) }),
+            }
+        }
         "tts_test" => {
             crate::tts::set_enabled(true);
             let text = if i18n::get_language() == "en" { "Hello. This is my voice. How do I sound?" } else { "Здравствуйте. Это мой голос. Как я звучу?" };
@@ -407,6 +422,31 @@ fn ai_test() -> serde_json::Value {
 // ---- scenarios of the "Конструктор" ----
 fn scenarios_json() -> serde_json::Value {
     json!({ "scenarios": crate::scenario::list(), "kinds": crate::scenario::kinds_json(), "templates": crate::scenario::templates(), "running": crate::scenario::running_json() })
+}
+
+// the panel "Задачи": the same file as the voice commands (tasks.rs)
+fn tasks_action(body: &serde_json::Value) -> serde_json::Value {
+    let op = body["op"].as_str().unwrap_or("");
+    let text = body["text"].as_str().unwrap_or("");
+    let old = body["old"].as_str().unwrap_or("");
+    let index = body["index"].as_u64().unwrap_or(u64::MAX) as usize;
+    let done = |r: Result<String, String>| match r {
+        Ok(m) => json!({ "ok": true, "message": m }),
+        Err(e) => json!({ "ok": false, "message": e }),
+    };
+    match op {
+        "add" => done(crate::tasks::add(text).map(|n| format!("Задача добавлена ({}/{})", n, crate::tasks::MAX))),
+        "edit" => done(crate::tasks::edit(index, old, text).map(|_| "Задача изменена".to_string())),
+        "remove" => done(crate::tasks::remove(index, old).map(|_| "Задача удалена".to_string())),
+        "clear" => done(crate::tasks::clear().map(|n| format!("Удалено задач: {}", n))),
+        // read aloud with the voice of Jarvis; without a working voice the user is told why
+        "speak" => done(crate::tasks::list().and_then(|l| {
+            crate::tts::can_speak().map_err(|e| format!("Не могу озвучить: {}", e))?;
+            crate::tts::speak(&crate::tasks::spoken(&l));
+            Ok("Озвучиваю задачи".to_string())
+        })),
+        _ => json!({ "ok": false, "message": "unknown op" }),
+    }
 }
 
 fn scenario_action(body: &serde_json::Value) -> serde_json::Value {
@@ -781,6 +821,15 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
         ("GET", "/voice-install") => respond(&mut stream, "200 OK", "application/json", &crate::voice_install::status_json().to_string()),
         ("GET", "/chats") => respond(&mut stream, "200 OK", "application/json", &chats_json().to_string()),
         ("GET", "/scenarios") => respond(&mut stream, "200 OK", "application/json", &scenarios_json().to_string()),
+        ("GET", "/tasks") => respond(&mut stream, "200 OK", "application/json", &crate::tasks::json().to_string()),
+        ("POST", "/tasks") => {
+            if !req.custom_header {
+                respond(&mut stream, "403 Forbidden", "text/plain", "forbidden");
+                return Ok(());
+            }
+            let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap_or(json!({}));
+            respond(&mut stream, "200 OK", "application/json", &tasks_action(&body).to_string());
+        }
         ("POST", "/scenario") => {
             if !req.custom_header {
                 respond(&mut stream, "403 Forbidden", "text/plain", "forbidden");

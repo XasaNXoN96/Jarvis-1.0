@@ -7,13 +7,13 @@
 <link rel="icon" type="image/png" href="/icon.png">
 <style>
   :root {
-    --bg1: #060a18; --bg2: #0b1330; --panel: #0d1630cc; --line: #1b2750;
-    --text: #dce6ff; --dim: #7f8db5; --accent: #5ad1ff; --ok: #5be3a1; --err: #ff6b7a; --warn: #ffd166;
+    --bg1: #060607; --bg2: #0e0e10; --panel: #131315e6; --panel2: #18181b; --line: #26262a; --line2: #3a3a40;
+    --text: #ececee; --dim: #8b8b93; --accent: #f2f2f4; --ink: #0a0a0b; --ok: #6fdca0; --err: #ff6b7a; --warn: #f2c46d;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body {
-    background: radial-gradient(1200px 700px at 70% -10%, #14224f 0%, var(--bg2) 40%, var(--bg1) 100%);
+    background: radial-gradient(1100px 760px at 50% 38%, #141416 0%, var(--bg2) 45%, var(--bg1) 100%);
     color: var(--text); font: 15px/1.45 "Segoe UI", system-ui, sans-serif;
     display: flex; flex-direction: column; overflow: hidden;
   }
@@ -21,61 +21,65 @@
   .content { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
   .main { flex: 1; display: flex; min-height: 0; }
 
-  /* sidebar: the whole height of the window */
-  nav { width: 212px; flex-shrink: 0; padding: 20px 12px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; background: linear-gradient(180deg, #08102a99, #060a1899); overflow-y: auto; }
-  .brand { display: flex; align-items: center; gap: 10px; padding: 4px 10px 18px; font-weight: 700; letter-spacing: .08em; font-size: 18px; }
-  .brand small { display: block; color: var(--accent); font-size: 10px; letter-spacing: .3em; font-weight: 500; }
-
+  /* sidebar: the whole height of the window; it folds to a strip of icons */
+  nav { width: 208px; flex-shrink: 0; padding: 16px 10px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; background: #08080acc; overflow-y: auto; transition: width .25s ease; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 16px 12px; font-weight: 600; letter-spacing: .32em; font-size: 14px; }
+  .brand b { flex: 1; white-space: nowrap; }
+  .nav-fold { border: 0; background: transparent; color: var(--dim); cursor: pointer; width: 26px; height: 26px; padding: 3px; border-radius: 7px; display: inline-flex; }
+  .nav-fold:hover { color: var(--text); background: #ffffff0d; } .nav-fold svg { width: 20px; height: 20px; }
+  body.nav-folded nav { width: 62px; } body.nav-folded nav button span:not(.ei), body.nav-folded nav .nb, body.nav-folded .brand b, body.nav-folded nav .small { display: none; }
+  body.nav-folded nav button { justify-content: center; padding: 11px 6px; } body.nav-folded .brand { flex-direction: column; padding: 4px 0 14px; } body.nav-folded .nav-fold { transform: scaleX(-1); }
   /* top bar */
-  .topbar { display: flex; align-items: center; gap: 12px; padding: 12px 22px; border-bottom: 1px solid var(--line); background: #060a18aa; flex-shrink: 0; }
+  .topbar { display: flex; align-items: center; gap: 12px; padding: 12px 22px; border-bottom: 1px solid var(--line); background: #0b0b0eaa; flex-shrink: 0; }
   .tb-title { flex: 1; min-width: 0; } .tb-title b { font-size: 18px; letter-spacing: .04em; } .tb-title span { margin-left: 10px; color: var(--dim); font-size: 12px; letter-spacing: .22em; text-transform: uppercase; }
-  .vchip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line); background: #0d163099; font-size: 12px; letter-spacing: .14em; white-space: nowrap; cursor: default; }
+  .vchip { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line); background: #ffffff05; font-size: 12.5px; letter-spacing: .04em; white-space: nowrap; cursor: default; }
   .vchip i { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); flex-shrink: 0; }
   .vchip .vl { color: var(--dim); } .vchip b { font-weight: 600; }
   .vchip[data-state=READY] { border-color: #5be3a166; } .vchip[data-state=READY] i { background: var(--ok); box-shadow: 0 0 8px var(--ok); } .vchip[data-state=READY] b { color: var(--ok); }
-  .vchip[data-state=LISTENING] { border-color: #5ad1ff88; } .vchip[data-state=LISTENING] i { background: var(--accent); animation: blink 1s infinite; } .vchip[data-state=LISTENING] b { color: var(--accent); }
-  .vchip[data-state=SPEAKING] { border-color: #5ad1ff88; } .vchip[data-state=SPEAKING] i { background: #7af0e0; animation: blink .6s infinite; } .vchip[data-state=SPEAKING] b { color: #7af0e0; }
+  .vchip[data-state=LISTENING] { border-color: rgba(255,255,255,0.373); } .vchip[data-state=LISTENING] i { background: var(--accent); animation: blink 1s infinite; } .vchip[data-state=LISTENING] b { color: var(--accent); }
+  .vchip[data-state=SPEAKING] { border-color: rgba(255,255,255,0.373); } .vchip[data-state=SPEAKING] i { background: #e2e2e6; animation: blink .6s infinite; } .vchip[data-state=SPEAKING] b { color: #e2e2e6; }
   .vchip[data-state=DISABLED] b { color: var(--dim); }
   .vchip[data-state=ERROR] { border-color: #ff6b7a77; } .vchip[data-state=ERROR] i { background: var(--err); } .vchip[data-state=ERROR] b { color: var(--err); }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); transition: .3s; }
   .dot.on { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
   nav button {
-    display: flex; align-items: center; gap: 12px; text-align: left; border: 0; background: transparent; color: var(--dim);
-    padding: 12px 14px; border-radius: 12px; font: inherit; font-size: 16px; cursor: pointer;
+    display: flex; align-items: center; gap: 12px; text-align: left; border: 1px solid transparent; background: transparent; color: var(--dim);
+    padding: 10px 12px; border-radius: 11px; font: inherit; font-size: 15px; cursor: pointer; white-space: nowrap; transition: background .15s, color .15s;
   }
-  nav button:hover { background: #ffffff0d; color: var(--text); }
-  nav button.active { background: #5ad1ff1f; color: var(--accent); }
+  nav button:hover { background: #ffffff0a; color: var(--text); }
+  nav button.active { background: #ffffff10; border-color: var(--line); color: #fff; }
+  nav .nb { margin-left: auto; color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; } nav .nb:empty { display: none; }
   nav .grow { flex: 1; }
   nav .small { color: var(--dim); font-size: 12px; padding: 0 12px; line-height: 1.35; }
-  .ei { display: inline-block; width: 1.5em; text-align: center; font-size: 1.15em; }
+  .ei { display: inline-flex; width: 1.5em; justify-content: center; align-items: center; font-size: 1.15em; flex-shrink: 0; } .ei svg { width: 19px; height: 19px; }
 
   /* pages */
   .pages { flex: 1; position: relative; min-width: 0; }
   .page { position: absolute; inset: 0; display: none; padding: 18px 22px; overflow: auto; }
   .page.active { display: flex; flex-direction: column; }
   .page::-webkit-scrollbar, #log::-webkit-scrollbar { width: 8px; }
-  .page::-webkit-scrollbar-thumb, #log::-webkit-scrollbar-thumb { background: #5ad1ff33; border-radius: 8px; }
+  .page::-webkit-scrollbar-thumb, #log::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.140); border-radius: 8px; }
   h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
   .lead { color: var(--dim); margin: 0 0 16px; }
 
-  /* home: a big hologram sphere in the middle, the input under it, the cards on the right */
-  #page-home { padding: 14px 18px 14px 12px; overflow: hidden; }
-  #page-home::after { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0;
-    background: repeating-linear-gradient(0deg, rgba(90,209,255,.04) 0 1px, transparent 1px 4px); animation: scan 7s linear infinite; }
-  @keyframes scan { from { background-position-y: 0; } to { background-position-y: 80px; } }
-  .hgrid { flex: 1; min-height: 0; display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) 282px; position: relative; z-index: 1; }
-  .hcenter { display: flex; flex-direction: column; min-height: 0; min-width: 0; position: relative; }
-  .topright { display: flex; justify-content: flex-end; align-items: center; gap: 12px; flex-wrap: wrap; flex-shrink: 0; padding: 0 2px 6px; position: relative; z-index: 3; }
-  .clockbox { text-align: right; line-height: 1.15; } .clk { font-size: 22px; font-weight: 600; letter-spacing: .04em; color: var(--text); font-variant-numeric: tabular-nums; }
+  /* home: the sphere of particles in the middle, the text under it, the input at the bottom */
+  #page-home { padding: 14px 22px 16px; overflow: hidden; align-items: stretch; }
+  .h-top { display: flex; align-items: center; gap: 14px; flex-shrink: 0; position: relative; z-index: 3; }
+  .h-top .grow { flex: 1; }
+  .clockbox { text-align: right; line-height: 1.15; } .clk { font-size: 22px; font-weight: 300; letter-spacing: .06em; color: var(--text); font-variant-numeric: tabular-nums; }
   .clk-date { color: var(--dim); font-size: 12px; text-transform: capitalize; }
-  .wbox { display: flex; flex-direction: column; align-items: flex-start; border: 1px solid var(--line); background: #0d163099; color: var(--text); border-radius: 12px; padding: 4px 12px; font: inherit; cursor: pointer; text-align: left; line-height: 1.2; }
-  .wbox:hover { border-color: var(--accent); } .wbox .w-main { font-size: 15px; } .wbox small { color: var(--accent); font-size: 11px; letter-spacing: .08em; }
+  .wbox { display: flex; flex-direction: column; align-items: flex-end; border: 0; background: transparent; color: var(--text); padding: 2px 4px; font: inherit; cursor: pointer; text-align: right; line-height: 1.2; }
+  .wbox:hover .w-main { color: #fff; } .wbox .w-main { font-size: 14px; color: #cfcfd4; } .wbox small { color: var(--dim); font-size: 11px; letter-spacing: .08em; }
   .wbox.muted .w-main { color: var(--dim); font-size: 13px; }
-  #toast { position: fixed; left: 50%; bottom: 84px; transform: translate(-50%, 20px); background: #0d2a4af2; border: 1px solid #5ad1ff77; color: var(--text); padding: 8px 18px; border-radius: 999px; font-size: 13px; opacity: 0; pointer-events: none; transition: .25s; z-index: 50; }
+  #toast { position: fixed; left: 50%; bottom: 84px; transform: translate(-50%, 20px); background: #28282bf2; border: 1px solid rgba(255,255,255,0.327); color: var(--text); padding: 8px 18px; border-radius: 999px; font-size: 13px; opacity: 0; pointer-events: none; transition: .25s; z-index: 50; }
   #toast.on { opacity: 1; transform: translate(-50%, 0); }
-  #close-dlg { position: fixed; inset: 0; background: #02060fcc; display: none; align-items: center; justify-content: center; z-index: 100; padding: 16px; }
+  #full-exit { position: fixed; top: 12px; right: 14px; z-index: 60; display: none; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: #0c0c0ecc; color: var(--dim); cursor: pointer; font-size: 14px; }
+  #full-exit:hover { color: var(--text); border-color: var(--line2); }
+  body.full nav, body.full .topbar { display: none !important; } body.full #full-exit { display: block; }
+  body.full #page-home .h-top { padding-right: 48px; }
+  #close-dlg { position: fixed; inset: 0; background: #060609cc; display: none; align-items: center; justify-content: center; z-index: 100; padding: 16px; }
   #close-dlg.on { display: flex; }
-  #close-dlg .box { background: var(--panel, #0b1428); border: 1px solid #5ad1ff55; border-radius: 16px; padding: 22px 22px 18px; width: min(420px, 100%); box-shadow: 0 20px 60px #0008; }
+  #close-dlg .box { background: var(--panel, #151518); border: 1px solid rgba(255,255,255,0.233); border-radius: 16px; padding: 22px 22px 18px; width: min(420px, 100%); box-shadow: 0 20px 60px #0008; }
   #close-dlg h3 { margin: 0 0 8px; font-size: 18px; }
   #close-dlg p { margin: 0 0 16px; color: var(--dim); font-size: 13px; line-height: 1.45; }
   #close-dlg .acts { display: flex; flex-direction: column; gap: 8px; }
@@ -88,78 +92,79 @@
   #rm-on { text-align: center; }
   .rmerr { color: #ff9aa6 !important; } .rmhelp { margin-top: 8px; display: block; color: var(--dim); font-size: 11.5px; line-height: 1.4; }
   #timers-card .scroll { max-height: 220px; overflow-y: auto; }
-  .hero { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 6px 8px; }
-  .hero > * { margin-top: auto; margin-bottom: auto; }
-  .orbwrap { width: min(100%, 380px, 38vh); text-align: center; flex-shrink: 0; transition: width .35s; }
-  #orb { width: 100%; aspect-ratio: 1; cursor: pointer; display: block;
-         filter: drop-shadow(0 0 6px rgba(90,209,255,.85)) drop-shadow(0 0 20px rgba(90,209,255,.35)); }
-  #state { margin-top: 2px; font-size: 12px; letter-spacing: .2em; text-transform: uppercase; color: var(--accent); text-shadow: 0 0 12px #5ad1ff88; }
-  .herotext { max-width: 760px; min-width: 0; }
-  #status { margin-top: 10px; color: var(--text); font-size: 18px; line-height: 1.4; min-height: 26px; overflow-wrap: anywhere; }
+  .hero { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 8px 6px; }
+  .orbwrap { width: min(100%, 470px, 50vh); flex-shrink: 1; min-height: 120px; aspect-ratio: 1; transition: width .45s ease; }
+  #orb { width: 100%; height: 100%; cursor: pointer; display: block; }
+  #state { margin-top: 4px; font-size: 12px; letter-spacing: .32em; text-transform: uppercase; color: var(--dim); }
+  .herotext { max-width: 820px; min-width: 0; width: 100%; }
+  .h-heard { color: var(--dim); font-size: 14px; margin-top: 12px; min-height: 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .h-heard:empty { display: none; }
+  #status { margin-top: 8px; color: var(--text); font-size: 19px; font-weight: 300; line-height: 1.45; min-height: 28px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .h-open { margin-top: 8px; border: 0; background: transparent; color: var(--dim); font: inherit; font-size: 13px; cursor: pointer; } .h-open:hover { color: var(--text); text-decoration: underline; }
   .howto { margin-top: 8px; color: var(--dim); font-size: 14px; }
   .examples { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 14px; }
-  .ex { border: 1px solid var(--line); background: #0d163099; color: var(--dim); padding: 5px 14px; border-radius: 999px; font: inherit; font-size: 13px; cursor: pointer; }
-  .ex:hover { color: var(--accent); border-color: var(--accent); }
-  .banner { margin-top: 10px; padding: 8px 14px; border-radius: 12px; border: 1px solid #ffd16655; background: #3a2d0acc; color: #ffe3a3; font-size: 14px; text-align: left; }
+  .ex { border: 1px solid var(--line); background: transparent; color: var(--dim); padding: 5px 14px; border-radius: 999px; font: inherit; font-size: 13px; cursor: pointer; transition: .2s; }
+  .ex:hover { color: var(--text); border-color: var(--line2); background: #ffffff08; }
+  .banner { margin: 10px auto 0; padding: 8px 14px; border-radius: 12px; border: 1px solid #f2c46d44; background: #2a2210cc; color: #f3dfb0; font-size: 14px; text-align: left; max-width: 760px; }
   .banner b { color: #fff1c9; }
-  .hlog { display: none; flex: 1; min-height: 120px; overflow-y: auto; flex-direction: column; gap: 9px; padding: 8px 4px 8px 0; }
-  .hlog::-webkit-scrollbar { width: 8px; } .hlog::-webkit-scrollbar-thumb { background: #5ad1ff33; border-radius: 8px; }
-  /* a conversation has begun: the sphere moves to the corner, the history takes the room */
-  #page-home.has-msgs .hero { flex: 0 0 auto; flex-direction: row; justify-content: flex-start; text-align: left; gap: 16px; padding: 0 70px 6px 0; }
-  #page-home.has-msgs .orbwrap { width: 128px; }
-  #page-home.has-msgs #status { margin-top: 4px; font-size: 16px; }
-  #page-home.has-msgs .howto, #page-home.has-msgs .examples { display: none; }
-  #page-home.has-msgs .hlog { display: flex; }
-  #page-home.big:not(.has-msgs) .orbwrap { width: min(100%, 470px, 54vh); }
+  #page-home.talked .howto, #page-home.talked .examples { display: none; }
+  #page-home.big .orbwrap { width: min(100%, 600px, 64vh); }
   #page-home.big .examples, #page-home.big .howto, #page-home.big .banner { display: none !important; }
-  .composer { display: flex; gap: 8px; flex-shrink: 0; padding-top: 10px; border-top: 1px solid var(--line); }
-  .composer input { flex: 1; min-width: 0; padding: 13px 16px; border-radius: 12px; border: 1px solid var(--line); background: #0d1630; color: var(--text); font: inherit; outline: none; }
-  .composer input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px #5ad1ff22; }
-  .composer .ib { width: 46px; border: 1px solid var(--line); border-radius: 12px; background: #0d1630; color: var(--text); cursor: pointer; font-size: 18px; flex-shrink: 0; }
-  .composer .ib:hover { border-color: var(--accent); } .composer .ib.off { color: #ff9aa6; border-color: #ff6b7a77; }
-  .composer .sb { padding: 0 22px; border: 0; border-radius: 12px; background: var(--accent); color: #04101f; cursor: pointer; font: inherit; font-weight: 600; flex-shrink: 0; }
-  .composer .sb.stop { background: #ff6b7a; color: #1a0508; }
-  /* the cards on the right: the whole height, they scroll by themselves */
-  .hright { display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-y: auto; padding-right: 2px; }
-  .hright::-webkit-scrollbar { width: 6px; } .hright::-webkit-scrollbar-thumb { background: #5ad1ff33; border-radius: 6px; }
-  .hright .card { flex-shrink: 0; background: #0b1330d9; border-color: #5ad1ff2e; }
+  .composer { display: flex; gap: 8px; flex-shrink: 0; padding-top: 12px; max-width: 900px; width: 100%; margin: 0 auto; }
+  .composer input { flex: 1; min-width: 0; padding: 13px 18px; border-radius: 14px; border: 1px solid var(--line); background: #ffffff06; color: var(--text); font: inherit; outline: none; transition: .2s; }
+  .composer input:focus { border-color: var(--line2); background: #ffffff0a; box-shadow: 0 0 0 3px #ffffff0d; }
+  .composer .ib { width: 46px; border: 1px solid var(--line); border-radius: 14px; background: #ffffff06; color: var(--text); cursor: pointer; font-size: 18px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; }
+  .composer .ib svg { width: 20px; height: 20px; }
+  .composer .ib:hover { border-color: var(--line2); background: #ffffff0d; } .composer .ib.off { color: #ff9aa6; border-color: #ff6b7a77; }
+  .composer .sb { padding: 0 22px; border: 0; border-radius: 14px; background: var(--accent); color: var(--ink); cursor: pointer; font: inherit; font-weight: 600; flex-shrink: 0; }
+  .composer .sb:hover { background: #fff; } .composer .sb.stop { background: #ff6b7a; color: #1a0508; }
+  /* "Система": the cards that were on the right of the home page */
+  .sys-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; align-items: start; }
+  .sys-grid .card { background: var(--panel); }
   .card.pro h3 { font-size: 13px; letter-spacing: .22em; text-transform: uppercase; color: var(--accent); margin: 0 0 12px; font-weight: 600; }
   .card.pro .scroll { overflow-y: auto; }
   .hrow { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 13px; color: var(--dim); letter-spacing: .05em; margin-top: 2px; }
   .hrow span { white-space: nowrap; } .hrow b { color: var(--text); font-weight: 600; text-align: right; min-width: 0; overflow-wrap: anywhere; }
   .hsub { text-align: right; color: var(--text); font-weight: 600; font-size: 13px; }
-  .hbar { height: 8px; border-radius: 8px; background: #ffffff14; overflow: hidden; margin: 5px 0 12px; } .hbar i { display: block; height: 100%; border-radius: 8px; width: 0; background: linear-gradient(90deg, #3a7bff, var(--accent)); transition: width .6s; }
+  .hbar { height: 8px; border-radius: 8px; background: #ffffff14; overflow: hidden; margin: 5px 0 12px; } .hbar i { display: block; height: 100%; border-radius: 8px; width: 0; background: linear-gradient(90deg, #7d7d84, var(--accent)); transition: width .6s; }
   .hbar.warn i { background: linear-gradient(90deg, #ffb347, var(--warn)); } .hbar.hot i { background: linear-gradient(90deg, #ff6b7a, #ff9aa6); }
   .pill { display: inline-block; padding: 3px 12px; border-radius: 999px; font-size: 11px; letter-spacing: .12em; border: 1px solid var(--line); color: var(--dim); white-space: nowrap; }
-  .pill.ok { color: var(--ok); border-color: #5be3a177; } .pill.bad { color: var(--err); border-color: #ff6b7a77; background: #3a162033; } .pill.warn { color: var(--warn); border-color: #ffd16677; } .pill.info { color: var(--accent); border-color: #5ad1ff77; }
+  .pill.ok { color: var(--ok); border-color: #5be3a177; } .pill.bad { color: var(--err); border-color: #ff6b7a77; background: #3a162033; } .pill.warn { color: var(--warn); border-color: #ffd16677; } .pill.info { color: var(--accent); border-color: rgba(255,255,255,0.327); }
   .evrow { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; padding: 3px 0; border-bottom: 1px solid #ffffff08; }
   .evrow time { color: var(--dim); font-variant-numeric: tabular-nums; flex-shrink: 0; } .evrow span { min-width: 0; overflow-wrap: anywhere; }
-  .evrow.error span { color: #ff9aa6; } .evrow.start span, .evrow.ai span { color: var(--accent); } .evrow.voice span { color: #7af0e0; }
+  .evrow.error span { color: #ff9aa6; } .evrow.start span, .evrow.ai span { color: var(--accent); } .evrow.voice span { color: #e2e2e6; }
   .hubrow { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px solid #ffffff08; font-size: 13px; } .hubrow .n { flex: 1; min-width: 0; } .hubrow small { display: block; color: var(--dim); font-size: 11.5px; }
   .aicard small { color: var(--dim); display: block; font-size: 12.5px; overflow-wrap: anywhere; margin-top: 4px; }
   .aicard .acts { display: flex; gap: 8px; margin-top: 12px; flex-direction: column; align-items: flex-start; }
   body.on-home .topbar { display: none; }
   @media (max-width: 760px) { details.grp > summary { padding: 12px; } .grp .gt b { font-size: 17px; } .chip { font-size: 15px; padding: 6px 12px; } .grp .gc { display: none; } }
-  /* narrower window: the cards go under the conversation, the input stays at the bottom of the conversation */
-  @media (max-width: 1000px) {
-    #page-home { overflow-y: auto; }
-    .hgrid { flex: none; grid-template-columns: minmax(0, 1fr); }
-    .hcenter { height: clamp(430px, 78vh, 700px); }
-    .hright { overflow: visible; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); align-items: start; }
-  }
   @media (max-width: 760px) {
-    nav { width: 64px; padding: 14px 6px; } nav button span:not(.ei), .brand b, .brand small, nav .small { display: none; } nav button { justify-content: center; padding: 12px 6px; }
-    .hright { grid-template-columns: 1fr; } #status { font-size: 15px; } .orbwrap { width: min(70%, 260px, 36vh); }
-    #page-home.has-msgs .orbwrap { width: 84px; } #page-home.has-msgs .hero { gap: 10px; padding-right: 0; }
+    nav { width: 64px; padding: 14px 6px; } nav button span:not(.ei), nav button .nb, .brand b, .brand small, nav .small, .nav-fold { display: none; } nav button { justify-content: center; padding: 12px 6px; }
+    #status { font-size: 16px; } .orbwrap { width: min(80%, 300px, 40vh); }
     .tb-title span { display: none; } .topbar { padding: 10px 14px; } #page-home { padding: 10px; } .composer .sb { padding: 0 12px; }
   }
 
+  .feed { display: flex; gap: 10px; font-size: 13px; padding: 6px 10px; margin-bottom: 4px; border-radius: 8px; border-left: 2px solid var(--line2); background: #ffffff05; }
+  .feed time { color: var(--dim); flex-shrink: 0; font-variant-numeric: tabular-nums; } .feed span { min-width: 0; overflow-wrap: anywhere; } .feed b { font-weight: 600; }
+  .feed.ok { border-left-color: #6fdca099; } .feed.err { border-left-color: #ff6b7a99; } .feed.err span { color: #ffb3bc; }
+  .cat-side .ei, .card h3 .ei, .tabs button, .quick button { filter: grayscale(1) brightness(1.25); }
+  .sw input:checked + span::after { background: #0a0a0b; }
+  /* tasks */
+  .tk-box { max-width: 760px; width: 100%; margin: 0 auto; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
+  .tk-head { display: flex; justify-content: space-between; align-items: baseline; } .tk-brand { letter-spacing: .28em; font-size: 13px; color: var(--dim); } .tk-head b { font-weight: 400; font-variant-numeric: tabular-nums; color: var(--text); }
+  .tk-form { display: flex; gap: 8px; } .tk-form input { flex: 1; min-width: 0; }
+  .tk-list { display: flex; flex-direction: column; gap: 6px; }
+  .tk-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: #ffffff04; }
+  .tk-row .n { color: var(--dim); font-variant-numeric: tabular-nums; min-width: 22px; } .tk-row .t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .tk-row input { flex: 1; min-width: 0; } .tk-row .btn { font-size: 11px; letter-spacing: .14em; padding: 4px 10px; }
+  .tk-acts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; } .tk-acts .grow { flex: 1; } .tk-acts .ei svg { width: 16px; height: 16px; } .tk-acts .btn { display: inline-flex; align-items: center; gap: 4px; }
+  .tk-help { line-height: 1.45; } #tk-path { overflow-wrap: anywhere; max-width: 320px; text-align: right; }
   /* scenario builder */
   .b-io { display: flex; gap: 6px; flex-wrap: wrap; }
   .b-grid { display: grid; grid-template-columns: 240px minmax(0, 1fr) 270px; gap: 14px; align-items: start; }
   .b-side, .b-main, .b-edit { display: flex; flex-direction: column; gap: 8px; }
   .b-sidehead { display: flex; justify-content: space-between; align-items: center; }
-  .b-item { padding: 8px 10px; border-radius: 9px; cursor: pointer; border: 1px solid transparent; } .b-item:hover { background: #ffffff0d; } .b-item.active { border-color: #5ad1ff66; background: #5ad1ff14; }
+  .b-item { padding: 8px 10px; border-radius: 9px; cursor: pointer; border: 1px solid transparent; } .b-item:hover { background: #ffffff0d; } .b-item.active { border-color: rgba(255,255,255,0.280); background: rgba(255,255,255,0.055); }
   .b-item small { display: block; color: var(--dim); } .b-item.off { opacity: .55; } .b-item .st { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--dim); } .b-item .st.ok { background: var(--ok); } .b-item .st.bad { background: var(--err); }
   .b-tpl { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; } .b-tpl button { display: block; width: 100%; text-align: left; background: transparent; border: 0; color: var(--text); padding: 6px 4px; font: inherit; cursor: pointer; border-radius: 7px; } .b-tpl button:hover { background: #ffffff0d; color: var(--accent); }
   .b-label { font-size: 11px; letter-spacing: .14em; color: var(--dim); margin-top: 4px; }
@@ -167,9 +172,9 @@
   .b-chainhead { display: flex; justify-content: space-between; align-items: baseline; margin-top: 6px; }
   .b-kinds { display: flex; flex-wrap: wrap; gap: 6px; } .b-kinds button { border: 1px solid var(--line); background: #ffffff08; color: var(--text); border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer; } .b-kinds button:hover { border-color: var(--accent); }
   .b-steps { min-height: 160px; border: 1px dashed var(--line); border-radius: 12px; padding: 10px; display: flex; flex-wrap: wrap; gap: 10px; align-content: flex-start; background-image: radial-gradient(#ffffff10 1px, transparent 1px); background-size: 16px 16px; }
-  .b-step { position: relative; border: 1px solid var(--line); background: #0b1330; border-radius: 10px; padding: 8px 12px 8px 30px; min-width: 150px; max-width: 240px; cursor: pointer; }
+  .b-step { position: relative; border: 1px solid var(--line); background: #141417; border-radius: 10px; padding: 8px 12px 8px 30px; min-width: 150px; max-width: 240px; cursor: pointer; }
   .b-step i { position: absolute; left: 10px; top: 9px; font-style: normal; color: var(--dim); font-size: 12px; } .b-step b { display: block; font-size: 14px; } .b-step small { display: block; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .b-step.active { border-color: var(--accent); box-shadow: 0 0 0 2px #5ad1ff33; } .b-step.bad { border-color: #ff6b7a88; }
+  .b-step.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(255,255,255,0.140); } .b-step.bad { border-color: #ff6b7a88; }
   .b-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; } .b-en { display: flex; align-items: center; gap: 6px; color: var(--dim); }
   .b-last { color: var(--dim); font-size: 13px; } .b-edit input, .b-edit select { width: 100%; } .b-stepbtns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
   @media (max-width: 1100px) { .b-grid { grid-template-columns: 220px minmax(0, 1fr); } .b-edit { grid-column: 1 / -1; } }
@@ -190,8 +195,8 @@
   /* dialog */
   #log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; min-height: 0; }
   .msg { max-width: 88%; padding: 8px 12px; border-radius: 14px; white-space: pre-wrap; word-break: break-word; }
-  .me { align-self: flex-end; background: #1e3a78; border-bottom-right-radius: 4px; }
-  .bot { align-self: flex-start; background: #121c3d; border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+  .me { align-self: flex-end; background: #2a2a2f; border-bottom-right-radius: 4px; }
+  .bot { align-self: flex-start; background: #1e1e21; border: 1px solid var(--line); border-bottom-left-radius: 4px; }
   .err { align-self: flex-start; background: #3a1620; color: var(--err); }
   .note { align-self: center; color: var(--dim); font-size: 12px; }
   .empty { color: var(--dim); padding: 8px 2px; }
@@ -212,23 +217,23 @@
   .st { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); flex-shrink: 0; }
   .st.bad { background: var(--err); } .st.idle { background: var(--accent); }
   .bar { height: 8px; border-radius: 8px; background: #ffffff14; overflow: hidden; margin: 5px 0 12px; }
-  .bar i { display: block; height: 100%; border-radius: 8px; background: linear-gradient(90deg, #3a7bff, var(--accent)); transition: width .6s; }
+  .bar i { display: block; height: 100%; border-radius: 8px; background: linear-gradient(90deg, #7d7d84, var(--accent)); transition: width .6s; }
   .bar.warn i { background: linear-gradient(90deg, #ffb347, var(--warn)); } .bar.hot i { background: linear-gradient(90deg, #ff6b7a, #ff9aa6); }
   .lab { display: flex; justify-content: space-between; color: var(--dim); font-size: 13px; }
   .qa { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .qa button { text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: #ffffff08; color: var(--text); font: inherit; cursor: pointer; }
-  .qa button:hover { border-color: var(--accent); background: #5ad1ff14; }
+  .qa button:hover { border-color: var(--accent); background: rgba(255,255,255,0.055); }
   .qa small { display: block; color: var(--dim); }
 
   .btn { border: 1px solid var(--line); background: #ffffff0a; color: var(--text); padding: 7px 13px; border-radius: 9px; cursor: pointer; font: inherit; }
-  .btn:hover { background: #5ad1ff26; border-color: var(--accent); }
-  .btn.primary { background: var(--accent); color: #04101f; border-color: var(--accent); font-weight: 600; }
+  .btn:hover { background: rgba(255,255,255,0.104); border-color: var(--accent); }
+  .btn.primary { background: var(--accent); color: #0a0a0b; border-color: var(--accent); font-weight: 600; }
   .btn.small { padding: 4px 10px; font-size: 13px; }
   .setrow { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 11px 0; border-top: 1px solid var(--line); flex-wrap: wrap; }
   .setrow:first-of-type { border-top: 0; }
   .setrow .l { min-width: 200px; flex: 1; } .setrow .l small { display: block; color: var(--dim); }
   .setrow .r { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
-  select, input[type=text], input[type=password] { background: #0a1230; color: var(--text); border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; font: inherit; min-width: 220px; max-width: 100%; outline: none; }
+  select, input[type=text], input[type=password] { background: #131316; color: var(--text); border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; font: inherit; min-width: 220px; max-width: 100%; outline: none; }
   select:focus, input[type=text]:focus, input[type=password]:focus { border-color: var(--accent); }
   input[type=range] { accent-color: var(--accent); width: 200px; }
   .meter { width: 220px; height: 12px; border-radius: 8px; background: #ffffff10; overflow: hidden; display: flex; gap: 2px; }
@@ -237,35 +242,35 @@
   .sw input { opacity: 0; width: 100%; height: 100%; position: absolute; margin: 0; cursor: pointer; z-index: 1; }
   .sw span { position: absolute; inset: 0; border-radius: 26px; background: #ffffff22; transition: .2s; }
   .sw span::after { content: ""; position: absolute; left: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: .2s; }
-  .sw input:checked + span { background: #2d8fbf; } .sw input:checked + span::after { transform: translateX(20px); }
+  .sw input:checked + span { background: #e9e9ec; } .sw input:checked + span::after { transform: translateX(20px); }
   .msgline { font-size: 13px; color: var(--dim); min-height: 18px; } .msgline.ok { color: var(--ok); } .msgline.bad { color: #ff9aa6; }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
   .seg button { background: transparent; border: 0; color: var(--dim); padding: 6px 14px; font: inherit; cursor: pointer; }
-  .seg button.active { background: #5ad1ff22; color: var(--accent); }
+  .seg button.active { background: rgba(255,255,255,0.093); color: var(--accent); }
   .cmd { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; background: var(--panel); }
   .cmd b { color: var(--accent); font-weight: 600; }
   .chip { display: inline-block; margin: 4px 6px 0 0; padding: 3px 10px; border-radius: 999px; background: #ffffff10; color: var(--text); cursor: pointer; font-size: 13px; }
-  .chip:hover { background: #5ad1ff33; }
+  .chip:hover { background: rgba(255,255,255,0.140); }
   small.dim { color: var(--dim); }
   .tabs { display: flex; gap: 6px; margin-bottom: 12px; } .tabs button { border: 1px solid var(--line); background: transparent; color: var(--dim); padding: 6px 14px; border-radius: 999px; font: inherit; cursor: pointer; }
-  .tabs button.active { color: var(--accent); border-color: var(--accent); background: #5ad1ff1a; }
+  .tabs button.active { color: var(--accent); border-color: var(--accent); background: rgba(255,255,255,0.071); }
   .aichat { flex: 1; min-height: 0; display: flex; gap: 14px; }
   .convs { width: 210px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; min-height: 0; } #conv-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
   .conv { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 10px; border: 1px solid transparent; cursor: pointer; color: var(--dim); }
-  .conv:hover { background: #ffffff0a; } .conv.active { background: #5ad1ff1a; color: var(--text); border-color: var(--line); }
+  .conv:hover { background: #ffffff0a; } .conv.active { background: rgba(255,255,255,0.071); color: var(--text); border-color: var(--line); }
   .conv .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .conv .x { opacity: 0; border: 0; background: transparent; color: var(--dim); cursor: pointer; } .conv:hover .x { opacity: 1; } .conv .x:hover { color: var(--err); }
   .chatmain { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
   .chathead { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; } .chathead .grow { flex: 1; } .chathead b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .privacy { color: var(--dim); font-size: 12px; margin-bottom: 8px; }
-  #ai-log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; min-height: 0; } #ai-log::-webkit-scrollbar { width: 8px; } #ai-log::-webkit-scrollbar-thumb { background: #5ad1ff33; border-radius: 8px; }
+  #ai-log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; min-height: 0; } #ai-log::-webkit-scrollbar { width: 8px; } #ai-log::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.140); border-radius: 8px; }
   .ai-msg { max-width: 92%; padding: 9px 13px; border-radius: 14px; word-break: break-word; line-height: 1.5; }
-  .ai-msg.user { align-self: flex-end; background: #1e3a78; border-bottom-right-radius: 4px; white-space: pre-wrap; }
-  .ai-msg.assistant { align-self: flex-start; background: #121c3d; border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+  .ai-msg.user { align-self: flex-end; background: #2a2a2f; border-bottom-right-radius: 4px; white-space: pre-wrap; }
+  .ai-msg.assistant { align-self: flex-start; background: #1e1e21; border: 1px solid var(--line); border-bottom-left-radius: 4px; }
   .ai-msg.error { align-self: flex-start; background: #3a1620; color: #ffb3bc; border: 1px solid #ff6b7a44; }
   .ai-msg.thinking { align-self: flex-start; color: var(--dim); font-style: italic; }
   .ai-msg p { margin: 0 0 8px; } .ai-msg p:last-child { margin-bottom: 0; } .ai-msg ul, .ai-msg ol { margin: 4px 0 8px 20px; padding: 0; } .ai-msg h3, .ai-msg h4 { margin: 8px 0 4px; font-size: 15px; }
   .ai-msg code { background: #ffffff14; padding: 1px 5px; border-radius: 5px; font-family: Consolas, monospace; font-size: 13px; } .ai-msg a { color: var(--accent); }
-  .code { margin: 8px 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #070d20; }
+  .code { margin: 8px 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #0e0e11; }
   .code .bar2 { display: flex; justify-content: space-between; align-items: center; padding: 4px 10px; background: #ffffff0d; color: var(--dim); font-size: 12px; }
   .code pre { margin: 0; padding: 10px 12px; overflow-x: auto; } .code pre code { background: transparent; padding: 0; }
   .msgtools { margin-top: 6px; display: flex; gap: 6px; } .msgtools button { border: 0; background: transparent; color: var(--dim); cursor: pointer; font-size: 12px; padding: 2px 6px; border-radius: 6px; } .msgtools button:hover { color: var(--accent); background: #ffffff0d; }
@@ -276,7 +281,7 @@
   .cat-grid { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 14px; align-items: start; }
   .cat-side { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 6px; display: flex; flex-direction: column; gap: 2px; }
   .cat-side button { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 0; border-radius: 9px; background: transparent; color: var(--dim); font: inherit; cursor: pointer; text-align: left; }
-  .cat-side button:hover { background: #ffffff0d; color: var(--text); } .cat-side button.active { background: #5ad1ff1f; color: var(--accent); }
+  .cat-side button:hover { background: #ffffff0d; color: var(--text); } .cat-side button.active { background: rgba(255,255,255,0.085); color: var(--accent); }
   .cat-side button .n { flex: 1; min-width: 0; } .cat-side button small { color: var(--dim); font-variant-numeric: tabular-nums; } .cat-side button.off .n { text-decoration: line-through; } .cat-side button.na { opacity: .55; }
   .cat-title { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; } .cat-title b { font-size: 17px; } .cat-title small { display: block; color: var(--dim); }
   .cmd-list { display: flex; flex-direction: column; gap: 8px; }
@@ -322,21 +327,21 @@
   body.on-home .bottom { display: none; }
   /* the home page has its own input; an open session (a question "да / нет", dictation) still shows its bar there */
   body.on-home .bottom:has(#session-bar.on) { display: block; } body.on-home .bottom #form { display: none; }
-  .ai-msg.user .msgtools { justify-content: flex-end; margin-top: 4px; } .ai-msg.user .msgtools button { color: #9fb4e6; }
+  .ai-msg.user .msgtools { justify-content: flex-end; margin-top: 4px; } .ai-msg.user .msgtools button { color: #a9a9b0; }
   .srcb { display: inline-block; margin: 0 8px 4px 0; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); font-size: 11px; letter-spacing: .08em; }
   .ai-msg.streaming::after { content: "▍"; color: var(--accent); animation: blink 1s infinite; margin-left: 2px; }
   /* input bar */
-  .bottom { padding: 12px 16px 10px; border-top: 1px solid var(--line); background: #060a18d9; }
+  .bottom { padding: 12px 16px 10px; border-top: 1px solid var(--line); background: #0b0b0ed9; }
   form { display: flex; gap: 8px; }
-  #input { flex: 1; min-width: 0; padding: 13px 16px; border-radius: 12px; border: 1px solid var(--line); background: #0d1630; color: var(--text); font: inherit; outline: none; }
-  #input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px #5ad1ff22; }
-  #micbtn { width: 48px; border: 1px solid var(--line); border-radius: 12px; background: #0d1630; color: var(--text); cursor: pointer; font-size: 18px; }
+  #input { flex: 1; min-width: 0; padding: 13px 16px; border-radius: 12px; border: 1px solid var(--line); background: #17171a; color: var(--text); font: inherit; outline: none; }
+  #input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,255,255,0.093); }
+  #micbtn { width: 48px; border: 1px solid var(--line); border-radius: 12px; background: #ffffff06; color: var(--text); cursor: pointer; font-size: 18px; display: inline-flex; align-items: center; justify-content: center; } #micbtn svg { width: 20px; height: 20px; }
   #micbtn:hover { border-color: var(--accent); } #micbtn.off { color: #ff9aa6; border-color: #ff6b7a77; }
-  #send { padding: 0 20px; border: 0; border-radius: 12px; background: var(--accent); color: #04101f; cursor: pointer; font: inherit; font-weight: 600; }
+  #send { padding: 0 20px; border: 0; border-radius: 12px; background: var(--accent); color: #0a0a0b; cursor: pointer; font: inherit; font-weight: 600; }
   #send:hover { filter: brightness(1.1); }
   #micbtn, #send { flex-shrink: 0; } @media (max-width: 480px) { #send { padding: 0 12px; } }
   #hint { margin-top: 6px; font-size: 12px; color: var(--dim); }
-  #session-bar { display: none; align-items: center; gap: 12px; margin-bottom: 10px; padding: 9px 14px; border-radius: 12px; border: 1px solid #5ad1ff55; background: #0d2a4acc; }
+  #session-bar { display: none; align-items: center; gap: 12px; margin-bottom: 10px; padding: 9px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.233); background: #28282bcc; }
   #session-bar.on { display: flex; } #session-bar .sdot { width: 10px; height: 10px; border-radius: 50%; background: var(--err); animation: blink 1.2s infinite; flex-shrink: 0; }
   #session-bar .st2 { flex: 1; } @keyframes blink { 50% { opacity: .3; } }
 </style>
@@ -344,54 +349,62 @@
 <body>
 <div class="shell">
   <nav>
-    <div class="brand"><span class="dot" id="dot"></span><b>Джарвис</b></div>
-    <button data-page="home" class="active"><span class="ei">◉</span><span>Главная</span></button>
-    <button data-page="chat"><span class="ei">💬</span><span>Диалог</span></button>
-    <button data-page="commands"><span class="ei">☰</span><span>Команды</span></button>
-    <button data-page="builder"><span class="ei">🧩</span><span>Конструктор</span></button>
-    <button data-page="apps"><span class="ei">🖥</span><span>Программы</span></button>
-    <button data-page="files"><span class="ei">📁</span><span>Файлы</span></button>
-    <button data-page="diag"><span class="ei">🩺</span><span>Диагностика</span></button>
-    <button data-page="settings"><span class="ei">⚙</span><span>Настройки</span></button>
+    <div class="brand"><span class="dot" id="dot"></span><b>JARVIS</b><button type="button" class="nav-fold" id="nav-fold" title="Свернуть меню" data-ico="fold"></button></div>
+    <button data-page="home" class="active" title="Главная"><span class="ei" data-ico="orb"></span><span>Главная</span></button>
+    <button data-page="chat" title="Диалоги"><span class="ei" data-ico="chat"></span><span>Диалоги</span></button>
+    <button data-page="tasks" title="Задачи"><span class="ei" data-ico="check"></span><span>Задачи</span><small class="nb" id="nav-tasks"></small></button>
+    <button data-page="commands" title="Команды"><span class="ei" data-ico="list"></span><span>Команды</span></button>
+    <button data-page="builder" title="Конструктор"><span class="ei" data-ico="flow"></span><span>Конструктор</span></button>
+    <button data-page="apps" title="Программы"><span class="ei" data-ico="apps"></span><span>Программы</span></button>
+    <button data-page="files" title="Файлы"><span class="ei" data-ico="folder"></span><span>Файлы</span></button>
+    <button data-page="system" title="Система"><span class="ei" data-ico="cpu"></span><span>Система</span></button>
+    <button data-page="diag" title="Диагностика"><span class="ei" data-ico="pulse"></span><span>Диагностика</span></button>
+    <button data-page="settings" title="Настройки"><span class="ei" data-ico="gear"></span><span>Настройки</span></button>
     <div class="grow"></div>
-    <button type="button" id="close-open" style="display:none" title="Свернуть в трей или полностью закрыть JARVIS"><span class="ei">⏻</span><span id="close-open-t">Закрыть JARVIS…</span></button>
-    <div class="small">Нажмите на шар или скажите «Джарвис». Или напишите сообщение.</div>
+    <button type="button" id="full-btn" title="Полноэкранный режим (F11)"><span class="ei" data-ico="full"></span><span>Во весь экран</span></button>
+    <button type="button" id="close-open" style="display:none" title="Свернуть в трей или полностью закрыть JARVIS"><span class="ei" data-ico="power"></span><span id="close-open-t">Закрыть JARVIS…</span></button>
+    <div class="small">Нажмите на сферу или скажите «Джарвис». Или напишите сообщение.</div>
   </nav>
 
   <div class="content">
   <header class="topbar">
     <div class="tb-title"><b id="page-title">Главная</b><span id="page-sub">Neural Interface</span></div>
-    <span class="vchip" id="voice-chip" data-state="ERROR" title="Состояние голоса"><i></i><span class="vl">VOICE</span><b id="voice-chip-t">…</b></span>
+    <span class="vchip" id="voice-chip" data-state="ERROR" title="Состояние голоса"><i></i><b id="voice-chip-t">…</b></span>
   </header>
   <div class="main">
   <div class="pages">
     <section class="page active" id="page-home">
-      <div class="hgrid">
-        <div class="hcenter">
-          <div class="topright">
-            <div class="clockbox" title="Время и дата берутся с этого компьютера"><div class="clk" id="clk-time">--:--</div><div class="clk-date" id="clk-date"></div></div>
-            <button type="button" class="wbox" id="wbox" title="Погода: выберите город в настройках"><span class="w-main" id="w-main">Погода…</span><small id="w-city"></small></button>
-            <span class="vchip" id="voice-chip-h" data-state="ERROR" title="Состояние голоса"><i></i><span class="vl">VOICE</span><b>…</b></span>
-          </div>
-          <div class="hero">
-            <div class="orbwrap"><canvas id="orb" width="760" height="760" title="Нажмите: Джарвис начнёт слушать"></canvas><div id="state">готов</div></div>
-            <div class="herotext">
-              <div id="status">Здравствуйте! Чем могу помочь?</div>
-              <div class="howto" id="howto">Нажмите на шар или скажите «Джарвис», затем команду. Или напишите её внизу.</div>
-              <div class="examples" id="examples"></div>
-              <div class="banner" id="voice-banner" style="display:none"></div>
-              <div class="banner" id="speech-banner" style="display:none"></div>
-            </div>
-          </div>
-          <div class="hlog" id="h-log"></div>
-          <form class="composer" id="h-form" autocomplete="off">
-            <input id="h-input" placeholder="Напишите сообщение или команду…" autofocus>
-            <button type="button" class="ib" id="h-listen" title="Говорить: Джарвис послушает одну фразу">🎙</button>
-            <button type="button" class="ib" id="h-mic" title="Микрофон">🎤</button>
-            <button type="submit" class="sb" id="h-send">Отправить</button>
-          </form>
+      <div class="h-top">
+        <span class="vchip" id="voice-chip-h" data-state="ERROR" title="Состояние голоса"><i></i><b>…</b></span>
+        <span class="grow"></span>
+        <button type="button" class="wbox" id="wbox" title="Погода: выберите город в настройках"><span class="w-main" id="w-main">Погода…</span><small id="w-city"></small></button>
+        <div class="clockbox" title="Время и дата берутся с этого компьютера"><div class="clk" id="clk-time">--:--</div><div class="clk-date" id="clk-date"></div></div>
+      </div>
+      <div class="hero">
+        <div class="orbwrap"><canvas id="orb" width="900" height="900" title="Нажмите: Джарвис начнёт слушать"></canvas></div>
+        <div id="state">готов</div>
+        <div class="herotext">
+          <div class="h-heard" id="h-heard"></div>
+          <div id="status">Здравствуйте! Чем могу помочь?</div>
+          <button type="button" class="h-open" id="h-open" style="display:none">Весь разговор — в «Диалогах» →</button>
+          <div class="howto" id="howto">Нажмите на сферу или скажите «Джарвис», затем команду. Или напишите её внизу.</div>
+          <div class="examples" id="examples"></div>
+          <div class="banner" id="voice-banner" style="display:none"></div>
+          <div class="banner" id="speech-banner" style="display:none"></div>
         </div>
-        <aside class="hright">
+      </div>
+      <form class="composer" id="h-form" autocomplete="off">
+        <input id="h-input" placeholder="Напишите сообщение или команду…" autofocus>
+        <button type="button" class="ib" id="h-listen" title="Говорить: Джарвис послушает одну фразу" data-ico="wave"></button>
+        <button type="button" class="ib" id="h-mic" title="Микрофон"></button>
+        <button type="submit" class="sb" id="h-send">Отправить</button>
+      </form>
+    </section>
+
+    <section class="page" id="page-system">
+      <h1>Система</h1>
+      <p class="lead">Состояние компьютера, подключение к ИИ и пульт телефона.</p>
+      <div class="sys-grid">
           <div class="card pro" id="card-health">
             <h3>System Health</h3>
             <div class="hrow"><span>CPU LOAD</span><b id="hl-cpu">N/A</b></div><div class="hbar" id="hb-cpu"><i></i></div>
@@ -438,16 +451,16 @@
             <small class="rmerr" id="rm-err"></small>
             <small class="rmhelp">Телефон и компьютер должны быть в одной Wi-Fi сети. Наведите камеру телефона на QR-код или откройте ссылку. Пульт работает в локальной сети, не через интернет. Ссылка секретная.</small>
           </div>
-        </aside>
-      </div>
+        </div>
     </section>
 
     <section class="page" id="page-chat">
-      <div class="tabs"><button data-tab="ai" class="active">🤖 ИИ-чат</button><button data-tab="log">📜 Журнал команд</button></div>
+      <div class="tabs"><button data-tab="ai" class="active">Диалоги</button><button data-tab="log">Журнал команд</button></div>
       <div id="tab-ai" class="aichat">
         <aside class="convs">
           <button class="btn primary" id="chat-new" type="button">＋ Новый диалог</button>
           <div id="conv-list"></div>
+          <button class="btn small" id="chat-del-all" type="button" title="Удалить все сохранённые диалоги с этого компьютера">Удалить все диалоги</button>
         </aside>
         <div class="chatmain">
           <div class="chathead"><b id="chat-title">Диалог</b><span class="grow"></span><button class="btn small" id="chat-image" type="button" title="Задать вопрос о картинке: она уйдёт выбранному ИИ-провайдеру и не сохраняется в Джарвисе">🖼 Картинка</button><input type="file" id="chat-image-file" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none"><button class="btn small" id="chat-clear" type="button">Очистить</button></div>
@@ -459,6 +472,25 @@
       <div id="tab-log" style="display:none;flex:1;min-height:0;flex-direction:column">
         <p class="lead">Что вы говорили и писали как команды, и ответы Джарвиса.</p>
         <div id="log"></div>
+      </div>
+    </section>
+
+    <section class="page" id="page-tasks">
+      <div class="tk-box">
+        <div class="tk-head"><span class="tk-brand">JARVIS // ЗАДАЧИ</span><b id="tk-count">0/30</b></div>
+        <form class="tk-form" id="tk-form" autocomplete="off">
+          <input type="text" id="tk-input" placeholder="Новая задача" maxlength="200">
+          <button class="btn primary" type="submit">Добавить</button>
+        </form>
+        <div class="msgline" id="tk-msg"></div>
+        <div class="tk-list" id="tk-list"><div class="empty">Загрузка…</div></div>
+        <div class="tk-acts">
+          <button class="btn" id="tk-speak" type="button"><span class="ei" data-ico="speaker"></span>Озвучить</button>
+          <button class="btn" id="tk-clear" type="button"><span class="ei" data-ico="trash"></span>Стереть все</button>
+          <span class="grow"></span>
+          <small class="dim" id="tk-path"></small>
+        </div>
+        <small class="dim tk-help">Голосом: «Джарвис, добавь задачу купить хлеб», «озвучь задачи», «выполнил задачу 2», «стереть все задачи». Задачи хранятся в файле в «Документах» — тот же список, что и у голосовых команд.</small>
       </div>
     </section>
 
@@ -480,7 +512,7 @@
           <div class="cat-title"><div><b id="cat-name">Все команды</b><small id="cat-about"></small></div><label class="sw" id="cat-switch-wrap" title="Включить или выключить раздел"><input type="checkbox" id="cat-switch"><span></span></label></div>
           <div id="commands" class="cmd-list">Загрузка…</div>
           <div class="card" id="timers-card" style="margin-top:14px"><h3><span class="ei">⏱</span>Активные таймеры и напоминания</h3><div class="scroll" id="timers"><div class="empty">Нет активных. Скажите «таймер на 5 минут» или «напомни через 10 минут позвонить маме».</div></div></div>
-          <div class="card" style="margin-top:14px"><h3><span class="ei">🕘</span>Последние действия</h3><div id="cmd-actions"><div class="empty">Пока ничего не выполнялось.</div></div></div>
+          <div class="card" style="margin-top:14px"><h3>Лента <small class="dim" style="font-weight:400">— что слышит и выполняет JARVIS</small></h3><div id="cmd-actions"><div class="empty">Пока ничего не выполнялось.</div></div></div>
         </div>
       </div>
     </section>
@@ -681,9 +713,16 @@
         </div>
       </div>
 
+      <div class="card" style="margin-bottom:14px" id="perf-card"><h3><span class="ei">⚡</span>Производительность</h3>
+        <div class="setrow"><div class="l">Режим<small id="perf-hint">«Слабый ноут»: сфера рисуется меньшим числом точек и реже, анимация останавливается, когда окно скрыто или открыта другая страница. Команды и голос работают так же</small></div>
+          <div class="r"><div class="seg" id="perf-seg"><button data-perf="low" type="button">Слабый ноут</button><button data-perf="normal" type="button">Обычный ПК</button></div></div></div>
+        <div class="setrow"><div class="l">Память Джарвиса<small>сколько оперативной памяти сейчас занимает сам Джарвис (с голосовыми моделями)</small></div>
+          <div class="r"><b id="perf-mem">—</b></div></div>
+      </div>
+
       <div class="card"><h3><span class="ei">🧩</span>Внешний вид</h3>
-        <div class="setrow"><div class="l">Шар<small>что показывать на главном экране</small></div>
-          <div class="r"><div class="seg"><button data-mode="wire">Голограмма-шар</button><button data-mode="avatar">Моё фото</button></div></div></div>
+        <div class="setrow"><div class="l">Сфера<small>что показывать на главном экране</small></div>
+          <div class="r"><div class="seg"><button data-mode="wire">Сфера из частиц</button><button data-mode="avatar">Моё фото</button></div></div></div>
         <div class="setrow"><div class="l">Фото-голограмма<small>фото остаётся на этом компьютере</small></div>
           <div class="r"><button class="btn" id="avatar-pick">Выбрать фото</button><button class="btn" id="avatar-clear">Убрать</button></div></div>
         <input type="file" id="avatar-file" accept="image/png,image/jpeg,image/webp" style="display:none">
@@ -698,7 +737,7 @@
   <div id="session-bar"><span class="sdot"></span><div class="st2" id="session-text"></div><button class="btn small" id="session-yes" type="button" style="display:none">Да</button><button class="btn small" id="session-end" type="button">Закончить</button></div>
   <form id="form" autocomplete="off">
     <input id="input" placeholder="Напишите команду, например: таймер на 5 минут" autofocus>
-    <button type="button" id="micbtn" title="Микрофон">🎤</button>
+    <button type="button" id="micbtn" title="Микрофон"></button>
     <button id="send" type="submit">Отправить</button>
   </form>
   <div id="hint"></div>
@@ -707,6 +746,7 @@
 </div>
 
 <div id="toast" role="status"></div>
+<button type="button" id="full-exit" title="Выйти из полноэкранного режима (Esc)">✕</button>
 <div id="close-dlg" role="dialog" aria-modal="true" aria-labelledby="close-dlg-title"><div class="box">
   <h3 id="close-dlg-title">Что вы хотите сделать?</h3><p id="close-dlg-note"></p>
   <div class="acts"><button class="btn primary" id="close-dlg-tray" type="button">Свернуть в трей</button><button class="btn" id="close-dlg-exit" type="button">Полностью закрыть JARVIS</button><button class="btn" id="close-dlg-cancel" type="button">Отмена</button></div>
@@ -737,13 +777,24 @@ const ICONS = {
   vol: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6"/>',
   folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7M12 17h.01"/>',
+  orb: '<circle cx="12" cy="12" r="8.5"/><ellipse cx="12" cy="12" rx="3.6" ry="8.5"/><path d="M3.5 12h17"/>',
+  check: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12.2l2.4 2.4 4.8-5"/>',
+  list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
+  flow: '<rect x="3" y="4" width="7" height="5" rx="1.5"/><rect x="14" y="15" width="7" height="5" rx="1.5"/><path d="M6.5 9v3.5a2 2 0 0 0 2 2H14"/><path d="M11.5 12.5l2.5 2-2.5 2"/>',
+  apps: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>',
+  full: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+  power: '<path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/>',
+  fold: '<rect x="3.5" y="4" width="17" height="16" rx="2.5"/><path d="M9 4v16M15.5 10l-2 2 2 2"/>',
+  wave: '<path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
 };
 function ico(name) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + (ICONS[name] || '') + '</svg>'; }
 document.querySelectorAll('[data-ico]').forEach(el => { el.innerHTML = ico(el.dataset.ico); });
 
 // ---------- navigation ----------
-const PAGES = ['home', 'chat', 'commands', 'builder', 'apps', 'files', 'diag', 'settings'];
-const TITLES = { home: ['Главная', 'Neural Interface'], chat: ['Диалог', 'Conversation'], commands: ['Команды', 'Command Library'], diag: ['Диагностика', 'Diagnostics'], builder: ['Конструктор', 'Scenario Builder'], apps: ['Программы', 'Applications'], files: ['Файлы', 'File Search'], settings: ['Настройки', 'Settings'] };
+const PAGES = ['home', 'chat', 'tasks', 'commands', 'builder', 'apps', 'files', 'system', 'diag', 'settings'];
+const TITLES = { home: ['Главная', 'Neural Interface'], chat: ['Диалоги', 'Conversations'], tasks: ['Задачи', 'Tasks'], system: ['Система', 'System'], commands: ['Команды', 'Command Library'], diag: ['Диагностика', 'Diagnostics'], builder: ['Конструктор', 'Scenario Builder'], apps: ['Программы', 'Applications'], files: ['Файлы', 'File Search'], settings: ['Настройки', 'Settings'] };
 let currentPage = 'home';
 const curInput = () => currentPage === 'home' ? $('#h-input') : $('#input');
 function show(name) {
@@ -760,6 +811,7 @@ function show(name) {
   if (name === 'apps') appsLoad();
   if (name === 'files') filesLoad();
   if (name === 'settings') { loadSettings(); refreshRemote(); }
+  if (name === 'tasks') tasksLoad();
   if (name === 'chat') { chatTab === 'ai' ? aiOpen() : ($('#log').scrollTop = $('#log').scrollHeight); }
   renderChatViews();
   if (name === 'home' || name === 'chat') curInput().focus();
@@ -800,7 +852,7 @@ function connect() {
     switch (m.event) {
       case 'wake_word_detected': setState('wake', 1500); setStatus('Слушаю…'); autoBig(); break;
       case 'listening': setState('listening'); setStatus('Слушаю…'); autoBig(); break;
-      case 'speech_recognized': add('me', m.text); setStatus('«' + m.text + '»'); setState('busy', 2500); break;
+      case 'speech_recognized': add('me', m.text); $('#h-heard').textContent = '«' + m.text + '»'; setStatus('…'); setState('busy', 2500); break;
       case 'command_executed': if (!m.success) add('err', 'Не получилось выполнить: ' + m.id); setTimeout(pollNow, 400); break;
       case 'output': add('bot', m.text); setStatus(m.text); setState('speaking', 2500); break;
       case 'speaking': setState('speaking', 3500); break;
@@ -918,7 +970,7 @@ function applyVoice(s) {
 }
 function renderMic() {
   for (const b of [$('#micbtn'), $('#h-mic')]) {
-    b.textContent = micMuted ? '🔇' : '🎤';
+    b.innerHTML = ico(micMuted ? 'micoff' : 'mic');
     b.classList.toggle('off', micMuted);
     b.title = micMuted ? 'Микрофон выключен (только текст). Нажмите, чтобы включить' : 'Микрофон включён. Нажмите, чтобы выключить';
   }
@@ -1109,6 +1161,7 @@ function healthCard(h) {
   $('#hl-disk').textContent = h.disk_pct == null ? 'N/A' : Math.round(h.disk_pct) + '% · свободно ' + h.disk_free.toFixed(0) + ' ГБ'; hBar('disk', h.disk_pct || 0);
   $('#hl-temp').textContent = h.temperature == null ? 'N/A' : h.temperature.toFixed(0) + ' °C';
   $('#hl-net').textContent = h.network; $('#hl-ip').textContent = h.ip || '';
+  if (h.self_mb != null) $('#perf-mem').textContent = h.self_mb + ' МБ';
   const pc = h.pc_status || 'N/A'; $('#hl-pc').innerHTML = '<span class="pill ' + (pc === 'OK' ? 'ok' : 'warn') + '">' + esc(pc) + '</span>';
 }
 const AI_PILL = { CONNECTED: 'ok', DISCONNECTED: '', ERROR: 'bad', CHECKING: 'info' };
@@ -1125,9 +1178,11 @@ function aiCard(a) {
 }
 $('#ai-check').onclick = async () => { $('#ai-check').disabled = true; try { await action('ai_test'); } catch (e) {} pollNow(); };
 $('#ai-settings').onclick = () => { show('settings'); setTimeout(() => { const el = $('#ai-provider'); if (el) el.scrollIntoView({ block: 'center' }); }, 120); };
+const VOICE_LABEL = { READY: 'Готов', LISTENING: 'Слушаю…', SPEAKING: 'Говорю…', DISABLED: 'Микрофон выключен', ERROR: 'Голос недоступен' };
 function voiceChip(v) {
   if (!v) return;
-  for (const c of document.querySelectorAll('.vchip')) { c.dataset.state = v.state; c.querySelector('b').textContent = v.state; c.title = v.detail || ''; }
+  const label = VOICE_LABEL[v.state] || v.state;
+  for (const c of document.querySelectorAll('.vchip')) { c.dataset.state = v.state; c.querySelector('b').textContent = label; c.title = v.detail || ''; }
   // the sphere follows the real state of the voice
   if (performance.now() > stateUntil) { const map = { LISTENING: 'listening', SPEAKING: 'speaking' }; const want = map[v.state] || (v.state === 'ERROR' ? 'error' : 'idle'); if (state !== want && state !== 'busy' && state !== 'wake') setState(want); }
 }
@@ -1241,7 +1296,10 @@ function msgEl(m) {
       const code = d.querySelectorAll('pre code')[[...d.querySelectorAll('[data-copy-code]')].indexOf(b)]; copyText(code ? code.textContent : '', b); });
     if (!m.streaming) {
       const tools = document.createElement('div'); tools.className = 'msgtools';
-      const cp = document.createElement('button'); cp.type = 'button'; cp.textContent = '⧉ Копировать ответ'; cp.onclick = () => copyText(m.content, cp); tools.appendChild(cp); d.appendChild(tools);
+      const cp = document.createElement('button'); cp.type = 'button'; cp.textContent = '⧉ Копировать ответ'; cp.onclick = () => copyText(m.content, cp); tools.appendChild(cp);
+      const sp = document.createElement('button'); sp.type = 'button'; sp.textContent = '🔊 Озвучить'; sp.title = 'Прочитать ответ голосом Джарвиса';
+      sp.onclick = async () => { try { const r = await action('speak_text', { text: m.content }); if (!r.ok) showToast(r.message || 'Не удалось озвучить'); } catch (e) { showToast('Нет связи с Джарвисом'); } };
+      tools.appendChild(sp); d.appendChild(tools);
     }
   } else {
     d.textContent = m.content;
@@ -1281,16 +1339,36 @@ const EXAMPLES = ['Что ты умеешь?', 'Сколько будет 2 + 2?
     $('#examples').appendChild(b);
   }
 })();
+// the home page shows no conversation: only the last phrase and the last answer as a caption under the sphere;
+// the whole conversation is kept in "Диалоги"
+const plain = t => String(t || '').replace(/```[\s\S]*?```/g, ' [код] ').replace(/[*_`#>]+/g, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/\s+/g, ' ').trim();
+let homeSig = '';
+function homeText(chat) {
+  const msgs = chat ? chat.messages : [];
+  let lastUser = null, lastBot = null;
+  for (let i = msgs.length - 1; i >= 0 && !(lastUser && lastBot); i--) {
+    const m = msgs[i];
+    if (m.role === 'user' && !lastUser) lastUser = m;
+    else if (m.role !== 'user' && !lastBot && !lastUser) lastBot = m;
+  }
+  const busy = !!(lastState && lastState.ai_busy);
+  const sig = (lastUser ? lastUser.content.length + lastUser.content.slice(0, 40) : '') + '|' + (lastBot ? lastBot.content.length : -1) + '|' + busy;
+  $('#page-home').classList.toggle('talked', msgs.length > 0);
+  $('#h-open').style.display = msgs.length ? '' : 'none';
+  if (sig === homeSig) return;
+  homeSig = sig;
+  $('#h-heard').textContent = lastUser ? '«' + plain(lastUser.content) + '»' : '';
+  if (lastBot) setStatus(plain(lastBot.content));
+  else if (lastUser && busy) setStatus('Думаю…');
+}
+$('#h-open').onclick = () => show('chat');
 function renderChatViews() {
   const chat = chatCache;
   aiBusy = !!(lastState && lastState.ai_busy);
-  if (currentPage === 'home') {
-    const n = syncMessages($('#h-log'), chat);
-    $('#page-home').classList.toggle('has-msgs', n > 0 || aiBusy);
-  }
+  if (currentPage === 'home') homeText(chat);
   if (currentPage === 'chat' && chatTab === 'ai') {
     const log = $('#ai-log'); const n = syncMessages(log, chat);
-    if (!n && !aiBusy) log.insertAdjacentHTML('beforeend', '<div class="empty">Напишите вопрос или команду в поле внизу. Здесь та же история, что и на главной странице.</div>');
+    if (!n && !aiBusy) log.insertAdjacentHTML('beforeend', '<div class="empty">Напишите вопрос или команду в поле внизу. Здесь сохраняются все разговоры с Джарвисом — голосом и текстом.</div>');
   }
   if (chat) $('#chat-title').textContent = chat.title;
   updateComposers();
@@ -1420,6 +1498,29 @@ function applyCloseRequest(s) {
   if (s.close_req > closeReqSeen) { closeReqSeen = s.close_req; closeBrowserWindow(); }
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#close-dlg').classList.contains('on')) closeAnswer('cancel'); });
+
+// ---------- the menu folds to icons; full screen: only the page, without the menu and the frame of the window ----------
+try { if (localStorage.getItem('jarvis-nav') === 'folded') document.body.classList.add('nav-folded'); } catch (e) {}
+$('#nav-fold').onclick = () => {
+  const on = document.body.classList.toggle('nav-folded');
+  try { localStorage.setItem('jarvis-nav', on ? 'folded' : ''); } catch (e) {}
+};
+let isFull = false;
+function setFull(on) {
+  if (isFull === on) return;
+  isFull = on; document.body.classList.toggle('full', on);
+  if (ownWindow) window.ipc.postMessage(on ? 'full:on' : 'full:off');
+  else {
+    try { if (on && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {}); else if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {}); } catch (e) {}
+  }
+}
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && isFull && !ownWindow) setFull(false); });
+$('#full-btn').onclick = () => setFull(!isFull);
+$('#full-exit').onclick = () => setFull(false);
+document.addEventListener('keydown', e => {
+  if (e.key === 'F11') { e.preventDefault(); setFull(!isFull); }
+  else if (e.key === 'Escape' && isFull && !$('#close-dlg').classList.contains('on')) setFull(false);
+});
 
 async function aiOpen() { await aiRefreshList(); await pollNow(true); }
 $('#chat-new').onclick = async () => { await chatApi({ op: 'new' }); await pollNow(true); aiRefreshList(); curInput().focus(); };
@@ -1569,6 +1670,7 @@ function applyPrivacy(s) {
   $('#ext-status').textContent = extTxt;
   extLists = { allowed: s.ext_allowed || [], blocked: s.ext_blocked || [], seen: s.ext_seen || [] }; renderExtLists();
   if (s.ui && s.ui['jarvis-mode'] && s.ui['jarvis-mode'] !== mode) setMode(s.ui['jarvis-mode'], true);
+  if (s.ui && s.ui['jarvis-perf']) setPerf(s.ui['jarvis-perf'] === 'low', true);
 }
 let extLists = { allowed: [], blocked: [], seen: [] };
 function chip(text, cls, onclick) { const b = document.createElement('button'); b.type = 'button'; b.className = 'c ' + (cls || ''); b.textContent = text; b.onclick = onclick; return b; }
@@ -1608,6 +1710,12 @@ $('#pv-hist-del').onclick = async () => {
   const r = await action('history_delete_all', { confirm: 'delete' });
   pvMsg(r.ok, r.ok ? 'Удалено диалогов: ' + r.deleted + (r.kept ? '. Не удалён ' + r.kept + ' (ИИ ещё отвечает — повторите позже)' : '') : (r.message || 'Не удалось'));
   await pollNow(true); loadSettings();
+};
+$('#chat-del-all').onclick = async () => {
+  if (!confirm('Удалить ВСЕ диалоги с этого компьютера? Это нельзя отменить.')) return;
+  const r = await action('history_delete_all', { confirm: 'delete' });
+  showToast(r.ok ? 'Удалено диалогов: ' + r.deleted + (r.kept ? '. Один не удалён: ИИ ещё отвечает' : '') : (r.message || 'Не удалось удалить'));
+  await pollNow(true); aiRefreshList();
 };
 $('#pv-key-del').onclick = async () => {
   if (!confirm('Удалить сохранённый ключ ИИ с этого компьютера? Чтобы снова пользоваться ИИ, ключ нужно будет ввести заново.')) return;
@@ -1893,23 +2001,100 @@ let actionsSig = '';
 function commandActions(list) {
   const sig = (list || []).map(a => a.text + a.ago).join('|'); if (sig === actionsSig) return; actionsSig = sig;
   const box = $('#cmd-actions'); if (!box) return; box.textContent = '';
-  if (!list || !list.length) { box.innerHTML = '<div class="empty">Пока ничего не выполнялось.</div>'; return; }
-  for (const a of list.slice(0, 8)) {
-    const r = document.createElement('div'); r.className = 'ntrow' + (a.ok ? '' : ' err');
-    const tm = document.createElement('time'); tm.textContent = fmtAgo(a.ago); const sp = document.createElement('span'); const b = document.createElement('b'); b.textContent = a.text;
-    sp.append(b, document.createTextNode(' → ' + a.command)); r.append(tm, sp); box.appendChild(r);
+  if (!list || !list.length) { box.innerHTML = '<div class="empty">Пока пусто. Здесь видно, что Джарвис услышал и что выполнил.</div>'; return; }
+  for (const a of list.slice(0, 12)) {
+    const r = document.createElement('div'); r.className = 'feed' + (a.ok ? ' ok' : ' err');
+    const tm = document.createElement('time'); const d = new Date(Date.now() - a.ago * 1000);
+    tm.textContent = [d.getHours(), d.getMinutes(), d.getSeconds()].map(x => String(x).padStart(2, '0')).join(':'); tm.title = fmtAgo(a.ago);
+    const sp = document.createElement('span');
+    if (a.command === '—') sp.textContent = 'Не понял команду: «' + a.text + '»';
+    else { const b = document.createElement('b'); b.textContent = '«' + a.text + '»'; sp.append(b, document.createTextNode(' → ' + a.command + (a.ok ? '' : ' — не получилось'))); }
+    r.append(tm, sp); box.appendChild(r);
   }
 }
+
+// ---------- "Задачи": the same list as the voice commands (Documents\\Jarvis-tasks.txt) ----------
+let tkList = [], tkEdit = -1, tkMax = 30;
+const tkApi = body => api('/tasks', body);
+function tkMsg(ok, t) { const m = $('#tk-msg'); m.className = 'msgline ' + (ok ? 'ok' : 'bad'); m.textContent = t || ''; }
+async function tasksLoad() {
+  try {
+    const r = await (await fetch('/tasks')).json();
+    tkList = r.tasks || []; tkMax = r.max || 30;
+    $('#tk-path').textContent = r.path ? 'Файл: ' + String(r.path).split(/[\\/]/).pop() : ''; $('#tk-path').title = r.path || '';
+    if (!r.ok) tkMsg(false, r.message);
+  } catch (e) { tkMsg(false, 'Нет связи с Джарвисом'); }
+  tasksRender();
+}
+function tasksRender() {
+  $('#tk-count').textContent = tkList.length + '/' + tkMax;
+  $('#nav-tasks').textContent = tkList.length ? String(tkList.length) : '';
+  const box = $('#tk-list'); box.textContent = '';
+  if (!tkList.length) { box.innerHTML = '<div class="empty">Нет задач</div>'; return; }
+  tkList.forEach((t, i) => {
+    const row = document.createElement('div'); row.className = 'tk-row';
+    const n = document.createElement('span'); n.className = 'n'; n.textContent = (i + 1) + '.';
+    row.appendChild(n);
+    if (i === tkEdit) {
+      const inp = document.createElement('input'); inp.type = 'text'; inp.value = t; inp.maxLength = 200;
+      const ok = document.createElement('button'); ok.className = 'btn small primary'; ok.type = 'button'; ok.textContent = 'СОХР';
+      const no = document.createElement('button'); no.className = 'btn small'; no.type = 'button'; no.textContent = 'ОТМЕНА';
+      const save = async () => { const r = await tkApi({ op: 'edit', index: i, old: t, text: inp.value }); tkMsg(r.ok, r.message); if (r.ok) tkEdit = -1; tasksLoad(); };
+      ok.onclick = save; no.onclick = () => { tkEdit = -1; tasksRender(); };
+      inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); save(); } else if (e.key === 'Escape') { tkEdit = -1; tasksRender(); } };
+      row.append(inp, ok, no); box.appendChild(row); setTimeout(() => inp.focus(), 0);
+      return;
+    }
+    const tx = document.createElement('span'); tx.className = 't'; tx.textContent = t;
+    const ed = document.createElement('button'); ed.className = 'btn small'; ed.type = 'button'; ed.textContent = 'ИЗМ'; ed.title = 'Изменить';
+    const del = document.createElement('button'); del.className = 'btn small'; del.type = 'button'; del.textContent = 'УДАЛ'; del.title = 'Удалить';
+    ed.onclick = () => { tkEdit = i; tasksRender(); };
+    del.onclick = async () => { const r = await tkApi({ op: 'remove', index: i, old: t }); tkMsg(r.ok, r.message); tasksLoad(); };
+    row.append(tx, ed, del); box.appendChild(row);
+  });
+}
+$('#tk-form').onsubmit = async e => {
+  e.preventDefault();
+  const v = $('#tk-input').value;
+  if (!v.trim()) { $('#tk-input').focus(); return; }
+  const r = await tkApi({ op: 'add', text: v }); tkMsg(r.ok, r.message);
+  if (r.ok) $('#tk-input').value = '';
+  tasksLoad();
+};
+$('#tk-clear').onclick = async () => {
+  if (!tkList.length) return;
+  if (!confirm('Стереть все задачи (' + tkList.length + ')? Это нельзя отменить.')) return;
+  const r = await tkApi({ op: 'clear' }); tkMsg(r.ok, r.message); tasksLoad();
+};
+$('#tk-speak').onclick = async () => { const r = await tkApi({ op: 'speak' }); tkMsg(r.ok, r.message); };
+// a task added by voice shows up here without a reload
+setInterval(() => { if (currentPage === 'tasks' && !document.hidden && tkEdit < 0) tasksLoad(); }, 4000);
+tasksLoad();
 
 // ---------- hologram: orb and avatar ----------
 const canvas = $('#orb'), ctx = canvas.getContext('2d');
 const W = canvas.width, H = canvas.height;
 const rnd = (a, b) => a + Math.random() * (b - a);
-const N = 340, pts = [];
-for (let i = 0; i < N; i++) {           // fibonacci sphere
-  const y = 1 - (i / (N - 1)) * 2, r = Math.sqrt(1 - y * y), th = Math.PI * (3 - Math.sqrt(5)) * i;
-  pts.push([Math.cos(th) * r, y, Math.sin(th) * r]);
+// the sphere: points on a Fibonacci sphere; "Слабый ноут" draws fewer of them, less often
+let PERF_LOW = false;
+try { PERF_LOW = localStorage.getItem('jarvis-perf') === 'low'; } catch (e) {}
+let pts = [];
+function buildPoints() {
+  const N = PERF_LOW ? 420 : 1100; pts = [];
+  for (let i = 0; i < N; i++) {
+    const y = 1 - (i / (N - 1)) * 2, r = Math.sqrt(1 - y * y), th = Math.PI * (3 - Math.sqrt(5)) * i;
+    pts.push([Math.cos(th) * r, y, Math.sin(th) * r, Math.random() * Math.PI * 2, Math.atan2(Math.sin(th) * r, Math.cos(th) * r), Math.asin(y)]);
+  }
 }
+buildPoints();
+function setPerf(low, fromServer) {
+  if (low !== PERF_LOW) { PERF_LOW = low; buildPoints(); }
+  try { localStorage.setItem('jarvis-perf', low ? 'low' : 'normal'); } catch (e) {}
+  if (!fromServer) saveSettings({ ui: { 'jarvis-perf': low ? 'low' : 'normal' } });
+  document.querySelectorAll('[data-perf]').forEach(b => b.classList.toggle('active', (b.dataset.perf === 'low') === low));
+}
+document.querySelectorAll('[data-perf]').forEach(b => b.onclick = () => setPerf(b.dataset.perf === 'low'));
+setPerf(PERF_LOW, true);
 let mode = 'wire';
 try { mode = localStorage.getItem('jarvis-mode') || 'wire'; if (mode === 'orb' || mode === 'plasma') mode = 'wire'; } catch (e) {}
 function setMode(m, fromServer) {
@@ -1922,108 +2107,54 @@ document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => setMode(
 let yaw = 0, level = 0, glitchUntil = 0, nextGlitch = performance.now() + 3000;
 
 function palette() {
-  // [hue, saturation] by state
-  if (state === 'error') return [350, 90];
-  if (state === 'listening' || state === 'wake') return [155, 85];
-  if (state === 'speaking') return [190, 95];
-  return [195, 95];
+  // [hue, saturation] by state: graphite-white points with a cold glow inside
+  if (state === 'error') return [352, 75];
+  if (state === 'off') return [220, 6];
+  if (state === 'listening' || state === 'wake') return [172, 70];
+  if (state === 'speaking') return [186, 55];
+  return [176, 45];
 }
 
-function project(x, y, z, cx, cy, R, tilt) {
-  const ct = Math.cos(tilt), st = Math.sin(tilt);
-  const y2 = y * ct - z * st, z2 = y * st + z * ct;
-  const k = 3 / (3 - z2);
-  return [cx + x * R * k, cy + y2 * R * k, z2];
-}
-
-function drawEmitter(cx, baseY, R, hue, sat, t) {
-  // glowing base disc + rising light beam + ripples while speaking
+// a soft glow under the photo-hologram (the avatar mode)
+function drawEmitter(cx, baseY, R, hue, sat) {
   const g = ctx.createRadialGradient(cx, baseY, 5, cx, baseY, R * 1.2);
-  g.addColorStop(0, `hsla(${hue},${sat}%,65%,.55)`); g.addColorStop(1, `hsla(${hue},${sat}%,50%,0)`);
-  ctx.save(); ctx.translate(0, 0); ctx.scale(1, 1);
-  ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(cx, baseY, R * 1.2, R * 0.28, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = `hsla(${hue},${sat}%,70%,.7)`; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.ellipse(cx, baseY, R * 0.95, R * 0.2, 0, 0, Math.PI * 2); ctx.stroke();
-  ctx.strokeStyle = `hsla(${hue},${sat}%,70%,.3)`; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.ellipse(cx, baseY, R * 0.6, R * 0.12, 0, 0, Math.PI * 2); ctx.stroke();
-  // ripples
-  if (level > 0.25) {
-    for (let k = 0; k < 3; k++) {
-      const ph = ((t / 900) + k / 3) % 1;
-      ctx.strokeStyle = `hsla(${hue},${sat}%,70%,${(1 - ph) * 0.45 * Math.min(1, level * 1.4)})`;
-      ctx.beginPath(); ctx.ellipse(cx, baseY, R * (0.4 + ph * 0.9), R * (0.08 + ph * 0.19), 0, 0, Math.PI * 2); ctx.stroke();
-    }
-  }
-  // beam
-  const b = ctx.createLinearGradient(0, baseY, 0, baseY - R * 2.1);
-  b.addColorStop(0, `hsla(${hue},${sat}%,65%,.22)`); b.addColorStop(1, `hsla(${hue},${sat}%,65%,0)`);
-  ctx.fillStyle = b;
-  ctx.beginPath(); ctx.moveTo(cx - R * 0.9, baseY); ctx.lineTo(cx - R * 0.6, baseY - R * 2.1); ctx.lineTo(cx + R * 0.6, baseY - R * 2.1); ctx.lineTo(cx + R * 0.9, baseY); ctx.closePath(); ctx.fill();
-  ctx.restore();
-}
-
-function drawWire(cx, cy, R, hue, sat, dx, alphaMul, t) {
-  const tilt = 0.32;
-  const wob = 1 + Math.sin(t / 260) * 0.025 * level * 2;
-  // latitude + longitude lines, back part dimmer
-  ctx.lineWidth = 1.2;
-  const seg = 56;
-  const drawCircle = (fn) => {
-    let prev = null;
-    for (let i = 0; i <= seg; i++) {
-      const [x, y, z] = fn(i / seg * Math.PI * 2);
-      const [px, py, pz] = project(x, y, z, cx + dx, cy, R * wob, tilt);
-      if (prev) {
-        const depth = (pz + 1) / 2;
-        ctx.strokeStyle = `hsla(${hue},${sat}%,${58 + depth * 25}%,${(0.1 + depth * 0.5) * alphaMul})`;
-        ctx.beginPath(); ctx.moveTo(prev[0], prev[1]); ctx.lineTo(px, py); ctx.stroke();
-      }
-      prev = [px, py];
-    }
-  };
-  for (let la = -60; la <= 60; la += 20) {
-    const phi = la * Math.PI / 180, rr = Math.cos(phi), yy = Math.sin(phi);
-    drawCircle(a => [Math.cos(a + yaw) * rr, yy, Math.sin(a + yaw) * rr]);
-  }
-  for (let lo = 0; lo < 180; lo += 30) {
-    const th = lo * Math.PI / 180 + yaw;
-    drawCircle(a => [Math.cos(a) * Math.cos(th), Math.sin(a), Math.cos(a) * Math.sin(th)]);
-  }
-  // glowing points
-  for (const [x0, y0, z0] of pts) {
-    const x = x0 * Math.cos(yaw * 1.3) + z0 * Math.sin(yaw * 1.3), z = -x0 * Math.sin(yaw * 1.3) + z0 * Math.cos(yaw * 1.3);
-    const [px, py, pz] = project(x, y0, z, cx + dx, cy, R * wob * 1.02, tilt);
-    const depth = (pz + 1) / 2;
-    ctx.fillStyle = `hsla(${hue},${sat}%,${70 + depth * 25}%,${(0.15 + depth * 0.8) * alphaMul})`;
-    ctx.beginPath(); ctx.arc(px, py, 0.8 + depth * 1.9, 0, Math.PI * 2); ctx.fill();
-  }
-  // two rotating rings
-  for (let r = 0; r < 2; r++) {
-    const tl = r === 0 ? 1.15 : -0.7, rad = R * (r === 0 ? 1.28 : 1.15), rot = yaw * (r === 0 ? 1.8 : -1.3);
-    ctx.lineWidth = r === 0 ? 2 : 1.4;
-    ctx.setLineDash(r === 0 ? [14, 10] : [3, 7]);
-    ctx.strokeStyle = `hsla(${hue},${sat}%,70%,${(r === 0 ? 0.55 : 0.4) * alphaMul})`;
-    ctx.beginPath();
-    for (let i = 0; i <= 90; i++) {
-      const a = i / 90 * Math.PI * 2 + rot;
-      const [px, py] = project(Math.cos(a) * 1.28 / 1.28, Math.sin(a) * 0.0, Math.sin(a), cx + dx, cy, rad, tl);
-      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
-    }
-    ctx.stroke(); ctx.setLineDash([]);
-  }
+  g.addColorStop(0, `hsla(${hue},${sat}%,70%,.30)`); g.addColorStop(1, `hsla(${hue},${sat}%,50%,0)`);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(cx, baseY, R * 1.2, R * 0.26, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = `hsla(${hue},${sat}%,80%,.35)`; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.ellipse(cx, baseY, R * 0.9, R * 0.18, 0, 0, Math.PI * 2); ctx.stroke();
 }
 
 function drawOrb(t) {
   const [hue, sat] = palette();
-  const cx = W / 2, cy = H * 0.46, R = W * 0.26 * (1 + Math.sin(t / 330) * 0.03 * level * 2);
-  drawEmitter(cx, H * 0.86, W * 0.3, hue, sat, t);
-  const glitching = t < glitchUntil;
-  if (glitching) {                       // colour-split copies
-    drawWire(cx, cy, R, (hue + 140) % 360, sat, -9, 0.5, t);
-    drawWire(cx, cy, R, (hue + 220) % 360, sat, 9, 0.5, t);
+  const cx = W / 2, cy = H / 2, R = W * 0.33;
+  const tilt = 0.38, ct = Math.cos(tilt), st = Math.sin(tilt);
+  const cy2 = Math.cos(yaw), sy2 = Math.sin(yaw);
+  const speaking = state === 'speaking', listening = state === 'listening' || state === 'wake';
+  // the glow inside
+  const glow = ctx.createRadialGradient(cx, cy, R * 0.05, cx, cy, R * 1.25);
+  glow.addColorStop(0, `hsla(${hue},${sat}%,55%,${0.16 + level * 0.22})`);
+  glow.addColorStop(0.55, `hsla(${hue},${sat}%,40%,${0.05 + level * 0.06})`);
+  glow.addColorStop(1, `hsla(${hue},${sat}%,30%,0)`);
+  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+  const breath = 1 + Math.sin(t / 900) * 0.012 + (listening ? Math.sin(t / 160) * 0.025 * level : 0);
+  for (const p of pts) {
+    const [x0, y0, z0, ph, lon, lat] = p;
+    // speech makes the surface ripple, listening makes it breathe
+    let k = breath;
+    if (speaking) k += 0.075 * level * Math.sin(3 * lon + t / 170) * Math.sin(2 * lat + t / 230);
+    k += 0.012 * Math.sin(ph + t / 700);
+    const x = (x0 * cy2 + z0 * sy2) * k, z1 = (-x0 * sy2 + z0 * cy2) * k, y1 = y0 * k;
+    const y = y1 * ct - z1 * st, z = y1 * st + z1 * ct;
+    const persp = 3.2 / (3.2 - z);
+    const px = cx + x * R * persp, py = cy + y * R * persp;
+    const depth = (z + 1) / 2;
+    const a = (0.10 + depth * 0.9) * (state === 'off' ? 0.45 : 1);
+    // front points are white, the back ones carry the colour of the glow
+    const l = 62 + depth * 36, sa = sat * (1 - depth * 0.8);
+    ctx.fillStyle = `hsla(${hue},${sa}%,${l}%,${a})`;
+    const r = (PERF_LOW ? 2.6 : 2.0) + depth * 2.6;
+    ctx.fillRect(px - r / 2, py - r / 2, r, r);
   }
-  const flick = Math.random() < 0.04 ? rnd(0.55, 0.85) : 1;
-  drawWire(cx, cy, R, hue, sat, 0, flick, t);
 }
 
 // ---------- avatar (photo -> hologram) ----------
@@ -2045,7 +2176,7 @@ function buildAvatar() {
     if (inv) l = 255 - l;
     const a = Math.max(0, Math.min(1, (l - thr) / Math.max(30, 255 - thr)));
     const k = Math.pow(a, 0.8);
-    px[i] = 70 + l * 0.25; px[i + 1] = 190 + l * 0.25; px[i + 2] = 255;   // cyan tint
+    px[i] = 40 + l * 0.8; px[i + 1] = 46 + l * 0.8; px[i + 2] = 50 + l * 0.8;   // graphite-white tint
     px[i + 3] = Math.round(k * 255 * (px[i + 3] / 255));
   }
   g.putImageData(data, 0, 0);
@@ -2133,17 +2264,22 @@ function avatarLayer(w, h) {
 }
 
 // ---------- main loop ----------
+// nothing is drawn while the sphere is not on the screen (another page, a hidden window)
+let lastDraw = 0;
 function frame(t) {
+  requestAnimationFrame(frame);
   if (stateUntil && performance.now() > stateUntil) setState(connected ? 'idle' : 'off');
-  const target = { idle: 0.05, listening: 0.55, wake: 0.8, speaking: 0.7, busy: 0.4, error: 0.6, off: 0 }[state] ?? 0.05;
+  if (document.hidden || currentPage !== 'home') return;
+  if (PERF_LOW && t - lastDraw < 33) return;
+  const dt = Math.min(64, t - (lastDraw || t)); lastDraw = t;
+  const target = { idle: 0.05, listening: 0.55, wake: 0.8, speaking: 0.75, busy: 0.4, error: 0.6, off: 0 }[state] ?? 0.05;
   level += (target - level) * 0.06;
-  yaw += 0.004 + level * 0.014;
+  yaw += (0.0022 + level * 0.009 + (state === 'busy' ? 0.01 : 0)) * dt / 16;
   if (t > nextGlitch) { glitchUntil = t + rnd(90, 220); nextGlitch = t + rnd(3500, 9000); }
   ctx.clearRect(0, 0, W, H);
   ctx.globalCompositeOperation = 'lighter';
   if (mode === 'avatar') drawAvatar(t); else drawOrb(t);
   ctx.globalCompositeOperation = 'source-over';
-  requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 loadAvatar();
