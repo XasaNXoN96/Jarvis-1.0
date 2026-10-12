@@ -760,6 +760,16 @@ pub fn diagnose() {
 }
 
 pub fn speak(text: &str) {
+    speak_inner(text, true);
+}
+
+// the user pressed "Озвучить" / "Озвучить задачи": said from the beginning even when the same text was just said
+// (the check against two parts of the program reporting one event is for events, not for a button)
+pub fn speak_requested(text: &str) {
+    speak_inner(text, false);
+}
+
+fn speak_inner(text: &str, dedupe: bool) {
     let text: String = text.chars().take(MAX_CHARS).collect();
     let text = text.trim().to_string();
     if text.is_empty() || !is_enabled() {
@@ -768,7 +778,7 @@ pub fn speak(text: &str) {
     // the same phrase again while it is still being said (two parts of the program reporting one event):
     // it is said once, not started over from the beginning
     let fresh = crate::guard::first(&format!("tts:{}", crate::guard::norm(&text)), crate::guard::NOTIFY_WINDOW);
-    if !fresh && is_speaking() {
+    if dedupe && !fresh && is_speaking() {
         return;
     }
     info!("TTS: {} chars", text.chars().count());
@@ -878,6 +888,23 @@ mod tests {
         assert!(!got.iter().any(|s| s.trim().is_empty()), "an empty phrase is not queued");
         assert!(!is_speaking(), "nothing stays counted as speaking");
         assert!(QUEUE.lock().is_empty());
+    }
+
+    #[test]
+    fn the_speak_button_says_the_text_again_while_an_event_repeat_is_said_once() {
+        let _g = LOCK.lock();
+        stop();
+        ENABLED.store(true, Ordering::SeqCst);
+        let text = format!("Ответ для озвучки {}", rand::random::<u32>());
+        // a phrase is being said
+        BUSY.fetch_add(1, Ordering::SeqCst);
+        let before = TEST_SPOKEN.lock().len();
+        speak(&text);
+        speak(&text);
+        assert_eq!(TEST_SPOKEN.lock()[before..].iter().filter(|s| **s == text).count(), 1, "the same event twice: said once");
+        speak_requested(&text);
+        assert_eq!(TEST_SPOKEN.lock()[before..].iter().filter(|s| **s == text).count(), 2, "«Озвучить» pressed again: said again, not silenced");
+        BUSY.fetch_sub(1, Ordering::SeqCst);
     }
 
     #[test]

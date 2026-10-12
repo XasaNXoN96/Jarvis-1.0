@@ -211,8 +211,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             }
             match crate::tts::can_speak() {
                 Ok(()) => {
-                    crate::tts::stop();
-                    crate::tts::speak(&text);
+                    crate::tts::speak_requested(&text);
                     json!({ "ok": true })
                 }
                 Err(e) => json!({ "ok": false, "message": format!("Не могу озвучить: {}", e) }),
@@ -432,8 +431,7 @@ fn messages_action(body: &serde_json::Value) -> serde_json::Value {
             None => json!({ "ok": false, "message": "Сообщения уже нет в списке" }),
             Some(m) => match crate::tts::can_speak() {
                 Ok(()) => {
-                    crate::tts::stop();
-                    crate::tts::speak(&format!("{}: {}", m.title.replace(" · ", ", "), m.text));
+                    crate::tts::speak_requested(&format!("{}: {}", m.title.replace(" · ", ", "), m.text));
                     json!({ "ok": true })
                 }
                 Err(e) => json!({ "ok": false, "message": format!("Не могу озвучить: {}", e) }),
@@ -461,7 +459,7 @@ fn tasks_action(body: &serde_json::Value) -> serde_json::Value {
         // read aloud with the voice of Jarvis; without a working voice the user is told why
         "speak" => done(crate::tasks::list().and_then(|l| {
             crate::tts::can_speak().map_err(|e| format!("Не могу озвучить: {}", e))?;
-            crate::tts::speak(&crate::tasks::spoken(&l));
+            crate::tts::speak_requested(&crate::tasks::spoken(&l));
             Ok("Озвучиваю задачи".to_string())
         })),
         _ => json!({ "ok": false, "message": "unknown op" }),
