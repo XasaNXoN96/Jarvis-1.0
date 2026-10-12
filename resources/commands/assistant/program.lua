@@ -60,11 +60,24 @@ if closing then
     say(T("Программа", "Program"), T("Эту программу нельзя закрыть голосом", "This program cannot be closed by voice") .. ": " .. found.name)
     return
   end
-  local r = run("taskkill", { "/f", "/im", found.process })
+  -- the program is asked to close, like its own cross: Word, Notepad and the others ask about unsaved work.
+  -- Killing it (/f) loses that work, so only "закрой … принудительно" does it.
+  local force = has_stem("принудит") or has_stem("force")
+  local r = run("taskkill", force and { "/f", "/im", found.process } or { "/im", found.process })
   if r.success then
-    say(T("Закрыто", "Closed"), found.name, T("Закрываю " .. found.name, "Closing " .. found.name))
-  else
+    if force then
+      say(T("Закрыто", "Closed"), found.name .. T(" (принудительно)", " (forced)"), T("Закрываю " .. found.name, "Closing " .. found.name))
+    else
+      say(T("Закрываю", "Closing"), found.name .. T(". Если есть несохранённые изменения, программа спросит, сохранить ли их.", ". If there are unsaved changes, the program asks whether to save them."),
+          T("Закрываю " .. found.name, "Closing " .. found.name))
+    end
+  elseif r.code == 128 then
+    -- taskkill: no such process
     say(T("Программа", "Program"), found.name .. T(" не запущена", " is not running"))
+  else
+    say(T("Программа", "Program"), found.name .. T(" не закрылась сама (возможно, ждёт ответа в своём окне). Чтобы закрыть без сохранения, скажите «закрой " .. found.name .. " принудительно».",
+        " did not close by itself (it may be waiting for an answer in its window). To close it without saving, say \"close " .. found.name .. " force\"."),
+        T(found.name .. " не закрылась сама", found.name .. " did not close by itself"))
   end
 else
   -- "открой ворд" heard or pressed twice in a row: one window, not two

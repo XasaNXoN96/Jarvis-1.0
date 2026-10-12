@@ -711,5 +711,16 @@ mod tests {
         let (shown, _) = answer("assistant_website", "website.lua", "открой ютуб и найди котиков");
         assert!(shown.ends_with("котиков") && !shown.contains("ютуб"), "{}", shown);
     }
+
+    #[test]
+    fn close_word_asks_the_program_to_close_and_never_kills_unsaved_work() {
+        let (shown, _) = answer("assistant_program_close", "program.lua", "закрой ворд");
+        assert!(shown.contains("несохранённые изменения"), "{}", shown);
+        // the kill is only for the explicit word, and the script asks taskkill without /f otherwise
+        let script = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../resources/commands/assistant/program.lua")).unwrap();
+        assert!(script.contains(r#"force and { "/f", "/im", found.process } or { "/im", found.process }"#));
+        let (shown, _) = answer("assistant_program_close", "program.lua", "закрой ворд принудительно");
+        assert!(shown.contains("принудительно"), "{}", shown);
+    }
 }
 
