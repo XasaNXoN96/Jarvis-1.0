@@ -45,6 +45,11 @@ fn selftest_speech() -> String {
         Ok(w) => w,
         Err(e) => return format!("FAIL piper: {}", e),
     };
+    // what Vosk makes of the sound without any codec (to tell a weak recognition from a damaged sound)
+    let direct = match jarvis_core::tgvoice::wav_to_16k(&wav).and_then(|s| jarvis_core::tgvoice::recognize(&s)) {
+        Ok(t) => t.trim().to_string(),
+        Err(e) => format!("(error: {})", e),
+    };
     let ogg = match jarvis_core::tgvoice::encode_wav_to_ogg_opus(&wav) {
         Ok(o) => o,
         Err(e) => return format!("FAIL opus-encode: {}", e),
@@ -55,9 +60,9 @@ fn selftest_speech() -> String {
     };
     match jarvis_core::tgvoice::recognize(&samples) {
         Ok(text) if !text.trim().is_empty() => {
-            format!("OK heard: {} | wav {} KB, ogg {} KB, {} samples, {} ms", text.trim(), wav.len() / 1024, ogg.len() / 1024, samples.len(), t0.elapsed().as_millis())
+            format!("OK heard: {} | without the codec: {} | wav {} KB, ogg {} KB, {} samples, {} ms", text.trim(), direct, wav.len() / 1024, ogg.len() / 1024, samples.len(), t0.elapsed().as_millis())
         }
-        Ok(_) => "FAIL vosk: nothing recognized".into(),
+        Ok(_) => format!("FAIL vosk: nothing recognized (without the codec: {})", direct),
         Err(e) => format!("FAIL vosk: {}", e),
     }
 }

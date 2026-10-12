@@ -74,6 +74,31 @@ pub fn decode_ogg_opus(bytes: &[u8]) -> Result<Vec<i16>, String> {
     Ok(out)
 }
 
+// WAV (16-bit PCM, any rate, the first channel) -> 16 kHz mono samples (a linear resampling)
+pub fn wav_to_16k(wav: &[u8]) -> Result<Vec<i16>, String> {
+    let mut r = hound::WavReader::new(Cursor::new(wav)).map_err(|_| "звук в непонятном формате".to_string())?;
+    let spec = r.spec();
+    if spec.bits_per_sample != 16 || spec.sample_format != hound::SampleFormat::Int || spec.sample_rate == 0 {
+        return Err("звук не 16-битный".into());
+    }
+    let samples: Vec<i16> = r.samples::<i16>().filter_map(|s| s.ok()).step_by(spec.channels.max(1) as usize).collect();
+    if samples.is_empty() {
+        return Err("звук пустой".into());
+    }
+    let ratio = spec.sample_rate as f64 / RATE as f64;
+    let n = (samples.len() as f64 / ratio) as usize;
+    Ok((0..n)
+        .map(|i| {
+            let pos = i as f64 * ratio;
+            let a = pos as usize;
+            let f = pos - a as f64;
+            let s0 = samples[a.min(samples.len() - 1)] as f64;
+            let s1 = samples[(a + 1).min(samples.len() - 1)] as f64;
+            (s0 + (s1 - s0) * f) as i16
+        })
+        .collect())
+}
+
 // WAV (16-bit PCM, any rate, the first channel) -> Ogg/Opus voice message
 pub fn encode_wav_to_ogg_opus(wav: &[u8]) -> Result<Vec<u8>, String> {
     let mut r = hound::WavReader::new(Cursor::new(wav)).map_err(|_| "озвучка получилась в непонятном формате".to_string())?;
