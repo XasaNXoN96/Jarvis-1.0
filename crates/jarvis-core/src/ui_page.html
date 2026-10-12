@@ -73,6 +73,13 @@
   .wbox.muted .w-main { color: var(--dim); font-size: 13px; }
   #toast { position: fixed; left: 50%; bottom: 84px; transform: translate(-50%, 20px); background: #0d2a4af2; border: 1px solid #5ad1ff77; color: var(--text); padding: 8px 18px; border-radius: 999px; font-size: 13px; opacity: 0; pointer-events: none; transition: .25s; z-index: 50; }
   #toast.on { opacity: 1; transform: translate(-50%, 0); }
+  #close-dlg { position: fixed; inset: 0; background: #02060fcc; display: none; align-items: center; justify-content: center; z-index: 100; padding: 16px; }
+  #close-dlg.on { display: flex; }
+  #close-dlg .box { background: var(--panel, #0b1428); border: 1px solid #5ad1ff55; border-radius: 16px; padding: 22px 22px 18px; width: min(420px, 100%); box-shadow: 0 20px 60px #0008; }
+  #close-dlg h3 { margin: 0 0 8px; font-size: 18px; }
+  #close-dlg p { margin: 0 0 16px; color: var(--dim); font-size: 13px; line-height: 1.45; }
+  #close-dlg .acts { display: flex; flex-direction: column; gap: 8px; }
+  #close-dlg .acts .btn { width: 100%; justify-content: center; padding: 11px; }
   .rmrow { display: flex; align-items: center; gap: 12px; margin: 10px 0 8px; font-size: 14px; }
   .rmoff { color: var(--dim); font-size: 13px; padding: 8px 0 4px; }
   .qrbox { background: #fff; border-radius: 14px; padding: 8px; width: 176px; margin: 8px auto 8px; } .qrbox img { width: 160px; height: 160px; display: block; }
@@ -695,6 +702,10 @@
 </div>
 
 <div id="toast" role="status"></div>
+<div id="close-dlg" role="dialog" aria-modal="true" aria-labelledby="close-dlg-title"><div class="box">
+  <h3 id="close-dlg-title">Что вы хотите сделать?</h3><p id="close-dlg-note"></p>
+  <div class="acts"><button class="btn primary" id="close-dlg-tray" type="button">Свернуть в трей</button><button class="btn" id="close-dlg-exit" type="button">Полностью закрыть JARVIS</button><button class="btn" id="close-dlg-cancel" type="button">Отмена</button></div>
+</div></div>
 <script>
 const $ = s => document.querySelector(s);
 const WS_URL = 'ws://127.0.0.1:9712';
@@ -1305,6 +1316,29 @@ $('#chat-image-file').onchange = () => {
   reader.onerror = () => showToast('Не удалось прочитать файл');
   reader.readAsDataURL(file);
 };
+// ---------- the cross of the own window of Jarvis (WebView2): what to do — tray, exit, cancel ----------
+// the window asks with window.jarvisCloseRequest() and waits for the answer through window.ipc
+function closeAnswer(answer) {
+  $('#close-dlg').classList.remove('on');
+  if (window.ipc && window.ipc.postMessage) window.ipc.postMessage('close:' + answer);
+}
+window.jarvisCloseRequest = function () {
+  const t = (lastState && lastState.close_dialog) || {};
+  $('#close-dlg-title').textContent = t.title || 'Что вы хотите сделать?';
+  $('#close-dlg-tray').textContent = t.tray || 'Свернуть в трей';
+  $('#close-dlg-exit').textContent = t.exit || 'Полностью закрыть JARVIS';
+  $('#close-dlg-cancel').textContent = t.cancel || 'Отмена';
+  $('#close-dlg-note').textContent = t.note || '';
+  $('#close-dlg').classList.add('on');
+  $('#close-dlg-tray').focus();
+  // the dialog is on the screen: the window waits for the choice (no fallback to the tray)
+  if (window.ipc && window.ipc.postMessage) window.ipc.postMessage('close:ack');
+};
+$('#close-dlg-tray').onclick = () => closeAnswer('tray');
+$('#close-dlg-exit').onclick = () => closeAnswer('exit');
+$('#close-dlg-cancel').onclick = () => closeAnswer('cancel');
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#close-dlg').classList.contains('on')) closeAnswer('cancel'); });
+
 async function aiOpen() { await aiRefreshList(); await pollNow(true); }
 $('#chat-new').onclick = async () => { await chatApi({ op: 'new' }); await pollNow(true); aiRefreshList(); curInput().focus(); };
 $('#chat-clear').onclick = async () => {

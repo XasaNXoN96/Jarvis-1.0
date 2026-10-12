@@ -142,4 +142,12 @@ search-error-not-running = Assistant is not running
 search-error-failed = Failed to execute command
 settings-no-voices = No voices found
 tray-mic-muted = Microphone off (text only)
-tray-open-window = Open window
+tray-open-window = Open JARVIS
+
+tray-hide-window = Minimize to tray
+close-dialog-title = What would you like to do?
+close-dialog-tray = Minimize to tray
+close-dialog-exit = Exit JARVIS completely
+close-dialog-cancel = Cancel
+close-dialog-listening = In the tray Jarvis keeps listening for "Jarvis".
+close-dialog-not-listening = The voice is not working now: in the tray Jarvis takes commands from the window and the phone.

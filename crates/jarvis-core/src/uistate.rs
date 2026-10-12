@@ -483,6 +483,19 @@ pub fn command_status(id: &str) -> Option<(&'static str, &'static str)> {
     })
 }
 
+// the texts of the close dialog; the note says honestly whether the wake word will be listened to in the tray
+pub fn close_dialog_json() -> serde_json::Value {
+    let t = crate::i18n::t;
+    let listening = crate::VOICE_ACTIVE.load(std::sync::atomic::Ordering::SeqCst) && !crate::MIC_MUTED.load(std::sync::atomic::Ordering::SeqCst);
+    serde_json::json!({
+        "title": t("close-dialog-title"),
+        "tray": t("close-dialog-tray"),
+        "exit": t("close-dialog-exit"),
+        "cancel": t("close-dialog-cancel"),
+        "note": t(if listening { "close-dialog-listening" } else { "close-dialog-not-listening" }),
+    })
+}
+
 pub fn group_key(pack: &str, id: &str) -> &'static str {
     let id = id.strip_prefix("assistant_").unwrap_or(id);
     let starts = |p: &str| id.starts_with(p);
@@ -653,6 +666,8 @@ pub fn state_json() -> Value {
         "tts_enabled": crate::tts::is_enabled(),
         "remote": crate::remote::is_running(),
         "phone": crate::remote::phone_json(),
+        // the question of the cross of the window, in the language of Jarvis (the own window of Jarvis asks it)
+        "close_dialog": close_dialog_json(),
         "voice_state": voice_state(),
         "rev": crate::ai::rev(),
         "ai": crate::ai::status_json(),

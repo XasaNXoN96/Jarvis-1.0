@@ -142,4 +142,12 @@ search-error-not-running = Асистент не запущено
 search-error-failed = Не вдалося виконати команду
 settings-no-voices = Голоси не знайдено
 tray-mic-muted = Мікрофон вимкнено (лише текст)
-tray-open-window = Відкрити вікно
+tray-open-window = Відкрити JARVIS
+
+tray-hide-window = Згорнути в трей
+close-dialog-title = Що ви хочете зробити?
+close-dialog-tray = Згорнути в трей
+close-dialog-exit = Повністю закрити JARVIS
+close-dialog-cancel = Скасувати
+close-dialog-listening = У треї Джарвіс і далі чекатиме слово «Джарвіс».
+close-dialog-not-listening = Голос зараз не працює: у треї Джарвіс прийматиме команди з вікна і з телефону.

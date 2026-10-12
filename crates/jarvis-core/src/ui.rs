@@ -298,6 +298,8 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             std::thread::sleep(Duration::from_millis(250));
             json!({ "ok": true, "enabled": crate::remote::is_running() })
         }
+        // a second start of Jarvis asks the running one to show its window (instead of opening another window)
+        "show_window" => json!({ "ok": open_window() }),
         // the "Программы" page: rebuild the index, start a program of the index (never a path from the page itself)
         "apps_rescan" => {
             let started = crate::appindex::rescan_background();
@@ -788,8 +790,50 @@ fn try_start(args: &[&str]) -> bool {
         .unwrap_or(false)
 }
 
-// Opens the Jarvis window. Returns true when a browser window was started.
+// What the own window of Jarvis does with an answer of its close dialog ("Свернуть в трей" / "Полностью закрыть" /
+// "Отмена"; "ack" = the dialog is on the screen). An unknown answer never exits.
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum CloseAction {
+    Hide,
+    Exit,
+    Stay,
+    Ack,
+}
+
+pub fn close_action(answer: &str) -> Option<CloseAction> {
+    Some(match answer {
+        "tray" => CloseAction::Hide,
+        "exit" => CloseAction::Exit,
+        "cancel" => CloseAction::Stay,
+        "ack" => CloseAction::Ack,
+        _ => return None,
+    })
+}
+
+// The window of Jarvis that belongs to the program (the WebView2 window of jarvis-app on Windows): when it is there,
+// "open the window" shows it instead of starting a browser window.
+static WINDOW_HOST: once_cell::sync::OnceCell<Box<dyn Fn() -> bool + Send + Sync>> = once_cell::sync::OnceCell::new();
+
+pub fn set_window_host(show: Box<dyn Fn() -> bool + Send + Sync>) {
+    let _ = WINDOW_HOST.set(show);
+}
+
+pub fn has_window_host() -> bool {
+    WINDOW_HOST.get().is_some()
+}
+
+// Opens the Jarvis window. Returns true when a window was shown or a browser window was started.
 pub fn open_window() -> bool {
+    if let Some(show) = WINDOW_HOST.get() {
+        if show() {
+            return true;
+        }
+    }
+    open_browser_window()
+}
+
+// The window in Edge / Chrome (app mode): used when the own window of Jarvis is not available.
+pub fn open_browser_window() -> bool {
     let link = url();
     #[cfg(target_os = "windows")]
     {
@@ -822,6 +866,16 @@ pub fn open_window() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_answers_of_the_close_dialog_and_the_window_host() {
+        assert_eq!(close_action("tray"), Some(CloseAction::Hide));
+        assert_eq!(close_action("exit"), Some(CloseAction::Exit));
+        assert_eq!(close_action("cancel"), Some(CloseAction::Stay));
+        assert_eq!(close_action("ack"), Some(CloseAction::Ack));
+        assert_eq!(close_action("none"), None, "an unknown answer never exits");
+        assert_eq!(close_action(""), None);
+    }
 
     #[test]
     fn the_same_message_from_the_window_is_handled_once() {
