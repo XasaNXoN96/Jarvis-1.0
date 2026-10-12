@@ -697,9 +697,14 @@ mod net {
                 let Some(first) = run_phrase(cx, chat, it.phrase, offset, times) else { return };
                 let mut answer = first;
                 // the command asked its own «да / нет»: the button was the answer
+                // (only when Jarvis really asks the question of a power command: «да» is never sent into another session)
                 if it.then_yes {
-                    if let Some(second) = run_phrase(cx, chat, "да", offset, times) {
-                        answer = second;
+                    if super::power_question_open() {
+                        if let Some(second) = run_phrase(cx, chat, "да", offset, times) {
+                            answer = second;
+                        }
+                    } else {
+                        answer = format!("{}\n\n⚠ Jarvis не задал вопрос о подтверждении, поэтому команда не выполнена.", answer);
                     }
                 }
                 if alive(cx.gen) {
@@ -913,6 +918,15 @@ pub fn status_text() -> String {
     }
     lines.push(format!("🕒 На компьютере сейчас {}", chrono::Local::now().format("%H:%M, %d.%m.%Y")));
     lines.join("\n")
+}
+
+// Jarvis waits for «да / нет» to a power command (not to something else)
+fn power_question_open() -> bool {
+    is_power_question(crate::session::kind().as_deref(), &crate::session::data())
+}
+
+fn is_power_question(kind: Option<&str>, data: &str) -> bool {
+    kind == Some("confirm") && data.starts_with("power:")
 }
 
 // the question of a dangerous button that waits for «Да»: (entry, when asked)
@@ -1379,5 +1393,15 @@ mod tests {
         let j = json();
         assert_eq!((j["allow_screen"].clone(), j["voice_reply"].clone(), j["voice_in"].clone()), (json!(true), json!(true), json!(false)));
         set_for_tests(Config::default());
+    }
+
+    #[test]
+    fn the_button_answers_only_the_question_of_a_power_command() {
+        assert!(is_power_question(Some("confirm"), "power:/s:60:0"));
+        assert!(is_power_question(Some("confirm"), "power:/h:0:0"));
+        assert!(!is_power_question(Some("confirm"), "trash"), "never «да» to the question about the recycle bin");
+        assert!(!is_power_question(Some("confirm"), "tasks_clear"));
+        assert!(!is_power_question(Some("word"), "power:/s:60:0"));
+        assert!(!is_power_question(None, ""));
     }
 }
