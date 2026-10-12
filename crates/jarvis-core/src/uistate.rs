@@ -492,6 +492,9 @@ pub fn close_dialog_json() -> serde_json::Value {
         "tray": t("close-dialog-tray"),
         "exit": t("close-dialog-exit"),
         "cancel": t("close-dialog-cancel"),
+        "open": t("close-dialog-open"),
+        "browser_tray": t("close-dialog-browser-tray"),
+        "exited": t("close-dialog-exited"),
         "note": t(if listening { "close-dialog-listening" } else { "close-dialog-not-listening" }),
     })
 }
@@ -668,6 +671,7 @@ pub fn state_json() -> Value {
         "phone": crate::remote::phone_json(),
         // the question of the cross of the window, in the language of Jarvis (the own window of Jarvis asks it)
         "close_dialog": close_dialog_json(),
+        "close_req": crate::ui::browser_close_counter(),
         "voice_state": voice_state(),
         "rev": crate::ai::rev(),
         "ai": crate::ai::status_json(),

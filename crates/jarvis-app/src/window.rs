@@ -131,6 +131,15 @@ fn hide(w: &Win) {
     w.window.set_visible(false);
 }
 
+// "Свернуть в трей": the own window is hidden; without it (WebView2 is not available) the browser window is asked to
+// close itself — Jarvis keeps running in the tray in both cases
+fn hide_any(win: &Option<Win>) {
+    match win {
+        Some(w) => hide(w),
+        None => jarvis_core::ui::request_browser_close(),
+    }
+}
+
 // Runs the window and the tray messages on the main thread until Jarvis exits.
 pub fn run(h: Hooks) -> ! {
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
@@ -220,11 +229,7 @@ pub fn run(h: Hooks) -> ! {
                 close_asked = None;
                 want_show = true;
             }
-            Event::UserEvent(UserEvent::Hide) => {
-                if let Some(w) = &win {
-                    hide(w);
-                }
-            }
+            Event::UserEvent(UserEvent::Hide) => hide_any(&win),
             // the Windows session ends or the installer asks Jarvis to close (Restart Manager): a full, clean exit
             Event::LoopDestroyed => {
                 (h.on_exit)();
@@ -238,11 +243,7 @@ pub fn run(h: Hooks) -> ! {
                     close_asked = None;
                     want_show = true;
                 }
-                "hide_ui" => {
-                    if let Some(w) = &win {
-                        hide(w);
-                    }
-                }
+                "hide_ui" => hide_any(&win),
                 // "Выход" of the tray: the user chose to exit, no question again
                 "exit" => {
                     (h.on_exit)();
@@ -256,7 +257,10 @@ pub fn run(h: Hooks) -> ! {
             // (a failure is tried again next time: after a restart the old WebView2 may still hold its folder)
             if win.is_none() {
                 match make_window(target, &h, &mut ctx, proxy.clone()) {
-                    Ok(w) => win = Some(w),
+                    Ok(w) => {
+                        log::info!("Window: the WebView2 window is created");
+                        win = Some(w);
+                    }
                     Err(e) => log::warn!("Window: WebView2 is not available ({}), the browser window is used", e),
                 }
             }

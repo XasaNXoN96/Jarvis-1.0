@@ -223,6 +223,8 @@ fn main() -> Result<(), String> {
         ipc_rt.block_on(ipc::start_server());
     });
     
+    // "Полностью закрыть JARVIS" of the browser window goes the same way as the tray and the own window
+    jarvis_core::ui::set_exit_hook(Box::new(|| shutdown_and_exit()));
     // the Jarvis window (chat, orb, commands): a local page shown in an app-style Edge/Chrome window.
     // `--background`: no window at start (tray menu "Open window"), `--no-ui`: no window at all,
     // `--console`: keep the console window open

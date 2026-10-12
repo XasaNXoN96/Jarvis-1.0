@@ -300,6 +300,25 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         }
         // a second start of Jarvis asks the running one to show its window (instead of opening another window)
         "show_window" => json!({ "ok": open_window() }),
+        // "Полностью закрыть JARVIS" of the browser window (the Edge/Chrome window has no window.ipc): the same full
+        // exit as the WebView2 window and the tray — the answer goes out first, then Jarvis ends
+        "app_exit" => match EXIT_HOOK.get() {
+            Some(_) => {
+                std::thread::spawn(|| {
+                    std::thread::sleep(Duration::from_millis(200));
+                    if let Some(exit) = EXIT_HOOK.get() {
+                        exit();
+                    }
+                });
+                json!({ "ok": true })
+            }
+            None => json!({ "ok": false }),
+        },
+        // the tray asks the browser window to close itself ("Свернуть в трей" when there is no WebView2 window)
+        "hide_window" => {
+            request_browser_close();
+            json!({ "ok": true })
+        }
         // the "Программы" page: rebuild the index, start a program of the index (never a path from the page itself)
         "apps_rescan" => {
             let started = crate::appindex::rescan_background();
@@ -688,6 +707,7 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
             }
         }
         ("GET", "/state") => {
+            *LAST_STATE_POLL.lock() = Some(std::time::Instant::now());
             // the window says whether it is visible: results of commands pop up as notifications only when it is not
             if req.query.split('&').any(|p| p == "v=1") {
                 crate::notify::window_seen();
@@ -715,6 +735,16 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
             let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap_or(json!({}));
             let result = if req.path == "/settings" { apply_settings(&body) } else { run_action(&body) };
             respond(&mut stream, "200 OK", "application/json", &result.to_string());
+        }
+        // the browser window was closed with its own cross: Jarvis keeps running in the tray, said once per run.
+        // A reload of the page also says "closed": if the page asks for its state again soon, nothing is said.
+        ("POST", "/window-closed") => {
+            if !req.custom_header {
+                respond(&mut stream, "403 Forbidden", "text/plain", "forbidden");
+                return Ok(());
+            }
+            browser_window_closed();
+            respond(&mut stream, "200 OK", "application/json", "{\"ok\":true}");
         }
         ("GET", "/voice-install") => respond(&mut stream, "200 OK", "application/json", &crate::voice_install::status_json().to_string()),
         ("GET", "/chats") => respond(&mut stream, "200 OK", "application/json", &chats_json().to_string()),
@@ -822,6 +852,48 @@ pub fn has_window_host() -> bool {
     WINDOW_HOST.get().is_some()
 }
 
+// The full exit of Jarvis (jarvis-app: stops the voice, releases the microphone, ends the process).
+static EXIT_HOOK: once_cell::sync::OnceCell<Box<dyn Fn() + Send + Sync>> = once_cell::sync::OnceCell::new();
+
+pub fn set_exit_hook(exit: Box<dyn Fn() + Send + Sync>) {
+    let _ = EXIT_HOOK.set(exit);
+}
+
+// The browser window cannot be hidden from outside: it is asked to close itself. The page sees the counter grow
+// in its state (a page opened later starts from the current value and is not closed by an old request).
+static CLOSE_REQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub fn request_browser_close() {
+    CLOSE_REQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    info!("UI: the browser window is asked to close (Jarvis stays in the tray)");
+}
+
+pub fn browser_close_counter() -> u64 {
+    CLOSE_REQ.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+static LAST_STATE_POLL: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
+static TRAY_NOTICE_SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+const RELOAD_GRACE: Duration = Duration::from_secs(4);
+
+fn browser_window_closed() {
+    let closed_at = std::time::Instant::now();
+    std::thread::spawn(move || {
+        std::thread::sleep(RELOAD_GRACE);
+        let polled_again = LAST_STATE_POLL.lock().map(|t| t > closed_at).unwrap_or(false);
+        if !closed_window_notice_due(polled_again, &TRAY_NOTICE_SAID) {
+            return;
+        }
+        info!("UI: the browser window was closed, Jarvis keeps running in the tray");
+        crate::notify::push("system", "JARVIS", &crate::i18n::t("window-closed-tray"), false);
+    });
+}
+
+// said only when no page came back (not a reload) and only the first time in this run of Jarvis
+fn closed_window_notice_due(polled_again: bool, said: &std::sync::atomic::AtomicBool) -> bool {
+    !polled_again && !said.swap(true, std::sync::atomic::Ordering::SeqCst)
+}
+
 // Opens the Jarvis window. Returns true when a window was shown or a browser window was started.
 pub fn open_window() -> bool {
     if let Some(show) = WINDOW_HOST.get() {
@@ -866,6 +938,17 @@ pub fn open_browser_window() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_closed_browser_window_is_told_once_and_not_after_a_reload() {
+        let said = std::sync::atomic::AtomicBool::new(false);
+        assert!(!closed_window_notice_due(true, &said), "a reload says nothing");
+        assert!(closed_window_notice_due(false, &said), "the first real close is told");
+        assert!(!closed_window_notice_due(false, &said), "never twice in one run");
+        let before = browser_close_counter();
+        request_browser_close();
+        assert!(browser_close_counter() > before);
+    }
 
     #[test]
     fn the_answers_of_the_close_dialog_and_the_window_host() {

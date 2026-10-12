@@ -353,6 +353,7 @@
     <button data-page="diag"><span class="ei">🩺</span><span>Диагностика</span></button>
     <button data-page="settings"><span class="ei">⚙</span><span>Настройки</span></button>
     <div class="grow"></div>
+    <button type="button" id="close-open" style="display:none" title="Свернуть в трей или полностью закрыть JARVIS"><span class="ei">⏻</span><span id="close-open-t">Закрыть JARVIS…</span></button>
     <div class="small">Нажмите на шар или скажите «Джарвис». Или напишите сообщение.</div>
   </nav>
 
@@ -1267,7 +1268,7 @@ async function loadChat(id) {
 async function pollNow(force) {
   try {
     const s = await (await fetch(document.hidden ? '/state' : '/state?v=1')).json();
-    lastState = s; applyState(s);
+    lastState = s; applyState(s); applyCloseRequest(s);
     if (force || s.rev !== chatRev || (s.active_chat || '') !== aiActive) await loadChat(s.active_chat || '');
   } catch (e) {}
 }
@@ -1317,13 +1318,34 @@ $('#chat-image-file').onchange = () => {
   reader.readAsDataURL(file);
 };
 // ---------- the cross of the own window of Jarvis (WebView2): what to do — tray, exit, cancel ----------
-// the window asks with window.jarvisCloseRequest() and waits for the answer through window.ipc
-function closeAnswer(answer) {
+// The own window asks with window.jarvisCloseRequest() and waits for the answer through window.ipc.
+// The browser window (Edge/Chrome, when WebView2 is not available) has no window.ipc and its cross cannot be asked:
+// it gets the button "Закрыть JARVIS…" with the same dialog, "tray" closes the browser window (Jarvis stays in the
+// tray), "exit" is the same full exit as everywhere (the app_exit action).
+const ownWindow = !!(window.ipc && window.ipc.postMessage);
+function closeTexts() { return (lastState && lastState.close_dialog) || {}; }
+function closeBrowserWindow() {
+  window.close();
+  // a browser may refuse to close a window it did not open by a script: then the user is told how
+  setTimeout(() => {
+    if (document.hidden) return;
+    const t = closeTexts().browser_tray || 'Закройте окно крестиком — JARVIS останется в трее.';
+    $('#status').textContent = t; showToast(t);
+  }, 400);
+}
+async function closeAnswer(answer) {
   $('#close-dlg').classList.remove('on');
-  if (window.ipc && window.ipc.postMessage) window.ipc.postMessage('close:' + answer);
+  if (ownWindow) { window.ipc.postMessage('close:' + answer); return; }
+  if (answer === 'tray') closeBrowserWindow();
+  else if (answer === 'exit') {
+    try { await action('app_exit'); } catch (e) {}
+    browserExited = true;
+    $('#status').textContent = closeTexts().exited || 'JARVIS закрыт. Это окно можно закрыть.';
+    window.close();
+  }
 }
 window.jarvisCloseRequest = function () {
-  const t = (lastState && lastState.close_dialog) || {};
+  const t = closeTexts();
   $('#close-dlg-title').textContent = t.title || 'Что вы хотите сделать?';
   $('#close-dlg-tray').textContent = t.tray || 'Свернуть в трей';
   $('#close-dlg-exit').textContent = t.exit || 'Полностью закрыть JARVIS';
@@ -1332,11 +1354,28 @@ window.jarvisCloseRequest = function () {
   $('#close-dlg').classList.add('on');
   $('#close-dlg-tray').focus();
   // the dialog is on the screen: the window waits for the choice (no fallback to the tray)
-  if (window.ipc && window.ipc.postMessage) window.ipc.postMessage('close:ack');
+  if (ownWindow) window.ipc.postMessage('close:ack');
 };
 $('#close-dlg-tray').onclick = () => closeAnswer('tray');
 $('#close-dlg-exit').onclick = () => closeAnswer('exit');
 $('#close-dlg-cancel').onclick = () => closeAnswer('cancel');
+// the browser window: the button, "Свернуть в трей" of the tray (a request counter in the state; a page opened later
+// starts from the current value), and a word to Jarvis when the window is closed with the cross of the browser
+let closeReqSeen = null, browserExited = false;
+if (!ownWindow) {
+  $('#close-open').style.display = '';
+  $('#close-open').onclick = () => window.jarvisCloseRequest();
+  window.addEventListener('pagehide', () => {
+    if (browserExited) return;
+    try { fetch('/window-closed', { method: 'POST', headers: { 'X-Jarvis': '1' }, body: '{}', keepalive: true }); } catch (e) {}
+  });
+}
+function applyCloseRequest(s) {
+  if (ownWindow || typeof s.close_req !== 'number') return;
+  if (s.close_dialog && s.close_dialog.open) $('#close-open-t').textContent = s.close_dialog.open;
+  if (closeReqSeen === null) { closeReqSeen = s.close_req; return; }
+  if (s.close_req > closeReqSeen) { closeReqSeen = s.close_req; closeBrowserWindow(); }
+}
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#close-dlg').classList.contains('on')) closeAnswer('cancel'); });
 
 async function aiOpen() { await aiRefreshList(); await pollNow(true); }
