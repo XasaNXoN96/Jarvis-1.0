@@ -17,7 +17,8 @@ pub fn init_vosk() -> Result<(), String> {
         return Ok(());
     }
 
-    let model_path = get_configured_model_path()?;
+    // (Vosk opens its files by ANSI paths: a model in a folder with non-Latin letters is reached through an ASCII alias)
+    let model_path = crate::ascii_path::ascii_dir(get_configured_model_path()?);
     let model_id = format!("vosk:{}", model_path.display());
 
     // load through registry (shared if anything else needs the same model)

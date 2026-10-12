@@ -68,6 +68,7 @@ pub mod scenario;
 pub mod tasks;
 pub mod telegram;
 pub mod tgvoice;
+pub mod ascii_path;
 pub mod tgmenu;
 pub mod tunnel;
 pub mod autostart;

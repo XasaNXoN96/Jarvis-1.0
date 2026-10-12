@@ -230,7 +230,7 @@ fn piper_voice(lang: &str) -> Option<(PathBuf, PathBuf)> {
     // Piper (a C++ program) crashes (0xC0000409) when it is installed in a folder with non-Latin letters (C:\Users\Иван\…,
     // «C:\Jarvis Тест»): it builds the paths of its own files in the ANSI code page. It is started through a plain-ASCII
     // alias of its folder (a junction, no administrator rights needed).
-    let dir = ascii_dir(APP_DIR.join("piper"));
+    let dir = crate::ascii_path::ascii_dir(APP_DIR.join("piper"));
     let exe = dir.join(if cfg!(windows) { "piper.exe" } else { "piper" });
     if !exe.exists() {
         return None;
@@ -553,55 +553,6 @@ fn piper_synth(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64
     }
 }
 
-// a folder with a plain-ASCII name that leads to the same files (Windows junction under %ProgramData%\JarvisAlias);
-// the folder itself when its name is ASCII already, or when no alias could be made
-#[cfg(target_os = "windows")]
-fn ascii_dir(dir: PathBuf) -> PathBuf {
-    if is_ascii(&dir) {
-        return dir;
-    }
-    junction_for(&dir).unwrap_or(dir)
-}
-
-#[cfg(not(target_os = "windows"))]
-fn ascii_dir(dir: PathBuf) -> PathBuf {
-    dir
-}
-
-// the name of the alias: the same folder always gets the same ASCII name
-pub fn alias_name(dir: &Path) -> String {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    dir.to_string_lossy().to_lowercase().hash(&mut h);
-    format!("{:016x}", h.finish())
-}
-
-#[cfg(target_os = "windows")]
-fn junction_for(dir: &Path) -> Option<PathBuf> {
-    let base = PathBuf::from(std::env::var_os("ProgramData")?).join("JarvisAlias");
-    if !is_ascii(&base) {
-        return None;
-    }
-    std::fs::create_dir_all(&base).ok()?;
-    let link = base.join(alias_name(dir));
-    // a working alias is reused; one whose target is gone (the program was moved or reinstalled) is made again
-    if link.exists() {
-        return Some(link);
-    }
-    let _ = std::fs::remove_dir(&link);
-    let mut cmd = Command::new("cmd");
-    cmd.args(["/C", "mklink", "/J"]).arg(&link).arg(dir);
-    crate::null_stdio(&mut cmd);
-    hide_window(&mut cmd);
-    let ok = cmd.status().map(|s| s.success()).unwrap_or(false);
-    if ok && link.exists() {
-        Some(link)
-    } else {
-        warn!("Piper: could not make an ASCII alias for {}", dir.display());
-        None
-    }
-}
-
 fn is_ascii(p: &Path) -> bool {
     p.to_string_lossy().is_ascii()
 }
@@ -775,9 +726,93 @@ if ($pick) { $s.SelectVoice($pick.VoiceInfo.Name) }
 $s.Speak($env:JARVIS_TTS_TEXT)
 "#;
 
+// ---- starting PowerShell for the Windows voice ----
+// Windows refuses CreateProcess in some environments (a user's report: «os error 50») and the cause can be in HOW it is
+// asked: the name looked up in PATH, the creation flags, the environment block, the standard handles, the command line.
+// The ways below are tried one after another; the one that worked is remembered; when none works the message names every
+// refusal (nothing is hidden and nothing is invented).
+struct PsWay {
+    name: &'static str,
+    absolute: bool,
+    inline_env: bool, // the values go into the script itself instead of the environment of the process
+    no_flags: bool,   // without CREATE_NO_WINDOW (the window is hidden by PowerShell itself)
+    piped: bool,      // standard handles are pipes, not NUL
+}
+
+const PS_WAYS: [PsWay; 6] = [
+    PsWay { name: "powershell", absolute: false, inline_env: false, no_flags: false, piped: false },
+    PsWay { name: "powershell, значения в команде", absolute: false, inline_env: true, no_flags: false, piped: false },
+    PsWay { name: "полный путь к powershell.exe", absolute: true, inline_env: false, no_flags: false, piped: false },
+    PsWay { name: "полный путь, значения в команде", absolute: true, inline_env: true, no_flags: false, piped: false },
+    PsWay { name: "полный путь, без флагов окна", absolute: true, inline_env: true, no_flags: true, piped: false },
+    PsWay { name: "полный путь, потоки-каналы", absolute: true, inline_env: true, no_flags: false, piped: true },
+];
+
+static PS_WAY: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+// the script with the values written into it (the text as base64: no quote of the text can break the command)
+pub fn inline_env_script(script: &str, envs: &[(&str, String)]) -> String {
+    let mut out = String::new();
+    for (k, v) in envs {
+        out.push_str(&format!("$env:{} = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{}'))\n", k, crate::ai::base64(v.as_bytes())));
+    }
+    out.push_str(script);
+    out
+}
+
+fn powershell_path() -> PathBuf {
+    let root = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("C:\\Windows"));
+    root.join("System32").join("WindowsPowerShell").join("v1.0").join("powershell.exe")
+}
+
+fn build_ps(way: &PsWay, script: &str, envs: &[(&str, String)]) -> Command {
+    let mut command = Command::new(if way.absolute { powershell_path() } else { PathBuf::from("powershell") });
+    command.args(["-NoProfile", "-ExecutionPolicy", "Bypass"]);
+    if way.no_flags {
+        command.args(["-WindowStyle", "Hidden"]);
+    }
+    if way.inline_env {
+        command.args(["-EncodedCommand", &crate::appindex::encoded_command(&inline_env_script(script, envs))]);
+    } else {
+        command.args(["-Command", script]);
+        for (k, v) in envs {
+            command.env(k, v);
+        }
+    }
+    if way.piped {
+        command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    } else {
+        crate::null_stdio(&mut command);
+    }
+    if !way.no_flags {
+        hide_window(&mut command);
+    }
+    command
+}
+
+fn spawn_powershell(script: &str, envs: &[(&str, String)]) -> Result<Child, String> {
+    use std::sync::atomic::Ordering::SeqCst;
+    let first = PS_WAY.load(SeqCst).min(PS_WAYS.len() - 1);
+    let mut refusals: Vec<String> = Vec::new();
+    for k in 0..PS_WAYS.len() {
+        let i = (first + k) % PS_WAYS.len();
+        match build_ps(&PS_WAYS[i], script, envs).spawn() {
+            Ok(child) => {
+                if i != first || !refusals.is_empty() {
+                    info!("TTS: PowerShell started the way «{}» after {} refusal(s)", PS_WAYS[i].name, refusals.len());
+                }
+                PS_WAY.store(i, SeqCst);
+                return Ok(child);
+            }
+            Err(e) => refusals.push(format!("{}: {}", PS_WAYS[i].name, e)),
+        }
+    }
+    Err(refusals.join("; "))
+}
+
 // PowerShell could not be started for the Windows voice: the reason of THIS engine (never of Piper), the way out that
 // really exists, and the build (so that a report of it names the program)
-fn sapi_start_failed(e: &std::io::Error) {
+fn sapi_start_failed(e: &dyn std::fmt::Display) {
     let way_out = if piper_available() {
         "Выберите голос Jarvis (Piper): Настройки → Голос → «Автоматически»."
     } else {
@@ -793,18 +828,15 @@ fn speak_sapi(text: &str, lang: &str, generation: u64) {
     {
         let note = std::env::temp_dir().join(format!("jarvis_tts_note_{}.txt", generation));
         let _ = std::fs::remove_file(&note);
-        let mut command = Command::new("powershell");
-        command
-            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", SAPI_SCRIPT])
-            .env("JARVIS_TTS_TEXT", text)
-            .env("JARVIS_TTS_LANG", lang)
-            .env("JARVIS_TTS_RATE", ((crate::uistate::voice_rate() - 1.0) * 10.0).round().clamp(-10.0, 10.0).to_string())
-            .env("JARVIS_TTS_VOLUME", crate::uistate::settings().tts_volume.min(100).to_string())
-            .env("JARVIS_TTS_VOICE", crate::uistate::voice_name().strip_prefix("win:").unwrap_or(""))
-            .env("JARVIS_TTS_NOTE", &note);
-        crate::null_stdio(&mut command);
-        hide_window(&mut command);
-        match command.spawn() {
+        let envs: Vec<(&str, String)> = vec![
+            ("JARVIS_TTS_TEXT", text.to_string()),
+            ("JARVIS_TTS_LANG", lang.to_string()),
+            ("JARVIS_TTS_RATE", ((crate::uistate::voice_rate() - 1.0) * 10.0).round().clamp(-10.0, 10.0).to_string()),
+            ("JARVIS_TTS_VOLUME", crate::uistate::settings().tts_volume.min(100).to_string()),
+            ("JARVIS_TTS_VOICE", crate::uistate::voice_name().strip_prefix("win:").unwrap_or("").to_string()),
+            ("JARVIS_TTS_NOTE", note.display().to_string()),
+        ];
+        match spawn_powershell(SAPI_SCRIPT, &envs) {
             Ok(child) => {
                 let result = if store(child, generation) { wait_current(generation) } else { None };
                 if result == Some(true) && !note.exists() {
@@ -816,8 +848,8 @@ fn speak_sapi(text: &str, lang: &str, generation: u64) {
                     tell_once("Голос Windows не смог произнести фразу (нет устройства вывода звука или голос повреждён). Проверьте звук или выберите голос Jarvis (Piper) в Настройки → Голос.");
                 }
             }
-            Err(e) => {
-                sapi_start_failed(&e);
+            Err(why) => {
+                sapi_start_failed(&why);
                 return;
             }
         }
@@ -1184,11 +1216,29 @@ mod engine_tests {
         note_play_for(Engine::Piper, Ok(()));
     }
 
+    #[test]
+    fn the_values_go_into_the_script_as_base64_and_the_ways_cover_every_difference() {
+        let envs = vec![("JARVIS_TTS_TEXT", "он сказал 'привет' \"мир\" $x `n".to_string()), ("JARVIS_TTS_LANG", "ru".to_string())];
+        let s = inline_env_script("$s.Speak($env:JARVIS_TTS_TEXT)", &envs);
+        assert!(s.starts_with("$env:JARVIS_TTS_TEXT = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"));
+        assert!(!s.contains("привет") && !s.contains('"'), "the text itself never stands in the command: {}", s);
+        assert!(s.ends_with("$s.Speak($env:JARVIS_TTS_TEXT)"));
+        assert!(s.contains(&crate::ai::base64("ru".as_bytes())));
+        // the first way is the one that always was; the others differ in the name, the environment, the flags, the handles
+        assert!(!PS_WAYS[0].absolute && !PS_WAYS[0].inline_env && !PS_WAYS[0].no_flags && !PS_WAYS[0].piped);
+        assert!(PS_WAYS.iter().any(|w| w.absolute) && PS_WAYS.iter().any(|w| w.inline_env) && PS_WAYS.iter().any(|w| w.no_flags) && PS_WAYS.iter().any(|w| w.piped));
+        let mut names: Vec<&str> = PS_WAYS.iter().map(|w| w.name).collect();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), PS_WAYS.len());
+    }
+
     // every program that is started for the voice has its three standard handles set (an inherited invalid one was
     // the cause of «os error 50» before): a spawn() with none of them set is a regression
     #[test]
     fn every_spawn_of_the_voice_sets_its_standard_handles() {
-        let src = include_str!("tts.rs");
+        // (the file has CRLF line ends in a Windows checkout)
+        let src = include_str!("tts.rs").replace("\r\n", "\n");
         let body = &src[..src.find("#[cfg(test)]\nmod speech_problem_tests").unwrap()];
         let lines: Vec<&str> = body.lines().collect();
         for (i, l) in lines.iter().enumerate() {
@@ -1200,20 +1250,5 @@ mod engine_tests {
                 assert!(sets_all || captured, "line {}: a process of the voice is started without its standard handles: {}", i + 1, l.trim());
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod alias_tests {
-    use super::*;
-
-    #[test]
-    fn the_ascii_alias_of_a_folder_is_stable_plain_and_different_for_other_folders() {
-        let a = alias_name(Path::new("C:\\Jarvis Тест Full\\piper"));
-        assert!(a.is_ascii() && a.len() == 16, "{}", a);
-        assert_eq!(a, alias_name(Path::new("c:\\jarvis тест full\\PIPER")), "the same folder in another case");
-        assert_ne!(a, alias_name(Path::new("C:\\Users\\Иван\\Jarvis\\piper")));
-        // an ASCII folder is used as it is (no alias)
-        assert_eq!(ascii_dir(PathBuf::from("C:\\Jarvis\\piper")), PathBuf::from("C:\\Jarvis\\piper"));
     }
 }

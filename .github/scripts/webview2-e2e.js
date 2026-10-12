@@ -56,6 +56,9 @@ const { chromium } = require('playwright-core');
   await page.mouse.up();
   await wait(250);
   check('builder: Esc cancels the drag', (await order()) === '["Громкость","Пауза","Ссылка"]', await order());
+  // (clicking a kind scrolls the page down to its editor: the row of kinds and the chain must both be on the screen)
+  await page.evaluate(() => { const el = document.querySelector('#page-builder'); if (el) el.scrollTop = 0; });
+  await wait(200);
   const kb = await (await page.$('#b-kinds button:has-text("Текст")')).boundingBox();
   f = await box(0);
   await page.mouse.move(kb.x + kb.width / 2, kb.y + kb.height / 2);
