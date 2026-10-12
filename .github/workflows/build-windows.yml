@@ -224,7 +224,27 @@ jobs:
           $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
           Set-ItemProperty -Path $runKey -Name "Jarvis" -Value "`"$dir\jarvis-app.exe`" --background"
           $app = Start-Process (Join-Path $dir "jarvis-app.exe") -ArgumentList "--background" -WorkingDirectory $dir -PassThru
-          Start-Sleep 8
+          for ($i = 0; $i -lt 60; $i++) { Start-Sleep 1; try { Invoke-RestMethod http://127.0.0.1:9714/state -TimeoutSec 3 | Out-Null; break } catch {} }
+          # the voice of Jarvis (Piper) in an install path with spaces and Cyrillic: the diagnostics make a real phrase
+          # with the installed piper.exe and voice (nothing is played), then Jarvis tries to play one
+          $hh = @{ "X-Jarvis" = "1" }
+          Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $hh -Body '{"name":"diag_run"}' | Out-Null
+          $piper = $null
+          for ($i = 0; $i -lt 90 -and -not $piper; $i++) {
+            Start-Sleep 1
+            $dj = Invoke-RestMethod http://127.0.0.1:9714/diag -TimeoutSec 5
+            if (-not $dj.running -and $dj.checks) { $piper = $dj.checks | Where-Object { $_.key -eq "piper" } }
+          }
+          if (-not $piper) { throw "the diagnostics did not finish" }
+          Write-Host "PIPER synthesis in '$dir': [$($piper.status)] $($piper.detail)"
+          if ($piper.detail -notlike "*синтезирована*") { throw "Piper could not make a phrase from the installed voice: $($piper.detail)" }
+          Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $hh -Body '{"name":"tts_test"}' | Out-Null
+          Start-Sleep 10
+          Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $hh -Body '{"name":"diag_run"}' | Out-Null
+          Start-Sleep 15
+          $dj = Invoke-RestMethod http://127.0.0.1:9714/diag -TimeoutSec 5
+          $piper = $dj.checks | Where-Object { $_.key -eq "piper" }
+          Write-Host "PIPER playback on this runner (it has no sound card, so a failure here is expected): [$($piper.status)] $($piper.detail)"
           # the secrets of the user (the Telegram token, the phone link) must go with the program; the rest stays
           $data = Join-Path $env:APPDATA "com.priler.jarvis"
           New-Item -ItemType Directory -Force -Path $data | Out-Null
