@@ -104,7 +104,8 @@ fn parse_model_name(name: &str) -> (String, String) {
 
 // Get model path by name
 pub fn get_model_path(model_name: &str) -> Option<PathBuf> {
-    let path = Path::new(config::VOSK_MODELS_PATH).join(model_name);
+    // from the program folder, not the current folder (autostart starts Jarvis in System32)
+    let path = APP_DIR.join(config::VOSK_MODELS_PATH).join(model_name);
     if path.exists() && path.is_dir() {
         Some(path)
     } else {

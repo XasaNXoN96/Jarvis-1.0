@@ -137,9 +137,9 @@ fn get_configured_model_path() -> Result<std::path::PathBuf, String> {
     }
     
     // fallback to legacy path
-    let legacy_path = std::path::Path::new(config::VOSK_MODEL_PATH);
+    let legacy_path = crate::APP_DIR.join(config::VOSK_MODEL_PATH);
     if legacy_path.exists() {
-        return Ok(legacy_path.to_path_buf());
+        return Ok(legacy_path);
     }
     
     Err("No Vosk models found".into())

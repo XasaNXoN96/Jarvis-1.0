@@ -22,7 +22,7 @@ pub fn init() -> Result<(), ()> {
     // create porcupine instance with the given API key
     match PorcupineBuilder::new_with_keyword_paths(
         picovoice_api_key,
-        &[Path::new(config::KEYWORDS_PATH).join(config::DEFAULT_KEYWORD)],
+        &[crate::APP_DIR.join(config::KEYWORDS_PATH).join(config::DEFAULT_KEYWORD)],
     )
     .sensitivities(&[config::DEFAULT_SENSITIVITY]) // set sensitivity
     .init()

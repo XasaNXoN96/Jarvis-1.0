@@ -28,8 +28,11 @@ pub fn init() -> Result<(), ()> {
 
             // load wake word files
             for rpw in rustpotter_wake_word_files {
+                // from the program folder, not the current folder (autostart starts Jarvis in System32)
+                let file = crate::APP_DIR.join(rpw);
+                let file = file.to_string_lossy();
                 // @TODO: Change wakeword key to something else?
-                if let Err(e) = rinstance.add_wakeword_from_file(rpw, rpw) {
+                if let Err(e) = rinstance.add_wakeword_from_file(rpw, &file) {
                     error!("Failed to load wakeword file '{}': {}", rpw, e);
                 }
             }
