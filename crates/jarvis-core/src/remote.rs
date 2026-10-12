@@ -657,7 +657,7 @@ async function poll() {
     else if (r.status === 503) { lost('Пульт выключен на компьютере. Включите его на главной странице Jarvis.'); }
     else if (!r.ok) { lost('Компьютер ответил ошибкой ' + r.status + '.'); }
     else { const j = await r.json(); connected(); for (const m of j.msgs) { if (m.id > shownId || j.last < shownId) { handle(m); shownId = m.id; } } lastId = j.last; if (j.last < shownId) shownId = j.last; }
-  } catch (e) { lost('Компьютер не отвечает. Проверьте, что Jarvis запущен и телефон в той же Wi-Fi сети.'); }
+  } catch (e) { lost('Компьютер не отвечает: Jarvis закрыт, пульт выключен на компьютере или телефон в другой Wi-Fi сети.'); }
   polling = false;
   timer = setTimeout(poll, failures ? Math.min(2000 * (failures + 1), 10000) : 2000);
 }

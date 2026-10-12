@@ -601,4 +601,28 @@ mod tests {
         assert!(cmd_fallback_allowed("C:\\Users\\Сергей\\Documents\\отчёт 2024.docx"));
         assert!(cmd_fallback_allowed("https://www.youtube.com/"));
     }
+
+    // tasks and notes in a home folder with Cyrillic letters and spaces ("C:\Users\Сергей Иванов")
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn tasks_and_notes_work_in_a_cyrillic_home_folder() {
+        let _s = crate::session::TEST_LOCK.lock();
+        let base = tempdir().unwrap();
+        let home = base.path().join("Сергей Иванов");
+        std::fs::create_dir_all(home.join("Documents")).unwrap();
+        std::env::set_var("HOME", &home);
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../resources/commands/assistant");
+        let run = |id: &str, script: &str, phrase: &str| -> String {
+            crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow_mut().clear());
+            let ctx = CommandContext { phrase: phrase.into(), command_id: id.into(), command_path: dir.clone(), language: "ru".into(), slots: None };
+            assert!(execute(&dir.join(script), ctx, SandboxLevel::Full, Duration::from_secs(5)).is_ok(), "{}", phrase);
+            crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow().join(" | "))
+        };
+        run("assistant_task_add", "tasks.lua", "добавь задачу купить хлеб");
+        run("assistant_note_add", "notes.lua", "запиши идею позвонить в банк");
+        assert_eq!(std::fs::read_to_string(home.join("Documents/Jarvis-tasks.txt")).unwrap(), "купить хлеб\n");
+        assert!(std::fs::read_to_string(home.join("Documents/Jarvis-notes.txt")).unwrap().contains("позвонить в банк"));
+        assert!(run("assistant_task_read", "tasks.lua", "озвучь задачи").contains("купить хлеб"));
+        assert!(run("assistant_note_read", "notes.lua", "что я записывал").contains("Последние"));
+    }
 }
