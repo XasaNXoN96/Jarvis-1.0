@@ -227,7 +227,10 @@ fn hide_window(command: &mut Command) {
 
 // find the Piper voice for a language
 fn piper_voice(lang: &str) -> Option<(PathBuf, PathBuf)> {
-    let dir = APP_DIR.join("piper");
+    // Piper (a C++ program) crashes (0xC0000409) when it is installed in a folder with non-Latin letters (C:\Users\Иван\…,
+    // «C:\Jarvis Тест»): it builds the paths of its own files in the ANSI code page. It is started through a plain-ASCII
+    // alias of its folder (a junction, no administrator rights needed).
+    let dir = ascii_dir(APP_DIR.join("piper"));
     let exe = dir.join(if cfg!(windows) { "piper.exe" } else { "piper" });
     if !exe.exists() {
         return None;
@@ -511,6 +514,55 @@ fn piper_synth(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64
         let why = if why.is_empty() { code.unwrap_or_else(|| "Piper не создал звук".into()) } else { why };
         note_synth(Err(why.clone()));
         Synth::Failed(why)
+    }
+}
+
+// a folder with a plain-ASCII name that leads to the same files (Windows junction under %ProgramData%\JarvisAlias);
+// the folder itself when its name is ASCII already, or when no alias could be made
+#[cfg(target_os = "windows")]
+fn ascii_dir(dir: PathBuf) -> PathBuf {
+    if is_ascii(&dir) {
+        return dir;
+    }
+    junction_for(&dir).unwrap_or(dir)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn ascii_dir(dir: PathBuf) -> PathBuf {
+    dir
+}
+
+// the name of the alias: the same folder always gets the same ASCII name
+pub fn alias_name(dir: &Path) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    dir.to_string_lossy().to_lowercase().hash(&mut h);
+    format!("{:016x}", h.finish())
+}
+
+#[cfg(target_os = "windows")]
+fn junction_for(dir: &Path) -> Option<PathBuf> {
+    let base = PathBuf::from(std::env::var_os("ProgramData")?).join("JarvisAlias");
+    if !is_ascii(&base) {
+        return None;
+    }
+    std::fs::create_dir_all(&base).ok()?;
+    let link = base.join(alias_name(dir));
+    // a working alias is reused; one whose target is gone (the program was moved or reinstalled) is made again
+    if link.exists() {
+        return Some(link);
+    }
+    let _ = std::fs::remove_dir(&link);
+    let mut cmd = Command::new("cmd");
+    cmd.args(["/C", "mklink", "/J"]).arg(&link).arg(dir);
+    crate::null_stdio(&mut cmd);
+    hide_window(&mut cmd);
+    let ok = cmd.status().map(|s| s.success()).unwrap_or(false);
+    if ok && link.exists() {
+        Some(link)
+    } else {
+        warn!("Piper: could not make an ASCII alias for {}", dir.display());
+        None
     }
 }
 
@@ -1038,5 +1090,20 @@ mod volume_tests {
         let mut junk = b"not a wav at all".to_vec();
         scale_wav(&mut junk, 10);
         assert_eq!(junk, b"not a wav at all".to_vec());
+    }
+}
+
+#[cfg(test)]
+mod alias_tests {
+    use super::*;
+
+    #[test]
+    fn the_ascii_alias_of_a_folder_is_stable_plain_and_different_for_other_folders() {
+        let a = alias_name(Path::new("C:\\Jarvis Тест Full\\piper"));
+        assert!(a.is_ascii() && a.len() == 16, "{}", a);
+        assert_eq!(a, alias_name(Path::new("c:\\jarvis тест full\\PIPER")), "the same folder in another case");
+        assert_ne!(a, alias_name(Path::new("C:\\Users\\Иван\\Jarvis\\piper")));
+        // an ASCII folder is used as it is (no alias)
+        assert_eq!(ascii_dir(PathBuf::from("C:\\Jarvis\\piper")), PathBuf::from("C:\\Jarvis\\piper"));
     }
 }
