@@ -864,7 +864,8 @@ function show(name) {
   if (name === 'apps') appsLoad();
   if (name === 'files') filesLoad();
   if (name === 'settings') { loadSettings(); refreshRemote(); tgLoad(); }
-  if (name === 'tasks') tasksLoad();
+  if (name === 'tasks') { tkEdit = -1; tasksLoad(); }
+  if (name === 'home') { homeSig = ''; }
   if (name === 'messages') msgsLoad(true);
   if (name === 'chat') { chatTab === 'ai' ? aiOpen() : ($('#log').scrollTop = $('#log').scrollHeight); }
   renderChatViews();
@@ -904,14 +905,14 @@ function connect() {
   ws.onmessage = ev => {
     let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
     switch (m.event) {
-      case 'wake_word_detected': setState('wake', 1500); setStatus('Слушаю…'); autoBig(); break;
-      case 'listening': setState('listening'); setStatus('Слушаю…'); autoBig(); break;
-      case 'speech_recognized': add('me', m.text); $('#h-heard').textContent = '«' + m.text + '»'; setStatus('…'); setState('busy', 2500); break;
+      case 'wake_word_detected': setState('wake', 1500); setStatus('Слушаю…'); homeSig = ''; autoBig(); break;
+      case 'listening': setState('listening'); setStatus('Слушаю…'); homeSig = ''; autoBig(); break;
+      case 'speech_recognized': add('me', m.text); $('#h-heard').textContent = '«' + m.text + '»'; setStatus('…'); homeSig = ''; setState('busy', 2500); break;
       case 'command_executed': if (!m.success) add('err', 'Не получилось выполнить: ' + m.id); setTimeout(pollNow, 400); break;
       case 'output': add('bot', m.text); setStatus(m.text); setState('speaking', 2500); break;
       case 'speaking': setState('speaking', 3500); break;
       case 'error': add('err', m.message); setStatus(m.message); setState('error', 2500); break;
-      case 'idle': if (state !== 'speaking') setState('idle'); scheduleAutoSmall(); break;
+      case 'idle': if (state !== 'speaking') setState('idle'); scheduleAutoSmall(); homeSig = ''; if (currentPage === 'home') homeText(chatCache); break;
       case 'show_page': show(m.page); break;
       case 'stopping': add('note', 'Джарвис завершает работу'); setState('off'); break;
     }
@@ -979,7 +980,6 @@ $('#orb').onclick = async () => {
     else setStatus('Голос не запущен: ' + (s.voice_error || 'микрофон недоступен') + '. Можно писать команду внизу.');
   } catch (e) {}
 };
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && home().classList.contains('big')) setBig(false); });
 
 // ---------- api helpers ----------
 async function api(path, body) {
@@ -1400,13 +1400,14 @@ let homeSig = '';
 function homeText(chat) {
   const msgs = chat ? chat.messages : [];
   let lastUser = null, lastBot = null;
-  for (let i = msgs.length - 1; i >= 0 && !(lastUser && lastBot); i--) {
+  for (let i = msgs.length - 1; i >= 0 && !lastUser; i--) {
     const m = msgs[i];
-    if (m.role === 'user' && !lastUser) lastUser = m;
-    else if (m.role !== 'user' && !lastBot && !lastUser) lastBot = m;
+    if (m.role === 'user') lastUser = m;
+    else if (!lastBot) lastBot = m;
   }
   const busy = !!(lastState && lastState.ai_busy);
-  const sig = (lastUser ? lastUser.content.length + lastUser.content.slice(0, 40) : '') + '|' + (lastBot ? lastBot.content.length : -1) + '|' + busy;
+  // (the request id and the count: the same short phrase asked again is a new caption)
+  const sig = msgs.length + '|' + (lastUser ? (lastUser.rid || '') + lastUser.content.slice(0, 40) : '') + '|' + (lastBot ? (lastBot.rid || '') + lastBot.content.length : -1) + '|' + busy;
   $('#page-home').classList.toggle('talked', msgs.length > 0);
   $('#h-open').style.display = msgs.length ? '' : 'none';
   if (sig === homeSig) return;
@@ -1414,6 +1415,7 @@ function homeText(chat) {
   $('#h-heard').textContent = lastUser ? '«' + plain(lastUser.content) + '»' : '';
   if (lastBot) setStatus(plain(lastBot.content));
   else if (lastUser && busy) setStatus('Думаю…');
+  else if (!msgs.length) setStatus('Здравствуйте! Чем могу помочь?');
 }
 $('#h-open').onclick = () => show('chat');
 function renderChatViews() {
@@ -1551,7 +1553,6 @@ function applyCloseRequest(s) {
   if (closeReqSeen === null || s.close_req < closeReqSeen) { closeReqSeen = s.close_req; return; }
   if (s.close_req > closeReqSeen) { closeReqSeen = s.close_req; closeBrowserWindow(); }
 }
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#close-dlg').classList.contains('on')) closeAnswer('cancel'); });
 
 // ---------- the menu folds to icons; full screen: only the page, without the menu and the frame of the window ----------
 try { if (localStorage.getItem('jarvis-nav') === 'folded') document.body.classList.add('nav-folded'); } catch (e) {}
@@ -1571,9 +1572,13 @@ function setFull(on) {
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && isFull && !ownWindow) setFull(false); });
 $('#full-btn').onclick = () => setFull(!isFull);
 $('#full-exit').onclick = () => setFull(false);
+// one key handler: Esc does ONE thing — closes the dialog, else folds the big sphere, else leaves the full screen
 document.addEventListener('keydown', e => {
-  if (e.key === 'F11') { e.preventDefault(); setFull(!isFull); }
-  else if (e.key === 'Escape' && isFull && !$('#close-dlg').classList.contains('on')) setFull(false);
+  if (e.key === 'F11') { e.preventDefault(); setFull(!isFull); return; }
+  if (e.key !== 'Escape') return;
+  if ($('#close-dlg').classList.contains('on')) closeAnswer('cancel');
+  else if (currentPage === 'home' && home().classList.contains('big')) setBig(false);
+  else if (isFull) setFull(false);
 });
 
 async function aiOpen() { await aiRefreshList(); await pollNow(true); }
@@ -2176,6 +2181,8 @@ async function tasksLoad() {
   try {
     const r = await (await fetch('/tasks')).json();
     tkList = r.tasks || []; tkMax = r.max || 30;
+    // the line being edited is gone (removed by voice or in the file): the editing ends, the list is polled again
+    if (tkEdit >= tkList.length) tkEdit = -1;
     $('#tk-path').textContent = r.path ? 'Файл: ' + String(r.path).split(/[\\/]/).pop() : ''; $('#tk-path').title = r.path || '';
     if (!r.ok) tkMsg(false, r.message);
   } catch (e) { tkMsg(false, 'Нет связи с Джарвисом'); }
@@ -2194,7 +2201,8 @@ function tasksRender() {
       const inp = document.createElement('input'); inp.type = 'text'; inp.value = t; inp.maxLength = 200;
       const ok = document.createElement('button'); ok.className = 'btn small primary'; ok.type = 'button'; ok.textContent = 'СОХР';
       const no = document.createElement('button'); no.className = 'btn small'; no.type = 'button'; no.textContent = 'ОТМЕНА';
-      const save = async () => { const r = await tkApi({ op: 'edit', index: i, old: t, text: inp.value }); tkMsg(r.ok, r.message); if (r.ok) tkEdit = -1; tasksLoad(); };
+      // (a failed save — the list changed meanwhile — ends the editing too: the row would show another task)
+      const save = async () => { const r = await tkApi({ op: 'edit', index: i, old: t, text: inp.value }); tkMsg(r.ok, r.message); tkEdit = -1; tasksLoad(); };
       ok.onclick = save; no.onclick = () => { tkEdit = -1; tasksRender(); };
       inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); save(); } else if (e.key === 'Escape') { tkEdit = -1; tasksRender(); } };
       row.append(inp, ok, no); box.appendChild(row); setTimeout(() => inp.focus(), 0);
