@@ -81,12 +81,24 @@ pub fn find_url(line: &str) -> Option<String> {
     Some(url.to_string())
 }
 
-// the answer of `Get-AuthenticodeSignature`: "Valid|CN=Cloudflare, Inc., O=..." -> true only for a valid signature
-// whose subject names Cloudflare
+// the answer of `Get-AuthenticodeSignature`: "Valid|CN=Cloudflare, Inc., O=Cloudflare, Inc., L=..." (Windows puts
+// quotes round a value with a comma: CN="Cloudflare, Inc.") -> true only for a valid signature whose subject names
+// "Cloudflare, Inc." as a whole field (the common name or the organization)
 pub fn signature_ok(output: &str) -> bool {
     let out = output.trim();
     let Some((status, subject)) = out.split_once('|') else { return false };
-    status.trim() == "Valid" && subject.split(',').any(|p| p.trim().eq_ignore_ascii_case("CN=Cloudflare") || p.trim().eq_ignore_ascii_case("O=Cloudflare"))
+    if status.trim() != "Valid" {
+        return false;
+    }
+    let subject = subject.replace('"', "");
+    ["CN=Cloudflare, Inc.", "O=Cloudflare, Inc."].iter().any(|want| {
+        subject.match_indices(want).any(|(i, _)| {
+            let before_ok = i == 0 || subject[..i].ends_with(", ") || subject[..i].ends_with(',');
+            let rest = &subject[i + want.len()..];
+            let after_ok = rest.is_empty() || rest.starts_with(',');
+            before_ok && after_ok
+        })
+    })
 }
 
 pub fn sha256_hex(path: &std::path::Path) -> std::io::Result<String> {
@@ -121,7 +133,10 @@ fn verify_signature(path: &std::path::Path) -> Result<(), String> {
     if signature_ok(&text) {
         Ok(())
     } else {
-        Err("подпись cloudflared не принадлежит Cloudflare — файл удалён".into())
+        // (the status and the name of the signer are not secret: they tell what exactly was wrong)
+        let shown: String = text.trim().chars().take(140).collect();
+        warn!("Tunnel: the signature check said: {}", shown);
+        Err(format!("подпись cloudflared не принадлежит Cloudflare — файл удалён (проверка вернула: {})", shown))
     }
 }
 
@@ -186,7 +201,8 @@ fn ensure_exe(gen: u64) -> Result<PathBuf, String> {
     }
     let dir = exe.parent().ok_or("нет папки")?.to_path_buf();
     std::fs::create_dir_all(&dir).map_err(|e| format!("не удалось создать папку: {}", e))?;
-    let part = dir.join("cloudflared.exe.part");
+    // (the extension .exe: Get-AuthenticodeSignature answers "NotSupportedFileFormat" for a file named otherwise)
+    let part = dir.join("cloudflared-download.exe");
     download(&part, gen)?;
     let hash = sha256_hex(&part).map_err(|e| e.to_string())?;
     if hash != SHA256 {
@@ -338,7 +354,7 @@ fn run(gen: u64) {
 // the link for the phone: the public address with the secret of the remote
 pub fn public_link() -> Option<String> {
     match state() {
-        State::On(url) => Some(format!("{}/?t={}", url, crate::remote::token_for_diag())),
+        State::On(url) => Some(format!("{}/?t={}", url, crate::remote::link_token())),
         _ => None,
     }
 }
@@ -388,6 +404,10 @@ mod tests {
     #[test]
     fn the_signature_must_be_valid_and_from_cloudflare() {
         assert!(signature_ok("Valid|CN=Cloudflare, Inc., O=Cloudflare, Inc., L=San Francisco, S=California, C=US\r\n"));
+        // the real form: Windows quotes a value with a comma
+        assert!(signature_ok("Valid|CN=\"Cloudflare, Inc.\", O=\"Cloudflare, Inc.\", L=San Francisco, S=California, C=US"));
+        assert!(!signature_ok("NotSupportedFileFormat|"));
+        assert!(!signature_ok("Valid|CN=\"Evil, Inc.\", O=\"Not Cloudflare, Inc.\""), "a longer name is not Cloudflare, Inc.");
         assert!(!signature_ok("NotSigned|"));
         assert!(!signature_ok("Valid|CN=Evil Corp, O=Evil Corp"));
         assert!(!signature_ok("HashMismatch|CN=Cloudflare, Inc."));

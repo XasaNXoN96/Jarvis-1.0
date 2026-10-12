@@ -36,6 +36,11 @@ fn token() -> String {
     TOKEN.lock().clone()
 }
 
+// the secret for a link of the tunnel (made at the first use, like the links of the home network)
+pub fn link_token() -> String {
+    token()
+}
+
 pub fn last_client() -> Option<u64> {
     match LAST_CLIENT.load(Ordering::SeqCst) { 0 => None, t => Some(t) }
 }
