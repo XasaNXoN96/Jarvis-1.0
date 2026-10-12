@@ -300,6 +300,10 @@ mod tests {
         assert!(run("assistant_session", "да").contains("стёрты"));
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
         crate::session::end();
+        // a file saved by Notepad with a BOM: the first task is read without it (as the panel reads it)
+        std::fs::write(&file, "\u{feff}с бомом\nвторая\n").unwrap();
+        let read = run("assistant_task_read", "озвучь задачи");
+        assert!(read.contains("1. с бомом") && !read.contains('\u{feff}'), "{:?}", read);
     }
 
     // every script of every command compiles in the Lua of Jarvis (5.5: e.g. a loop variable cannot be assigned)

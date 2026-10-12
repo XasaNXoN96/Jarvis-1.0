@@ -197,6 +197,34 @@ mod win {
         }
     }
 
+    // the program file of a window ("telegram.exe"), lower case
+    pub fn process_exe(h: isize) -> Option<String> {
+        use winapi::um::handleapi::CloseHandle;
+        use winapi::um::processthreadsapi::OpenProcess;
+        use winapi::um::winbase::QueryFullProcessImageNameW;
+        use winapi::um::winnt::PROCESS_QUERY_LIMITED_INFORMATION;
+        unsafe {
+            let mut pid: u32 = 0;
+            GetWindowThreadProcessId(h as HWND, &mut pid);
+            if pid == 0 {
+                return None;
+            }
+            let ph = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if ph.is_null() {
+                return None;
+            }
+            let mut buf = [0u16; 1024];
+            let mut len = buf.len() as u32;
+            let ok = QueryFullProcessImageNameW(ph, 0, buf.as_mut_ptr(), &mut len) != 0;
+            CloseHandle(ph);
+            if !ok {
+                return None;
+            }
+            let path = String::from_utf16_lossy(&buf[..len as usize]);
+            path.rsplit(['\\', '/']).next().map(|n| n.to_lowercase())
+        }
+    }
+
     // the working area (without the taskbar) of the monitor of the first window
     pub fn work_area(first: isize) -> Option<(i32, i32, i32, i32)> {
         use winapi::shared::windef::HMONITOR;
@@ -330,21 +358,38 @@ pub fn grid_cells(n: usize, area: (i32, i32, i32, i32)) -> Vec<(i32, i32, i32, i
     out
 }
 
-// the window just opened by a step: the new window in front (not Jarvis, not the one in front before), waited for
-// up to `max`. Only a link (`same_ok`) may give the window that was already in front — a browser that was in front
-// opens the page in itself; a program that did not come to the front gives no window, so a window of the user that
-// has nothing to do with the chain is never moved
-pub fn opened_window(before: Option<isize>, same_ok: bool, max: std::time::Duration) -> Option<isize> {
+// Is this window one of the program a step started? `expected` is its program file ("telegram.exe"); unknown
+// (None) on either side is not held against it. A Microsoft Store program shows its window through
+// ApplicationFrameHost.exe, which is accepted for a NEW window only (`new_window`): a Store window that was
+// already in front is not taken for the program of the step.
+pub fn window_of(window_exe: Option<&str>, expected: Option<&str>, new_window: bool) -> bool {
+    match (window_exe, expected) {
+        (_, None) | (None, _) => true,
+        (Some(w), Some(e)) => w.eq_ignore_ascii_case(e) || (new_window && w.eq_ignore_ascii_case("applicationframehost.exe")),
+    }
+}
+
+// the window just opened by a step: the new window in front (not Jarvis, not the one in front before) of the
+// program of the step (`expected`), waited for up to `max`. Only a link (`same_ok`) may give the window that was
+// already in front — a browser that was in front opens the page in itself. The program of the step that was already
+// in front gives its window at once. A window the user switched to meanwhile (another program) is not taken.
+pub fn opened_window(before: Option<isize>, same_ok: bool, expected: Option<&str>, max: std::time::Duration) -> Option<isize> {
     #[cfg(target_os = "windows")]
     {
         let start = std::time::Instant::now();
         loop {
             let fg = win::foreground();
-            if fg.is_some() && fg != before {
-                return fg;
-            }
-            if same_ok && fg.is_some() && start.elapsed() >= std::time::Duration::from_millis(1500) {
-                return fg;
+            if let Some(h) = fg {
+                let exe = win::process_exe(h);
+                if fg != before && window_of(exe.as_deref(), expected, true) {
+                    return fg;
+                }
+                if fg == before && expected.is_some() && exe.is_some() && window_of(exe.as_deref(), expected, false) {
+                    return fg;
+                }
+                if same_ok && start.elapsed() >= std::time::Duration::from_millis(1500) {
+                    return fg;
+                }
             }
             if start.elapsed() >= max {
                 return None;
@@ -354,7 +399,7 @@ pub fn opened_window(before: Option<isize>, same_ok: bool, max: std::time::Durat
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (before, same_ok, max);
+        let _ = (before, same_ok, expected, max);
         None
     }
 }
@@ -385,6 +430,15 @@ pub fn arrange(windows: &[isize]) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_grid_takes_only_a_window_of_the_program_of_the_step() {
+        assert!(window_of(Some("telegram.exe"), Some("Telegram.exe"), true));
+        assert!(!window_of(Some("winword.exe"), Some("telegram.exe"), true), "the user switched to Word meanwhile: not taken");
+        assert!(window_of(Some("applicationframehost.exe"), Some("telegram.exe"), true), "a new Store window");
+        assert!(!window_of(Some("applicationframehost.exe"), Some("telegram.exe"), false), "a Store window that was already in front is not the program");
+        assert!(window_of(None, Some("telegram.exe"), true) && window_of(Some("chrome.exe"), None, true), "unknown is not held against it");
+    }
 
     #[test]
     fn the_auto_grid_puts_three_windows_side_by_side_and_four_in_two_rows() {

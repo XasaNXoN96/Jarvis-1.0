@@ -10,7 +10,9 @@ local function read_tasks()
   local lines = read_lines(path)
   if not lines then return nil end
   local list = {}
-  for _, raw in ipairs(lines) do
+  for i, raw in ipairs(lines) do
+    -- (a text editor may put a BOM before the first task)
+    if i == 1 then raw = raw:gsub("^\239\187\191", "") end
     local line = raw:gsub("^%s+", ""):gsub("%s+$", "")
     if line ~= "" then list[#list + 1] = line end
   end
