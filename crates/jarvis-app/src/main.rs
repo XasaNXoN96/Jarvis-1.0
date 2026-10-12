@@ -46,12 +46,14 @@ fn main() -> Result<(), String> {
     // (two copies ran every spoken command twice and wrote every question and answer twice)
     {
         let restarting = std::env::args().any(|a| a == "--wait-instance");
-        let wait = std::time::Duration::from_secs(if restarting { 15 } else { 0 });
+        // (the old copy needs a few seconds to end: the speech model and the libraries are unloaded)
+        let wait = std::time::Duration::from_secs(if restarting { 30 } else { 0 });
         if !jarvis_core::instance::acquire_or_wait(jarvis_core::instance::NAME, wait) {
             if !std::env::args().any(|a| a == "--background" || a == "--no-ui") {
-                // the running Jarvis shows its own window; only when it does not answer, a browser window opens
+                // the running Jarvis shows its own window. A browser window on its address would show "cannot reach
+                // this page" while it is still starting, so none is opened: the user is told instead.
                 if !ask_running_to_show() {
-                    jarvis_core::ui::open_browser_window();
+                    tell_still_starting();
                 }
             }
             return Ok(());
@@ -188,7 +190,8 @@ fn main() -> Result<(), String> {
         match action {
             IpcAction::Stop => {
                 info!("Received stop command from GUI");
-                SHOULD_STOP.store(true, Ordering::SeqCst);
+                // a full exit: stopping only the voice loop left the window and the tray without anyone to answer
+                std::thread::spawn(|| shutdown_and_exit());
             }
             IpcAction::ReloadCommands => {
                 info!("Received reload commands request");
@@ -285,14 +288,23 @@ pub fn shutdown_and_exit() -> ! {
     jarvis_core::uistate::log_event("start", "Jarvis закрыт пользователем");
     // the voice loop sees the stop flag; a short pause lets it leave the microphone alone
     std::thread::sleep(std::time::Duration::from_millis(300));
+    info!("Exit: done");
+    ::log::logger().flush();
+    // Everything Jarvis keeps is written already (settings, chats, timers: synchronous writes). The usual exit()
+    // then unloads every library (the speech model, its thread pools, WebView2) after their threads are gone,
+    // which took about ten seconds; the process is ended at once instead, with the same exit code.
+    #[cfg(target_os = "windows")]
+    unsafe {
+        winapi::um::processthreadsapi::TerminateProcess(winapi::um::processthreadsapi::GetCurrentProcess(), 0);
+    }
     std::process::exit(0)
 }
 
 // a second start: the running Jarvis is asked (through its local page server) to show its window
 fn ask_running_to_show() -> bool {
-    // the running copy may still be starting (the speech model loads for seconds before its page server is up):
-    // it is asked again for up to 25 seconds before a browser window is opened as a last resort
-    let until = std::time::Instant::now() + std::time::Duration::from_secs(25);
+    // the running copy may still be starting (the speech model loads for many seconds on a slow PC, more right after
+    // the Windows login): it is asked again for up to two minutes; its own window opens by itself when it is ready
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(120);
     loop {
         if ask_running_once() {
             return true;
@@ -301,6 +313,21 @@ fn ask_running_to_show() -> bool {
             return false;
         }
         std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+}
+
+// the running Jarvis did not answer for two minutes (it hangs, or it is still loading on a very slow PC)
+fn tell_still_starting() {
+    warn!("Second start: the running Jarvis does not answer");
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        let wide = |s: &str| -> Vec<u16> { std::ffi::OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect() };
+        let text = wide("Джарвис уже запущен, но пока не отвечает (возможно, ещё загружается). Подождите немного и откройте его значком в трее. Если он не отвечает долго — закройте jarvis-app в диспетчере задач и запустите снова.");
+        let title = wide("Джарвис");
+        unsafe {
+            winapi::um::winuser::MessageBoxW(std::ptr::null_mut(), text.as_ptr(), title.as_ptr(), winapi::um::winuser::MB_OK | winapi::um::winuser::MB_ICONINFORMATION);
+        }
     }
 }
 

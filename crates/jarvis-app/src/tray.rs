@@ -198,7 +198,8 @@ fn restart_app() {
     match Command::new(&exe_path).arg("--wait-instance").spawn() {
         Ok(_) => {
             info!("Spawned new instance, exiting current...");
-            std::process::exit(0);
+            // the full exit: the microphone and the ports are released for the new copy
+            crate::shutdown_and_exit();
         }
         Err(e) => {
             error!("Failed to restart: {}", e);

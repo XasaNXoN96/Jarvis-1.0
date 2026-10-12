@@ -277,7 +277,9 @@ pub fn run(h: Hooks) -> ! {
         }
         if want_show {
             // (a failure is tried again next time: after a restart the old WebView2 may still hold its folder)
-            if win.is_none() {
+            // (a browser window of the fallback already open: no own window next to it, no second browser window)
+            let browser_open = win.is_none() && jarvis_core::ui::browser_page_alive();
+            if win.is_none() && !browser_open {
                 match make_window(target, &h, &mut ctx, proxy.clone()) {
                     Ok(w) => {
                         log::info!("Window: the WebView2 window is created");
@@ -288,6 +290,7 @@ pub fn run(h: Hooks) -> ! {
             }
             match &win {
                 Some(w) => show(w),
+                None if browser_open => log::info!("Window: the browser window is already open"),
                 None => {
                     (h.fallback_open)();
                 }

@@ -48,8 +48,8 @@ pub fn console_input(tx: std::sync::mpsc::Sender<String>) {
                     continue;
                 }
                 if matches!(text, "exit" | "quit" | "выход") {
-                    crate::request_stop();
-                    return;
+                    // the whole Jarvis ends (not only the voice loop with the window and the tray left behind)
+                    crate::shutdown_and_exit();
                 }
                 if tx.send(text.to_string()).is_err() {
                     return;

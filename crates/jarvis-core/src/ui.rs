@@ -372,22 +372,20 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         "mic_check" => mic_check(),
         "restart_voice" => {
             // starts a fresh Jarvis without --text (after this one has closed and freed its ports) and quits
+            // The new copy is started directly (no cmd line: its quoting broke the path, and Jarvis quit without a
+            // new one); it waits until this one has released the microphone and its ports (--wait-instance).
             if let Ok(exe) = std::env::current_exe() {
-                #[cfg(target_os = "windows")]
-                {
-                    use std::os::windows::process::CommandExt;
-                    let _ = Command::new("cmd")
-                        .args(["/C", &format!("ping -n 3 127.0.0.1 >nul & start \"\" \"{}\" --wait-instance", exe.display())])
-                        .creation_flags(0x0800_0000)
-                        .spawn();
+                if Command::new(&exe).arg("--wait-instance").spawn().is_ok() {
+                    std::thread::spawn(|| {
+                        std::thread::sleep(Duration::from_millis(400));
+                        // the same full exit as the tray and the window (the microphone is released)
+                        match EXIT_HOOK.get() {
+                            Some(exit) => exit(),
+                            None => std::process::exit(0),
+                        }
+                    });
+                    return json!({ "ok": true });
                 }
-                #[cfg(not(target_os = "windows"))]
-                let _ = Command::new(&exe).arg("--wait-instance").spawn();
-                std::thread::spawn(|| {
-                    std::thread::sleep(Duration::from_millis(400));
-                    std::process::exit(0);
-                });
-                return json!({ "ok": true });
             }
             json!({ "ok": false, "message": "Не удалось перезапустить" })
         }
@@ -913,6 +911,12 @@ pub fn hide_window() {
 }
 
 static LAST_STATE_POLL: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
+// a page of Jarvis asked for its state in the last seconds: a browser window is open (it polls every 1.5 s, every
+// 4 s when hidden), so "show the window" must not start one more
+pub fn browser_page_alive() -> bool {
+    LAST_STATE_POLL.lock().map(|t| t.elapsed() < Duration::from_secs(5)).unwrap_or(false)
+}
+
 static TRAY_NOTICE_SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 const RELOAD_GRACE: Duration = Duration::from_secs(4);
 
