@@ -640,6 +640,29 @@ fn the_power_phrases_of_the_pc_section_reach_the_power_commands() {
     }
 }
 
+// every button of the Telegram menu sends a phrase: it must reach a real command, not fall through to the AI
+#[test]
+fn every_phrase_of_the_telegram_menu_reaches_its_command() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({}));
+    let want = [
+        ("t1", "assistant_timer_set"), ("t5", "assistant_timer_set"), ("t10", "assistant_timer_set"), ("t30", "assistant_timer_set"),
+        ("tleft", "assistant_timer_status"), ("tstop", "assistant_timer_cancel"),
+        ("mplay", "assistant_media_playpause"), ("mnext", "assistant_media_next"), ("mprev", "assistant_media_prev"),
+        ("vup", "assistant_volume_up"), ("vdown", "assistant_volume_down"), ("vmute", "assistant_volume_mute"), ("vunmute", "assistant_volume_unmute"),
+        ("bup", "assistant_brightness_up"), ("bdown", "assistant_brightness_down"),
+        ("wmin", "windows_1"), ("wlock", "windows_5"), ("wtask", "windows_3"), ("wlang", "windows_8"),
+        ("time", "assistant_info_time"), ("taskread", "assistant_task_read"),
+        ("pcsleep", "windows_6"), ("pwoff", "assistant_power_off"), ("pwrestart", "assistant_power_restart"),
+        ("pwhib", "assistant_power_hibernate"), ("pwlogoff", "assistant_power_logoff"), ("pwcancel", "assistant_power_cancel"),
+    ];
+    assert_eq!(want.len(), crate::tgmenu::ITEMS.len(), "a new menu entry needs a line here");
+    for (key, id) in want {
+        let it = crate::tgmenu::find(key).unwrap();
+        assert_eq!(w.route(it.phrase).as_deref(), Some(id), "{} «{}»", key, it.phrase);
+    }
+}
+
 #[test]
 fn a_tab_or_the_taskbar_is_not_a_program_and_word_is_found_in_any_case() {
     let _g = LOCK.lock();

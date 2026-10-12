@@ -52,6 +52,9 @@ ort = { workspace = true, optional = true }
 ndarray = { workspace = true, optional = true }
 tokenizers = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
+opus-decoder = "0.1.1"
+ogg = "0.9.2"
+opus-rs = "0.1.37"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["shellapi", "winuser", "sysinfoapi", "fileapi", "processthreadsapi", "winnt", "combaseapi", "objbase", "mmdeviceapi", "endpointvolume", "winerror", "objidl", "unknwnbase", "handleapi", "winbase", "minwindef", "dpapi", "wincrypt", "wingdi", "libloaderapi", "synchapi", "errhandlingapi", "winreg", "shlobj", "knownfolders", "fileapi", "tlhelp32", "iphlpapi", "iptypes", "ws2def", "inaddr", "ifdef", "nldef", "ipifcons", "psapi", "jobapi2", "playsoundapi", "mmsystem"] }

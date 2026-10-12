@@ -428,6 +428,23 @@ pub fn synth_check() -> SynthCheck {
     r
 }
 
+// the speech as WAV bytes, nothing is played (the voice answer of the Telegram bot). Only Piper can do it.
+pub fn synth_to_wav(text: &str) -> Result<Vec<u8>, String> {
+    let Some((exe, model)) = piper_voice(&tts_lang()) else {
+        return Err(if crate::uistate::voice_name().starts_with("win:") { "голос Windows нельзя записать в файл, нужен Piper".into() } else { "голос Джарвиса (Piper) не установлен".into() });
+    };
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let wav = std::env::temp_dir().join(format!("jarvis_tg_{}_{}.wav", std::process::id(), SEQ.fetch_add(1, Ordering::SeqCst)));
+    let generation = GENERATION.load(Ordering::SeqCst);
+    let r = match piper_synth(&exe, &model, text, &wav, generation) {
+        Synth::Done => std::fs::read(&wav).map_err(|_| "звуковой файл не прочитался".to_string()),
+        Synth::Cancelled => Err("озвучка была прервана".into()),
+        Synth::Failed(why) => Err(if why.is_empty() { "Piper не создал звук".into() } else { why }),
+    };
+    let _ = std::fs::remove_file(&wav);
+    r
+}
+
 fn piper_synth(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64) -> Synth {
     let err_file = wav.with_extension("err");
     let _ = std::fs::remove_file(wav);

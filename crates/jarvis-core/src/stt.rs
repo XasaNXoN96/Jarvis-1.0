@@ -9,6 +9,7 @@ pub use self::vosk::init_vosk;
 pub use self::vosk::recognize_wake_word;
 pub use self::vosk::recognize_speech;
 pub use self::vosk::reset_speech_recognizer;
+pub use self::vosk::transcribe;
 pub use self::vosk::reset_wake_recognizer;
 
 static STT_TYPE: OnceCell<SpeechToTextEngine> = OnceCell::new();

@@ -91,6 +91,22 @@ pub fn recognize_speech(data: &[i16]) -> Option<String> {
 }
 
 
+// a recording that is not the microphone (a voice message of Telegram): a recognizer of its own on the same model, so
+// the live recognition of the microphone is never disturbed. 16 kHz mono.
+pub fn transcribe(data: &[i16]) -> Result<String, String> {
+    init_vosk()?;
+    let model = VOSK_MODEL.get().ok_or("модель распознавания не загружена")?;
+    let mut r = Recognizer::new(&model.model, 16000.0).ok_or("не удалось запустить распознавание")?;
+    for chunk in data.chunks(8000) {
+        r.accept_waveform(chunk).map_err(|_| "распознавание не приняло звук".to_string())?;
+    }
+    let text = match r.final_result() {
+        vosk::CompleteResult::Single(s) => s.text.to_string(),
+        vosk::CompleteResult::Multiple(m) => m.alternatives.first().map(|a| a.text.to_string()).unwrap_or_default(),
+    };
+    Ok(text)
+}
+
 pub fn reset_speech_recognizer() {
     if let Some(recognizer) = SPEECH_RECOGNIZER.get() {
         recognizer.lock().reset();

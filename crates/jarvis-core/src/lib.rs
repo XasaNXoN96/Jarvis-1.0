@@ -67,6 +67,8 @@ pub mod input;
 pub mod scenario;
 pub mod tasks;
 pub mod telegram;
+pub mod tgvoice;
+pub mod tgmenu;
 pub mod tunnel;
 pub mod autostart;
 pub mod screen;
