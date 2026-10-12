@@ -95,6 +95,12 @@ pub fn set_enabled(on: bool) {
     }
 }
 
+// Jarvis is exiting: what is said stops and nothing new starts (the saved on/off choice is not touched)
+pub fn shutdown() {
+    ENABLED.store(false, Ordering::SeqCst);
+    stop();
+}
+
 pub fn stop() {
     GENERATION.fetch_add(1, Ordering::SeqCst);
     // what was waiting in the queue is dropped too
@@ -884,6 +890,17 @@ mod tests {
         stop();
         assert!(QUEUE.lock().is_empty(), "stop() empties the queue");
         assert_eq!(BUSY.load(Ordering::SeqCst), 0, "and the counter does not stay behind");
+    }
+
+    #[test]
+    fn exiting_silences_the_voice_without_saving_speech_off() {
+        let _g = LOCK.lock();
+        ENABLED.store(true, Ordering::SeqCst);
+        shutdown();
+        assert!(!is_enabled(), "nothing new is said while Jarvis exits");
+        // the saved choice (the tts_off file) is not written: the next start speaks as before
+        assert!(off_flag_path().map(|p| !p.exists()).unwrap_or(true));
+        ENABLED.store(true, Ordering::SeqCst);
     }
 
     #[test]

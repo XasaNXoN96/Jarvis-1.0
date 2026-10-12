@@ -114,6 +114,7 @@ fn main_loop(text_cmd_rx: &Receiver<String>, rt: &tokio::runtime::Runtime) -> Re
     jarvis_core::VOICE_ACTIVE.store(true, std::sync::atomic::Ordering::SeqCst);
     jarvis_core::VOICE_ERROR.lock().clear();
     ipc::send(IpcEvent::Idle);
+    let mut mic_closed = false;
 
     // ### WAKE WORD DETECTION LOOP
     'wake_word: loop {
@@ -129,10 +130,30 @@ fn main_loop(text_cmd_rx: &Receiver<String>, rt: &tokio::runtime::Runtime) -> Re
             continue 'wake_word;
         }
 
-        // microphone switched off (tray / command): wait for text commands only
+        // microphone switched off (tray / command): the device itself is closed (Windows no longer shows it in use),
+        // text commands still work; switched on again: it is opened again
         if jarvis_core::MIC_MUTED.load(std::sync::atomic::Ordering::SeqCst) {
+            if !mic_closed {
+                recorder::release();
+                mic_closed = true;
+                info!("Microphone switched off: the device is closed");
+            }
             std::thread::sleep(std::time::Duration::from_millis(100));
             continue 'wake_word;
+        }
+        if mic_closed {
+            mic_closed = false;
+            match recorder::start_recording() {
+                Ok(_) => info!("Microphone switched on: the device is open again"),
+                // (cannot be opened now: the background recovery keeps trying, the window shows why)
+                Err(_) => recorder::recover_in_background(),
+            }
+            stt::reset_wake_recognizer();
+            stt::reset_speech_recognizer();
+            audio_processing::reset();
+            audio_buffer.clear();
+            vad_state = VadState::WaitingForVoice;
+            silence_frames = 0;
         }
 
         // a session is open (dictation, a question about a file): keep listening without the wake word,
@@ -192,6 +213,10 @@ fn main_loop(text_cmd_rx: &Receiver<String>, rt: &tokio::runtime::Runtime) -> Re
                 if let Some(_keyword_index) = listener::data_callback(&frame_buffer) {
                     // WAKE WORD DETECTED!
                     info!("Wake word activated!");
+                    // the user calls Jarvis while he is speaking: he stops and listens ("Джарвис, стоп" works too)
+                    if jarvis_core::tts::is_speaking() {
+                        jarvis_core::tts::stop();
+                    }
                     ipc::send(IpcEvent::WakeWordDetected);
                     
                     stt::reset_wake_recognizer();
@@ -277,6 +302,7 @@ fn recognize_command(
     let mut silence_frames: u32 = 0;
     let mut start = SystemTime::now();
     let mut first_recognition = prefed_audio;
+    let mut heard_own_voice = false;
     
     // longer silence threshold for commands (user might pause to think)
     // 5 seconds
@@ -293,6 +319,21 @@ fn recognize_command(
         }
         
         recorder::read_microphone(frame_buffer);
+        // Jarvis is speaking (an AI answer, a reply, a prompt of a session): the microphone hears that voice, so it
+        // is not recognized as the user's next words; listening goes on with a fresh start when the voice is silent
+        if jarvis_core::tts::is_speaking() {
+            heard_own_voice = true;
+            continue;
+        }
+        if heard_own_voice {
+            heard_own_voice = false;
+            stt::reset_speech_recognizer();
+            audio_processing::reset();
+            audio_buffer.clear();
+            vad_state = VadState::WaitingForVoice;
+            silence_frames = 0;
+            start = SystemTime::now();
+        }
         let processed = audio_processing::process(frame_buffer);
         
         match vad_state {
@@ -398,7 +439,10 @@ fn recognize_command(
                     // execute command and check if we should chain
                     VOICE_INPUT.store(true, std::sync::atomic::Ordering::SeqCst);
                     *ORIGINAL.lock() = recognized_voice.clone();
+                    // nothing listens while the command runs: the window does not say "слушаю"
+                    jarvis_core::VOICE_LISTENING.store(false, std::sync::atomic::Ordering::SeqCst);
                     let should_chain = execute_command(&recognized_voice, rt);
+                    jarvis_core::VOICE_LISTENING.store(should_chain, std::sync::atomic::Ordering::SeqCst);
                     VOICE_INPUT.store(false, std::sync::atomic::Ordering::SeqCst);
                     
                     if should_chain {
@@ -722,7 +766,8 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
                 // a failure is heard, not only shown (the voice packs have no error sound of their own);
                 // a command that already said why stays the only voice
                 if !jarvis_core::tts::is_speaking() {
-                    if jarvis_core::tts::is_enabled() {
+                    // (a voice that cannot speak — no Piper in the Lite edition — gets the short sound instead)
+                    if jarvis_core::tts::can_speak().is_ok() {
                         jarvis_core::tts::speak("Не получилось выполнить команду. Подробности в окне.");
                     } else {
                         voices::play_error();
@@ -800,13 +845,12 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
         open_request(text, "local");
         jarvis_core::dialog::reply(&unknown, "local");
         jarvis_core::dialog::end(false);
-        if jarvis_core::tts::is_enabled() {
+        if jarvis_core::tts::can_speak().is_ok() {
             jarvis_core::tts::speak("Не знаю такой команды.");
-        }
-        jarvis_core::uistate::log_action(text, "—", false);
-        if !jarvis_core::tts::is_speaking() {
+        } else {
             voices::play_not_found();
         }
+        jarvis_core::uistate::log_action(text, "—", false);
         ipc::send(IpcEvent::Error { 
             message: format!("Command not found: {}", text) 
         });

@@ -390,13 +390,18 @@ pub fn execute_command(cmd_path: &PathBuf, cmd_config: &JCommand, phrase: Option
         
         // TERMINATOR command (T1000)
         "terminate" => {
-            std::thread::sleep(Duration::from_secs(2));
-            std::process::exit(0);
+            // the same full exit as the tray and the window: the speech stops, the microphone is released
+            crate::ui::exit_now();
+            Ok(false)
         }
         
         // STOP CHANING
         // "хватит", "стоп", "всё": also silences what Jarvis is reading
         "stop_chaining" => {
+            // the AI answer that is still arriving stops too: otherwise its next sentences are read after "стоп"
+            if let Some(id) = crate::ai::store().active() {
+                crate::ai::stop(&id);
+            }
             crate::tts::stop();
             Ok(false)
         }

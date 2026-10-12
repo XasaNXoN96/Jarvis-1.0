@@ -672,6 +672,8 @@ pub fn state_json() -> Value {
         // the question of the cross of the window, in the language of Jarvis (the own window of Jarvis asks it)
         "close_dialog": close_dialog_json(),
         "close_req": crate::ui::browser_close_counter(),
+        // something is still to be said (the queue, the next sentence being prepared): the "Стоп" button stays
+        "speaking": crate::tts::is_speaking(),
         "voice_state": voice_state(),
         "rev": crate::ai::rev(),
         "ai": crate::ai::status_json(),

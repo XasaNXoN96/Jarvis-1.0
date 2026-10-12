@@ -628,3 +628,15 @@ fn a_tab_or_the_taskbar_is_not_a_program_and_word_is_found_in_any_case() {
     assert_eq!(crate::apps::find_in_phrase("закрой окно ворда").map(|m| m.app.id), Some("word"));
     assert_eq!(crate::apps::find_in_phrase("напиши в блокноте").map(|m| m.app.id), Some("notepad"));
 }
+
+#[test]
+fn stop_stops_and_a_longer_stop_phrase_keeps_its_own_command() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({}));
+    assert_eq!(w.route("стоп").as_deref(), Some("stop_1"));
+    assert_eq!(w.route("остановись").as_deref(), Some("stop_1"));
+    for longer in ["стоп поиск", "останови сигнал телефона"] {
+        let id = w.route(longer);
+        assert!(id.is_some() && id.as_deref() != Some("stop_1"), "{} -> {:?}", longer, id);
+    }
+}

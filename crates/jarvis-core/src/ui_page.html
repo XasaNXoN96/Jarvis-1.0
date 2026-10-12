@@ -839,7 +839,8 @@ function submitFrom(inputEl) {
 }
 $('#form').onsubmit = e => { e.preventDefault(); submitFrom($('#input')); };
 $('#h-form').onsubmit = e => { e.preventDefault(); submitFrom($('#h-input')); };
-const stopMode = () => !!(lastState && (lastState.ai_busy || (lastState.voice_state && lastState.voice_state.state === 'SPEAKING')));
+// "Стоп" stays while anything is to be said (also between the sentences of an answer, while the next one is prepared)
+const stopMode = () => !!(lastState && (lastState.ai_busy || lastState.speaking || (lastState.voice_state && lastState.voice_state.state === 'SPEAKING')));
 async function stopAll() { try { await chatApi({ op: 'stop', id: aiActive }); } catch (e) {} pollNow(); }
 function updateComposers() {
   const stop = stopMode(), empty = id => !$(id).value.trim();

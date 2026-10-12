@@ -212,6 +212,8 @@ pub fn release() {
 pub fn read_microphone(frame_buffer: &mut [i16]) {
     let rec = RECORDER.read().clone();
     let Some(rec) = rec else {
+        // no microphone (released, recovering): silence, never the last real frame again and again
+        frame_buffer.fill(0);
         std::thread::sleep(Duration::from_millis(20));
         return;
     };
@@ -222,8 +224,13 @@ pub fn read_microphone(frame_buffer: &mut [i16]) {
             mark_frame();
             READ_ERRORS.store(0, Ordering::Relaxed);
         }
-        Ok(_) => std::thread::sleep(Duration::from_millis(20)),
+        Ok(_) => {
+            frame_buffer.fill(0);
+            std::thread::sleep(Duration::from_millis(20))
+        }
         Err(msg) => {
+            // a failed read gives silence (the old frame repeated would look like speech to the recognizer)
+            frame_buffer.fill(0);
             // do not spin and flood the log: wait, and report once when the device is clearly gone
             let n = READ_ERRORS.fetch_add(1, Ordering::Relaxed) + 1;
             if n == 1 {

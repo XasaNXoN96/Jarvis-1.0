@@ -889,6 +889,14 @@ pub fn set_exit_hook(exit: Box<dyn Fn() + Send + Sync>) {
     let _ = EXIT_HOOK.set(exit);
 }
 
+// the full exit from anywhere (a voice command, the console): the hook of jarvis-app, else a plain exit
+pub fn exit_now() {
+    match EXIT_HOOK.get() {
+        Some(exit) => exit(),
+        None => std::process::exit(0),
+    }
+}
+
 // The browser window cannot be hidden from outside: it is asked to close itself. The page sees the counter grow
 // in its state (a page opened later starts from the current value and is not closed by an old request).
 static CLOSE_REQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);

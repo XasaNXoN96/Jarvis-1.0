@@ -97,7 +97,15 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
 
     // jarvis.tts.stop() / jarvis.tts.set_enabled(bool) / jarvis.tts.is_enabled()
     let tts = lua.create_table()?;
-    tts.set("stop", lua.create_function(|_, ()| { crate::tts::stop(); Ok(()) })?)?;
+    // "хватит читать": the voice stops, and an AI answer that is still arriving stops too (its next sentences
+    // would otherwise be read after it)
+    tts.set("stop", lua.create_function(|_, ()| {
+        if let Some(id) = crate::ai::store().active() {
+            crate::ai::stop(&id);
+        }
+        crate::tts::stop();
+        Ok(())
+    })?)?;
     tts.set("set_enabled", lua.create_function(|_, on: bool| { crate::tts::set_enabled(on); Ok(()) })?)?;
     tts.set("diagnose", lua.create_function(|_, ()| { crate::tts::diagnose(); Ok(()) })?)?;
     tts.set("is_enabled", lua.create_function(|_, ()| Ok(crate::tts::is_enabled()))?)?;

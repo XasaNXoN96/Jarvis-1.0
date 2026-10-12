@@ -2,7 +2,12 @@
 id = "stop_1"
 type = "stop_chaining"
 sounds.ru = ["thanks", "ok1"]
+# "Джарвис, стоп" while he reads or listens (a longer phrase like "стоп поиск" keeps its own command)
+triggers.ru = ["стоп", "остановись"]
+triggers.en = ["stop", "enough"]
+phrases.en = ["stop", "enough"]
 phrases.ru = [
+    "стоп",
     "всё",
     "хватит",
     "отмена",

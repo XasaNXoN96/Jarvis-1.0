@@ -281,7 +281,12 @@ pub fn request_stop() {
 pub fn shutdown_and_exit() -> ! {
     info!("Exit requested: stopping the microphone, the speech and the remote");
     request_stop();
-    jarvis_core::tts::stop();
+    // an AI answer still arriving is stopped (its part so far is kept in the conversation) and no new phrase
+    // starts while Jarvis exits (a Piper process would outlive it)
+    if let Some(id) = jarvis_core::ai::store().active() {
+        jarvis_core::ai::stop(&id);
+    }
+    jarvis_core::tts::shutdown();
     // released and never reopened by the background recovery
     jarvis_core::recorder::shutdown();
     jarvis_core::remote::stop();
