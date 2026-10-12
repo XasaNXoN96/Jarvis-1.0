@@ -695,8 +695,11 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
             Ok(chain) => {
                 info!("Command executed successfully");
                 jarvis_core::uistate::log_action(text, &cmd_config.id, true);
-                // voices::play_ok();
-                voices::play_random_from(cmd_config.get_sounds(&i18n::get_language()).as_slice());
+                // the short reaction sound only when the command did not answer aloud itself: never two voices at once
+                // (the spoken answer "Сейчас 10 часов" is not covered by a recorded "Есть, сэр")
+                if !jarvis_core::tts::is_speaking() {
+                    voices::play_random_from(cmd_config.get_sounds(&i18n::get_language()).as_slice());
+                }
                 ipc::send(IpcEvent::CommandExecuted {
                     id: cmd_config.id.clone(),
                     success: true,
@@ -708,7 +711,9 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
                 error!("Error executing command: {}", msg);
                 jarvis_core::uistate::log_action(text, &cmd_config.id, false);
                 say(&format!("! error: {}", msg));
-                voices::play_error();
+                if !jarvis_core::tts::is_speaking() {
+                    voices::play_error();
+                }
                 ipc::send(IpcEvent::CommandExecuted {
                     id: cmd_config.id.clone(),
                     success: false,
@@ -770,7 +775,9 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
             jarvis_core::tts::speak("Не знаю такой команды.");
         }
         jarvis_core::uistate::log_action(text, "—", false);
-        voices::play_not_found();
+        if !jarvis_core::tts::is_speaking() {
+            voices::play_not_found();
+        }
         ipc::send(IpcEvent::Error { 
             message: format!("Command not found: {}", text) 
         });
