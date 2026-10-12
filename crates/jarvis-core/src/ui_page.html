@@ -197,6 +197,11 @@
   .b-step i { position: absolute; left: 10px; top: 9px; font-style: normal; color: var(--dim); font-size: 12px; } .b-step b { display: block; font-size: 14px; } .b-step small { display: block; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .b-step.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(255,255,255,0.140); } .b-step.bad { border-color: #ff6b7a88; }
   #e-win { display: flex; border-radius: 12px; } #e-win button { flex: 1; padding: 7px 6px; white-space: nowrap; font-size: 12.5px; }
+  .b-step { cursor: grab; touch-action: none; user-select: none; } .b-kinds button { touch-action: none; }
+  .b-step.dragging { opacity: .35; } .b-step.ghost { position: fixed; z-index: 90; pointer-events: none; opacity: .92; box-shadow: 0 10px 30px #000a; transform: rotate(-2deg); max-width: 240px; }
+  .b-step.ghost::before, .b-step.ghost::after { display: none; }
+  .b-step.drop-before { box-shadow: -5px 0 0 #e9e9ec; } .b-step.drop-after { box-shadow: 5px 0 0 #e9e9ec; }
+  body.drag-on, body.drag-on * { cursor: grabbing !important; user-select: none; }
   /* the chain as nodes joined by dashed arrows */
   .b-step:not(:last-child)::after { content: ""; position: absolute; right: -30px; top: 50%; width: 22px; border-top: 1.5px dashed var(--line2); }
   .b-step:not(:last-child)::before { content: ""; position: absolute; right: -31px; top: calc(50% - 4px); border: 4px solid transparent; border-left: 6px solid var(--line2); }
@@ -578,7 +583,7 @@
           <div class="seg"><button class="active" type="button">Голос</button><button type="button" disabled title="Недоступно: нет распознавания жестов">Жест — недоступно</button></div>
           <div class="b-row"><div><div class="b-label">НАЗВАНИЕ</div><input type="text" id="b-name" placeholder="например: Режим работы" maxlength="80"></div>
             <div><div class="b-label">ФРАЗА АКТИВАЦИИ</div><input type="text" id="b-phrase" placeholder="например: начать рабочий день" maxlength="120"></div></div>
-          <div class="b-chainhead"><div class="b-label">ЦЕПОЧКА <b id="b-count">0</b></div><small class="dim">добавить шаг:</small></div>
+          <div class="b-chainhead"><div class="b-label">ЦЕПОЧКА <b id="b-count">0</b></div><small class="dim">добавить шаг: нажмите или перетащите в цепочку</small></div>
           <div class="b-kinds" id="b-kinds"></div>
           <div class="b-steps" id="b-steps"><div class="empty">Добавьте первый шаг кнопкой выше.</div></div>
           <div class="b-actions"><button class="btn primary" id="b-save" type="button">Сохранить</button><button class="btn" id="b-test" type="button">Тест сценария</button><label class="b-en"><label class="sw"><input type="checkbox" id="b-enabled" checked><span></span></label> включён</label><span class="grow"></span><button class="btn" id="b-delete" type="button">Удалить сценарий</button></div>
@@ -1850,7 +1855,7 @@ function kindTitle(k) { const x = bData.kinds.find(z => z.kind === k); return x 
 async function builderLoad(keepId) {
   try { bData = await (await fetch('/scenarios')).json(); } catch (e) { return; }
   const kinds = $('#b-kinds'); kinds.textContent = '';
-  for (const k of bData.kinds) { const b = document.createElement('button'); b.type = 'button'; b.textContent = k.title; b.title = k.hint; b.onclick = () => addStep(k.kind); kinds.appendChild(b); }
+  for (const k of bData.kinds) { const b = document.createElement('button'); b.type = 'button'; b.textContent = k.title; b.title = k.hint; b.onclick = () => addStep(k.kind); b.onpointerdown = e => startDrag(e, b, -1, k.kind); kinds.appendChild(b); }
   const sel = $('#e-kind'); if (!sel.options.length) for (const k of bData.kinds) sel.add(new Option(k.title, k.kind));
   const tp = $('#b-templates'); tp.textContent = '';
   for (const t of bData.templates) { const b = document.createElement('button'); b.type = 'button'; b.textContent = t.name; b.onclick = () => { bCur = Object.assign(blank(), JSON.parse(JSON.stringify(t))); bStep = 0; bMsg(true, 'Заготовка открыта: проверьте шаги и нажмите «Сохранить».'); renderBuilder(); }; tp.appendChild(b); }
@@ -1885,7 +1890,10 @@ function renderBuilder() {
     d.querySelector('small').textContent = st.param || 'настроить';
     const tag = { max: 'НА ВЕСЬ ЭКРАН', grid: 'СЕТКА' }[st.window] || '';
     if (tag && ['link', 'app', 'file'].includes(st.kind)) { const t = document.createElement('em'); t.textContent = tag; d.appendChild(t); }
-    d.onclick = () => { bStep = i; renderBuilder(); }; box.appendChild(d);
+    d.onclick = () => { if (justDragged) return; bStep = i; renderBuilder(); };
+    // the mouse (or a finger) moves a step: press it, drag it to the place, let go
+    d.onpointerdown = e => startDrag(e, d, i, '');
+    box.appendChild(d);
   });
   const lr = bCur.last_run; $('#b-last').textContent = lr ? 'Последний запуск ' + fmtTime(lr.at) + ': ' + lr.message : '';
   renderStepEditor();
@@ -1902,6 +1910,55 @@ function renderStepEditor() {
   const nGrid = bCur.steps.filter(x => x.window === 'grid' && ['link', 'app', 'file'].includes(x.kind)).length;
   $('#e-winhint').textContent = st.window === 'grid' ? 'Окон в сетке: ' + nGrid + '. Они встанут рядом на экране после последнего шага.' : '';
   $('#e-up').disabled = bStep === 0; $('#e-down').disabled = bStep === bCur.steps.length - 1;
+}
+// ---------- moving the steps with the mouse: drag a step to another place, or drag a kind from the row above into the chain ----------
+let justDragged = false;
+function startDrag(e, node, from, kind) {
+  if (e.button !== 0 || (e.target.closest && e.target.closest('input,select,textarea'))) return;
+  const box = $('#b-steps'), x0 = e.clientX, y0 = e.clientY;
+  let drag = null;
+  const steps = () => [...box.children].filter(c => c.classList.contains('b-step'));
+  const clear = () => steps().forEach(k => k.classList.remove('drop-before', 'drop-after'));
+  const inside = ev => { const r = box.getBoundingClientRect(); return ev.clientX >= r.left - 20 && ev.clientX <= r.right + 20 && ev.clientY >= r.top - 20 && ev.clientY <= r.bottom + 20; };
+  const move = ev => {
+    if (!drag) {
+      if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
+      const ghost = node.cloneNode(true); ghost.className = 'b-step ghost'; ghost.onclick = ghost.onpointerdown = null;
+      ghost.style.width = node.offsetWidth + 'px'; document.body.appendChild(ghost);
+      if (from >= 0) node.classList.add('dragging');
+      document.body.classList.add('drag-on'); drag = { ghost, to: -1 };
+    }
+    drag.ghost.style.left = ev.clientX + 10 + 'px'; drag.ghost.style.top = ev.clientY + 10 + 'px';
+    clear();
+    if (!inside(ev)) { drag.to = -1; return; }
+    const kids = steps();
+    if (!kids.length) { drag.to = 0; return; }
+    let best = 0, bd = 1e9, after = false;
+    kids.forEach((k, j) => {
+      const r = k.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2, d = Math.hypot(ev.clientX - cx, (ev.clientY - cy) * 2);
+      if (d < bd) { bd = d; best = j; after = ev.clientX > cx; }
+    });
+    drag.to = best + (after ? 1 : 0);
+    kids[best].classList.add(after ? 'drop-after' : 'drop-before');
+  };
+  const end = ev => {
+    window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end); window.removeEventListener('pointercancel', end); window.removeEventListener('keydown', esc, true);
+    if (!drag) return;
+    drag.ghost.remove(); clear(); node.classList.remove('dragging'); document.body.classList.remove('drag-on');
+    justDragged = true; setTimeout(() => { justDragged = false; }, 0);
+    const to = ev && ev.type === 'pointerup' ? drag.to : -1;
+    if (to < 0) { renderBuilder(); return; }
+    if (from >= 0) {
+      let t = to; if (t > from) t--;
+      if (t !== from) { const [m] = bCur.steps.splice(from, 1); bCur.steps.splice(t, 0, m); bStep = t; }
+    } else {
+      if (bCur.steps.length >= 30) { bMsg(false, 'Не больше 30 шагов'); renderBuilder(); return; }
+      bCur.steps.splice(to, 0, { kind, param: '', window: '' }); bStep = to;
+    }
+    renderBuilder();
+  };
+  const esc = ev => { if (ev.key === 'Escape') { ev.stopPropagation(); end({ type: 'cancel' }); } };
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end); window.addEventListener('keydown', esc, true);
 }
 function addStep(kind) { if (bCur.steps.length >= 30) { bMsg(false, 'Не больше 30 шагов'); return; } bCur.steps.push({ kind, param: '', window: '' }); bStep = bCur.steps.length - 1; renderBuilder(); setTimeout(() => $('#e-param').focus(), 50); }
 $('#b-search').oninput = renderBuilder;

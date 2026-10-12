@@ -175,9 +175,9 @@ sandbox = "full"
 timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3"]
 sounds.en = ["ok1", "ok2", "ok3"]
-triggers.ru = ["выключ комп", "выключ пк", "выключ ноутбук", "заверш работ комп", "выруб комп"]
+triggers.ru = ["выключ комп", "выключ пк", "выключ ноутбук", "выключен комп", "выключен пк", "заверш работ комп", "заверш работ пк", "выруб комп", "выруб пк"]
 triggers.en = ["shut down computer", "turn off computer", "shutdown computer", "shut down pc"]
-phrases.ru = ["выключи компьютер через 10 минут", "выключи компьютер"]
+phrases.ru = ["выключи компьютер", "выключи мой компьютер", "выключи пк через 10 минут", "выключение компьютера"]
 phrases.en = ["shut down the computer in 10 minutes"]
 
 [[commands]]
@@ -188,10 +188,36 @@ sandbox = "full"
 timeout = 15000
 sounds.ru = ["ok1", "ok2", "ok3"]
 sounds.en = ["ok1", "ok2", "ok3"]
-triggers.ru = ["перезагруз комп", "перезагруз пк", "перезагруз ноутбук"]
+triggers.ru = ["перезагруз комп", "перезагруз пк", "перезагруз ноутбук", "перезагрузк комп", "перезагрузк пк"]
 triggers.en = ["restart computer", "reboot computer", "restart pc"]
-phrases.ru = ["перезагрузи компьютер через 5 минут"]
+phrases.ru = ["перезагрузи компьютер", "перезагрузи мой компьютер через 5 минут"]
 phrases.en = ["restart the computer in 5 minutes"]
+
+[[commands]]
+id = "assistant_power_hibernate"
+type = "lua"
+script = "power.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["гибернац", "усып компьютер в гибернац"]
+triggers.en = ["hibernate"]
+phrases.ru = ["гибернация"]
+phrases.en = ["hibernate the computer"]
+
+[[commands]]
+id = "assistant_power_logoff"
+type = "lua"
+script = "power.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["выйди из систем", "выход из систем", "смени пользовател", "выйти из учетн"]
+triggers.en = ["log off", "sign out", "log out"]
+phrases.ru = ["выйди из системы"]
+phrases.en = ["sign out of windows"]
 
 [[commands]]
 id = "assistant_power_cancel"

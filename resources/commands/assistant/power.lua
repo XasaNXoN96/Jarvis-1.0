@@ -12,11 +12,31 @@ if id == "assistant_power_cancel" then
   return
 end
 
+-- hibernate and log off are immediate: no delay, only the question
+if id == "assistant_power_hibernate" or id == "assistant_power_logoff" then
+  local flag, ask_ru, ask_en = "/h", "Отправить компьютер в гибернацию", "Hibernate the computer"
+  if id == "assistant_power_logoff" then
+    flag, ask_ru, ask_en = "/l", "Выйти из учётной записи Windows (несохранённые данные могут пропасть)", "Sign out of Windows (unsaved data may be lost)"
+  end
+  jarvis.session.start("confirm", 30)
+  jarvis.session.set_data("power:" .. flag .. ":0:0")
+  say(T("Компьютер", "Computer"), T(ask_ru .. "? Скажите «да» или «нет».", ask_en .. "? Say yes or no."),
+    T(ask_ru .. "? Да или нет?", ask_en .. "? Yes or no?"))
+  return
+end
+
 local secs = jarvis.parse.duration(phrase)
 local delayed = secs ~= nil
 if not secs then
-  -- no time given: leave a minute to change your mind (voice recognition can be wrong)
-  secs = 60
+  local p = " " .. (phrase or ""):lower() .. " "
+  if p:find("сейчас", 1, true) or p:find("немедленно", 1, true) or p:find("срочно", 1, true) or p:find(" now ", 1, true) or p:find("immediately", 1, true) then
+    -- "сейчас": five seconds are left so that "отмени выключение" still works
+    secs = 5
+    delayed = true
+  else
+    -- no time given: leave a minute to change your mind (voice recognition can be wrong)
+    secs = 60
+  end
 end
 
 local flag, ask_ru, ask_en

@@ -165,7 +165,7 @@ fn is_program_command(id: &str) -> bool {
 }
 
 fn is_power_command(id: &str) -> bool {
-    matches!(id, "assistant_power_off" | "assistant_power_restart")
+    matches!(id, "assistant_power_off" | "assistant_power_restart" | "assistant_power_hibernate" | "assistant_power_logoff")
 }
 
 pub fn fetch_by_triggers<'a>(

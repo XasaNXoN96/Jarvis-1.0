@@ -616,6 +616,31 @@ fn a_named_part_of_the_computer_never_switches_the_computer_off() {
 }
 
 #[test]
+fn the_power_phrases_of_the_pc_section_reach_the_power_commands() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({}));
+    let cases = [
+        ("выключи мой компьютер", "assistant_power_off"),
+        ("выключи пк", "assistant_power_off"),
+        ("выключение компьютера", "assistant_power_off"),
+        ("выключи компьютер сейчас", "assistant_power_off"),
+        ("выключи мой компьютер через 10 минут", "assistant_power_off"),
+        ("перезагрузи мой компьютер", "assistant_power_restart"),
+        ("отправь компьютер в гибернацию", "assistant_power_hibernate"),
+        ("гибернация", "assistant_power_hibernate"),
+        ("выйди из системы", "assistant_power_logoff"),
+        ("отмени выключение", "assistant_power_cancel"),
+    ];
+    for (phrase, want) in cases {
+        assert_eq!(w.route(phrase).as_deref(), Some(want), "{}", phrase);
+    }
+    for phrase in ["выключи звук на компьютере", "выключи экран"] {
+        let id = w.route(phrase);
+        assert!(!matches!(id.as_deref(), Some(x) if x.starts_with("assistant_power_") && x != "assistant_power_cancel"), "{} -> {:?}", phrase, id);
+    }
+}
+
+#[test]
 fn a_tab_or_the_taskbar_is_not_a_program_and_word_is_found_in_any_case() {
     let _g = LOCK.lock();
     let w = World::new(json!({}));

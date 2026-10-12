@@ -337,10 +337,13 @@ local function confirm_session(text)
   local negative = word("нет") or word("не") or word("no") or word("not") or stem("отмен") or stem("стоп") or stem("cancel")
   local positive = not negative and (word("да") or word("yes") or word("конечно") or word("давай") or stem("подтвер") or stem("confirm"))
 
-  local flag, secs, delayed = data:match("^power:(/[sr]):(%d+):([01])$")
+  local flag, secs, delayed = data:match("^power:(/[srhl]):(%d+):([01])$")
   local title = flag and T("Компьютер", "Computer") or "Windows"
   if not positive then
-    if flag then say(title, flag == "/r" and T("Перезагрузка отменена", "Restart cancelled") or T("Выключение отменено", "Shutdown cancelled"))
+    if flag then say(title, flag == "/r" and T("Перезагрузка отменена", "Restart cancelled")
+      or flag == "/h" and T("Гибернация отменена", "Hibernate cancelled")
+      or flag == "/l" and T("Выход отменён", "Sign out cancelled")
+      or T("Выключение отменено", "Shutdown cancelled"))
     elseif data == "tasks_clear" then say(T("Задачи", "Tasks"), T("Задачи оставлены", "Tasks kept"))
     else say(title, T("Корзину не очищаю", "Not emptying the recycle bin")) end
     -- something else was said instead of an answer: it is handled as an ordinary command
@@ -348,6 +351,15 @@ local function confirm_session(text)
     return
   end
 
+  if flag == "/h" or flag == "/l" then
+    -- immediate: Windows has no timer for these
+    say(title, flag == "/h" and T("Ухожу в гибернацию", "Hibernating") or T("Выхожу из системы", "Signing out"))
+    local r = run("shutdown", { flag })
+    if not r.success then
+      say(title, T("Не удалось выполнить: ", "Failed: ") .. (r.stderr or ""))
+    end
+    return
+  end
   if flag then
     -- clear a previous schedule first, otherwise Windows refuses with "already in progress"
     run("shutdown", { "/a" })
