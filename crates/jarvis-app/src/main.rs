@@ -62,7 +62,17 @@ fn selftest_speech() -> String {
             Err(e) => shorts.push_str(&format!(" [«{}»: {}]", short, e)),
         }
     }
-    let sound = wav_info(&wav);
+    let sound = format!("{}, length_scale {:.2}", wav_info(&wav), jarvis_core::tts::length_scale());
+    // the same phrases at exactly 1.0 and at 0.7 (faster): is the speed the reason for the poor recognition?
+    for scale in [1.0f32, 0.7] {
+        match jarvis_core::tts::synth_to_wav_scaled("открой ютуб", scale) {
+            Ok(w) => {
+                let heard = jarvis_core::tgvoice::wav_to_16k(&w).and_then(|s| jarvis_core::tgvoice::recognize(&s)).unwrap_or_else(|e| format!("(error: {})", e));
+                shorts.push_str(&format!(" [scale {}: {} -> «{}»]", scale, wav_info(&w), heard.trim()));
+            }
+            Err(e) => shorts.push_str(&format!(" [scale {}: {}]", scale, e)),
+        }
+    }
     // what Vosk makes of the sound without any codec (to tell a weak recognition from a damaged sound)
     let direct = match jarvis_core::tgvoice::wav_to_16k(&wav).and_then(|s| jarvis_core::tgvoice::recognize(&s)) {
         Ok(t) => t.trim().to_string(),

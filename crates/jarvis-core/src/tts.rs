@@ -467,6 +467,21 @@ pub fn synth_check() -> SynthCheck {
     r
 }
 
+// how long Piper stretches the phonemes: the speed of the voice from the settings (1.0 = as the voice was made)
+static LENGTH_SCALE_OVERRIDE: Lazy<Mutex<Option<f32>>> = Lazy::new(|| Mutex::new(None));
+
+pub fn length_scale() -> f32 {
+    LENGTH_SCALE_OVERRIDE.lock().unwrap_or_else(|| 1.0 / crate::uistate::voice_rate())
+}
+
+// for the self-test only: a phrase at an exact length scale
+pub fn synth_to_wav_scaled(text: &str, scale: f32) -> Result<Vec<u8>, String> {
+    *LENGTH_SCALE_OVERRIDE.lock() = Some(scale);
+    let r = synth_to_wav(text);
+    *LENGTH_SCALE_OVERRIDE.lock() = None;
+    r
+}
+
 // the speech as WAV bytes, nothing is played (the voice answer of the Telegram bot). Only Piper can do it.
 pub fn synth_to_wav(text: &str) -> Result<Vec<u8>, String> {
     let Some((exe, model)) = piper_voice(&tts_lang()) else {
@@ -494,7 +509,7 @@ fn piper_synth(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64
         .arg("--output_file")
         .arg(ansi_safe_new(wav))
         .arg("--length_scale")
-        .arg(format!("{:.2}", 1.0 / crate::uistate::voice_rate()))
+        .arg(format!("{:.2}", length_scale()))
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(std::fs::File::create(&err_file).map(Stdio::from).unwrap_or_else(|_| Stdio::null()));
