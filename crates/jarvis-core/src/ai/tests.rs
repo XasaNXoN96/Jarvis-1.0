@@ -288,7 +288,7 @@ fn a_second_message_waits_and_stop_cancels() {
 fn text_chat_does_not_need_the_microphone_or_the_voice() {
     // voice mode is not running (no microphone) and speech is off: the answer still appears in the chat
     assert!(!crate::VOICE_ACTIVE.load(Ordering::SeqCst));
-    let _g = crate::tts::TEST_TTS_LOCK.lock();
+    let _g = crate::uistate::TEST_LOCK.lock();
     crate::tts::set_enabled(false);
     let store = leaked_store();
     let m = mock(vec![(200, ok_body("ответ без голоса"), 0)]);
@@ -302,7 +302,7 @@ fn text_chat_does_not_need_the_microphone_or_the_voice() {
 
 #[test]
 fn the_answer_of_the_ai_is_read_aloud_when_speech_is_on() {
-    let _g = crate::tts::TEST_TTS_LOCK.lock();
+    let _g = crate::uistate::TEST_LOCK.lock();
     crate::tts::set_enabled(true);
     let store = leaked_store();
     let m = mock(vec![(200, ok_body("Столица Франции — Париж."), 0)]);

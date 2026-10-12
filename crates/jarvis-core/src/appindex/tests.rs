@@ -147,3 +147,13 @@ fn only_entries_of_the_index_that_exist_are_started() {
     set_for_tests(Vec::new());
     let _ = std::fs::remove_dir_all(&base);
 }
+
+#[test]
+fn the_program_file_of_an_entry_is_known_only_when_it_really_is_an_exe() {
+    let app = |launch: &str, exe: &str| IndexedApp { name: "X".into(), launch: launch.into(), source: "start_menu".into(), exe: exe.into() };
+    assert_eq!(exe_name(&app("C:\\Program Files\\Krita\\bin\\krita.exe", "")).as_deref(), Some("krita.exe"));
+    assert_eq!(exe_name(&app("C:\\Users\\Сергей\\Desktop\\Total Commander.lnk", "totalcmd64.exe")).as_deref(), Some("totalcmd64.exe"));
+    // a shortcut or a registered app without a known file: not checked (no false "did not start")
+    assert_eq!(exe_name(&app("C:\\Users\\Сергей\\Desktop\\Krita.lnk", "")), None);
+    assert_eq!(exe_name(&app("shell:AppsFolder\\Microsoft.WindowsCalculator!App", "")), None);
+}

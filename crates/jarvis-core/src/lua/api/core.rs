@@ -239,11 +239,15 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
     })?)?;
     // jarvis.apps.launch_pending(answer) -> name | nil, error: start the program chosen from the last list
     // ("первый", "2", "тотал"); only programs of that list can be started
+    // -> name, nil, exe, was_running: the program file ("Code.exe", when known) and whether it was already running,
+    // so the command can check that the program really appeared
     apps.set("launch_pending", lua.create_function(|_, answer: String| {
-        let Some(a) = crate::appindex::choose(&answer) else { return Ok((None, Some("не понял, какую программу выбрать".to_string()))) };
+        let Some(a) = crate::appindex::choose(&answer) else { return Ok((None, Some("не понял, какую программу выбрать".to_string()), None, false)) };
+        let exe = crate::appindex::exe_name(&a);
+        let was_running = exe.as_deref().map(crate::lua::api::system::process_running).unwrap_or(false);
         Ok(match crate::appindex::launch(&a) {
-            Ok(()) => (Some(a.name), None),
-            Err(e) => (None, Some(e)),
+            Ok(()) => (Some(a.name), None, exe, was_running),
+            Err(e) => (None, Some(e), None, false),
         })
     })?)?;
     // jarvis.apps.rescan() -> number of programs found (the index of installed programs is rebuilt)

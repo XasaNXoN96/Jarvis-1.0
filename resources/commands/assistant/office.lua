@@ -1114,10 +1114,11 @@ else -- assistant_session: every phrase while a session is open
       say(T("Программа", "Program"), T("Хорошо, ничего не открываю", "Okay, nothing is opened"))
       return
     end
-    local name, err = jarvis.apps.launch_pending(phrase)
+    local name, err, exe, was_running = jarvis.apps.launch_pending(phrase)
     if name then
       jarvis.session.finish()
       say(T("Открываю", "Opening"), name, T("Открываю " .. name, "Opening " .. name), "program")
+      confirm_started(name, exe, nil, was_running)
     elseif err == "не понял, какую программу выбрать" then
       -- not an answer: leave the question, the phrase is an ordinary command
       jarvis.session.finish()

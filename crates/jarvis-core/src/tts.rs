@@ -331,7 +331,7 @@ mod speech_problem_tests {
 
     #[test]
     fn a_failed_phrase_stays_visible_until_a_phrase_is_heard_again() {
-        let _g = TEST_TTS_LOCK.lock();
+        let _g = crate::uistate::TEST_LOCK.lock();
         tell_once("Голос Jarvis (Piper) не создал звук (тест), поэтому ответ не озвучен.");
         assert!(speech_problem().unwrap().contains("не озвучен"));
         // a second failure of another kind replaces the reason, it is not lost after the first one
@@ -343,11 +343,9 @@ mod speech_problem_tests {
     }
 }
 
-// what reached the voice in the tests (speak and speak_queued), and the lock of the tests that switch speech on/off
+// what reached the voice in the tests (speak and speak_queued); the tests that switch speech on/off hold uistate::TEST_LOCK
 #[cfg(test)]
 pub static TEST_SPOKEN: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(Vec::new()));
-#[cfg(test)]
-pub static TEST_TTS_LOCK: Mutex<()> = parking_lot::const_mutex(());
 
 // the tests decide whether a voice "is installed" (the test machine has no Piper)
 #[cfg(test)]
@@ -852,24 +850,24 @@ pub fn list_voices() -> Vec<(String, String)> {
 mod tests {
     use super::*;
 
-    // the queue and the "busy" counter are global: one test at a time
-    static LOCK: Mutex<()> = Mutex::new(());
+    // the queue, the "busy" counter and the on/off switch are global: one test at a time, with every other test
+    // that switches the speech (uistate::TEST_LOCK)
+    use crate::uistate::TEST_LOCK as LOCK;
 
     #[test]
     fn queued_phrases_are_taken_one_by_one_and_the_counter_returns_to_zero() {
         let _g = LOCK.lock();
         stop();
         ENABLED.store(true, Ordering::SeqCst);
-        // nothing here can really be spoken (no voices in the test), the point is the bookkeeping
+        // in the tests the voice records what reached it instead of playing it
+        let before = TEST_SPOKEN.lock().len();
         speak_queued("Первая фраза.");
         speak_queued("Вторая фраза.");
         speak_queued("   ");
-        assert!(BUSY.load(Ordering::SeqCst) >= 1 || QUEUE.lock().is_empty(), "queued phrases count as speaking");
-        let t = std::time::Instant::now();
-        while is_speaking() && t.elapsed() < std::time::Duration::from_secs(20) {
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
-        assert!(!is_speaking(), "the voice is free again after the queue is done");
+        let got: Vec<String> = TEST_SPOKEN.lock()[before..].to_vec();
+        assert!(got.iter().any(|s| s == "Первая фраза.") && got.iter().any(|s| s == "Вторая фраза."), "{:?}", got);
+        assert!(!got.iter().any(|s| s.trim().is_empty()), "an empty phrase is not queued");
+        assert!(!is_speaking(), "nothing stays counted as speaking");
         assert!(QUEUE.lock().is_empty());
     }
 

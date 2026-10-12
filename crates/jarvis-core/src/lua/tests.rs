@@ -641,7 +641,7 @@ mod tests {
 
     #[test]
     fn time_date_battery_and_help_are_said_aloud_once_and_shown() {
-        let _g = crate::tts::TEST_TTS_LOCK.lock();
+        let _g = crate::uistate::TEST_LOCK.lock();
         crate::tts::set_enabled(true);
         let (shown, spoken) = answer("assistant_info_time", "info.lua", "сколько времени");
         assert!(shown.contains(':'), "the time is shown: {}", shown);
@@ -659,12 +659,46 @@ mod tests {
 
     #[test]
     fn with_speech_off_the_answer_is_only_shown() {
-        let _g = crate::tts::TEST_TTS_LOCK.lock();
+        let _g = crate::uistate::TEST_LOCK.lock();
         crate::tts::set_enabled(false);
         let (shown, spoken) = answer("assistant_info_date", "info.lua", "какое сегодня число");
         crate::tts::set_enabled(true);
         assert!(shown.contains("Сегодня"), "the answer stays in the window: {}", shown);
         assert!(!spoken.iter().any(|s| s.starts_with("Сегодня")), "nothing is said: {:?}", spoken);
+    }
+
+    // ---- "открой тотал командер": "Открываю …" when Windows took it, an error when the program never appears ----
+    static PROCESS_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
+    fn open_program(now: &[&str], later: &[&str], after: u32) -> (String, Vec<String>) {
+        let _g = PROCESS_LOCK.lock();
+        // the fixed list of programs, not the installed-programs index (other tests fill it): an empty index
+        let _i = crate::appindex::TEST_LOCK.lock();
+        crate::appindex::set_for_tests(vec![]);
+        // every check is a new request (the "already starting" guard of a double command is not tested here)
+        crate::guard::forget("lua:open:Total Commander");
+        *crate::lua::api::system::TEST_PROCESSES.lock() = Some((now.iter().map(|s| s.to_string()).collect(), later.iter().map(|s| s.to_string()).collect(), after));
+        let r = answer("assistant_program_open", "program.lua", "открой тотал командер");
+        *crate::lua::api::system::TEST_PROCESSES.lock() = None;
+        r
+    }
+
+    #[test]
+    fn opening_a_program_is_confirmed_and_a_launch_that_never_appears_is_reported() {
+        let _t = crate::uistate::TEST_LOCK.lock();
+        crate::tts::set_enabled(true);
+        // the process appears a moment later: "Открываю", no second phrase
+        let (_, spoken) = open_program(&[], &["totalcmd64.exe"], 2);
+        assert_eq!(spoken.iter().filter(|s| s.as_str() == "Открываю Total Commander").count(), 1, "{:?}", spoken);
+        assert!(!spoken.iter().any(|s| s.contains("не запустилась")), "{:?}", spoken);
+        // already running before (it only brings its window forward): no waiting, no false alarm
+        let (_, spoken) = open_program(&["TOTALCMD64.EXE"], &[], 0);
+        assert!(!spoken.iter().any(|s| s.contains("не запустилась")), "{:?}", spoken);
+        // the process never appears: the user hears that it did not start
+        crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow_mut().clear());
+        let (shown, spoken) = open_program(&[], &[], 0);
+        assert!(spoken.iter().any(|s| s == "Total Commander не запустилась"), "{:?}", spoken);
+        assert!(shown.contains("не запустилась"), "{}", shown);
     }
 }
 

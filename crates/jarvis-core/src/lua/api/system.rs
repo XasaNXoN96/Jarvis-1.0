@@ -66,21 +66,11 @@ fn open_target(target: &str) -> bool {
     match shell_open(target) {
         Ok(()) => true,
         Err(e) => {
-            // cmd would read & | < > ^ % ! ( ) " in a file name as its own syntax ("x&calc" would start calc):
-            // such a target is never given to it
-            if !cmd_fallback_allowed(target) {
-                log::warn!("[Lua] open '{}' failed: {}", target, e);
-                return false;
-            }
-            log::warn!("[Lua] open '{}' failed: {}; trying cmd start", target, e);
-            // second chance: cmd /C start "" target
-            use std::os::windows::process::CommandExt;
-            Command::new("cmd")
-                .args(["/C", "start", "", target])
-                .creation_flags(0x0800_0000)
-                .status()
-                .map(|s| s.success())
-                .unwrap_or(false)
+            // No second try with "cmd /C start": start uses the same ShellExecute, only with the Windows error
+            // dialog ("Windows cannot find …", "find an app for this link") that blocks Jarvis until someone
+            // clicks OK and makes a failed launch look like a success. The command says what failed instead.
+            log::warn!("[Lua] open '{}' failed: {}", target, e);
+            false
         }
     }
 }
@@ -97,6 +87,53 @@ fn open_target(target: &str) -> bool {
 
 // A notification from a command (jarvis.system.notify): the notification window of Jarvis, with its settings
 // ("do not disturb", sound, voice). It is never spoken here: the command speaks for itself.
+// the processes the tests pretend are running: (names now, names that appear after this many checks)
+pub static TEST_PROCESSES: once_cell::sync::Lazy<parking_lot::Mutex<Option<(Vec<String>, Vec<String>, u32)>>> = once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(None));
+
+// a process with this file name ("Code.exe") is running (the program really started, not only "ShellExecute said ok")
+pub fn process_running(exe: &str) -> bool {
+    if let Some((now, later, after)) = TEST_PROCESSES.lock().as_mut() {
+        if *after == 0 {
+            now.extend(later.drain(..));
+        } else {
+            *after -= 1;
+        }
+        return now.iter().any(|n| n.eq_ignore_ascii_case(exe));
+    }
+    #[cfg(target_os = "windows")]
+    unsafe {
+        use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
+        use winapi::um::tlhelp32::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS};
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snap == INVALID_HANDLE_VALUE {
+            // cannot be known: never reported as "did not start"
+            return true;
+        }
+        let mut e: PROCESSENTRY32W = std::mem::zeroed();
+        e.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+        let mut found = false;
+        if Process32FirstW(snap, &mut e) != 0 {
+            loop {
+                let len = e.szExeFile.iter().position(|&c| c == 0).unwrap_or(e.szExeFile.len());
+                if String::from_utf16_lossy(&e.szExeFile[..len]).eq_ignore_ascii_case(exe) {
+                    found = true;
+                    break;
+                }
+                if Process32NextW(snap, &mut e) == 0 {
+                    break;
+                }
+            }
+        }
+        CloseHandle(snap);
+        found
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = exe;
+        true
+    }
+}
+
 #[cfg(test)]
 pub static TEST_CLIPBOARD: once_cell::sync::Lazy<parking_lot::Mutex<Option<String>>> = once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(None));
 
@@ -233,6 +270,11 @@ pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Resul
             Ok(true)
         }
     })?)?;
+
+    // jarvis.system.process_running("TOTALCMD64.EXE") -> true when a process with this file name runs now;
+    // jarvis.system.can_check_processes() -> whether that can be known here (Windows; the tests set a list)
+    system.set("process_running", lua.create_function(|_, exe: String| Ok(process_running(&exe)))?)?;
+    system.set("can_check_processes", lua.create_function(|_, ()| Ok(cfg!(target_os = "windows") || TEST_PROCESSES.lock().is_some()))?)?;
 
     // jarvis.system.exists(path) -> true when the file / folder / drive exists
     system.set("exists", lua.create_function(|_, path: String| Ok(std::path::Path::new(&path).exists()))?)?;

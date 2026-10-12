@@ -44,9 +44,10 @@ if found.indexed then
     say(T("Программа", "Program"), found.name .. T(" уже запускается", " is already starting"))
     return
   end
-  local name, err = jarvis.apps.launch_pending("1")
+  local name, err, exe, was_running = jarvis.apps.launch_pending("1")
   if name then
     say(T("Открываю", "Opening"), name, T("Открываю " .. name, "Opening " .. name), "program")
+    confirm_started(name, exe, key, was_running)
   else
     jarvis.app.forget(key)
     say(T("Программа", "Program"), T("Не удалось запустить: ", "Could not start: ") .. tostring(err))
@@ -73,9 +74,10 @@ else
     return
   end
   -- the installed copy first (it is found even when the program is not in PATH), then the short name
-  local ok = false
-  if found.path then ok = pcall(open, found.path) end
-  if not ok then ok = pcall(open, found.start) end
+  local was_running = running_before(found.path) or running_before(found.start)
+  local ok, launched = false, nil
+  if found.path then ok = pcall(open, found.path); launched = found.path end
+  if not ok then ok = pcall(open, found.start); launched = found.start end
   if not ok and found.web then
     -- the program is not installed but it has a website (Discord, Telegram, Spotify): the website opens instead
     if pcall(open, found.web) then
@@ -89,6 +91,7 @@ else
     -- remember the document program: "пиши" then knows where to write
     if found.office then jarvis.state.set("office_app", found.office); jarvis.state.set("dict_last", "") end
     say(T("Открываю", "Opening"), found.name, T("Открываю " .. found.name, "Opening " .. found.name), "program")
+    confirm_started(found.name, launched, key, was_running)
   else
     jarvis.app.forget(key)
     say(T("Программа", "Program"), found.name .. T(": не удалось запустить. Скорее всего, она не установлена на этом компьютере", ": could not start it, probably it is not installed"))

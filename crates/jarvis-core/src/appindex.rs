@@ -598,6 +598,15 @@ pub fn choose(answer: &str) -> Option<IndexedApp> {
 }
 
 // start an entry of the index (never anything else): checked to exist first
+// the program file of an entry when it can be known ("code.exe"): its own field, or the started file itself
+pub fn exe_name(a: &IndexedApp) -> Option<String> {
+    if !a.exe.is_empty() {
+        return Some(a.exe.clone());
+    }
+    let file = a.launch.rsplit(['\\', '/']).next().unwrap_or("");
+    file.to_lowercase().ends_with(".exe").then(|| file.to_string())
+}
+
 pub fn launch(a: &IndexedApp) -> Result<(), String> {
     let in_index = apps().iter().any(|x| x.launch == a.launch) || pending().iter().any(|x| x.launch == a.launch);
     if !in_index {

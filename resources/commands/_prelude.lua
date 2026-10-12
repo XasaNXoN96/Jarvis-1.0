@@ -207,3 +207,35 @@ local function ps_file(name, extra)
   for _, a in ipairs(extra or {}) do args[#args + 1] = a end
   return run("powershell", args)
 end
+
+-- "Открываю X" is said when Windows took the launch; then the program itself must appear. When its process does not
+-- show up within a few seconds the user hears that it did not start (no extra phrase when everything is fine).
+-- Not checked when the program was already running (it may only bring its window forward) or when the process
+-- name cannot be known (a link, a short name without ".exe").
+local function exe_of(target)
+  local name = tostring(target or ""):match("([^\\/]+)$") or ""
+  if name:lower():match("%.exe$") then return name end
+  return nil
+end
+
+local START_WAIT_CHECKS, START_WAIT_MS = 24, 250
+
+local function running_before(target)
+  local exe = exe_of(target)
+  return exe ~= nil and jarvis.system.can_check_processes() and jarvis.system.process_running(exe)
+end
+
+local function confirm_started(name, target, key, was_running)
+  local exe = exe_of(target)
+  if was_running or not exe or not jarvis.system.can_check_processes() then return true end
+  for _ = 1, START_WAIT_CHECKS do
+    if jarvis.system.process_running(exe) then return true end
+    jarvis.sleep(START_WAIT_MS)
+  end
+  if key then jarvis.app.forget(key) end
+  say(T("Программа", "Program"),
+      name .. T(" не запустилась: Windows приняла запуск, но программа так и не появилась. Попробуйте открыть её вручную.",
+                " did not start: Windows accepted the launch, but the program never appeared. Try opening it yourself."),
+      T(name .. " не запустилась", name .. " did not start"))
+  return false
+end
