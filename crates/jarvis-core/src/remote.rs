@@ -832,10 +832,11 @@ const PAGE: &str = r#"<!doctype html>
   <div id="help" style="display:none;border-top:1px solid #30363d;margin-top:10px;padding-top:10px;font-size:14px;line-height:1.5">
     <b>Как включить голос на этом телефоне (один раз)</b><br>
     <span id="yandex" style="display:none;color:#ffb347">Яндекс.Браузер для этого не подходит. Откройте эту ссылку в <b>Chrome</b>.<br></span>
-    1. В Chrome откройте в адресной строке: <b>chrome://flags/#unsafely-treat-insecure-origin-as-secure</b><br>
-    2. В поле впишите адрес: <b id="origin" style="user-select:all;word-break:break-all"></b><br>
-    3. Справа выберите <b>Enabled</b> и нажмите <b>Relaunch</b>.<br>
-    4. Откройте ссылку пульта снова, нажмите 🎤 и разрешите микрофон.<br>
+    Браузер даёт микрофон только защищённой странице (https). У пульта она есть на том же компьютере:<br>
+    1. Нажмите <b>«Открыть защищённую страницу»</b> ниже.<br>
+    2. Браузер один раз предупредит о сертификате (он сделан самим компьютером, а не центром сертификации): нажмите «Дополнительно» → «Перейти на сайт».<br>
+    3. Нажмите 🎤 и разрешите микрофон.<br>
+    <button id="to-https" class="wide" type="button">Открыть защищённую страницу</button><br>
     <span class="dim">Не хотите настраивать? Нажмите на значок микрофона на клавиатуре телефона в поле команды: он диктует голосом и работает без настроек.</span>
   </div>
   <button id="howto" class="sec wide" type="button">Не работает голос? Как включить</button>
@@ -848,10 +849,11 @@ const PAGE: &str = r#"<!doctype html>
 // the secret of the link is taken from the address once and kept on this phone: it does not stay in the address
 // bar, the browser history or a shared screenshot ("Новая ссылка" on the computer revokes it)
 const token = (() => {
-  const fromUrl = new URLSearchParams(location.search).get('t') || '';
+  // (?t=… from the QR code; #t=… when the page moves to its https address: the part after # never reaches a server)
+  const fromUrl = new URLSearchParams(location.search).get('t') || new URLSearchParams(location.hash.slice(1)).get('t') || '';
   let t = fromUrl;
   try { if (fromUrl) localStorage.setItem('jarvis_t', fromUrl); else t = localStorage.getItem('jarvis_t') || ''; } catch (e) {}
-  if (fromUrl) { try { history.replaceState(null, '', location.pathname); } catch (e) {} }
+  if (fromUrl || location.hash) { try { history.replaceState(null, '', location.pathname); } catch (e) {} }
   return t;
 })();
 // no request waits forever: the computer asleep, another network or a lost packet ends in "нет связи" within seconds
@@ -975,7 +977,9 @@ function handle(m) {
 const micBtn = $('mic'), heard = $('heard');
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, wantVoice = false;
-$('origin').textContent = location.origin;
+// the https address of the same computer and port; the secret goes after # (never sent to a server, removed at once)
+$('to-https').onclick = () => { location.href = 'https://' + location.host + '/#t=' + encodeURIComponent(token); };
+if (location.protocol === 'https:') $('to-https').style.display = 'none';
 if (/YaBrowser/i.test(navigator.userAgent)) $('yandex').style.display = 'inline';
 $('howto').onclick = () => { $('help').style.display = $('help').style.display === 'none' ? 'block' : 'none'; };
 function voice(st, err) {
@@ -985,12 +989,12 @@ function voice(st, err) {
   if (err) heard.textContent = err;
   reportSoon();
 }
-if (!window.isSecureContext) { voice('unavailable', 'Голос: нужна одна настройка браузера (кнопка ниже). Текстом всё работает.'); }
+if (!window.isSecureContext) { voice('unavailable', 'Голос: нужна защищённая страница пульта (кнопка ниже). Текстом всё работает.'); }
 else if (!SR) { voice('unavailable', 'Этот браузер не умеет распознавать речь. Используйте Chrome или микрофон на клавиатуре.'); }
 function listen() {
-  if (!window.isSecureContext) { $('help').style.display = 'block'; voice('unavailable', 'Браузер не разрешает микрофон на этой странице. Сделайте настройку ниже.'); wantVoice = false; return; }
+  if (!window.isSecureContext) { $('help').style.display = 'block'; voice('unavailable', 'Браузер не разрешает микрофон на этой странице. Откройте защищённую страницу (ниже).'); wantVoice = false; return; }
   if (!SR) { voice('unavailable', 'Браузер не умеет слушать. Нажмите значок микрофона на клавиатуре в поле команды.'); wantVoice = false; return; }
-  rec = new SR(); rec.lang = 'ru-RU'; rec.interimResults = true; rec.continuous = false;
+  rec = new SR(); rec.lang = navigator.language && !/^ru/i.test(navigator.language) && /^(en|uk)/i.test(navigator.language) ? navigator.language : 'ru-RU'; rec.interimResults = true; rec.continuous = false;
   micBtn.classList.add('on'); micBtn.textContent = '🔴 Слушаю… (нажмите, чтобы остановить)'; voice('listening');
   let final = '', fatal = false;
   rec.onresult = e => { let t = ''; for (const r of e.results) { t += r[0].transcript; if (r.isFinal) final = t; } heard.textContent = '«' + t + '»'; };
