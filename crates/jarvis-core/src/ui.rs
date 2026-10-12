@@ -68,8 +68,12 @@ fn commands_json() -> String {
                     "group": group,
                     "phrases": phrases.iter().take(5).collect::<Vec<_>>(),
                     "description": cmd.description,
-                    // available = it runs when said; off = its section is switched off by the user
-                    "status": if crate::uistate::is_group_disabled(group) { "off" } else { "on" },
+                    // the words the command is recognized by (synonyms): searched, not shown
+                    "keywords": catalog_keywords(&cmd.id, &cmd.get_triggers(&lang)),
+                    // on = runs when said; partial = only under a condition; unavailable = explains why it cannot;
+                    // duplicate = a newer command does the same; off = its section is switched off by the user
+                    "status": if crate::uistate::is_group_disabled(group) { "off" } else { crate::uistate::command_status(&cmd.id).map(|s| s.0).unwrap_or("on") },
+                    "note": crate::uistate::command_status(&cmd.id).map(|s| s.1).unwrap_or(""),
                 }));
             }
         }
@@ -80,6 +84,28 @@ fn commands_json() -> String {
         .collect();
     groups.extend(crate::uistate::UNAVAILABLE_GROUPS.iter().map(|g| json!({ "key": g.0, "emoji": g.1, "title": g.2, "about": g.3, "unavailable": true })));
     json!({ "language": lang, "commands": list, "groups": groups }).to_string()
+}
+
+// the words a command is found by in the catalog: its triggers, and for the program and website commands the names
+// of the programs and sites they know ("телега", "тотал командер", "ютуб")
+fn catalog_keywords(id: &str, triggers: &[String]) -> String {
+    let mut words: Vec<String> = triggers.to_vec();
+    match id {
+        "assistant_program_open" | "assistant_program_close" => {
+            for a in crate::apps::APPS {
+                words.push(a.name.to_string());
+                words.extend(a.aliases.iter().map(|x| x.to_string()));
+            }
+        }
+        "assistant_website" => {
+            for site in crate::sites::SITES {
+                words.push(site.name.to_string());
+                words.extend(site.aliases.iter().map(|x| x.to_string()));
+            }
+        }
+        _ => {}
+    }
+    words.join(" ")
 }
 
 fn pack_name(path: &std::path::Path) -> String {

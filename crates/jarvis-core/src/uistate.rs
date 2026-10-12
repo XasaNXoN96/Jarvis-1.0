@@ -457,6 +457,32 @@ pub const UNAVAILABLE_GROUPS: &[(&str, &str, &str, &str)] = &[
     ("lighting", "💡", "Подсветка и умный дом", "Недоступно: нет поддержки ламп, лент и розеток (нужна интеграция с конкретным устройством)."),
 ];
 
+// What the catalog says about a command beyond "it runs": works only under a condition, cannot be done, or the
+// same action as a newer command (its phrases go to that one; the old command is kept, nothing is removed).
+// (status, note): status is "partial" | "unavailable" | "duplicate"; None = works as described.
+pub fn command_status(id: &str) -> Option<(&'static str, &'static str)> {
+    Some(match id {
+        "assistant_unlock" => ("unavailable", "Windows не даёт разблокировать компьютер программой — Джарвис объясняет, как войти (пароль, PIN, Windows Hello)."),
+        "assistant_phone_find" | "assistant_phone_stop" | "assistant_phone_link" | "assistant_phone_text" =>
+            ("partial", "Работает, когда пульт включён и его страница открыта на телефоне."),
+        "assistant_screen" => ("partial", "Нужен ИИ-провайдер с моделью, которая видит картинки, и разрешение «Анализ экрана» в настройках."),
+        "assistant_chat_start" | "assistant_chat_end" => ("partial", "Нужен настроенный и включённый ИИ-провайдер."),
+        "assistant_office_dictate" | "assistant_office_cell" | "assistant_office_new" | "assistant_object_start" =>
+            ("partial", "Word и Excel должны быть установлены; Блокнот работает всегда."),
+        "assistant_brightness_set" | "assistant_brightness_up" | "assistant_brightness_down" =>
+            ("partial", "Яркость меняется на экране ноутбука; внешние мониторы Windows обычно не позволяют."),
+        "assistant_info_battery" => ("partial", "Заряд есть только у ноутбука или планшета."),
+        "open_google" => ("duplicate", "То же действие выполняет «открой сайт» (каталог сайтов): Google открывается так же."),
+        "calculator_1" => ("duplicate", "Фразы обрабатывает «открой программу» — калькулятор запускается так же."),
+        "calculator_2" => ("duplicate", "«Закрой калькулятор» обрабатывает «закрой программу»."),
+        "windows_3" => ("duplicate", "Фразы обрабатывает «открой программу» — Диспетчер задач запускается так же."),
+        "steam_1" => ("duplicate", "«Открой Steam» обрабатывает «открой программу», «игровой режим» — команда игрового режима."),
+        "steam_2" => ("duplicate", "«Рабочий режим» обрабатывает команда игрового режима, «закрой Steam» — «закрой программу»."),
+        "jarvis_5" => ("duplicate", "Те же фразы благодарности есть у соседней команды ответа на «спасибо»."),
+        _ => return None,
+    })
+}
+
 pub fn group_key(pack: &str, id: &str) -> &'static str {
     let id = id.strip_prefix("assistant_").unwrap_or(id);
     let starts = |p: &str| id.starts_with(p);
@@ -851,3 +877,28 @@ mod settings_tests {
         assert!(!v.contains("LISTENING") && !v.contains("SPEAKING") && !v.contains("listening"));
     }
 }
+
+#[cfg(test)]
+mod status_tests {
+    // every command named in the status table exists, so the catalog never describes a removed command
+    #[test]
+    fn the_status_table_names_only_real_commands() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../resources/commands");
+        let mut all = String::new();
+        for e in std::fs::read_dir(&root).unwrap().flatten() {
+            if let Ok(t) = std::fs::read_to_string(e.path().join("command.toml")) {
+                all.push_str(&t);
+            }
+        }
+        for id in ["assistant_unlock", "assistant_phone_find", "assistant_phone_stop", "assistant_phone_link", "assistant_phone_text", "assistant_screen",
+            "assistant_chat_start", "assistant_chat_end", "assistant_office_dictate", "assistant_office_cell", "assistant_office_new", "assistant_object_start",
+            "assistant_brightness_set", "assistant_brightness_up", "assistant_brightness_down", "assistant_info_battery", "open_google", "calculator_1",
+            "calculator_2", "windows_3", "steam_1", "steam_2", "jarvis_5"] {
+            assert!(all.contains(&format!("id = \"{}\"", id)), "{} is not a command", id);
+            assert!(super::command_status(id).is_some(), "{} has no status", id);
+        }
+        assert_eq!(super::command_status("assistant_timer_set"), None, "an ordinary command just works");
+        assert_eq!(super::command_status("assistant_unlock").unwrap().0, "unavailable");
+    }
+}
+

@@ -272,6 +272,7 @@
   .cat-side button .n { flex: 1; min-width: 0; } .cat-side button small { color: var(--dim); font-variant-numeric: tabular-nums; } .cat-side button.off .n { text-decoration: line-through; } .cat-side button.na { opacity: .55; }
   .cat-title { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; } .cat-title b { font-size: 17px; } .cat-title small { display: block; color: var(--dim); }
   .cmd-list { display: flex; flex-direction: column; gap: 8px; }
+  .cnote { display: block; color: var(--dim); font-size: 12px; margin-top: 6px; line-height: 1.4; }
   .ap-tools, .fs-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
   .ap-tools input, .fs-form input { flex: 1 1 220px; min-width: 0; }
   .fs-form select { flex: 0 1 auto; max-width: 100%; }
@@ -453,7 +454,7 @@
       <div class="cat-head"><div><h1>Команды</h1><p class="lead" style="margin:0">«Джарвис» + фраза. Нажмите на фразу — она вставится в поле ввода. Свои цепочки действий — в «Конструкторе».</p></div><b id="cmd-count" class="dim"></b></div>
       <div class="cat-tools">
         <input type="text" id="cmd-search" placeholder="Поиск по фразам, описанию и разделам, например: вкладка">
-        <select id="cmd-status" title="Статус"><option value="">Все статусы</option><option value="on">Доступны</option><option value="off">Раздел выключен</option></select>
+        <select id="cmd-status" title="Статус"><option value="">Все статусы</option><option value="on">Работают</option><option value="partial">Частично (нужны условия)</option><option value="unavailable">Недоступны</option><option value="duplicate">Дубли</option><option value="off">Раздел выключен</option></select>
       </div>
       <div class="qa quick" id="quick">
         <button data-cmd="таймер на 5 минут">Таймер 5 минут<small>запустить сразу</small></button>
@@ -1709,7 +1710,8 @@ function cmdMatches(c, q, st) {
   if (st && c.status !== st) return false;
   if (!q) return true;
   const g = cmdData.groups.find(x => x.key === c.group);
-  return (c.phrases.join(' ') + ' ' + (c.description || '') + ' ' + (g ? g.title : '') + ' ' + c.id).toLowerCase().includes(q);
+  const norm = t => t.toLowerCase().replace(/ё/g, 'е');
+  return norm(c.phrases.join(' ') + ' ' + (c.keywords || '') + ' ' + (c.description || '') + ' ' + (c.note || '') + ' ' + (g ? g.title : '') + ' ' + c.id).includes(norm(q));
 }
 function renderCommands() {
   if (!cmdData) return;
@@ -1749,7 +1751,10 @@ function renderCommands() {
     card.querySelector('.cd').textContent = (c.description || ('Пакет: ' + c.pack)) + (cmdCat ? '' : ' · ' + (grp.title || ''));
     const ph = card.querySelector('.ph');
     for (const p of c.phrases.slice(1)) { const chip = document.createElement('span'); chip.className = 'chip'; chip.textContent = p; chip.onclick = () => insert(p); ph.appendChild(chip); }
-    const pill = card.querySelector('.pill'); pill.textContent = c.status === 'off' ? 'РАЗДЕЛ ВЫКЛЮЧЕН' : 'ДОСТУПНА'; pill.className = 'pill ' + (c.status === 'off' ? '' : 'ok');
+    const PILL = { on: ['РАБОТАЕТ', 'ok'], partial: ['ЧАСТИЧНО', 'warn'], unavailable: ['НЕДОСТУПНО', 'bad'], duplicate: ['ДУБЛЬ', ''], off: ['РАЗДЕЛ ВЫКЛЮЧЕН', ''] };
+    const pl = PILL[c.status] || PILL.on;
+    const pill = card.querySelector('.pill'); pill.textContent = pl[0]; pill.className = 'pill ' + pl[1];
+    if (c.note) { const n = document.createElement('small'); n.className = 'cnote'; n.textContent = c.note; card.querySelector('.cb').appendChild(n); }
     list.appendChild(card);
   }
 }
