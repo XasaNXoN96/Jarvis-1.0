@@ -683,6 +683,22 @@ mod tests {
         r
     }
 
+    // On Windows the command really starts the program: the CI machine has no Total Commander, so the honest
+    // answer is checked there instead
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn opening_a_program_that_is_not_installed_is_reported_on_windows() {
+        let _t = crate::uistate::TEST_LOCK.lock();
+        crate::tts::set_enabled(true);
+        let _i = crate::appindex::TEST_LOCK.lock();
+        crate::appindex::set_for_tests(vec![]);
+        crate::guard::forget("lua:open:Total Commander");
+        let (shown, _) = answer("assistant_program_open", "program.lua", "открой тотал командер");
+        assert!(shown.contains("не удалось запустить") || shown.contains("Открываю"), "{}", shown);
+        assert!(!shown.contains("Открываю") || crate::lua::api::system::process_running("TOTALCMD64.EXE") || crate::lua::api::system::process_running("TOTALCMD.EXE"), "never «Открываю» for a program that did not start: {}", shown);
+    }
+
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn opening_a_program_is_confirmed_and_a_launch_that_never_appears_is_reported() {
         let _t = crate::uistate::TEST_LOCK.lock();
@@ -701,6 +717,8 @@ mod tests {
         assert!(shown.contains("не запустилась"), "{}", shown);
     }
 
+    // (not on Windows: there the commands would really open Explorer and the browser on the developer's PC)
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn open_drive_d_in_russian_and_open_youtube_and_search_are_understood() {
         let (shown, _) = answer("assistant_disk_open", "places.lua", "открой диск д");
@@ -715,12 +733,19 @@ mod tests {
     #[test]
     fn close_word_asks_the_program_to_close_and_never_kills_unsaved_work() {
         let (shown, _) = answer("assistant_program_close", "program.lua", "закрой ворд");
-        assert!(shown.contains("несохранённые изменения"), "{}", shown);
+        if cfg!(target_os = "windows") {
+            // really asked on Windows: Word is not running on the CI machine (taskkill code 128)
+            assert!(shown.contains("несохранённые изменения") || shown.contains("не запущена"), "{}", shown);
+        } else {
+            assert!(shown.contains("несохранённые изменения"), "{}", shown);
+        }
         // the kill is only for the explicit word, and the script asks taskkill without /f otherwise
         let script = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../resources/commands/assistant/program.lua")).unwrap();
         assert!(script.contains(r#"force and { "/f", "/im", found.process } or { "/im", found.process }"#));
-        let (shown, _) = answer("assistant_program_close", "program.lua", "закрой ворд принудительно");
-        assert!(shown.contains("принудительно"), "{}", shown);
+        if !cfg!(target_os = "windows") {
+            let (shown, _) = answer("assistant_program_close", "program.lua", "закрой ворд принудительно");
+            assert!(shown.contains("принудительно"), "{}", shown);
+        }
     }
 }
 
