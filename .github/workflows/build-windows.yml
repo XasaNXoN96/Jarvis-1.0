@@ -258,6 +258,15 @@ jobs:
           $dj = Invoke-RestMethod http://127.0.0.1:9714/diag -TimeoutSec 5
           $piper = $dj.checks | Where-Object { $_.key -eq "piper" }
           Write-Host "PIPER playback on this runner (it has no sound card, so a failure here is expected): [$($piper.status)] $($piper.detail)"
+          Add-Content evidence.txt "PIPER synthesis in the install folder with Cyrillic: made a phrase (the diagnostics card said so before playback)"
+          Add-Content evidence.txt "PIPER playback on this runner (no sound card): [$($piper.status)] $($piper.detail)"
+          # the voice of the Telegram bot with the REAL engines: Piper -> voice message (Opus) -> Vosk, in the Cyrillic folder
+          $st = Join-Path $PWD "selftest-speech.txt"
+          $sp = Start-Process "$dir\jarvis-app.exe" -ArgumentList "--selftest-speech", "`"$st`"" -WorkingDirectory $dir -PassThru -Wait -WindowStyle Hidden
+          $rep = if (Test-Path $st) { (Get-Content $st -Raw -Encoding UTF8).Trim() } else { "no report (exit code $($sp.ExitCode))" }
+          Write-Host "SPEECH E2E: $rep"
+          Add-Content evidence.txt "SPEECH E2E (Piper -> Opus voice message -> Vosk): $rep"
+          if ($rep -notlike "OK*") { Write-Output "::warning title=speech e2e::$rep" }
           # the secrets of the user (the Telegram token, the phone link) must go with the program; the rest stays
           $data = Join-Path $env:APPDATA "com.priler.jarvis"
           New-Item -ItemType Directory -Force -Path $data | Out-Null
@@ -293,7 +302,10 @@ jobs:
           foreach ($f in "jarvis-app.exe", "resources\commands", "unins000.exe") {
             if (-not (Test-Path "$dir\$f")) { throw "not installed: $f" }
           }
+          # the debugging port of the WebView2 window for this one run (the interface is checked in the real window below)
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9333"
           $app = Start-Process "$dir\jarvis-app.exe" -WorkingDirectory $dir -PassThru
+          Remove-Item Env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
           $up = $false
           for ($i = 0; $i -lt 90 -and -not $up; $i++) {
             Start-Sleep 1
@@ -311,6 +323,22 @@ jobs:
           if ($count -ne 1) { throw "expected one jarvis-app process, found $count" }
           $r = Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $h -Body '{"name":"show_window"}'
           Write-Host "show_window: $($r | ConvertTo-Json -Compress)"
+          # the REAL WebView2 window: the pages, the mouse drag in the builder, Esc, the archive of dialogs
+          $wv = "FAIL"; $wvWhy = ""
+          try {
+            npm install --prefix "$env:RUNNER_TEMP\pw" playwright-core@1.49.1 --silent 2>&1 | Out-Null
+            $cdp = $false
+            for ($i = 0; $i -lt 90 -and -not $cdp; $i++) { try { Invoke-RestMethod http://127.0.0.1:9333/json/version -TimeoutSec 2 | Out-Null; $cdp = $true } catch { Start-Sleep 1 } }
+            if (-not $cdp) { throw "the debugging port of the WebView2 window did not open" }
+            $env:NODE_PATH = "$env:RUNNER_TEMP\pw\node_modules"
+            node .github\scripts\webview2-e2e.js 9333 webview2-e2e.txt
+            if ($LASTEXITCODE -ne 0) { throw "some checks failed (the lines above say which)" }
+            $wv = "PASS"
+          } catch { $wvWhy = $_.Exception.Message }
+          Write-Host "WEBVIEW2 E2E: $wv $wvWhy"
+          Add-Content evidence.txt "WEBVIEW2 E2E (the real window): $wv $wvWhy"
+          if (Test-Path webview2-e2e.txt) { Get-Content webview2-e2e.txt | ForEach-Object { Add-Content evidence.txt "   $_" } }
+          if ($wv -ne "PASS") { Write-Output "::warning title=webview2 e2e::$wvWhy" }
           # "Свернуть в трей" (the same way as the tray menu): Jarvis keeps running
           $r = Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $h -Body '{"name":"hide_window"}'
           Write-Host "hide_window: $($r | ConvertTo-Json -Compress)"
@@ -336,6 +364,27 @@ jobs:
           $tg = Invoke-RestMethod http://127.0.0.1:9714/telegram -TimeoutSec 5
           Write-Host "messages: $(@($m.messages).Count), networks: $(@($m.networks).Count); telegram: enabled=$($tg.enabled) available=$($tg.available)"
           if ($tg.enabled) { throw "the Telegram bot must be off by default" }
+          # real commands of the installed Jarvis (the queue shared by the window, the voice, the phone and Telegram):
+          # «открой блокнот» starts Notepad, «закрой блокнот» ends it
+          $cmdOk = "FAIL"; $cmdWhy = ""
+          try {
+            function Ask($t) { Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $h -ContentType "application/json; charset=utf-8" -Body ([Text.Encoding]::UTF8.GetBytes((@{ name = "ask"; text = $t; rid = [guid]::NewGuid().ToString() } | ConvertTo-Json -Compress))) }
+            $n0 = @(Get-Process notepad -ErrorAction SilentlyContinue).Count
+            $r = Ask "открой блокнот"
+            $started = $false
+            for ($i = 0; $i -lt 25 -and -not $started; $i++) { Start-Sleep 1; if (@(Get-Process notepad -ErrorAction SilentlyContinue).Count -gt $n0) { $started = $true } }
+            if (-not $started) { throw "«открой блокнот» did not start Notepad (answer: $($r | ConvertTo-Json -Compress))" }
+            Write-Host "command «открой блокнот»: Notepad started"
+            Ask "закрой блокнот" | Out-Null
+            $ended = $false
+            for ($i = 0; $i -lt 25 -and -not $ended; $i++) { Start-Sleep 1; if (@(Get-Process notepad -ErrorAction SilentlyContinue).Count -le $n0) { $ended = $true } }
+            if (-not $ended) { throw "«закрой блокнот» did not end Notepad" }
+            Write-Host "command «закрой блокнот»: Notepad ended"
+            $cmdOk = "PASS"
+          } catch { $cmdWhy = $_.Exception.Message }
+          Write-Host "COMMANDS E2E: $cmdOk $cmdWhy"
+          Add-Content evidence.txt "COMMANDS E2E (open and close Notepad through the real queue): $cmdOk $cmdWhy"
+          if ($cmdOk -ne "PASS") { Write-Output "::warning title=commands e2e::$cmdWhy" }
           # The access from any network: a REAL Cloudflare quick tunnel from this machine (download, hash and signature of
           # cloudflared, the process, the public address, the page, the secret and the throttle through it). The network
           # of the runner can fail, so a failure here is a loud warning and "TUNNEL E2E: FAIL" in the log, not a stop.
@@ -379,6 +428,7 @@ jobs:
             $tun = "PASS"
           } catch { $why = $_.Exception.Message }
           Write-Host "TUNNEL E2E: $tun $why"
+          Add-Content evidence.txt "TUNNEL E2E (real Cloudflare): $tun $why"
           if ($tun -ne "PASS") { Write-Output "::warning title=tunnel e2e::$why" }
           # on again, and left ON for the exit below: the full exit must end cloudflared too (checked after it)
           try {
@@ -386,6 +436,17 @@ jobs:
             Wait-Tunnel 300 | Out-Null; $tunOn = $true
           } catch { Write-Host "the tunnel could not be switched on again: $($_.Exception.Message)" }
           Write-Host "cloudflared processes before the exit: $(@(Get-Process cloudflared -ErrorAction SilentlyContinue).Count)"
+          # every card of the diagnostics of the installed Jarvis on this runner (what is PASS has its proof in the card)
+          try {
+            Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $h -Body '{"name":"diag_run"}' | Out-Null
+            $dj = $null
+            for ($i = 0; $i -lt 90; $i++) { Start-Sleep 1; $dj = Invoke-RestMethod http://127.0.0.1:9714/diag -TimeoutSec 5; if (-not $dj.running -and $dj.checks) { break } }
+            foreach ($c in $dj.checks) {
+              $d = "$($c.detail)"; if ($d.Length -gt 170) { $d = $d.Substring(0, 170) + "…" }
+              Write-Host "DIAG [$($c.status)] $($c.name): $d"
+              Add-Content evidence.txt "DIAG [$($c.status)] $($c.name): $d"
+            }
+          } catch { Write-Host "DIAG could not be read: $($_.Exception.Message)"; Add-Content evidence.txt "DIAG could not be read: $($_.Exception.Message)" }
           # without the X-Jarvis header nothing is done (a web page cannot close Jarvis)
           try { Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Body '{"name":"app_exit"}' | Out-Null; throw "app_exit without the header was accepted" } catch { if ($_.Exception.Message -like "*without the header*") { throw } }
           Start-Sleep 1
@@ -417,6 +478,13 @@ jobs:
 
   # The release "build-latest": only from main and only when BOTH the tests and the build passed.
   # dev/* branches stop before this job (the check of a branch is never published).
+      # everything the real-Windows checks found, in one place (read the end of this job)
+      - name: Evidence summary
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path evidence.txt) { Write-Host "===== EVIDENCE ====="; Get-Content evidence.txt -Encoding UTF8 } else { Write-Host "no evidence file" }
+
   publish:
     needs: [test, build]
     if: github.ref == 'refs/heads/main'

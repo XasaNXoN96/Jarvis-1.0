@@ -30,6 +30,34 @@ mod window;
 
 static SHOULD_STOP: AtomicBool = AtomicBool::new(false);
 
+// the report of --selftest-speech: "OK heard: ..." or "FAIL <step>: <reason>"
+fn selftest_speech() -> String {
+    let settings = db::init();
+    let _ = DB.set(settings.arc().clone());
+    i18n::init(&settings.lock().language);
+    let t0 = std::time::Instant::now();
+    let phrase = "открой ютуб и поставь таймер на пять минут";
+    let wav = match jarvis_core::tts::synth_to_wav(phrase) {
+        Ok(w) => w,
+        Err(e) => return format!("FAIL piper: {}", e),
+    };
+    let ogg = match jarvis_core::tgvoice::encode_wav_to_ogg_opus(&wav) {
+        Ok(o) => o,
+        Err(e) => return format!("FAIL opus-encode: {}", e),
+    };
+    let samples = match jarvis_core::tgvoice::decode_ogg_opus(&ogg) {
+        Ok(s) => s,
+        Err(e) => return format!("FAIL opus-decode: {}", e),
+    };
+    match jarvis_core::tgvoice::recognize(&samples) {
+        Ok(text) if !text.trim().is_empty() => {
+            format!("OK heard: {} | wav {} KB, ogg {} KB, {} samples, {} ms", text.trim(), wav.len() / 1024, ogg.len() / 1024, samples.len(), t0.elapsed().as_millis())
+        }
+        Ok(_) => "FAIL vosk: nothing recognized".into(),
+        Err(e) => format!("FAIL vosk: {}", e),
+    }
+}
+
 fn main() -> Result<(), String> {
     // `--background`: no console window (used by autostart); the tray icon stays
     #[cfg(target_os = "windows")]
@@ -41,6 +69,17 @@ fn main() -> Result<(), String> {
 
     // initialize directories
     config::init_dirs()?;
+
+    // `--selftest-speech <file>`: the real engines of the voice of the Telegram bot end to end, no network and no
+    // window: Piper makes a phrase, it is packed as a voice message (Opus), unpacked and recognized by Vosk. The result
+    // is written to the file; nothing is installed or changed. Used by the CI of the full installer.
+    if let Some(i) = std::env::args().position(|a| a == "--selftest-speech") {
+        let out = std::env::args().nth(i + 1).unwrap_or_else(|| "selftest-speech.txt".into());
+        let report = selftest_speech();
+        let _ = std::fs::write(&out, &report);
+        println!("{}", report);
+        std::process::exit(if report.starts_with("OK") { 0 } else { 1 });
+    }
 
     // one Jarvis at a time: a second start shows the window of the running one and quits
     // (two copies ran every spoken command twice and wrote every question and answer twice)
