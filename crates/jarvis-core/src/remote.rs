@@ -696,7 +696,9 @@ fn serve(stream: TcpStream) -> std::io::Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
     // a hard limit for the whole connection: a client sending one byte of the TLS handshake now and then (the
-    // handshake happens inside the first read, where the 10 s request deadline is not looked at) is cut off
+    // handshake happens inside the first read, where the 10 s request deadline is not looked at) is cut off: after
+    // the limit the socket is shut down, so the next read fails at once (on Windows a read already waiting ends by
+    // its 5 s timeout first) — at most CONNECTION_LIMIT + 5 s per connection
     let _watchdog = Watchdog::new(&stream, CONNECTION_LIMIT);
     let mut first = [0u8; 1];
     let n = stream.peek(&mut first)?;
@@ -1154,13 +1156,17 @@ mod tests {
         let addr = l.local_addr().unwrap();
         let _client = std::net::TcpStream::connect(addr).unwrap();
         let (server, _) = l.accept().unwrap();
-        server.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        server.set_read_timeout(Some(Duration::from_secs(4))).unwrap();
+        let _w = Watchdog::new(&server, Duration::from_millis(300));
+        std::thread::sleep(Duration::from_millis(900));
+        // the watchdog has closed the socket: the next read of the handshake or the request ends at once instead of
+        // waiting for its timeout (on Windows a read that was ALREADY waiting ends by its own 5 s timeout, then the
+        // next one fails at once — the connection is still bounded by the limit plus one read timeout)
         let t0 = std::time::Instant::now();
-        let _w = Watchdog::new(&server, Duration::from_millis(400));
         let mut b = [0u8; 1];
-        // the client sends nothing: the read ends because the watchdog closed the socket, not after 5 s
-        let _ = (&server).read(&mut b);
-        assert!(t0.elapsed() < Duration::from_secs(3), "{:?}", t0.elapsed());
+        let r = (&server).read(&mut b);
+        assert!(matches!(r, Ok(0)) || r.is_err(), "{:?}", r);
+        assert!(t0.elapsed() < Duration::from_secs(2), "{:?}", t0.elapsed());
     }
 
     // the page opens without the secret (a reload, a home-screen shortcut); news and commands never do
