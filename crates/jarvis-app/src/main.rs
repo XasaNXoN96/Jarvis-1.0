@@ -208,7 +208,7 @@ fn main() -> Result<(), String> {
                 jarvis_core::LISTEN_NOW.store(true, Ordering::SeqCst);
             }
             IpcAction::TextCommand { text } => {
-                info!("Received text command: {}", text);
+                info!("Received text command: {} chars", text.chars().count());
                 if let Err(e) = text_cmd_tx.send(text) {
                     error!("Failed to send text command to app: {}", e);
                 }

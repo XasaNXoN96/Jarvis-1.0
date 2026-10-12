@@ -319,7 +319,8 @@ fn recognize_command(
             VadState::VoiceActive => {
                 // feed to STT
                 if let Some(mut recognized_voice) = stt::recognize(frame_buffer, false) {
-                    info!("Recognized voice: {}", recognized_voice);
+                    // what was said can be private (a message, a note): only its size goes to the log, the window shows the text
+                    info!("Recognized voice: {} chars", recognized_voice.chars().count());
                     
                     ipc::send(IpcEvent::SpeechRecognized {
                         text: recognized_voice.clone(),
@@ -467,7 +468,7 @@ fn process_text_command(text: &str, rt: &tokio::runtime::Runtime) {
         Some(rest) => (true, rest),
         None => (false, text),
     };
-    info!("Processing text command: {}", text);
+    info!("Processing text command: {} chars", text.chars().count());
     
     if internal {
         jarvis_core::dialog::continue_last();
@@ -622,7 +623,7 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
 
     // a question for the AI ("что такое программа", "объясни, как работает Excel"): the commands do not run it
     if program_cmd.is_none() && jarvis_core::route::decide(text, jarvis_core::ai::is_configured()) == jarvis_core::route::Route::Ai {
-        info!("Knowledge question, sending to the AI: {}", text);
+        info!("Knowledge question, sending to the AI ({} chars)", text.chars().count());
         ask_ai(text);
         return false;
     }
@@ -728,7 +729,7 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
             }
         }
     } else {
-        info!("No command found for: {}", text);
+        info!("No command found ({} chars)", text.chars().count());
         // not a command: with "answer phrases that are not commands" switched on, the AI answers (only then)
         let ai_ready = jarvis_core::ai::is_configured();
         let question = jarvis_core::route::is_open_question(text);
@@ -754,8 +755,23 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
             ask_ai(text);
             return false;
         }
+        if question && !typed {
+            // a spoken question and no AI: a misheard phrase in the room is not sent to a search engine by itself;
+            // the user is told how to search on purpose
+            let msg = "ИИ не подключён (Настройки → ИИ-провайдер). Чтобы искать в интернете, скажите «найди в интернете …».".to_string();
+            say(&msg);
+            open_request(text, "local");
+            jarvis_core::dialog::reply(&msg, "local");
+            jarvis_core::dialog::end(true);
+            if jarvis_core::tts::is_enabled() {
+                jarvis_core::tts::speak("ИИ не подключён. Чтобы искать в интернете, скажите: найди в интернете.");
+            }
+            jarvis_core::uistate::log_action(text, "ИИ не подключён", false);
+            ipc::send(IpcEvent::Idle);
+            return false;
+        }
         if question {
-            // no AI is connected: say so and look it up on the Internet instead of staying silent.
+            // a typed question and no AI is connected: say so and look it up on the Internet instead of staying silent.
             // The note says plainly that this is a search, not an answer of the AI.
             let msg = "ИИ не подключён (Настройки → ИИ-провайдер), поэтому ищу ответ в интернете. Это результат поиска, а не ответ нейросети.".to_string();
             say(&msg);

@@ -907,7 +907,7 @@ function hintText() { return (micMuted ? 'Микрофон выключен — 
 function applyVoice(s) {
   voiceActive = !!s.voice_active;
   const textOnly = (s.voice_error || '').includes('--text');
-  const text = voiceActive ? '' : '<b>Голос не работает</b>, команды принимаются только текстом. Причина: ' + (s.voice_error || 'микрофон ещё запускается') + '.'
+  const text = voiceActive ? '' : '<b>Голос не работает</b>, команды принимаются только текстом. Причина: ' + esc(s.voice_error || 'микрофон ещё запускается') + '.'
     + (textOnly ? ' <button class="btn small" data-restart-voice type="button">Включить голос</button>' : '');
   for (const id of ['#voice-banner', '#voice-banner2']) {
     const b = $(id); b.innerHTML = text; b.style.display = text ? 'block' : 'none';

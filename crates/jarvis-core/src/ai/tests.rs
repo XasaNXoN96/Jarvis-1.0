@@ -870,3 +870,14 @@ fn a_picture_question_reports_a_provider_error_in_the_conversation() {
     assert!(!is_busy(&id));
 }
 
+
+#[test]
+fn only_a_provider_on_this_computer_or_the_home_network_counts_as_local() {
+    for local in ["http://localhost:11434/v1", "http://127.0.0.1:1234", "http://192.168.1.20:8080/v1", "http://10.0.0.5", "http://172.16.3.4/v1", "http://[::1]:11434"] {
+        assert!(is_local(local), "{}", local);
+    }
+    // a piece of text in the address is not the host: these are on the Internet (no key check skipped)
+    for remote in ["http://10.evil.com/v1", "http://localhost.evil.com", "https://192.168.example.org", "https://api.openai.com/v1", "http://user@8.8.8.8/v1"] {
+        assert!(!is_local(remote), "{}", remote);
+    }
+}

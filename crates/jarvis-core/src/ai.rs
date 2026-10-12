@@ -138,9 +138,26 @@ impl AiError {
     }
 }
 
+// the provider runs on this computer or in the home network: the HOST of the address is checked, not a piece of
+// text ("http://10.evil.com" or "http://localhost.evil.com" are on the Internet)
 fn is_local(url: &str) -> bool {
-    let u = url.to_lowercase();
-    u.contains("://localhost") || u.contains("://127.") || u.contains("://[::1]") || u.contains("://192.168.") || u.contains("://10.")
+    let u = url.trim().to_lowercase();
+    let rest = u.split_once("://").map(|(_, r)| r).unwrap_or(&u);
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let authority = authority.rsplit_once('@').map(|(_, h)| h).unwrap_or(authority);
+    let host = if let Some(v6) = authority.strip_prefix('[') {
+        v6.split(']').next().unwrap_or("")
+    } else {
+        authority.split(':').next().unwrap_or("")
+    };
+    if host == "localhost" {
+        return true;
+    }
+    match host.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(ip)) => ip.is_loopback() || ip.is_private(),
+        Ok(std::net::IpAddr::V6(ip)) => ip.is_loopback(),
+        Err(_) => false,
+    }
 }
 
 // the provider of the settings; the errors say what is missing
