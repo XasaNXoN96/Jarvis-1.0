@@ -90,6 +90,11 @@ pub fn commands_hash(commands: &[JCommandsList]) -> String {
 // Returns the command whose matching trigger has the most word stems.
 // "открой ворт", "запусти тотал командер": the program command for a phrase that is a verb plus a program name
 pub fn fetch_program<'a>(phrase: &str, commands: &'a [JCommandsList]) -> Option<(&'a PathBuf, &'a JCommand)> {
+    let low = phrase.to_lowercase();
+    let words: Vec<&str> = low.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    if not_about_a_program(&words) {
+        return None;
+    }
     let req = crate::apps::parse_request(phrase)?;
     // "открой проводник", "этот компьютер" keep their own command (places.lua); in English "open explorer" starts it
     if req.app.id == "explorer" && req.action == crate::apps::Action::Open && !phrase.to_lowercase().contains("explorer") {
@@ -148,6 +153,17 @@ pub fn fetch_indexed_program<'a>(phrase: &str, commands: &'a [JCommandsList]) ->
 
 const PARTS: &[&str] = &["звук", "громк", "экран", "монитор", "дисплей", "микрофон", "блютуз", "bluetooth", "вайфай", "wifi", "интернет", "подсветк", "свет", "музык", "камер", "sound", "volume", "screen", "monitor", "display", "mic", "camera", "music"];
 
+// "открой вкладку в хроме", "открой панель задач": about a tab or the taskbar, not about starting or closing the
+// program whose name is in the phrase
+fn not_about_a_program(words: &[&str]) -> bool {
+    let has = |p: &str| words.iter().any(|w| w.starts_with(p));
+    has("вкладк") || has("tab") || (has("панел") && has("задач")) || has("taskbar")
+}
+
+fn is_program_command(id: &str) -> bool {
+    matches!(id, "assistant_program_open" | "assistant_program_close")
+}
+
 fn is_power_command(id: &str) -> bool {
     matches!(id, "assistant_power_off" | "assistant_power_restart")
 }
@@ -169,10 +185,14 @@ pub fn fetch_by_triggers<'a>(
     // "выключи звук на компьютере", "выключи экран ноутбука": a part of the computer is named, so the phrase is about
     // that part, never about switching the whole computer off or restarting it
     let names_a_part = words.iter().any(|w| PARTS.iter().any(|p| w.starts_with(p))) || normalized.contains("wi-fi");
+    let not_program = not_about_a_program(&words);
 
     for cmd_list in commands {
         for cmd in &cmd_list.commands {
             if names_a_part && is_power_command(&cmd.id) {
+                continue;
+            }
+            if not_program && is_program_command(&cmd.id) {
                 continue;
             }
             for trigger in cmd.get_triggers(&lang) {

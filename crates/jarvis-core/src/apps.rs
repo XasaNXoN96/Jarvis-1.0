@@ -259,7 +259,24 @@ pub fn find_in_phrase(text: &str) -> Option<Match> {
             }
         }
     }
-    found.map(|(_, _, m)| m)
+    found.map(|(_, _, m)| m).or_else(|| exact_in_another_case(&words))
+}
+
+// "закрой окно ворда", "напиши в блокноте": a name in another grammatical case. Only an EXACT name after the
+// ending is cut counts (never a fuzzy one): "ворда" is Word, "вордка" is nothing.
+fn exact_in_another_case(words: &[String]) -> Option<Match> {
+    for w in words {
+        for ending in ["ом", "ой", "а", "е", "у", "я"] {
+            let Some(base) = w.strip_suffix(ending) else { continue };
+            if base.chars().count() < 3 {
+                continue;
+            }
+            if let Some(app) = APPS.iter().find(|a| a.aliases.iter().any(|al| !al.contains(' ') && al.to_lowercase() == base)) {
+                return Some(Match { app, distance: 0 });
+            }
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------------------------

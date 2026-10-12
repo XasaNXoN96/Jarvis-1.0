@@ -612,3 +612,19 @@ fn a_named_part_of_the_computer_never_switches_the_computer_off() {
     assert_eq!(w.route("выключи компьютер").as_deref(), Some("assistant_power_off"));
     assert_eq!(w.route("перезагрузи компьютер").as_deref(), Some("assistant_power_restart"));
 }
+
+#[test]
+fn a_tab_or_the_taskbar_is_not_a_program_and_word_is_found_in_any_case() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({}));
+    for phrase in ["открой вкладку в хроме", "открой панель задач"] {
+        let id = w.route(phrase);
+        assert!(!matches!(id.as_deref(), Some("assistant_program_open") | Some("assistant_program_close")), "{} -> {:?}", phrase, id);
+    }
+    assert_eq!(w.route("открой новую вкладку").as_deref(), Some("web_tab_new"));
+    assert_eq!(w.route("открой хром").as_deref(), Some("assistant_program_open"));
+    assert_eq!(w.route("открой панель управления").as_deref(), Some("assistant_program_open"));
+    // "закрой окно ворда": the program is found in its other forms
+    assert_eq!(crate::apps::find_in_phrase("закрой окно ворда").map(|m| m.app.id), Some("word"));
+    assert_eq!(crate::apps::find_in_phrase("напиши в блокноте").map(|m| m.app.id), Some("notepad"));
+}
