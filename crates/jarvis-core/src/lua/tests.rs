@@ -710,6 +710,18 @@ mod tests {
         // already running before (it only brings its window forward): no waiting, no false alarm
         let (_, spoken) = open_program(&["TOTALCMD64.EXE"], &[], 0);
         assert!(!spoken.iter().any(|s| s.contains("не запустилась")), "{:?}", spoken);
+        // "калькулятор": calc.exe hands over to CalculatorApp.exe and ends — that process is waited for, no false alarm
+        let spoken = {
+            let _p = PROCESS_LOCK.lock();
+            let _i = crate::appindex::TEST_LOCK.lock();
+            crate::appindex::set_for_tests(vec![]);
+            crate::guard::forget("lua:open:Калькулятор");
+            *crate::lua::api::system::TEST_PROCESSES.lock() = Some((vec![], vec!["CalculatorApp.exe".into()], 2));
+            let (_, spoken) = answer("assistant_program_open", "program.lua", "открой калькулятор");
+            *crate::lua::api::system::TEST_PROCESSES.lock() = None;
+            spoken
+        };
+        assert!(!spoken.iter().any(|s| s.contains("не запустилась")), "{:?}", spoken);
         // the process never appears: the user hears that it did not start
         crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow_mut().clear());
         let (shown, spoken) = open_program(&[], &[], 0);

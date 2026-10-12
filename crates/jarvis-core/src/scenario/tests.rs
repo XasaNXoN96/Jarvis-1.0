@@ -152,3 +152,11 @@ fn an_old_file_without_the_trigger_field_still_loads() {
     assert!(check(&old).is_ok());
 }
 
+#[test]
+fn an_app_step_waits_for_the_process_the_program_really_runs_as() {
+    // calc.exe hands over to CalculatorApp.exe and ends: waiting for "calc.exe" would report a failure
+    assert_eq!(app_process("калькулятор").as_deref(), Some("CalculatorApp.exe"));
+    // a name nobody knows: not checked (no false "did not appear")
+    assert_eq!(app_process("какая-то программа"), None);
+}
+

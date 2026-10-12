@@ -490,8 +490,15 @@ pub fn start() -> Result<String, String> {
                         continue;
                     }
                     std::thread::spawn(move || {
+                        // the slot is given back however the connection ends (also on a panic)
+                        struct Slot;
+                        impl Drop for Slot {
+                            fn drop(&mut self) {
+                                ACTIVE.fetch_sub(1, Ordering::SeqCst);
+                            }
+                        }
+                        let _slot = Slot;
                         let _ = serve(stream);
-                        ACTIVE.fetch_sub(1, Ordering::SeqCst);
                     });
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -553,7 +560,14 @@ struct Request {
 fn read_request<S: Read>(stream: &mut S) -> std::io::Result<Request> {
     let mut buf: Vec<u8> = Vec::new();
     let mut chunk = [0u8; 2048];
+    // the whole request must arrive within a few seconds (each read has its own timeout, but a client sending one
+    // byte now and then could otherwise hold a connection — and with it a slot — for hours)
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let late = || std::time::Instant::now() > deadline;
     let header_end = loop {
+        if late() {
+            return Err(std::io::ErrorKind::TimedOut.into());
+        }
         let n = stream.read(&mut chunk)?;
         if n == 0 {
             return Err(std::io::ErrorKind::UnexpectedEof.into());
@@ -594,6 +608,9 @@ fn read_request<S: Read>(stream: &mut S) -> std::io::Result<Request> {
         return Err(std::io::ErrorKind::InvalidData.into());
     }
     while buf.len() < header_end + content_length {
+        if late() {
+            return Err(std::io::ErrorKind::TimedOut.into());
+        }
         let n = stream.read(&mut chunk)?;
         if n == 0 {
             break;

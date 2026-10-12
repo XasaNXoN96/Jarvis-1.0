@@ -215,6 +215,10 @@ fn main_loop(text_cmd_rx: &Receiver<String>, rt: &tokio::runtime::Runtime) -> Re
                     info!("Wake word activated!");
                     // the user calls Jarvis while he is speaking: he stops and listens ("Джарвис, стоп" works too)
                     if jarvis_core::tts::is_speaking() {
+                        // (an AI answer still arriving stops too, or its next sentence would start the voice again)
+                        if let Some(id) = jarvis_core::ai::store().active() {
+                            jarvis_core::ai::stop(&id);
+                        }
                         jarvis_core::tts::stop();
                     }
                     ipc::send(IpcEvent::WakeWordDetected);

@@ -603,6 +603,10 @@ pub fn exe_name(a: &IndexedApp) -> Option<String> {
     if !a.exe.is_empty() {
         return Some(a.exe.clone());
     }
+    // (an App Paths entry is named after its registry key, "pbrush.exe" starting mspaint.exe: not a process name)
+    if a.source == "app_paths" {
+        return None;
+    }
     let file = a.launch.rsplit(['\\', '/']).next().unwrap_or("");
     file.to_lowercase().ends_with(".exe").then(|| file.to_string())
 }

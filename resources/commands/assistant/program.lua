@@ -87,7 +87,10 @@ else
     return
   end
   -- the installed copy first (it is found even when the program is not in PATH), then the short name
-  local was_running = running_before(found.path) or running_before(found.start)
+  -- the process to wait for: the file of the installed copy when it is started directly, else the known process
+  -- name of the program (calc.exe → CalculatorApp.exe); nothing when neither is known
+  local exe_path = found.path and exe_of(found.path) or nil
+  local was_running = running_before(exe_path) or running_before(found.process)
   local ok, launched = false, nil
   if found.path then ok = pcall(open, found.path); launched = found.path end
   if not ok then ok = pcall(open, found.start); launched = found.start end
@@ -104,7 +107,8 @@ else
     -- remember the document program: "пиши" then knows where to write
     if found.office then jarvis.state.set("office_app", found.office); jarvis.state.set("dict_last", "") end
     say(T("Открываю", "Opening"), found.name, T("Открываю " .. found.name, "Opening " .. found.name), "program")
-    confirm_started(found.name, launched, key, was_running)
+    local expected = (launched == found.path and exe_path) or found.process
+    confirm_started(found.name, expected, key, was_running)
   else
     jarvis.app.forget(key)
     say(T("Программа", "Program"), found.name .. T(": не удалось запустить. Скорее всего, она не установлена на этом компьютере", ": could not start it, probably it is not installed"))

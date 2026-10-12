@@ -209,6 +209,11 @@ pub fn release() {
     }
 }
 
+// the microphone is open and its last read gave audio (not a device that is gone and only fails)
+pub fn delivering() -> bool {
+    IS_RECORDING.load(Ordering::SeqCst) && READ_ERRORS.load(Ordering::Relaxed) == 0
+}
+
 pub fn read_microphone(frame_buffer: &mut [i16]) {
     let rec = RECORDER.read().clone();
     let Some(rec) = rec else {

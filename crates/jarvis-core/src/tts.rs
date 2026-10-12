@@ -47,7 +47,10 @@ const PROBLEM_REPEAT: std::time::Duration = std::time::Duration::from_secs(600);
 fn tell_once(text: &str) {
     warn!("TTS: {}", text);
     *PROBLEM.lock() = Some(text.to_string());
-    if crate::guard::first(&format!("tts-problem:{}", crate::guard::norm(text)), PROBLEM_REPEAT) {
+    // (the kind of the problem is the text before its details: a Piper error log with times in it would otherwise
+    // make every failed phrase look like a new problem)
+    let kind: String = text.split(['(', ':']).next().unwrap_or(text).chars().take(60).collect();
+    if crate::guard::first(&format!("tts-problem:{}", crate::guard::norm(&kind)), PROBLEM_REPEAT) {
         NOTE_SENT.store(true, Ordering::SeqCst);
         tell(text);
     }

@@ -142,6 +142,16 @@ pub fn recover_in_background() {
                 Recover::Wait => continue,
                 Recover::Try => {}
             }
+            // the microphone works again by another way (the user switched it off and on, which reopened it): a working
+            // stream is never closed by the recovery
+            if pvrecorder::delivering() {
+                info!("Microphone recovery: the microphone already works, nothing to do");
+                let mut err = crate::VOICE_ERROR.lock();
+                if err.starts_with("микрофон перестал") {
+                    err.clear();
+                }
+                break;
+            }
             attempt += 1;
             release();
             if start_recording().is_ok() {

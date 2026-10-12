@@ -441,7 +441,8 @@ fn scenario_action(body: &serde_json::Value) -> serde_json::Value {
             match edited.or_else(|| crate::scenario::get(id)) {
                 Some(s) => {
                     let unsaved = crate::scenario::get(&s.id).map(|stored| stored.steps != s.steps || stored.name != s.name).unwrap_or(true);
-                    json!({ "ok": true, "result": crate::scenario::run(&s), "unsaved": unsaved })
+                    let result = if unsaved { crate::scenario::run_draft(&s) } else { crate::scenario::run(&s) };
+                    json!({ "ok": true, "result": result, "unsaved": unsaved })
                 }
                 None => json!({ "ok": false, "message": "Добавьте шаги и нажмите «Тест сценария» ещё раз" }),
             }
@@ -740,6 +741,7 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
             *LAST_STATE_POLL.lock() = Some(std::time::Instant::now());
             // the window says whether it is visible: results of commands pop up as notifications only when it is not
             if req.query.split('&').any(|p| p == "v=1") {
+                *LAST_VISIBLE_POLL.lock() = Some(std::time::Instant::now());
                 crate::notify::window_seen();
             }
             respond(&mut stream, "200 OK", "application/json", &crate::uistate::state_json().to_string())
@@ -930,9 +932,13 @@ pub fn hide_window() {
 static LAST_STATE_POLL: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
 // a page of Jarvis asked for its state in the last seconds: a browser window is open (it polls every 1.5 s, every
 // 4 s when hidden), so "show the window" must not start one more
+// (only a page that is ON THE SCREEN counts: a minimized window or a background tab would make "Открыть" show
+// nothing, so a new window opens then)
 pub fn browser_page_alive() -> bool {
-    LAST_STATE_POLL.lock().map(|t| t.elapsed() < Duration::from_secs(5)).unwrap_or(false)
+    LAST_VISIBLE_POLL.lock().map(|t| t.elapsed() < Duration::from_secs(5)).unwrap_or(false)
 }
+
+static LAST_VISIBLE_POLL: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
 
 static TRAY_NOTICE_SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 const RELOAD_GRACE: Duration = Duration::from_secs(4);

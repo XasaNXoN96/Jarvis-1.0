@@ -220,13 +220,13 @@ end
 
 local START_WAIT_CHECKS, START_WAIT_MS = 24, 250
 
-local function running_before(target)
-  local exe = exe_of(target)
+-- `exe`: the process name the program really runs as. Not the file that was started: "calc.exe" hands over to
+-- CalculatorApp.exe and ends at once, "wt.exe" to WindowsTerminal.exe. Unknown (nil): not checked.
+local function running_before(exe)
   return exe ~= nil and jarvis.system.can_check_processes() and jarvis.system.process_running(exe)
 end
 
-local function confirm_started(name, target, key, was_running)
-  local exe = exe_of(target)
+local function confirm_started(name, exe, key, was_running)
   if was_running or not exe or not jarvis.system.can_check_processes() then return true end
   for _ = 1, START_WAIT_CHECKS do
     if jarvis.system.process_running(exe) then return true end

@@ -355,6 +355,20 @@ pub fn app_target(param: &str) -> String {
     }
 }
 
+// the process an "app" step must produce: the file itself when a path to an .exe is given or the installed copy is
+// started, else the known process of the program (calc.exe hands over to CalculatorApp.exe); None = not checked
+pub fn app_process(param: &str) -> Option<String> {
+    let p = param.trim();
+    if std::path::Path::new(p).exists() {
+        return exe_name(p);
+    }
+    let m = crate::apps::find_in_phrase(p)?;
+    match crate::apps::locate(m.app) {
+        Some(path) => exe_name(&path),
+        None => m.app.process.map(|s| s.to_string()),
+    }
+}
+
 fn exe_name(target: &str) -> Option<String> {
     let file = target.rsplit(['\\', '/']).next().unwrap_or("");
     file.to_lowercase().ends_with(".exe").then(|| file.to_string())
@@ -397,7 +411,7 @@ pub fn run_step(s: &Step) -> Result<(), String> {
         }
         "app" => {
             let target = app_target(p);
-            let exe = exe_name(&target);
+            let exe = app_process(p);
             let was_running = exe.as_deref().map(process_running).unwrap_or(false);
             open(&target).map_err(|e| format!("программа «{}» не запустилась: {}", p, e))?;
             // the program must really appear (not only "Windows took the launch"); not checked when it was already
@@ -476,6 +490,16 @@ pub fn preflight(sc: &Scenario) -> Result<(), String> {
 // order, each one must report success; the first failure stops the chain with its number, kind and reason.
 // The same chain never runs twice at once (a second start while it runs is refused, not queued).
 pub fn run(sc: &Scenario) -> RunResult {
+    run_inner(sc, true)
+}
+
+// a test of what the editor shows but is not saved: the same engine, but its result is not written into the history
+// of the stored scenario (its steps differ from what was run)
+pub fn run_draft(sc: &Scenario) -> RunResult {
+    run_inner(sc, false)
+}
+
+fn run_inner(sc: &Scenario, remember: bool) -> RunResult {
     let total = sc.steps.len();
     {
         let mut running = RUNNING.lock();
@@ -516,7 +540,7 @@ pub fn run(sc: &Scenario) -> RunResult {
         message = format!("Сценарий «{}» остановлен. {}", sc.name, message);
     }
     let r = RunResult { at: now(), ok, done, total, message };
-    {
+    if remember {
         let mut list = LIST.lock();
         if let Some(o) = list.iter_mut().find(|o| o.id == sc.id) {
             o.last_run = Some(r.clone());

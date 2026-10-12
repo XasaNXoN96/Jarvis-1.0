@@ -120,8 +120,10 @@ mod installer_tests;
 // Writes a file so that a crash or a power cut in the middle never leaves it cut off: the content goes to a
 // temporary file next to it, which then replaces the old one in one step (settings, timers, tasks, notes).
 pub fn write_atomic(path: &std::path::Path, data: impl AsRef<[u8]>) -> std::io::Result<()> {
+    // (a name of its own for every write: two writes of the same file at once never share the temporary file)
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let mut tmp = path.as_os_str().to_owned();
-    tmp.push(".tmp");
+    tmp.push(format!(".{}-{}.tmp", std::process::id(), SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
     let tmp = std::path::PathBuf::from(tmp);
     std::fs::write(&tmp, data)?;
     std::fs::rename(&tmp, path).map_err(|e| {
