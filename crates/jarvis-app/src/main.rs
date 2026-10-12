@@ -62,6 +62,16 @@ fn selftest_speech() -> String {
             Err(e) => shorts.push_str(&format!(" [«{}»: {}]", short, e)),
         }
     }
+    // the same phrase with the text as plain UTF-8 bytes and as ASCII JSON (--json-input): which one does Piper read right?
+    for json in [false, true] {
+        match jarvis_core::tts::synth_to_wav_input("открой ютуб", json) {
+            Ok(w) => {
+                let heard = jarvis_core::tgvoice::wav_to_16k(&w).and_then(|s| jarvis_core::tgvoice::recognize(&s)).unwrap_or_else(|e| format!("(error: {})", e));
+                shorts.push_str(&format!(" [{}: {} -> «{}»]", if json { "json" } else { "utf8" }, wav_info(&w), heard.trim()));
+            }
+            Err(e) => shorts.push_str(&format!(" [{}: {}]", if json { "json" } else { "utf8" }, e)),
+        }
+    }
     let sound = format!("{}, length_scale {:.2}", wav_info(&wav), jarvis_core::tts::length_scale());
     // the same phrases at exactly 1.0 and at 0.7 (faster): is the speed the reason for the poor recognition?
     for scale in [1.0f32, 0.7] {

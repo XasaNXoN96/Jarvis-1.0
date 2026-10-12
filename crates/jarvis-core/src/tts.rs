@@ -467,6 +467,45 @@ pub fn synth_check() -> SynthCheck {
     r
 }
 
+// The text goes to Piper as one JSON line {"text": "..."} with every non-ASCII letter written as \uXXXX: it does not depend
+// on the code page of the console or of the pipe (a Windows build of Piper can read the bytes of a Russian phrase wrongly)
+static JSON_INPUT: Lazy<Mutex<Option<bool>>> = Lazy::new(|| Mutex::new(None));
+
+fn json_input() -> bool {
+    JSON_INPUT.lock().unwrap_or(JSON_INPUT_DEFAULT)
+}
+
+const JSON_INPUT_DEFAULT: bool = false;
+
+pub fn piper_json_line(text: &str) -> String {
+    let mut out = String::from("{\"text\":\"");
+    for ch in text.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' | '\r' | '\t' => out.push(' '),
+            c if (c as u32) < 0x20 => out.push(' '),
+            c if c.is_ascii() => out.push(c),
+            c => {
+                let mut buf = [0u16; 2];
+                for unit in c.encode_utf16(&mut buf) {
+                    out.push_str(&format!("\\u{:04x}", unit));
+                }
+            }
+        }
+    }
+    out.push_str("\"}");
+    out
+}
+
+// for the self-test only: the same phrase with the text given as JSON or as plain bytes
+pub fn synth_to_wav_input(text: &str, json: bool) -> Result<Vec<u8>, String> {
+    *JSON_INPUT.lock() = Some(json);
+    let r = synth_to_wav(text);
+    *JSON_INPUT.lock() = None;
+    r
+}
+
 // how long Piper stretches the phonemes: the speed of the voice from the settings (1.0 = as the voice was made)
 static LENGTH_SCALE_OVERRIDE: Lazy<Mutex<Option<f32>>> = Lazy::new(|| Mutex::new(None));
 
@@ -510,6 +549,7 @@ fn piper_synth(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64
         .arg(ansi_safe_new(wav))
         .arg("--length_scale")
         .arg(format!("{:.2}", length_scale()))
+        .args(if json_input() { vec!["--json-input"] } else { Vec::new() })
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(std::fs::File::create(&err_file).map(Stdio::from).unwrap_or_else(|_| Stdio::null()));
@@ -532,7 +572,11 @@ fn piper_synth(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64
         }
     };
     if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(text.as_bytes());
+        if json_input() {
+            let _ = stdin.write_all(piper_json_line(text).as_bytes());
+        } else {
+            let _ = stdin.write_all(text.as_bytes());
+        }
         let _ = stdin.write_all(b"\n");
     }
     // wait here (not in the shared slot: the previous piece is being played at the same time)
@@ -1186,6 +1230,24 @@ mod volume_tests {
         let mut junk = b"not a wav at all".to_vec();
         scale_wav(&mut junk, 10);
         assert_eq!(junk, b"not a wav at all".to_vec());
+    }
+}
+
+#[cfg(test)]
+mod json_input_tests {
+    use super::*;
+
+    #[test]
+    fn the_phrase_goes_to_piper_as_ascii_json() {
+        let line = piper_json_line("открой ютуб \"сейчас\" \\ да");
+        assert!(line.is_ascii(), "{}", line);
+        assert!(line.starts_with("{\"text\":\"") && line.ends_with("\"}"));
+        // the line is valid JSON and gives the phrase back
+        let v: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(v["text"], "открой ютуб \"сейчас\" \\ да");
+        // a letter outside the basic plane is written as a surrogate pair, and a line break cannot split the JSON line
+        let v: serde_json::Value = serde_json::from_str(&piper_json_line("привет 😀\nмир")).unwrap();
+        assert_eq!(v["text"], "привет 😀 мир");
     }
 }
 
