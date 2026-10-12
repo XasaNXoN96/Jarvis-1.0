@@ -130,3 +130,51 @@ fn the_privacy_list_says_honestly_what_uses_the_internet() {
     assert_eq!(find(&on, "Vosk")["internet"], false, "speech recognition is local");
     assert_eq!(find(&on, "Пульт")["internet"], false);
 }
+
+#[test]
+fn telegram_is_working_only_when_telegram_really_answers() {
+    assert_eq!(telegram_check(false, true, true, "").status, Status::Unchecked, "off: not tested, not «ошибка»");
+    assert_eq!(telegram_check(true, false, false, "").status, Status::Error);
+    let down = telegram_check(true, true, true, "нет связи с api.telegram.org — повтор через 10 с");
+    assert_eq!(down.status, Status::Error);
+    assert!(down.detail.contains("api.telegram.org"));
+    assert_eq!(telegram_check(true, true, false, "работает").status, Status::Warn, "on the line but nobody is paired");
+    assert_eq!(telegram_check(true, true, true, "подключаюсь…").status, Status::Error, "«подключаюсь» is not «работает»");
+    assert_eq!(telegram_check(true, true, true, "работает").status, Status::Ok);
+}
+
+#[test]
+fn the_tunnel_is_working_only_when_its_address_really_opened() {
+    assert_eq!(tunnel_check("off", "", None).status, Status::Unchecked);
+    assert_eq!(tunnel_check("starting", "", None).status, Status::Warn);
+    assert_eq!(tunnel_check("error", "нет сети", None).status, Status::Error);
+    assert_eq!(tunnel_check("on", "", None).status, Status::Unchecked, "an address that was not opened proves nothing");
+    assert_eq!(tunnel_check("on", "", Some(Err("ответ 502".into()))).status, Status::Error);
+    assert_eq!(tunnel_check("on", "", Some(Ok(()))).status, Status::Ok);
+}
+
+#[test]
+fn the_notifications_of_other_programs_are_judged_by_the_state_of_the_watcher() {
+    assert_eq!(notify_check(false, "off", "").status, Status::Unchecked);
+    assert_eq!(notify_check(true, "on", "").status, Status::Ok);
+    assert_eq!(notify_check(true, "denied", "").status, Status::Error);
+    assert_eq!(notify_check(true, "starting", "").status, Status::Warn);
+    assert_eq!(notify_check(true, "error", "PowerShell не запустился").status, Status::Error);
+    assert_eq!(notify_check(true, "unsupported", "").status, Status::Unchecked);
+}
+
+#[test]
+fn the_life_of_the_program_needs_a_writable_data_folder_and_the_right_autostart() {
+    assert_eq!(lifecycle_check(Ok(()), false, false, Some(120.0)).status, Status::Ok);
+    assert_eq!(lifecycle_check(Err("отказано в доступе".into()), false, false, None).status, Status::Error);
+    assert_eq!(lifecycle_check(Ok(()), true, true, None).status, Status::Warn, "autostart of another copy");
+    assert_eq!(lifecycle_check(Ok(()), true, false, None).status, Status::Ok);
+}
+
+// the diagnostics of every run never carry a secret or a message text
+#[test]
+fn the_new_checks_hold_no_token_and_no_message_text() {
+    let t = telegram_check(true, true, true, "работает");
+    let all = format!("{} {} {}", t.detail, t.fix, notify_check(true, "on", "").detail);
+    assert!(!all.contains("AAH") && !all.contains("dpapi"));
+}

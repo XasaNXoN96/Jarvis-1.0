@@ -213,6 +213,67 @@ pub fn remote_check(running: bool, lan_answer: Option<Result<(), String>>, last_
     }
 }
 
+// the Telegram bot: PASS only when Telegram really answered the polling of the bot just now (the status says so)
+pub fn telegram_check(enabled: bool, token_saved: bool, paired: bool, status: &str) -> Check {
+    let (name, key) = ("Telegram-бот", "telegram");
+    if !enabled {
+        return check(key, name, Status::Unchecked, "Бот выключен: связь с Telegram не проверялась.", "Включите бота в Настройках → Управление через Telegram, если он нужен.");
+    }
+    if !token_saved {
+        return check(key, name, Status::Error, "Бот включён, но токен не сохранён.", "Вставьте токен от @BotFather и сохраните его.");
+    }
+    if status != "работает" {
+        return check(key, name, Status::Error, format!("Telegram не отвечает боту: {}.", status), "Проверьте интернет, токен у @BotFather и что бота не опрашивает другая программа.");
+    }
+    if !paired {
+        return check(key, name, Status::Warn, "Бот на связи с Telegram, но телефон не привязан: команды никто не отправит.", "Нажмите «Получить код» и отправьте код боту.");
+    }
+    check(key, name, Status::Ok, "Бот на связи с Telegram и привязан к вашему аккаунту. Выполнение команд из Telegram проверяйте вручную (см. чек-лист).", "")
+}
+
+// the access from any network: PASS only when the public address really opened from this computer
+pub fn tunnel_check(state: &str, error: &str, opened: Option<Result<(), String>>) -> Check {
+    let (name, key) = ("Доступ из любой сети (туннель)", "tunnel");
+    match state {
+        "off" => check(key, name, Status::Unchecked, "Туннель выключен (так задумано: по умолчанию пульт открыт только в вашей сети).", "Включите на главной в блоке «Пульт», если нужен доступ не из вашего Wi-Fi."),
+        "downloading" | "starting" => check(key, name, Status::Warn, "Туннель запускается.", "Подождите полминуты и запустите проверку ещё раз."),
+        "error" => check(key, name, Status::Error, format!("Туннель не запустился: {}.", error), "Проверьте интернет; антивирус или брандмауэр мог заблокировать cloudflared."),
+        _ => match opened {
+            Some(Ok(())) => check(key, name, Status::Ok, "Публичный адрес выдан и страница пульта открылась по нему с этого компьютера. С телефона вне сети проверьте вручную.", ""),
+            Some(Err(e)) => check(key, name, Status::Error, format!("Адрес выдан, но страница по нему не открылась: {}.", e), "Выключите и включите туннель."),
+            None => check(key, name, Status::Unchecked, "Адрес выдан, но открыть его для проверки не удалось.", ""),
+        },
+    }
+}
+
+// the notifications of other programs (they are read only with the permission of the user and of Windows)
+pub fn notify_check(enabled: bool, state: &str, detail: &str) -> Check {
+    let (name, key) = ("Уведомления других программ", "ext_notify");
+    if !enabled {
+        return check(key, name, Status::Unchecked, "Чтение выключено (по умолчанию): Jarvis не видит уведомления других программ.", "Включите в Настройках → Уведомления других программ, если нужны мессенджеры.");
+    }
+    match state {
+        "on" => check(key, name, Status::Ok, "Windows разрешила чтение, наблюдатель работает. Что приложения реально присылают уведомления, зависит от них и от браузера.", ""),
+        "starting" => check(key, name, Status::Warn, "Наблюдатель запускается.", "Запустите проверку ещё раз через несколько секунд."),
+        "denied" => check(key, name, Status::Error, "Windows не дала доступ к уведомлениям.", if detail.is_empty() { "Параметры Windows → Конфиденциальность → Уведомления → разрешите доступ приложениям.".to_string() } else { detail.to_string() }),
+        "unsupported" => check(key, name, Status::Unchecked, "Эта функция работает только в Windows.", ""),
+        _ => check(key, name, Status::Error, format!("Наблюдатель не работает{}.", if detail.is_empty() { String::new() } else { format!(": {}", detail) }), "Выключите и снова включите чтение уведомлений."),
+    }
+}
+
+// the life of the program: its folder of data can be written, autostart points to this copy
+pub fn lifecycle_check(data_dir: Result<(), String>, autostart_on: bool, autostart_other_copy: bool, mem_mb: Option<f64>) -> Check {
+    let (name, key) = ("Жизненный цикл программы", "lifecycle");
+    if let Err(e) = data_dir {
+        return check(key, name, Status::Error, format!("Папка данных Jarvis недоступна для записи: {}. Настройки, диалоги и токены не сохранятся.", e), "Проверьте права на папку %APPDATA%\\com.priler.jarvis и свободное место.");
+    }
+    if autostart_on && autostart_other_copy {
+        return check(key, name, Status::Warn, "Автозапуск включён, но указывает на другую копию Jarvis.", "Выключите и снова включите автозагрузку в настройках — она запишет эту копию.");
+    }
+    let mem = mem_mb.map(|m| format!(" Jarvis занимает {:.0} МБ памяти.", m)).unwrap_or_default();
+    check(key, name, Status::Ok, format!("Папка данных доступна для записи; автозапуск {}.{} Закрытие, трей и обновление поверх запущенной программы проверяются в CI установщика.", if autostart_on { "включён" } else { "выключен" }, mem), "")
+}
+
 pub fn monitor_check(mem_total_gb: f32, cpu: f32, disk_total_gb: f32) -> Check {
     let (name, key) = ("Системный мониторинг", "monitor");
     if mem_total_gb <= 0.0 {
@@ -323,6 +384,57 @@ fn output_device() -> Option<Result<String, String>> {
     None
 }
 
+fn measure_telegram() -> Check {
+    let j = crate::telegram::json();
+    telegram_check(j["enabled"] == true, j["token_saved"] == true, j["paired"] == true, j["status"].as_str().unwrap_or(""))
+}
+
+fn measure_notify() -> Check {
+    let j = crate::notify::ext_status_json();
+    notify_check(crate::uistate::settings().ext_enabled, j["state"].as_str().unwrap_or(""), j["detail"].as_str().unwrap_or(""))
+}
+
+fn measure_tunnel() -> Check {
+    let j = crate::tunnel::json();
+    let state = j["state"].as_str().unwrap_or("off").to_string();
+    let opened = if state == "on" { open_public_page() } else { None };
+    tunnel_check(&state, j["error"].as_str().unwrap_or(""), opened)
+}
+
+// the page of the remote opened through the public address (the page holds no secret): the real way the phone goes
+#[cfg(feature = "lua")]
+fn open_public_page() -> Option<Result<(), String>> {
+    let url = match crate::tunnel::state() {
+        crate::tunnel::State::On(u) => u,
+        _ => return None,
+    };
+    with_timeout(12_000, move || -> Result<(), String> {
+        let c = reqwest::blocking::Client::builder().timeout(Duration::from_secs(10)).build().map_err(|_| "нет сети".to_string())?;
+        let r = c.get(&url).send().map_err(|_| "нет ответа".to_string())?;
+        if r.status().is_success() { Ok(()) } else { Err(format!("ответ {}", r.status().as_u16())) }
+    })
+}
+
+#[cfg(not(feature = "lua"))]
+fn open_public_page() -> Option<Result<(), String>> {
+    None
+}
+
+fn measure_lifecycle() -> Check {
+    let dir = crate::APP_CONFIG_DIR.get().cloned();
+    let writable = match dir {
+        Some(d) => {
+            let probe = d.join(format!("diag_probe_{}.tmp", std::process::id()));
+            let r = std::fs::write(&probe, b"ok").map_err(|e| e.to_string());
+            let _ = std::fs::remove_file(&probe);
+            r
+        }
+        None => Err("папка не определена".into()),
+    };
+    let a = crate::autostart::state();
+    lifecycle_check(writable, a["on"] == true, a["other_copy"] == true, crate::health::self_memory_mb())
+}
+
 fn measure_resources() -> Check {
     let app = &*crate::APP_DIR;
     let mut missing = Vec::new();
@@ -409,7 +521,7 @@ pub fn run() -> Vec<Check> {
     let remote = measure_remote();
     let st = crate::uistate::stats();
     let monitor = monitor_check(st.mem_total_gb, st.cpu, st.disk_total_gb);
-    let checks = vec![mic, audio, piper, ai, latency, internet, remote, monitor, measure_resources(), measure_syscmds()];
+    let checks = vec![mic, audio, piper, ai, latency, internet, remote, measure_tunnel(), measure_telegram(), measure_notify(), monitor, measure_resources(), measure_syscmds(), measure_lifecycle()];
     *LAST.lock() = Some(Run { at: now(), checks: checks.clone(), os: os_version() });
     checks
 }
