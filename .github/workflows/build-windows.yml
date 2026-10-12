@@ -74,7 +74,8 @@ jobs:
         run: |
           choco install innosetup -y --no-progress
           New-Item -ItemType Directory -Force dist | Out-Null
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DSrcDir=build\Jarvis /DOutName=Jarvis-Setup-Lite installer\jarvis.iss
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DSrcDir=build\Jarvis /DOutName=Jarvis-Setup-Lite installer\jarvis.iss 2>&1 | Tee-Object -FilePath iscc-lite.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # Full installer: adds the Piper neural voice (offline). Change the voice names to switch voices:
       # list and samples: https://rhasspy.github.io/piper-samples/
@@ -148,7 +149,8 @@ jobs:
         if: steps.piper.outcome == 'success'
         shell: pwsh
         run: |
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DSrcDir=build\JarvisFull /DOutName=Jarvis-Setup installer\jarvis.iss
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DSrcDir=build\JarvisFull /DOutName=Jarvis-Setup installer\jarvis.iss 2>&1 | Tee-Object -FilePath iscc-full.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Without Piper the lite installer is the only one
         if: steps.piper.outcome != 'success'
@@ -176,6 +178,86 @@ jobs:
         with:
           name: jarvis-app
           path: build/Jarvis/jarvis-app.exe
+
+      # the checks run after the upload: the installers stay downloadable even when a check fails
+      # both installers are compiled with the Russian and the English language files (the language dialog)
+      - name: Check installer languages
+        shell: pwsh
+        run: |
+          foreach ($log in Get-ChildItem iscc-*.log) {
+            $text = Get-Content $log -Raw
+            foreach ($isl in "Languages\Russian.isl", "Default.isl") {
+              if ($text -notmatch [regex]::Escape($isl)) { Write-Output "::error title=installer::$($log.Name): $isl is not compiled in"; exit 1 }
+            }
+            if ($text -notmatch "Successful compile") { Write-Output "::error title=installer::$($log.Name): no successful compile"; exit 1 }
+            Write-Host "$($log.Name): Russian.isl and Default.isl compiled in"
+            Select-String -Path $log -Pattern "\[Languages\]|\.isl" | Select-Object -First 8 | ForEach-Object { "  " + $_.Line }
+          }
+
+      # an extra look inside the installers (languages, the files); innoextract may not know the newest Inno Setup
+      # format, so this step only informs
+      - name: Look inside the installers (innoextract)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          choco install innoextract -y --no-progress
+          foreach ($exe in "dist\Jarvis-Setup-Lite.exe", "dist\Jarvis-Setup.exe") {
+            Write-Host "=== $exe"
+            innoextract --list-languages $exe
+            innoextract -l $exe | Select-String -Pattern "jarvis-app.exe|piper.exe|vosk-model|ru.onnx" | Select-Object -First 10
+          }
+
+      # The Lite installer is installed silently and the installed Jarvis is started on the CI machine: its page server
+      # answers, a second start does not leave a second process, the window is asked to show, and the full exit ends the
+      # process. (The CI machine has no microphone and no user at the screen: the voice is not checked here.)
+      - name: Smoke test of the installed Jarvis
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $dir = "C:\JarvisSmoke"
+          $p = Start-Process dist\Jarvis-Setup-Lite.exe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LANG=russian", "/DIR=$dir", "/LOG=$PWD\install.log" -PassThru -Wait
+          Write-Host "installer exit code: $($p.ExitCode)"
+          Get-Content install.log -TotalCount 12
+          if ($p.ExitCode -ne 0) { throw "silent install failed" }
+          foreach ($f in "jarvis-app.exe", "resources\commands", "unins000.exe") {
+            if (-not (Test-Path "$dir\$f")) { throw "not installed: $f" }
+          }
+          $app = Start-Process "$dir\jarvis-app.exe" -WorkingDirectory $dir -PassThru
+          $up = $false
+          for ($i = 0; $i -lt 90 -and -not $up; $i++) {
+            Start-Sleep 1
+            try { $state = Invoke-RestMethod http://127.0.0.1:9714/state -TimeoutSec 3; $up = $true } catch {}
+            if ($app.HasExited) { throw "jarvis-app ended at start, exit code $($app.ExitCode)" }
+          }
+          if (-not $up) { throw "the page server did not answer in 90 s" }
+          Write-Host "page server answers; voice: $($state.voice_state.state) - $($state.voice_state.detail)"
+          $h = @{ "X-Jarvis" = "1" }
+          # a second start: shows the running window and ends, no second Jarvis stays
+          $second = Start-Process "$dir\jarvis-app.exe" -WorkingDirectory $dir -PassThru
+          if (-not $second.WaitForExit(40000)) { $second.Kill(); throw "the second start did not end" }
+          $count = @(Get-Process jarvis-app -ErrorAction SilentlyContinue).Count
+          Write-Host "second start ended (exit code $($second.ExitCode)); jarvis-app processes: $count"
+          if ($count -ne 1) { throw "expected one jarvis-app process, found $count" }
+          $r = Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $h -Body '{"name":"show_window"}'
+          Write-Host "show_window: $($r | ConvertTo-Json -Compress)"
+          $r = Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $h -Body '{"name":"hide_window"}'
+          Write-Host "hide_window: $($r | ConvertTo-Json -Compress)"
+          Start-Sleep 2
+          if ($app.HasExited) { throw "Jarvis ended after the window requests" }
+          # without the X-Jarvis header nothing is done (a web page cannot close Jarvis)
+          try { Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Body '{"name":"app_exit"}' | Out-Null; throw "app_exit without the header was accepted" } catch { if ($_.Exception.Message -like "*without the header*") { throw } }
+          Start-Sleep 1
+          if ($app.HasExited) { throw "Jarvis ended on a request without the header" }
+          $r = Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $h -Body '{"name":"app_exit"}'
+          Write-Host "app_exit: $($r | ConvertTo-Json -Compress)"
+          if (-not $app.WaitForExit(15000)) { throw "Jarvis did not end after the full exit" }
+          Write-Host "Jarvis ended after the full exit, exit code $($app.ExitCode)"
+          if (@(Get-Process jarvis-app -ErrorAction SilentlyContinue).Count -ne 0) { throw "a jarvis-app process is still running" }
+          $log = Get-ChildItem "$env:APPDATA", "$env:LOCALAPPDATA" -Recurse -Depth 3 -Filter log.txt -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*jarvis*" } | Sort-Object LastWriteTime | Select-Object -Last 1
+          if ($log) {
+            Write-Host "=== $($log.FullName)"
+            Select-String -Path $log.FullName -Pattern "Window:|UI:|Exit requested|Microphone|instance|show" | Select-Object -Last 30 | ForEach-Object { $_.Line }
+          } else { Write-Host "log.txt not found" }
 
   # The release "build-latest": only from main and only when BOTH the tests and the build passed.
   # dev/* branches stop before this job (the check of a branch is never published).
