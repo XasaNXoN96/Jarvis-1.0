@@ -326,8 +326,9 @@ pub fn execute_command(cmd_path: &PathBuf, cmd_config: &JCommand, phrase: Option
     // execute command by the type
     match cmd_config.cmd_type.as_str() {
 
-        // BRUH
-        "voice" => Ok(true),
+        // a reply sound only. No listening after it (like the Lua commands): the microphone would hear Jarvis'
+        // own voice and run random commands
+        "voice" => Ok(false),
         
         // LUA command
         #[cfg(feature = "lua")]
@@ -355,7 +356,7 @@ pub fn execute_command(cmd_path: &PathBuf, cmd_config: &JCommand, phrase: Option
             }
 
             execute_exe(exe_path.to_str().unwrap(), &cmd_config.exe_args)
-                .map(|_| true)
+                .map(|_| false)
                 .map_err(|e| format!("AHK process spawn error: {}", e))
         }
         
@@ -363,7 +364,7 @@ pub fn execute_command(cmd_path: &PathBuf, cmd_config: &JCommand, phrase: Option
         // @TODO: Consider security restrictions
         "cli" => {
             execute_cli(&cmd_config.cli_cmd, &cmd_config.cli_args)
-                .map(|_| true)
+                .map(|_| false)
                 .map_err(|e| format!("CLI command error: {}", e))
         }
         
