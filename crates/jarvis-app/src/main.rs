@@ -24,6 +24,10 @@ mod app;
 #[cfg(not(target_os = "macos"))]
 mod tray;
 
+// the own window of Jarvis on Windows (WebView2)
+#[cfg(target_os = "windows")]
+mod window;
+
 static SHOULD_STOP: AtomicBool = AtomicBool::new(false);
 
 fn main() -> Result<(), String> {
@@ -45,7 +49,10 @@ fn main() -> Result<(), String> {
         let wait = std::time::Duration::from_secs(if restarting { 15 } else { 0 });
         if !jarvis_core::instance::acquire_or_wait(jarvis_core::instance::NAME, wait) {
             if !std::env::args().any(|a| a == "--background" || a == "--no-ui") {
-                jarvis_core::ui::open_window();
+                // the running Jarvis shows its own window; only when it does not answer, a browser window opens
+                if !ask_running_to_show() {
+                    jarvis_core::ui::open_browser_window();
+                }
             }
             return Ok(());
         }
@@ -222,17 +229,13 @@ fn main() -> Result<(), String> {
     jarvis_core::ui::start();
     // the list of installed programs ("открой Photoshop"): read from its file, rebuilt in the background when old
     jarvis_core::appindex::ensure_loaded();
+    // (on Windows the own window is made by the window loop at the end of main)
+    #[cfg(not(target_os = "windows"))]
     {
         let args: Vec<String> = std::env::args().collect();
         let has = |flag: &str| args.iter().any(|a| a == flag);
-        if !has("--background") && !has("--no-ui") && jarvis_core::ui::open_window() {
-            #[cfg(target_os = "windows")]
-            if !has("--console") {
-                // the window replaces the console
-                unsafe {
-                    winapi::um::wincon::FreeConsole();
-                }
-            }
+        if !has("--background") && !has("--no-ui") {
+            jarvis_core::ui::open_window();
         }
     }
 
@@ -259,6 +262,40 @@ fn main() -> Result<(), String> {
 
 pub fn request_stop() {
     SHOULD_STOP.store(true, Ordering::SeqCst);
+}
+
+// "Полностью закрыть JARVIS" / "Выход": the wake word stops, the microphone and the speech are released, the phone
+// remote is closed, then the process ends (the settings and the history are saved as they change)
+pub fn shutdown_and_exit() -> ! {
+    info!("Exit requested: stopping the microphone, the speech and the remote");
+    request_stop();
+    jarvis_core::tts::stop();
+    // released and never reopened by the background recovery
+    jarvis_core::recorder::shutdown();
+    jarvis_core::remote::stop();
+    jarvis_core::uistate::log_event("start", "Jarvis закрыт пользователем");
+    // the voice loop sees the stop flag; a short pause lets it leave the microphone alone
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    std::process::exit(0)
+}
+
+// a second start: the running Jarvis is asked (through its local page server) to show its window
+fn ask_running_to_show() -> bool {
+    use std::io::{Read, Write};
+    let body = r#"{"name":"show_window"}"#;
+    let Ok(mut s) = std::net::TcpStream::connect_timeout(&"127.0.0.1:9714".parse().unwrap(), std::time::Duration::from_secs(2)) else { return false };
+    let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(4)));
+    let req = format!(
+        "POST /action HTTP/1.1\r\nHost: 127.0.0.1:9714\r\nX-Jarvis: 1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        body.len(),
+        body
+    );
+    if s.write_all(req.as_bytes()).is_err() {
+        return false;
+    }
+    let mut answer = String::new();
+    let _ = s.read_to_string(&mut answer);
+    answer.starts_with("HTTP/1.1 200") && answer.contains("\"ok\":true")
 }
 
 pub fn should_stop() -> bool {

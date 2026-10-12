@@ -57,30 +57,38 @@ pub fn init_blocking(settings: SettingsManager) {
         }).unwrap();
     }
 
+    // Windows: one message loop for the tray and the own window of Jarvis (window.rs)
     #[cfg(target_os = "windows")]
     {
-        loop {
-            if let Ok(event) = menu_channel.try_recv() {
-                handle_menu_event(&event, &settings, &tray_state);
-            }
-            
-            // pump Windows messages
-            unsafe {
-                let mut msg: winapi::um::winuser::MSG = std::mem::zeroed();
-                while winapi::um::winuser::PeekMessageW(
-                    &mut msg, 
-                    std::ptr::null_mut(), 
-                    0, 0, 
-                    winapi::um::winuser::PM_REMOVE
-                ) != 0 {
-                    winapi::um::winuser::TranslateMessage(&msg);
-                    winapi::um::winuser::DispatchMessageW(&msg);
+        let _ = &menu_channel; // the window loop receives the menu events through its handler
+        let args: Vec<String> = std::env::args().collect();
+        let has = |flag: &str| args.iter().any(|a| a == flag);
+        let show_at_start = !has("--background") && !has("--no-ui");
+        let keep_console = has("--console");
+        let hooks = crate::window::Hooks {
+            url: jarvis_core::ui::url(),
+            data_dir: jarvis_core::APP_CONFIG_DIR.get().map(|d| d.join("webview2")),
+            icon_png: TRAY_ICON_BYTES,
+            title: "Джарвис".to_string(),
+            show_at_start,
+            on_menu: Box::new(move |event| handle_menu_event(event, &settings, &tray_state)),
+            on_exit: Box::new(|| crate::shutdown_and_exit()),
+            fallback_open: Box::new(|| jarvis_core::ui::open_browser_window()),
+            on_first_show: Box::new(move || {
+                if !keep_console {
+                    // the window replaces the console
+                    unsafe {
+                        winapi::um::wincon::FreeConsole();
+                    }
                 }
-            }
-            std::thread::sleep(std::time::Duration::from_millis(50));
-        }
+            }),
+        };
+        jarvis_core::ui::set_window_host(Box::new(|| crate::window::send(crate::window::UserEvent::Show)));
+        info!("Tray initialized.");
+        crate::window::run(hooks);
     }
 
+    #[cfg(not(target_os = "windows"))]
     info!("Tray initialized.");
 }
 
@@ -152,7 +160,7 @@ fn handle_menu_event(event: &MenuEvent, settings: &SettingsManager, tray_state: 
         "open_ui" => {
             jarvis_core::ui::open_window();
         }
-        "exit" => std::process::exit(0),
+        "exit" => crate::shutdown_and_exit(),
         "restart" => {
             info!("Restarting from tray menu...");
             restart_app();

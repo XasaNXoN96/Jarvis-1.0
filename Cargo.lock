@@ -3274,11 +3274,13 @@ dependencies = [
  "platform-dirs",
  "rand 0.8.5",
  "simple-log",
+ "tao",
  "tokio",
  "tray-icon",
  "winapi",
  "winit",
  "winresource",
+ "wry",
 ]
 
 [[package]]

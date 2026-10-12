@@ -26,6 +26,9 @@ features = []
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { version = "0.3", features = ["winuser", "wincon"] }
+# the own window of Jarvis (WebView2): the cross asks "tray / exit / cancel", the tray hides and shows it
+tao = "0.34"
+wry = "0.53"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
