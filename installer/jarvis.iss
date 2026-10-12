@@ -70,6 +70,13 @@ Name: "autostart"; Description: "{cm:TaskAutostart}"; GroupDescription: "{cm:Tas
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Jarvis"; ValueData: """{app}\jarvis-app.exe"" --background"; Flags: uninsdeletevalue; Tasks: autostart
+; autostart switched on later in the settings of Jarvis writes the same value: the uninstaller removes it too
+; (otherwise Windows would try to start a deleted program at every login)
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "Jarvis"; Flags: uninsdeletevalue
+
+[UninstallRun]
+; Jarvis running hidden in the tray keeps its files open: it is ended before its files are removed
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM jarvis-app.exe"; Flags: runhidden waituntilterminated; RunOnceId: "StopJarvis"
 
 [Files]
 Source: "..\{#SrcDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion

@@ -220,12 +220,20 @@ jobs:
           $lnk = Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Jarvis" -Filter *.lnk | ForEach-Object { $_.Name }
           Write-Host "Start menu: $($lnk -join ', ')"
           if (@($lnk).Count -lt 2) { throw "the Start menu shortcuts are missing" }
+          # uninstall while Jarvis runs in the tray and autostart was switched on from its settings
+          $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+          Set-ItemProperty -Path $runKey -Name "Jarvis" -Value "`"$dir\jarvis-app.exe`" --background"
+          $app = Start-Process (Join-Path $dir "jarvis-app.exe") -ArgumentList "--background" -WorkingDirectory $dir -PassThru
+          Start-Sleep 8
           $u = Start-Process (Join-Path $dir "unins000.exe") -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -PassThru -Wait
           Write-Host "uninstaller exit code: $($u.ExitCode)"
           # the uninstaller finishes in a copy of itself: a few seconds
           for ($i = 0; $i -lt 30 -and (Test-Path -LiteralPath (Join-Path $dir "jarvis-app.exe")); $i++) { Start-Sleep 1 }
           if (Test-Path -LiteralPath (Join-Path $dir "jarvis-app.exe")) { throw "the uninstaller left jarvis-app.exe" }
           Write-Host "uninstalled: the program is removed"
+          if (-not $app.WaitForExit(10000)) { $app.Kill(); throw "the uninstaller left Jarvis running" }
+          if ((Get-ItemProperty -Path $runKey -ErrorAction SilentlyContinue).PSObject.Properties.Name -contains "Jarvis") { throw "the autostart entry stayed after uninstall" }
+          Write-Host "uninstalled: Jarvis was ended and the autostart entry removed"
 
       # The Lite installer is installed silently and the installed Jarvis is started on the CI machine: its page server
       # answers, a second start does not leave a second process, the window is asked to show, and the full exit ends the
@@ -270,10 +278,12 @@ jobs:
           try { Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Body '{"name":"app_exit"}' | Out-Null; throw "app_exit without the header was accepted" } catch { if ($_.Exception.Message -like "*without the header*") { throw } }
           Start-Sleep 1
           if ($app.HasExited) { throw "Jarvis ended on a request without the header" }
+          $sw = [Diagnostics.Stopwatch]::StartNew()
           $r = Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $h -Body '{"name":"app_exit"}'
           Write-Host "app_exit: $($r | ConvertTo-Json -Compress)"
           if (-not $app.WaitForExit(15000)) { throw "Jarvis did not end after the full exit" }
-          Write-Host "Jarvis ended after the full exit, exit code $($app.ExitCode)"
+          Write-Host "Jarvis ended after the full exit in $([int]$sw.Elapsed.TotalMilliseconds) ms, exit code $($app.ExitCode)"
+          if ($sw.Elapsed.TotalSeconds -gt 5) { Write-Output "::warning title=exit::the full exit took $([int]$sw.Elapsed.TotalSeconds) s" }
           if (@(Get-Process jarvis-app -ErrorAction SilentlyContinue).Count -ne 0) { throw "a jarvis-app process is still running" }
           # an update over a running Jarvis (it may sit hidden in the tray): the installer closes it and installs
           $app = Start-Process "$dir\jarvis-app.exe" -ArgumentList "--background" -WorkingDirectory $dir -PassThru
