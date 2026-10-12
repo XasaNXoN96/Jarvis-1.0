@@ -111,7 +111,7 @@ fn make_window(target: &tao::event_loop::EventLoopWindowTarget<UserEvent>, h: &H
         .map_err(|e| e.to_string())?;
     let local = h.url.clone();
     let ipc_proxy = proxy.clone();
-    let webview = WebViewBuilder::new_with_web_context(ctx)
+    let builder = WebViewBuilder::new_with_web_context(ctx)
         .with_url(&h.url)
         .with_ipc_handler(move |req| {
             // the close dialog ("close:<answer>") and the full screen button ("full:on" / "full:off") talk to the window
@@ -135,10 +135,20 @@ fn make_window(target: &tao::event_loop::EventLoopWindowTarget<UserEvent>, h: &H
         .with_new_window_req_handler(|url, _| {
             open_in_browser(&url);
             wry::NewWindowResponse::Deny
-        })
-        .build(&window)
-        .map_err(|e| e.to_string())?;
+        });
+    let webview = with_debug_port(builder).build(&window).map_err(|e| e.to_string())?;
     Ok(Win { window, webview })
+}
+
+// The debugging port of the window: only when JARVIS_WEBVIEW_DEBUG_PORT is set in the environment of this run (the CI of
+// the installer uses it to check the interface in the real window). Never set by the program itself or the installer.
+fn with_debug_port(builder: WebViewBuilder) -> WebViewBuilder {
+    use wry::WebViewBuilderExtWindows;
+    match std::env::var("JARVIS_WEBVIEW_DEBUG_PORT").ok().and_then(|p| p.parse::<u16>().ok()).filter(|p| *p >= 1024) {
+        // (the default arguments of wry are repeated: giving any replaces them)
+        Some(port) => builder.with_additional_browser_args(format!("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port={} --remote-debugging-address=127.0.0.1", port)),
+        None => builder,
+    }
 }
 
 // "full:on" / "full:off" of the page; anything else is not a full screen request

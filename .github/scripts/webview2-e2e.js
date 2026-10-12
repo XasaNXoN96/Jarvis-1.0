@@ -1,5 +1,5 @@
 // The interface checked inside the REAL WebView2 window of the installed Jarvis (Edge engine), not in a test browser:
-// connected through the debugging port that the CI opens for this one run (WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS).
+// connected through the debugging port that the CI opens for this one run (JARVIS_WEBVIEW_DEBUG_PORT).
 // Usage: node webview2-e2e.js <port> <report-file>
 const { chromium } = require('playwright-core');
 
@@ -76,7 +76,7 @@ const { chromium } = require('playwright-core');
 
   // the dialogs: «delete» puts the dialog into the archive (Settings)
   await page.evaluate(async () => {
-    await fetch('/action', { method: 'POST', headers: { 'X-Jarvis': '1' }, body: JSON.stringify({ name: 'ask', text: 'сколько времени', rid: 'ci-webview-1' }) });
+    await fetch('/chat', { method: 'POST', headers: { 'X-Jarvis': '1' }, body: JSON.stringify({ op: 'ask', text: 'сколько времени', rid: 'ci-webview-1' }) });
   });
   await wait(4000);
   await page.evaluate(() => show('chat'));

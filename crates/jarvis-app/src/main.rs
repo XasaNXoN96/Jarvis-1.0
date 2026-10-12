@@ -35,6 +35,10 @@ fn selftest_speech() -> String {
     let settings = db::init();
     let _ = DB.set(settings.arc().clone());
     i18n::init(&settings.lock().language);
+    // the registry of the models: the recognizer takes its model from it (the program does this at its start)
+    if let Err(e) = models::init() {
+        return format!("FAIL models: {}", e);
+    }
     let t0 = std::time::Instant::now();
     let phrase = "открой ютуб и поставь таймер на пять минут";
     let wav = match jarvis_core::tts::synth_to_wav(phrase) {
@@ -75,7 +79,11 @@ fn main() -> Result<(), String> {
     // is written to the file; nothing is installed or changed. Used by the CI of the full installer.
     if let Some(i) = std::env::args().position(|a| a == "--selftest-speech") {
         let out = std::env::args().nth(i + 1).unwrap_or_else(|| "selftest-speech.txt".into());
-        let report = selftest_speech();
+        // (a panic is reported in the file as well: the CI must see the reason, not only an exit code)
+        let report = match std::panic::catch_unwind(selftest_speech) {
+            Ok(r) => r,
+            Err(e) => format!("FAIL panic: {}", e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default()),
+        };
         let _ = std::fs::write(&out, &report);
         println!("{}", report);
         std::process::exit(if report.starts_with("OK") { 0 } else { 1 });
