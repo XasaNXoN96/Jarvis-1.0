@@ -108,6 +108,24 @@ pub fn recover_delay(attempt: u32) -> std::time::Duration {
     RECOVER_EVERY.saturating_mul(1 << attempt.min(4)).min(std::time::Duration::from_secs(60))
 }
 
+// A microphone that drops out again and again (a loose cable, a sleeping USB hub) is told to the user once in ten
+// minutes; every loss still goes to the log and the event list.
+pub const LOST_NOTICE_EVERY: std::time::Duration = std::time::Duration::from_secs(600);
+static LOST_NOTICE_AT: parking_lot::Mutex<Option<std::time::Instant>> = parking_lot::Mutex::new(None);
+
+pub fn lost_notice_due() -> bool {
+    notice_due(&LOST_NOTICE_AT, std::time::Instant::now())
+}
+
+fn notice_due(last: &parking_lot::Mutex<Option<std::time::Instant>>, now: std::time::Instant) -> bool {
+    let mut last = last.lock();
+    if last.map(|t| now.duration_since(t) < LOST_NOTICE_EVERY).unwrap_or(false) {
+        return false;
+    }
+    *last = Some(now);
+    true
+}
+
 pub fn recover_in_background() {
     use std::sync::atomic::Ordering;
     if RECOVERING.swap(true, Ordering::SeqCst) {
@@ -117,7 +135,9 @@ pub fn recover_in_background() {
         let mut attempt = 0u32;
         loop {
             std::thread::sleep(recover_delay(attempt));
-            match recover_step(SHUT_DOWN.load(Ordering::SeqCst), crate::MIC_MUTED.load(Ordering::SeqCst)) {
+            // (the text mode has no microphone at all: nothing to bring back)
+            let ends = SHUT_DOWN.load(Ordering::SeqCst) || crate::VOICE_TEXT_ONLY.load(Ordering::SeqCst);
+            match recover_step(ends, crate::MIC_MUTED.load(Ordering::SeqCst)) {
                 Recover::Stop => break,
                 Recover::Wait => continue,
                 Recover::Try => {}
@@ -280,6 +300,16 @@ mod recover_tests {
         assert_eq!(recover_step(false, true), Recover::Wait, "switched off by the user: stays off, the attempts wait");
         assert_eq!(recover_step(true, false), Recover::Stop, "Jarvis exits: nothing is opened");
         assert_eq!(recover_step(true, true), Recover::Stop);
+    }
+
+    #[test]
+    fn a_microphone_that_drops_out_again_and_again_is_told_once_in_ten_minutes() {
+        let last = parking_lot::Mutex::new(None);
+        let t0 = std::time::Instant::now();
+        assert!(notice_due(&last, t0), "the first loss is told");
+        assert!(!notice_due(&last, t0 + std::time::Duration::from_secs(60)), "a second loss a minute later is not");
+        assert!(!notice_due(&last, t0 + std::time::Duration::from_secs(599)));
+        assert!(notice_due(&last, t0 + LOST_NOTICE_EVERY), "after ten minutes it is told again");
         let delays: Vec<u64> = (0..7).map(|a| recover_delay(a).as_secs()).collect();
         assert_eq!(delays, [5, 10, 20, 40, 60, 60, 60], "a missing microphone is not tried every 5 s forever");
     }

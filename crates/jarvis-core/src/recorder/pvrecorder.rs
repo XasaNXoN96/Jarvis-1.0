@@ -234,7 +234,9 @@ pub fn read_microphone(frame_buffer: &mut [i16]) {
                 let why = format!("микрофон перестал отдавать звук: {} (отключён, занят другой программой или Windows вышла из сна)", text);
                 *crate::VOICE_ERROR.lock() = why.clone();
                 crate::uistate::log_event("error", &why);
-                crate::notify::push("system_error", "Микрофон", &format!("{}. Джарвис пробует подключить его снова; команды текстом работают.", why), true);
+                if crate::recorder::lost_notice_due() {
+                    crate::notify::push("system_error", "Микрофон", &format!("{}. Джарвис пробует подключить его снова; команды текстом работают.", why), true);
+                }
                 // the device may come back (after sleep, a reconnected headset): it is opened again in the background
                 crate::recorder::recover_in_background();
             }
