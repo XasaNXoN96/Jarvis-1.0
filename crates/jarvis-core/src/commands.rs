@@ -146,6 +146,12 @@ pub fn fetch_indexed_program<'a>(phrase: &str, commands: &'a [JCommandsList]) ->
     commands.iter().flat_map(|l| l.commands.iter().map(move |c| (&l.path, c))).find(|(_, c)| c.id == id)
 }
 
+const PARTS: &[&str] = &["звук", "громк", "экран", "монитор", "дисплей", "микрофон", "блютуз", "bluetooth", "вайфай", "wifi", "интернет", "подсветк", "свет", "музык", "камер", "sound", "volume", "screen", "monitor", "display", "mic", "camera", "music"];
+
+fn is_power_command(id: &str) -> bool {
+    matches!(id, "assistant_power_off" | "assistant_power_restart")
+}
+
 pub fn fetch_by_triggers<'a>(
     phrase: &str,
     commands: &'a [JCommandsList],
@@ -160,9 +166,15 @@ pub fn fetch_by_triggers<'a>(
     // best = (stems count, total characters of the stems, command). Ties on the stems count are
     // decided by the longer (more specific) trigger, then by the smaller id so the result is stable.
     let mut best: Option<(usize, usize, &PathBuf, &JCommand)> = None;
+    // "выключи звук на компьютере", "выключи экран ноутбука": a part of the computer is named, so the phrase is about
+    // that part, never about switching the whole computer off or restarting it
+    let names_a_part = words.iter().any(|w| PARTS.iter().any(|p| w.starts_with(p))) || normalized.contains("wi-fi");
 
     for cmd_list in commands {
         for cmd in &cmd_list.commands {
+            if names_a_part && is_power_command(&cmd.id) {
+                continue;
+            }
             for trigger in cmd.get_triggers(&lang) {
                 let stems: Vec<String> = trigger
                     .to_lowercase()

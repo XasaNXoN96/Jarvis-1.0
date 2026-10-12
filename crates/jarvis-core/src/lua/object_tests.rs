@@ -598,3 +598,17 @@ fn installed_programs_are_routed_without_taking_the_phrases_of_other_commands() 
     crate::appindex::set_for_tests(Vec::new());
 }
 
+
+#[test]
+fn a_named_part_of_the_computer_never_switches_the_computer_off() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({}));
+    for phrase in ["выключи звук на компьютере", "выключи звук на ноутбуке", "turn off the sound on the computer"] {
+        let id = w.route(phrase);
+        assert!(!matches!(id.as_deref(), Some("assistant_power_off") | Some("assistant_power_restart")), "{} -> {:?}", phrase, id);
+    }
+    assert_eq!(w.route("выключи звук на компьютере").as_deref(), Some("assistant_volume_mute"));
+    // the computer itself still goes to the power command (which asks "да/нет" first)
+    assert_eq!(w.route("выключи компьютер").as_deref(), Some("assistant_power_off"));
+    assert_eq!(w.route("перезагрузи компьютер").as_deref(), Some("assistant_power_restart"));
+}
