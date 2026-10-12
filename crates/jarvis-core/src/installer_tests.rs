@@ -81,6 +81,9 @@ fn the_last_page_starts_the_normal_jarvis_first_and_the_text_mode_only_on_reques
     assert!(normal.contains("postinstall") && !normal.contains("unchecked"), "and it is checked");
     let text = run[1];
     assert!(text.contains("--text") && text.contains("unchecked"), "the text mode is a second, unchecked choice");
+    // the two choices exclude each other (code of the last page), and the longer text does not cover them
+    assert!(t.contains("RunList.OnClickCheck := @RunListClickCheck") && t.contains("WizardForm.RunList.Checked[1 - i] := False"));
+    assert!(t.contains("AdjustLabelHeight(WizardForm.FinishedLabel)"));
     // the normal shortcut starts the window, not the text mode
     let icons = section(&t, "Icons");
     assert!(icons.iter().any(|l| l.starts_with("Name: \"{group}\\Jarvis\"") && !l.contains("--text")));

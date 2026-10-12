@@ -25,8 +25,9 @@ SetupIconFile=..\resources\icons\icon.ico
 ; the language is always asked, even when Windows has one of them as its own language
 ShowLanguageDialog=yes
 LanguageDetectionMethod=uilanguage
-; Jarvis running from a previous installation is closed by the installer (and started again from the last page)
-CloseApplications=yes
+; Jarvis running from a previous installation is closed by the installer (and started again from the last page);
+; "force": if it does not close by itself (it may run hidden in the tray), it is closed anyway
+CloseApplications=force
 RestartApplications=no
 
 [Languages]
@@ -89,10 +90,30 @@ Filename: "{app}\jarvis-app.exe"; Parameters: "--text"; WorkingDir: "{app}"; Des
 procedure InitializeWizard();
 begin
   WizardForm.WelcomeLabel2.Caption := WizardForm.WelcomeLabel2.Caption + #13#10#13#10 + CustomMessage('WelcomeAbout');
+  WizardForm.AdjustLabelHeight(WizardForm.WelcomeLabel2);
+end;
+
+// the two ways to start on the last page exclude each other: the normal Jarvis or the text mode, never both
+// (a second start would only show the window of the first one)
+procedure RunListClickCheck(Sender: TObject);
+var
+  i: Integer;
+begin
+  i := WizardForm.RunList.ItemIndex;
+  if (i >= 0) and (WizardForm.RunList.Items.Count = 2) and WizardForm.RunList.Checked[i] then
+    WizardForm.RunList.Checked[1 - i] := False;
 end;
 
 procedure CurPageChanged(CurPageID: Integer);
+var
+  grown: Integer;
 begin
   if CurPageID = wpFinished then
+  begin
     WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 + CustomMessage('EditionNote');
+    // the longer text gets its height and the choices move below it (no overlap)
+    grown := WizardForm.AdjustLabelHeight(WizardForm.FinishedLabel);
+    WizardForm.RunList.Top := WizardForm.RunList.Top + grown;
+    WizardForm.RunList.OnClickCheck := @RunListClickCheck;
+  end;
 end;
