@@ -822,6 +822,15 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
         ("GET", "/chats") => respond(&mut stream, "200 OK", "application/json", &chats_json().to_string()),
         ("GET", "/scenarios") => respond(&mut stream, "200 OK", "application/json", &scenarios_json().to_string()),
         ("GET", "/tasks") => respond(&mut stream, "200 OK", "application/json", &crate::tasks::json().to_string()),
+        ("GET", "/telegram") => respond(&mut stream, "200 OK", "application/json", &crate::telegram::json().to_string()),
+        ("POST", "/telegram") => {
+            if !req.custom_header {
+                respond(&mut stream, "403 Forbidden", "text/plain", "forbidden");
+                return Ok(());
+            }
+            let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap_or(json!({}));
+            respond(&mut stream, "200 OK", "application/json", &crate::telegram::action(&body).to_string());
+        }
         ("POST", "/tasks") => {
             if !req.custom_header {
                 respond(&mut stream, "403 Forbidden", "text/plain", "forbidden");

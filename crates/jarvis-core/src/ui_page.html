@@ -149,6 +149,7 @@
   .feed.ok { border-left-color: #6fdca099; } .feed.err { border-left-color: #ff6b7a99; } .feed.err span { color: #ffb3bc; }
   .cat-side .ei, .card h3 .ei, .tabs button, .quick button { filter: grayscale(1) brightness(1.25); }
   .sw input:checked + span::after { background: #0a0a0b; }
+  .tg-code { font-size: 20px; letter-spacing: .25em; font-variant-numeric: tabular-nums; }
   /* tasks */
   .tk-box { max-width: 760px; width: 100%; margin: 0 auto; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
   .tk-head { display: flex; justify-content: space-between; align-items: baseline; } .tk-brand { letter-spacing: .28em; font-size: 13px; color: var(--dim); } .tk-head b { font-weight: 400; font-variant-numeric: tabular-nums; color: var(--text); }
@@ -718,6 +719,19 @@
         </div>
       </div>
 
+      <div class="card" style="margin-bottom:14px" id="tg-card"><h3><span class="ei">✈</span>Управление через Telegram</h3>
+        <small class="dim">Пишите команды своему Telegram-боту с телефона из любой сети, как в окне Джарвиса: «поставь таймер на 1 минуту», «сверни все окна», «выключи компьютер» (спросит «да / нет»). Джарвис сам опрашивает Telegram — входящие порты на компьютере не открываются. <b>Тексты команд и ответов проходят через серверы Telegram.</b> Бот слушается только одного привязанного аккаунта.</small>
+        <div class="setrow"><div class="l">1. Токен бота<small id="tg-token-hint">создайте бота в Telegram у @BotFather (команда /newbot) и вставьте токен сюда. Он хранится в зашифрованном виде и больше не показывается</small></div>
+          <div class="r"><input type="password" id="tg-token" placeholder="123456789:AA…" autocomplete="off"><button class="btn" id="tg-token-save" type="button">Сохранить</button></div></div>
+        <div class="setrow"><div class="l">2. Включить бота<small id="tg-status">выключен</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="tg-on"><span></span></label></div></div>
+        <div class="setrow"><div class="l">3. Привязать телефон<small id="tg-pair-hint">нажмите «Получить код» и отправьте его своему боту в течение 10 минут</small></div>
+          <div class="r"><b id="tg-code" class="tg-code"></b><button class="btn" id="tg-pair" type="button">Получить код</button><button class="btn" id="tg-unpair" type="button">Отвязать</button></div></div>
+        <div class="setrow"><div class="l">Удалить токен и привязку<small>бот перестанет работать с этим компьютером</small></div>
+          <div class="r"><button class="btn" id="tg-forget" type="button">Удалить</button></div></div>
+        <div class="msgline" id="tg-msg"></div>
+      </div>
+
       <div class="card" style="margin-bottom:14px" id="perf-card"><h3><span class="ei">⚡</span>Производительность</h3>
         <div class="setrow"><div class="l">Режим<small id="perf-hint">«Слабый ноут»: сфера рисуется меньшим числом точек и реже, анимация останавливается, когда окно скрыто или открыта другая страница. Команды и голос работают так же</small></div>
           <div class="r"><div class="seg" id="perf-seg"><button data-perf="low" type="button">Слабый ноут</button><button data-perf="normal" type="button">Обычный ПК</button></div></div></div>
@@ -815,7 +829,7 @@ function show(name) {
   if (name === 'builder') builderLoad();
   if (name === 'apps') appsLoad();
   if (name === 'files') filesLoad();
-  if (name === 'settings') { loadSettings(); refreshRemote(); }
+  if (name === 'settings') { loadSettings(); refreshRemote(); tgLoad(); }
   if (name === 'tasks') tasksLoad();
   if (name === 'chat') { chatTab === 'ai' ? aiOpen() : ($('#log').scrollTop = $('#log').scrollHeight); }
   renderChatViews();
@@ -2021,6 +2035,29 @@ function commandActions(list) {
     r.append(tm, sp); box.appendChild(r);
   }
 }
+
+// ---------- Telegram: the user's own bot, paired with one account ----------
+const tgApi = body => api('/telegram', body);
+function tgMsg(ok, t) { const m = $('#tg-msg'); m.className = 'msgline ' + (ok ? 'ok' : 'bad'); m.textContent = t || ''; }
+let tgTimer = 0;
+async function tgLoad() {
+  clearTimeout(tgTimer);
+  let t; try { t = await (await fetch('/telegram')).json(); } catch (e) { return; }
+  $('#tg-on').checked = !!t.enabled;
+  $('#tg-token').placeholder = t.token_saved ? 'токен сохранён' + (t.bot ? ' (@' + t.bot + ')' : '') : '123456789:AA…';
+  $('#tg-status').textContent = !t.available ? 'недоступно в этой сборке' : t.enabled ? ('бот ' + (t.bot ? '@' + t.bot + ' ' : '') + '— ' + (t.status || '…')) : 'выключен';
+  $('#tg-code').textContent = t.pairing ? t.pairing.code : '';
+  $('#tg-pair-hint').textContent = t.paired ? 'привязан аккаунт: ' + (t.owner || 'без имени') + '. Бот слушается только его'
+    : t.pairing ? 'отправьте боту этот код (осталось ' + Math.ceil(t.pairing.left / 60) + ' мин). Бот должен быть включён'
+    : 'нажмите «Получить код» и отправьте его своему боту в течение 10 минут';
+  $('#tg-unpair').disabled = !t.paired; $('#tg-pair').disabled = !t.token_saved;
+  if (currentPage === 'settings' && (t.enabled || t.pairing)) tgTimer = setTimeout(tgLoad, 3000);
+}
+$('#tg-token-save').onclick = async () => { const r = await tgApi({ op: 'token', token: $('#tg-token').value }); tgMsg(r.ok, r.message); if (r.ok) $('#tg-token').value = ''; tgLoad(); };
+$('#tg-on').onchange = async e => { const r = await tgApi({ op: 'enable', value: e.target.checked }); tgMsg(r.ok, r.message); tgLoad(); };
+$('#tg-pair').onclick = async () => { const r = await tgApi({ op: 'pair' }); tgMsg(r.ok, r.message); tgLoad(); };
+$('#tg-unpair').onclick = async () => { if (!confirm('Отвязать телефон? Бот перестанет выполнять команды, пока вы не привяжете его снова.')) return; const r = await tgApi({ op: 'unpair' }); tgMsg(r.ok, r.message); tgLoad(); };
+$('#tg-forget').onclick = async () => { if (!confirm('Удалить токен бота и привязку с этого компьютера?')) return; const r = await tgApi({ op: 'forget' }); tgMsg(r.ok, r.message); tgLoad(); };
 
 // ---------- "Задачи": the same list as the voice commands (Documents\\Jarvis-tasks.txt) ----------
 let tkList = [], tkEdit = -1, tkMax = 30;

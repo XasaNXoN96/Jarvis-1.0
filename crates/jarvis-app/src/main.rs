@@ -185,6 +185,8 @@ fn main() -> Result<(), String> {
     let console_tx = text_cmd_tx.clone();
     // phone / remote control feeds commands through the same channel (off until enabled)
     jarvis_core::remote::set_sender(text_cmd_tx.clone());
+    // the Telegram bot of the user feeds the same queue (only when the user switched it on and paired a phone)
+    jarvis_core::telegram::start();
 
     ipc::set_action_handler(move |action| {
         match action {
@@ -290,6 +292,7 @@ pub fn shutdown_and_exit() -> ! {
     // released and never reopened by the background recovery
     jarvis_core::recorder::shutdown();
     jarvis_core::remote::stop();
+    jarvis_core::telegram::stop();
     jarvis_core::uistate::log_event("start", "Jarvis закрыт пользователем");
     // the voice loop sees the stop flag; a short pause lets it leave the microphone alone
     std::thread::sleep(std::time::Duration::from_millis(300));

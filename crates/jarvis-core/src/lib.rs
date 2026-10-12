@@ -66,6 +66,7 @@ pub mod instance;
 pub mod input;
 pub mod scenario;
 pub mod tasks;
+pub mod telegram;
 pub mod autostart;
 pub mod screen;
 pub mod sites;

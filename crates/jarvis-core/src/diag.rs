@@ -556,6 +556,7 @@ pub fn internet_uses(s: &crate::uistate::UiSettings) -> Value {
         { "name": "Распознавание речи (Vosk)", "internet": false, "active": true, "detail": "на этом компьютере: звук с микрофона никуда не отправляется" },
         { "name": "Голос (Piper)", "internet": false, "active": true, "detail": "на этом компьютере" },
         { "name": "Пульт телефона", "internet": false, "active": crate::remote::is_running(), "detail": "только локальная сеть (Wi-Fi), по секретной ссылке" },
+        { "name": "Управление через Telegram", "internet": true, "active": crate::telegram::json()["enabled"] == true, "detail": "только если вы включили бота: тексты команд и ответов идут через api.telegram.org; бот слушается одного привязанного аккаунта" },
         { "name": "Уведомления других программ", "internet": false, "active": s.ext_enabled, "detail": "читаются только на этом компьютере, никуда не отправляются и не сохраняются" },
         { "name": "Диагностика", "internet": true, "active": false, "detail": "проверка интернета подключается к msftconnecttest.com, только по кнопке «Проверить всё»" },
     ])
