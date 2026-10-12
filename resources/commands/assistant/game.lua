@@ -3,9 +3,10 @@
 local id = jarvis.context.command_id
 
 if id == "assistant_game_off" then
-  jarvis.timer.cancel_all()
+  -- only the reminders of the game mode: "напомни через час позвонить маме" stays
+  jarvis.timer.cancel_titled(T("Игровой режим", "Game mode"))
   run("taskkill", { "/f", "/im", "steam.exe" })
-  say(T("Рабочий режим", "Work mode"), T("Таймеры отменены", "Timers cancelled"), T("Рабочий режим. Возвращаемся к делам.", "Work mode. Back to business."))
+  say(T("Рабочий режим", "Work mode"), T("Напоминания игрового режима отменены", "Game mode reminders cancelled"), T("Рабочий режим. Возвращаемся к делам.", "Work mode. Back to business."))
   return
 end
 

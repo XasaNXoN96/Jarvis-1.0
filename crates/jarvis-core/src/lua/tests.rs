@@ -574,4 +574,20 @@ mod tests {
         let text = std::fs::read_to_string(home.path().join("Documents/Jarvis-tasks.txt")).unwrap();
         assert_eq!(text, "молоко\nкупить хлеб\n");
     }
+
+    // "рабочий режим" ends the game mode only: a reminder of the user stays
+    #[test]
+    fn work_mode_cancels_only_the_game_mode_reminders() {
+        use crate::lua::api::timer;
+        let mine = format!("позвонить маме {}", rand::random::<u32>());
+        let id_mine = timer::start_timer(3600, "Напоминание".into(), mine.clone());
+        let id_game = timer::start_timer(3600, "Игровой режим".into(), format!("Время игры вышло {}", rand::random::<u32>()));
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../resources/commands/assistant");
+        let ctx = CommandContext { phrase: "рабочий режим".into(), command_id: "assistant_game_off".into(), command_path: dir.clone(), language: "ru".into(), slots: None };
+        assert!(execute(&dir.join("game.lua"), ctx, SandboxLevel::Full, Duration::from_secs(5)).is_ok());
+        let ids: Vec<u64> = timer::list_json().iter().filter_map(|t| t["id"].as_u64()).collect();
+        assert!(ids.contains(&id_mine), "the user's reminder was cancelled");
+        assert!(!ids.contains(&id_game), "the game mode reminder stays");
+        timer::cancel_titled("Напоминание");
+    }
 }

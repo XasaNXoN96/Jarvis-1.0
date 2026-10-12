@@ -201,6 +201,16 @@ pub fn cancel_all() -> usize {
     n
 }
 
+// only the timers of one kind ("Игровой режим"): the reminders of the user stay
+pub fn cancel_titled(title: &str) -> usize {
+    let mut timers = TIMERS.lock();
+    let before = timers.len();
+    timers.retain(|t| t.title != title);
+    let n = before - timers.len();
+    save(&timers);
+    n
+}
+
 pub fn count() -> usize {
     TIMERS.lock().len()
 }
@@ -229,6 +239,8 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
     )?;
 
     timer.set("cancel_all", lua.create_function(|_, ()| Ok(cancel_all()))?)?;
+    // jarvis.timer.cancel_titled(title) -> how many were cancelled
+    timer.set("cancel_titled", lua.create_function(|_, title: String| Ok(cancel_titled(&title)))?)?;
     timer.set("count", lua.create_function(|_, ()| Ok(count()))?)?;
 
     timer.set(
