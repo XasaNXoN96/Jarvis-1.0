@@ -700,5 +700,16 @@ mod tests {
         assert!(spoken.iter().any(|s| s == "Total Commander не запустилась"), "{:?}", spoken);
         assert!(shown.contains("не запустилась"), "{}", shown);
     }
+
+    #[test]
+    fn open_drive_d_in_russian_and_open_youtube_and_search_are_understood() {
+        let (shown, _) = answer("assistant_disk_open", "places.lua", "открой диск д");
+        assert!(shown.contains("D:"), "{}", shown);
+        let (shown, _) = answer("assistant_disk_open", "places.lua", "открой диск дэ");
+        assert!(shown.contains("D:"), "{}", shown);
+        // the search is for "котиков", not for "ютуб и найди котиков"
+        let (shown, _) = answer("assistant_website", "website.lua", "открой ютуб и найди котиков");
+        assert!(shown.ends_with("котиков") && !shown.contains("ютуб"), "{}", shown);
+    }
 }
 

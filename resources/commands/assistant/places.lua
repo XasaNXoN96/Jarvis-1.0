@@ -51,10 +51,14 @@ local PLACES = {
 }
 
 -- "открой диск D"
-local letter = phrase:match("диск%s+([a-zа-я])%f[%A]") or phrase:match("disk%s+([a-z])%f[%A]") or phrase:match("drive%s+([a-z])%f[%A]")
-local CYR = { ["д"] = "D", ["с"] = "C", ["е"] = "E", ["э"] = "E", ["ф"] = "F", ["г"] = "G" }
+-- (a Cyrillic letter is two bytes: Lua's [а-я] never matches it, so the word after "диск" is looked up instead)
+local CYR = { ["д"] = "D", ["дэ"] = "D", ["ди"] = "D", ["с"] = "C", ["си"] = "C", ["ц"] = "C", ["це"] = "C", ["цэ"] = "C",
+              ["е"] = "E", ["э"] = "E", ["и"] = "E", ["ф"] = "F", ["эф"] = "F", ["г"] = "G", ["гэ"] = "G", ["ж"] = "G" }
+local low = jarvis.text.lower(jarvis.context.phrase or "")
+local word = low:match("диск%s+(%S+)") or low:match("disk%s+(%S+)") or low:match("drive%s+(%S+)")
+local letter = word and (CYR[word] or (word:match("^[a-z]$") and word)) or nil
 if letter and (jarvis.context.command_id == "assistant_disk_open") then
-  letter = (CYR[letter] or letter):upper()
+  letter = letter:upper()
   if WIN and not jarvis.system.exists(letter .. ":\\") then
     say(T("Диск", "Drive"), T("Диска " .. letter .. ": нет на этом компьютере", "There is no drive " .. letter .. ": on this computer"))
     return
