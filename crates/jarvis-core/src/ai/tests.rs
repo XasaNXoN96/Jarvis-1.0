@@ -881,3 +881,132 @@ fn only_a_provider_on_this_computer_or_the_home_network_counts_as_local() {
         assert!(!is_local(remote), "{}", remote);
     }
 }
+
+#[test]
+fn a_deleted_dialog_goes_to_the_archive_with_its_messages_in_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path().to_path_buf());
+    let a = store.create();
+    store.append(&a.id, "user", "первый вопрос про синего слона");
+    store.append(&a.id, "assistant", "ответ про слона");
+    store.append(&a.id, "user", "второй вопрос");
+    store.archive(&a.id).unwrap();
+    assert!(store.load(&a.id).is_none(), "gone from the list of dialogs");
+    assert!(store.list().is_empty());
+    let got = store.archive_get(&a.id).unwrap();
+    let msgs = got["messages"].as_array().unwrap();
+    assert_eq!(msgs.len(), 3);
+    assert_eq!(msgs[0]["content"], "первый вопрос про синего слона");
+    assert_eq!(msgs[2]["content"], "второй вопрос");
+    let text = got["text"].as_str().unwrap();
+    assert!(text.find("первый вопрос").unwrap() < text.find("второй вопрос").unwrap());
+    assert!(text.contains("Jarvis: ответ про слона"));
+    assert!(store.archive_path(&a.id, "txt").unwrap().exists(), "a readable text copy is kept");
+    // survives a restart
+    let reopened = Store::new(dir.path().to_path_buf());
+    assert_eq!(reopened.archive_list("").len(), 1);
+    assert_eq!(reopened.stats()["archived"], 1);
+}
+
+#[test]
+fn the_archive_is_searched_in_titles_and_texts_and_an_empty_dialog_is_not_archived() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path().to_path_buf());
+    let a = store.create();
+    store.append(&a.id, "user", "рецепт борща");
+    let b = store.create();
+    store.append(&b.id, "user", "привет");
+    store.append(&b.id, "assistant", "Ответ про Погоду");
+    let c = store.create();
+    store.archive(&a.id).unwrap();
+    store.archive(&b.id).unwrap();
+    store.archive(&c.id).unwrap();
+    assert_eq!(store.archive_list("").len(), 2, "an empty dialog has nothing to keep");
+    assert!(store.load(&c.id).is_none());
+    assert_eq!(store.archive_list("БОРЩ").len(), 1);
+    assert_eq!(store.archive_list("погоду")[0]["id"], b.id);
+    assert!(store.archive_list("нет такого").is_empty());
+}
+
+#[test]
+fn restore_brings_the_dialog_back_once_and_repeated_actions_are_harmless() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path().to_path_buf());
+    let a = store.create();
+    store.append(&a.id, "user", "один");
+    store.append(&a.id, "assistant", "два");
+    store.archive(&a.id).unwrap();
+    assert!(store.archive(&a.id).is_err(), "a second archive of the same dialog finds nothing");
+    store.archive_restore(&a.id).unwrap();
+    assert_eq!(store.load(&a.id).unwrap().messages.len(), 2);
+    assert!(store.archive_list("").is_empty(), "no copy stays in the archive");
+    assert_eq!(store.list().len(), 1, "no duplicate");
+    assert!(store.archive_restore(&a.id).is_err(), "a second restore finds nothing");
+    // the same id in both places (a crash between the steps): the dialog is not doubled or overwritten
+    store.archive(&a.id).unwrap();
+    let again = Chat { id: a.id.clone(), title: "новее".into(), created: 1, updated: 2, messages: vec![ChatMsg { role: "user".into(), content: "новее".into(), ..Default::default() }] };
+    store.save(&again);
+    store.archive_restore(&a.id).unwrap();
+    assert_eq!(store.load(&a.id).unwrap().messages[0].content, "новее");
+    assert!(store.archive_list("").is_empty());
+}
+
+#[test]
+fn deleting_from_the_archive_and_clearing_it_remove_only_the_archive() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path().to_path_buf());
+    let keep = store.create();
+    store.append(&keep.id, "user", "живой диалог");
+    let mut ids = Vec::new();
+    for i in 0..3 {
+        let c = store.create();
+        store.append(&c.id, "user", &format!("старый {}", i));
+        store.archive(&c.id).unwrap();
+        ids.push(c.id);
+    }
+    assert!(store.archive_delete(&ids[0]));
+    assert!(!store.archive_delete(&ids[0]), "already gone");
+    assert!(!store.archive_path(&ids[0], "txt").unwrap().exists());
+    assert_eq!(store.archive_list("").len(), 2);
+    assert_eq!(store.archive_clear(), 2);
+    assert!(store.archive_list("").is_empty());
+    assert_eq!(store.load(&keep.id).unwrap().messages.len(), 1, "the live dialogs are untouched");
+    // path tricks
+    assert!(store.archive_get("../x").is_none());
+    assert!(store.archive_restore("../x").is_err());
+    assert!(!store.archive_delete("../x"));
+}
+
+#[test]
+fn a_storage_error_never_loses_the_dialog() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path().to_path_buf());
+    let a = store.create();
+    store.append(&a.id, "user", "важное");
+    // a FILE where the archive folder must be: the archive cannot be written
+    std::fs::write(dir.path().join("archive"), "x").unwrap();
+    assert!(store.archive(&a.id).is_err());
+    assert_eq!(store.load(&a.id).unwrap().messages[0].content, "важное", "the dialog stays where it was");
+    // a damaged archive file is skipped, the others are listed
+    std::fs::remove_file(dir.path().join("archive")).unwrap();
+    let b = store.create();
+    store.append(&b.id, "user", "второй");
+    store.archive(&b.id).unwrap();
+    std::fs::write(dir.path().join("archive").join("cbroken.json"), "{not json").unwrap();
+    assert_eq!(store.archive_list("").len(), 1);
+    assert_eq!(store.archive_clear(), 1);
+}
+
+#[test]
+fn archive_all_keeps_the_busy_dialog() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path().to_path_buf());
+    for i in 0..3 {
+        let c = store.create();
+        store.append(&c.id, "user", &format!("диалог {}", i));
+    }
+    let (done, kept) = store.archive_all();
+    assert_eq!((done, kept), (3, 0));
+    assert!(store.list().is_empty());
+    assert_eq!(store.archive_list("").len(), 3);
+}

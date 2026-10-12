@@ -755,12 +755,16 @@ mod tests {
     fn close_finds_the_process_the_program_really_runs_as() {
         let _p = PROCESS_LOCK.lock();
         crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow_mut().clear());
-        *crate::lua::api::system::TEST_PROCESSES.lock() = Some((vec!["TOTALCMD.EXE".into(), "explorer.exe".into()], vec![], 0));
-        let (shown, _) = answer("assistant_program_close", "program.lua", "закрой Total Commander");
-        assert!(!shown.contains("не запущена"), "the 32-bit copy runs: {}", shown);
-        *crate::lua::api::system::TEST_PROCESSES.lock() = Some((vec!["TOTALCMD64.EXE".into()], vec![], 0));
-        let (shown, _) = answer("assistant_program_close", "program.lua", "закрой Total Commander");
-        assert!(!shown.contains("не запущена"), "the 64-bit copy runs: {}", shown);
+        // (on Windows taskkill is real: the fake process does not exist, so taskkill answers 128 «не запущена» there
+        // and only the "nothing runs" case below can be checked)
+        if !cfg!(target_os = "windows") {
+            *crate::lua::api::system::TEST_PROCESSES.lock() = Some((vec!["TOTALCMD.EXE".into(), "explorer.exe".into()], vec![], 0));
+            let (shown, _) = answer("assistant_program_close", "program.lua", "закрой Total Commander");
+            assert!(!shown.contains("не запущена"), "the 32-bit copy runs: {}", shown);
+            *crate::lua::api::system::TEST_PROCESSES.lock() = Some((vec!["TOTALCMD64.EXE".into()], vec![], 0));
+            let (shown, _) = answer("assistant_program_close", "program.lua", "закрой Total Commander");
+            assert!(!shown.contains("не запущена"), "the 64-bit copy runs: {}", shown);
+        }
         *crate::lua::api::system::TEST_PROCESSES.lock() = Some((vec!["explorer.exe".into()], vec![], 0));
         let (shown, _) = answer("assistant_program_close", "program.lua", "закрой Total Commander");
         assert!(shown.contains("не запущена"), "nothing of it runs: {}", shown);

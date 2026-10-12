@@ -245,13 +245,23 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             json!({ "ok": true })
         }
         // ---- stored data (asked and confirmed in the window) ----
+        // "put every dialog into the archive" (the button of the dialogs page)
+        "history_archive_all" => {
+            if body.get("confirm").and_then(|v| v.as_str()) != Some("archive") {
+                return json!({ "ok": false, "message": "Нужно подтверждение" });
+            }
+            let (archived, kept) = crate::ai::store().archive_all();
+            json!({ "ok": true, "archived": archived, "kept": kept })
+        }
+        // the privacy section: the whole history, the archive included
         "history_delete_all" => {
             if body.get("confirm").and_then(|v| v.as_str()) != Some("delete") {
                 return json!({ "ok": false, "message": "Нужно подтверждение" });
             }
             let (deleted, kept) = crate::ai::store().delete_all();
-            crate::uistate::log_event("info", &format!("История удалена: диалогов {}", deleted));
-            json!({ "ok": true, "deleted": deleted, "kept": kept })
+            let archived = crate::ai::store().archive_clear();
+            crate::uistate::log_event("info", &format!("История удалена: диалогов {}, из архива {}", deleted, archived));
+            json!({ "ok": true, "deleted": deleted + archived, "kept": kept })
         }
         "settings_reset" => {
             if body.get("confirm").and_then(|v| v.as_str()) != Some("reset") {
@@ -626,10 +636,27 @@ fn chat_action(body: &serde_json::Value) -> serde_json::Value {
             json!({ "ok": crate::ai::stop(id) })
         }
         "clear" => json!({ "ok": !crate::ai::is_busy(id) && store.clear(id) }),
+        // "delete a dialog" puts it into the archive (Settings → «Архив диалогов»)
         "delete" => {
-            let ok = !crate::ai::is_busy(id) && store.delete(id);
-            json!({ "ok": ok })
+            if crate::ai::is_busy(id) {
+                return json!({ "ok": false, "message": "Дождитесь конца ответа и попробуйте снова." });
+            }
+            match store.archive(id) {
+                Ok(()) => json!({ "ok": true, "archived": true }),
+                Err(e) => json!({ "ok": false, "message": e }),
+            }
         }
+        "archive_list" => json!({ "ok": true, "items": store.archive_list(body.get("query").and_then(|v| v.as_str()).unwrap_or("")) }),
+        "archive_get" => match store.archive_get(id) {
+            Some(v) => json!({ "ok": true, "chat": v }),
+            None => json!({ "ok": false, "message": "В архиве нет такого диалога" }),
+        },
+        "archive_restore" => match store.archive_restore(id) {
+            Ok(()) => json!({ "ok": true }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "archive_delete" => json!({ "ok": store.archive_delete(id) }),
+        "archive_clear" => json!({ "ok": true, "deleted": store.archive_clear() }),
         _ => json!({ "ok": false, "message": "unknown operation" }),
     }
 }

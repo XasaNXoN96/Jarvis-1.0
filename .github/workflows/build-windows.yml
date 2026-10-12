@@ -322,13 +322,13 @@ jobs:
             Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $h -Body '{"name":"remote_on"}' | Out-Null
             Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $h -Body '{"name":"remote_tunnel","value":true}' | Out-Null
             $url = Wait-Tunnel 300
-            $base = $url.Split('?')[0]; $tok = $url.Split('=')[-1]
+            $base = $url.Split('?')[0].TrimEnd('/'); $tok = $url.Split('=')[-1]
             $page = $null
             for ($i = 0; $i -lt 20 -and -not $page; $i++) { try { $page = Invoke-WebRequest $base -TimeoutSec 15 -UseBasicParsing } catch { Start-Sleep 3 } }
             if (-not $page -or $page.StatusCode -ne 200 -or $page.Content -notlike "*<html*") { throw "the page did not open through the tunnel" }
             Write-Host "the page opens through the tunnel"
             $refused = $false
-            try { Invoke-WebRequest "$base/poll?after=0" -TimeoutSec 15 -UseBasicParsing | Out-Null } catch { $refused = $true }
+            try { Invoke-WebRequest "$base/poll?after=0" -TimeoutSec 15 -UseBasicParsing | Out-Null } catch { $refused = ([int]$_.Exception.Response.StatusCode -eq 403) }
             if (-not $refused) { throw "a request without the secret was accepted through the tunnel" }
             $pr = Invoke-WebRequest "$base/poll?after=0" -Headers @{ "X-Token" = $tok } -TimeoutSec 15 -UseBasicParsing
             if ($pr.StatusCode -ne 200) { throw "the request with the secret failed through the tunnel" }

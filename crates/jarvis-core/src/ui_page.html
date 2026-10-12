@@ -503,7 +503,7 @@
         <aside class="convs">
           <button class="btn primary" id="chat-new" type="button">＋ Новый диалог</button>
           <div id="conv-list"></div>
-          <button class="btn small" id="chat-del-all" type="button" title="Удалить все сохранённые диалоги с этого компьютера">Удалить все диалоги</button>
+          <button class="btn small" id="chat-del-all" type="button" title="Убрать все диалоги в архив (Настройки → Архив диалогов)">Убрать все в архив</button>
         </aside>
         <div class="chatmain">
           <div class="chathead"><b id="chat-title">Диалог</b><span class="grow"></span><button class="btn small" id="chat-image" type="button" title="Задать вопрос о картинке: она уйдёт выбранному ИИ-провайдеру и не сохраняется в Джарвисе">🖼 Картинка</button><input type="file" id="chat-image-file" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none"><button class="btn small" id="chat-clear" type="button">Очистить</button></div>
@@ -647,6 +647,18 @@
         <div class="setrow"><div class="l">Движки распознавания<small id="eng-info">—</small></div>
           <div class="r"><button class="btn" id="logs-open" type="button">Открыть папку с логами</button></div></div>
         <div class="msgline" id="gen-msg"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:14px" id="archive-card"><h3><span class="ei">🗃</span>Архив диалогов</h3>
+        <div class="privacy">Когда вы удаляете диалог, он попадает сюда и хранится как текст только на этом компьютере. Отсюда его можно прочитать, скопировать, вернуть в «Диалоги» или удалить навсегда.</div>
+        <div class="setrow"><div class="l">Поиск по архиву<small id="ar-count">—</small></div>
+          <div class="r"><input type="text" id="ar-query" placeholder="название или слово из переписки"><button class="btn" id="ar-clear" type="button">Очистить архив</button></div></div>
+        <div id="ar-list"></div>
+        <div id="ar-view" style="display:none">
+          <div class="chathead"><b id="ar-title"></b><span class="grow"></span><button class="btn small" id="ar-copy" type="button">Копировать</button><button class="btn small" id="ar-restore" type="button">Вернуть в диалоги</button><button class="btn small" id="ar-del" type="button">Удалить навсегда</button><button class="btn small" id="ar-close" type="button">Закрыть</button></div>
+          <pre id="ar-text" style="white-space:pre-wrap;word-break:break-word;max-height:320px;overflow:auto;background:var(--panel2,rgba(255,255,255,.04));border:1px solid var(--line);border-radius:10px;padding:10px;margin:8px 0 0;font:inherit"></pre>
+        </div>
+        <div class="msgline" id="ar-msg"></div>
       </div>
 
       <div class="card" style="margin-bottom:14px" id="privacy-card"><h3><span class="ei">🛡</span>Приватность и разрешения</h3>
@@ -1507,11 +1519,12 @@ async function aiRefreshList() {
   const box = $('#conv-list'); box.textContent = '';
   for (const c of d.chats) {
     const row = document.createElement('div'); row.className = 'conv' + (c.id === d.active ? ' active' : '');
-    row.innerHTML = '<span class="t"></span><button class="x" type="button" title="Удалить диалог">✕</button>'; row.querySelector('.t').textContent = c.title;
+    row.innerHTML = '<span class="t"></span><button class="x" type="button" title="Убрать диалог в архив">✕</button>'; row.querySelector('.t').textContent = c.title;
     row.onclick = async e => { if (e.target.closest('.x')) return; await chatApi({ op: 'select', id: c.id }); await pollNow(true); aiRefreshList(); };
     row.querySelector('.x').onclick = async () => {
-      if (!confirm('Удалить диалог «' + c.title + '»? Это нельзя отменить.')) return;
-      const r = await chatApi({ op: 'delete', id: c.id }); if (!r.ok) { alert('Дождитесь конца ответа и попробуйте снова.'); return; }
+      if (!confirm('Убрать диалог «' + c.title + '» в архив? Его можно найти и вернуть в Настройки → Архив диалогов.')) return;
+      const r = await chatApi({ op: 'delete', id: c.id }); if (!r.ok) { alert(r.message || 'Дождитесь конца ответа и попробуйте снова.'); return; }
+      showToast('Диалог в архиве: Настройки → Архив диалогов');
       await pollNow(true); aiRefreshList();
     };
     box.appendChild(row);
@@ -1657,7 +1670,7 @@ async function loadSettings() {
     $('#ai-fallback').checked = !!s.ai_fallback; $('#ai-provider').value = s.ai_provider || 'none'; $('#ai-model').value = s.ai_model || ''; $('#ai-url').value = s.ai_url || '';
     $('#ai-key').value = ''; $('#ai-key-hint').textContent = s.ai_key_saved ? 'ключ сохранён (оставьте поле пустым, чтобы не менять)' : 'хранится только на этом компьютере';
     updateAiRows();
-    applyPrivacy(s); applyGeneral(s); $('#ai-screen').checked = !!s.ai_screen;
+    arLoad(); applyPrivacy(s); applyGeneral(s); $('#ai-screen').checked = !!s.ai_screen;
     $('#voice-hint').textContent = s.piper ? 'Джарвис (Piper) — нейросетевой голос, работает без интернета' : 'Piper не установлен: говорит голос Windows (в большом установщике есть Piper)';
     if (!$('#rv-select').options.length) {
       try { (await (await fetch('/reaction-voices')).json()).forEach(v => $('#rv-select').add(new Option(v.name, v.id))); } catch (e) {}
@@ -1749,7 +1762,7 @@ $('#set-search').oninput = e => {
 function applyPrivacy(s) {
   $('#pv-mic').checked = !s.mic_off; $('#pv-tts').checked = !!s.tts_enabled; $('#pv-ai').checked = s.ai_enabled !== false;
   $('#pv-ext').checked = !!s.ext_enabled; $('#pv-dnd').checked = !!s.dnd; $('#nt-dnd').checked = !!s.dnd;
-  const h = s.history || {}; $('#pv-hist').textContent = 'Сохранено на этом компьютере: диалогов ' + (h.chats || 0) + ', сообщений ' + (h.messages || 0) + '. Хранится, пока вы её не удалите (обновление программы её не удаляет).';
+  const h = s.history || {}; $('#pv-hist').textContent = 'Сохранено на этом компьютере: диалогов ' + (h.chats || 0) + ', сообщений ' + (h.messages || 0) + ', в архиве ' + (h.archived || 0) + '. Хранится, пока вы её не удалите (обновление программы её не удаляет).';
   $('#pv-key').textContent = s.ai_key_saved ? 'сохранён в зашифрованном виде (шифрование Windows), в окне не показывается' : 'не сохранён';
   $('#pv-key-del').disabled = !s.ai_key_saved;
   const net = $('#pv-net'); net.textContent = '';
@@ -1813,15 +1826,67 @@ $('#nt-clear').onclick = async () => { await action('notes_clear'); notesSig = '
 $('#pv-hist-open').onclick = () => show('chat');
 function pvMsg(ok, text) { const m = $('#pv-msg'); m.className = 'msgline ' + (ok ? 'ok' : 'bad'); m.textContent = text; }
 $('#pv-hist-del').onclick = async () => {
-  if (!confirm('Удалить ВСЮ историю диалогов с этого компьютера? Это нельзя отменить.')) return;
+  if (!confirm('Удалить ВСЮ историю диалогов с этого компьютера, включая архив? Это нельзя отменить.')) return;
   const r = await action('history_delete_all', { confirm: 'delete' });
   pvMsg(r.ok, r.ok ? 'Удалено диалогов: ' + r.deleted + (r.kept ? '. Не удалён ' + r.kept + ' (ИИ ещё отвечает — повторите позже)' : '') : (r.message || 'Не удалось'));
   await pollNow(true); loadSettings();
 };
+
+// ---------- the archive of dialogs (Settings) ----------
+let arCur = null;
+function arMsg(ok, text) { const m = $('#ar-msg'); m.className = 'msgline ' + (ok ? 'ok' : 'bad'); m.textContent = text; }
+function arDate(t) { return t ? new Date(t * 1000).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''; }
+async function arLoad() {
+  const r = await chatApi({ op: 'archive_list', query: $('#ar-query').value });
+  const box = $('#ar-list'); box.textContent = '';
+  const items = r.items || [];
+  $('#ar-count').textContent = items.length ? 'В архиве диалогов: ' + items.length : ($('#ar-query').value.trim() ? 'Ничего не найдено' : 'Архив пуст');
+  for (const c of items) {
+    const row = document.createElement('div'); row.className = 'conv';
+    row.innerHTML = '<span class="t"></span><span class="ar-d" style="color:var(--dim);font-size:12px;white-space:nowrap"></span>';
+    row.querySelector('.t').textContent = c.title; row.querySelector('.ar-d').textContent = arDate(c.archived) + ' · ' + c.count;
+    row.onclick = () => arOpen(c.id);
+    box.appendChild(row);
+  }
+  if (arCur && !items.some(c => c.id === arCur)) arShut();
+}
+async function arOpen(id) {
+  const r = await chatApi({ op: 'archive_get', id });
+  if (!r.ok) { arMsg(false, r.message || 'Не удалось открыть'); arLoad(); return; }
+  arCur = id; $('#ar-title').textContent = r.chat.title + ' · ' + arDate(r.chat.archived);
+  $('#ar-text').textContent = r.chat.text; $('#ar-view').style.display = 'block';
+}
+function arShut() { arCur = null; $('#ar-view').style.display = 'none'; $('#ar-text').textContent = ''; }
+$('#ar-query').oninput = () => arLoad();
+$('#ar-close').onclick = arShut;
+$('#ar-copy').onclick = async () => {
+  try { await navigator.clipboard.writeText($('#ar-text').textContent); arMsg(true, 'Скопировано'); }
+  catch (e) { const r = document.createRange(); r.selectNodeContents($('#ar-text')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); arMsg(false, 'Не удалось скопировать автоматически: текст выделен, нажмите Ctrl+C'); }
+};
+$('#ar-restore').onclick = async () => {
+  if (!arCur) return;
+  const r = await chatApi({ op: 'archive_restore', id: arCur });
+  arMsg(r.ok, r.ok ? 'Диалог возвращён в «Диалоги»' : (r.message || 'Не удалось вернуть'));
+  if (r.ok) arShut();
+  arLoad(); pollNow(true); loadSettings();
+};
+$('#ar-del').onclick = async () => {
+  if (!arCur) return;
+  if (!confirm('Удалить этот диалог из архива навсегда? Это нельзя отменить.')) return;
+  const r = await chatApi({ op: 'archive_delete', id: arCur });
+  arMsg(r.ok, r.ok ? 'Удалено из архива' : 'Не удалось удалить');
+  arShut(); arLoad(); loadSettings();
+};
+$('#ar-clear').onclick = async () => {
+  if (!confirm('Удалить ВСЕ диалоги из архива навсегда? Это нельзя отменить.')) return;
+  const r = await chatApi({ op: 'archive_clear' });
+  arMsg(r.ok, r.ok ? 'Из архива удалено диалогов: ' + r.deleted : 'Не удалось очистить');
+  arShut(); arLoad(); loadSettings();
+};
 $('#chat-del-all').onclick = async () => {
-  if (!confirm('Удалить ВСЕ диалоги с этого компьютера? Это нельзя отменить.')) return;
-  const r = await action('history_delete_all', { confirm: 'delete' });
-  showToast(r.ok ? 'Удалено диалогов: ' + r.deleted + (r.kept ? '. Один не удалён: ИИ ещё отвечает' : '') : (r.message || 'Не удалось удалить'));
+  if (!confirm('Убрать ВСЕ диалоги в архив? Их можно вернуть в Настройки → Архив диалогов.')) return;
+  const r = await action('history_archive_all', { confirm: 'archive' });
+  showToast(r.ok ? 'В архиве диалогов: ' + r.archived + (r.kept ? '. Один остался: ИИ ещё отвечает' : '') : (r.message || 'Не удалось убрать в архив'));
   await pollNow(true); aiRefreshList();
 };
 $('#pv-key-del').onclick = async () => {

@@ -368,7 +368,7 @@ impl Store {
     pub fn stats(&self) -> Value {
         let list = self.list();
         let messages: u64 = list.iter().filter_map(|c| c["count"].as_u64()).sum();
-        json!({ "chats": list.len(), "messages": messages, "dir": self.dir.display().to_string() })
+        json!({ "chats": list.len(), "messages": messages, "archived": self.archive_count(), "dir": self.dir.display().to_string() })
     }
 
     // "delete the whole history" (asked and confirmed in the window): every conversation that is not answering right now.
@@ -386,6 +386,143 @@ impl Store {
         let _ = std::fs::remove_file(self.dir.join("active"));
         bump();
         (deleted, kept)
+    }
+
+    // ---- the archive: "delete a dialog" moves it here (chats/archive/<id>.json, with a readable <id>.txt next to it) ----
+    fn archive_dir(&self) -> PathBuf {
+        self.dir.join("archive")
+    }
+
+    fn archive_path(&self, id: &str, ext: &str) -> Option<PathBuf> {
+        if valid_id(id) { Some(self.archive_dir().join(format!("{}.{}", id, ext))) } else { None }
+    }
+
+    // the dialog as plain text: what the archive card shows and the .txt file keeps
+    pub fn archive_text(chat: &Chat) -> String {
+        let mut out = format!("{}\n", chat.title);
+        for m in &chat.messages {
+            let who = match m.role.as_str() {
+                "user" => "Вы",
+                "assistant" => "Jarvis",
+                _ => "Ошибка",
+            };
+            out.push_str(&format!("\n{}: {}\n", who, m.content));
+        }
+        out
+    }
+
+    // moves the dialog to the archive; the original is removed only after the archive copy is written, so a failure
+    // never loses the dialog. A dialog without messages has nothing to keep and is simply deleted.
+    pub fn archive(&self, id: &str) -> Result<(), String> {
+        let chat = self.load(id).ok_or_else(|| "Диалог не найден".to_string())?;
+        if chat.messages.is_empty() {
+            return if self.delete(id) { Ok(()) } else { Err("Не удалось удалить пустой диалог".into()) };
+        }
+        let dir = self.archive_dir();
+        std::fs::create_dir_all(&dir).map_err(|_| "Не удалось создать папку архива".to_string())?;
+        let mut value = serde_json::to_value(&chat).map_err(|e| e.to_string())?;
+        value["archived"] = json!(now());
+        let jp = self.archive_path(id, "json").ok_or("Недопустимый номер диалога")?;
+        let tp = self.archive_path(id, "txt").ok_or("Недопустимый номер диалога")?;
+        crate::write_atomic(&jp, value.to_string()).map_err(|_| "Не удалось записать архив".to_string())?;
+        let _ = crate::write_atomic(&tp, Self::archive_text(&chat));
+        if !self.delete(id) {
+            let _ = std::fs::remove_file(&jp);
+            let _ = std::fs::remove_file(&tp);
+            return Err("Не удалось убрать диалог из списка: он остался на месте".into());
+        }
+        bump();
+        Ok(())
+    }
+
+    // every dialog that is not answering right now. Returns (archived, kept because busy)
+    pub fn archive_all(&self) -> (usize, usize) {
+        let (mut done, mut kept) = (0, 0);
+        for c in self.list() {
+            let id = c["id"].as_str().unwrap_or("");
+            if is_busy(id) {
+                kept += 1;
+            } else if self.archive(id).is_ok() {
+                done += 1;
+            }
+        }
+        let _ = std::fs::remove_file(self.dir.join("active"));
+        bump();
+        (done, kept)
+    }
+
+    fn archive_load(&self, id: &str) -> Option<(Chat, u64)> {
+        let text = std::fs::read_to_string(self.archive_path(id, "json")?).ok()?;
+        let v: Value = serde_json::from_str(&text).ok()?;
+        let at = v.get("archived").and_then(|a| a.as_u64()).unwrap_or(0);
+        Some((serde_json::from_value(v).ok()?, at))
+    }
+
+    // newest archived first; the query is looked for in the title and in the text of the messages
+    pub fn archive_list(&self, query: &str) -> Vec<Value> {
+        let q = query.trim().to_lowercase();
+        let mut items: Vec<(Chat, u64)> = std::fs::read_dir(self.archive_dir())
+            .map(|rd| {
+                rd.flatten()
+                    .filter(|e| e.path().extension().map(|x| x == "json").unwrap_or(false))
+                    .filter_map(|e| e.path().file_stem().map(|s| s.to_string_lossy().to_string()))
+                    .filter_map(|id| self.archive_load(&id))
+                    .collect()
+            })
+            .unwrap_or_default();
+        items.sort_by(|a, b| b.1.cmp(&a.1).then(b.0.updated.cmp(&a.0.updated)));
+        items
+            .into_iter()
+            .filter(|(c, _)| q.is_empty() || c.title.to_lowercase().contains(&q) || c.messages.iter().any(|m| m.content.to_lowercase().contains(&q)))
+            .map(|(c, at)| json!({ "id": c.id, "title": c.title, "updated": c.updated, "archived": at, "count": c.messages.len() }))
+            .collect()
+    }
+
+    // the archived dialog with its text
+    pub fn archive_get(&self, id: &str) -> Option<Value> {
+        let (chat, at) = self.archive_load(id)?;
+        Some(json!({ "id": chat.id, "title": chat.title, "archived": at, "updated": chat.updated, "messages": chat.messages, "text": Self::archive_text(&chat) }))
+    }
+
+    // back to the list of dialogs; a dialog that is already there is not duplicated (the archive copy is just dropped)
+    pub fn archive_restore(&self, id: &str) -> Result<(), String> {
+        let (chat, _) = self.archive_load(id).ok_or_else(|| "В архиве нет такого диалога".to_string())?;
+        if self.load(id).is_none() {
+            self.save(&chat);
+            if self.load(id).is_none() {
+                return Err("Не удалось вернуть диалог: он остался в архиве".into());
+            }
+        }
+        self.archive_delete(id);
+        bump();
+        Ok(())
+    }
+
+    pub fn archive_delete(&self, id: &str) -> bool {
+        let mut ok = false;
+        if let Some(p) = self.archive_path(id, "json") {
+            ok = std::fs::remove_file(p).is_ok();
+        }
+        if let Some(p) = self.archive_path(id, "txt") {
+            let _ = std::fs::remove_file(p);
+        }
+        ok
+    }
+
+    pub fn archive_clear(&self) -> usize {
+        let ids: Vec<String> = self.archive_list("").iter().filter_map(|c| c["id"].as_str().map(|s| s.to_string())).collect();
+        let n = ids.iter().filter(|id| self.archive_delete(id)).count();
+        // texts of unreadable archive entries and leftovers
+        if let Ok(rd) = std::fs::read_dir(self.archive_dir()) {
+            for e in rd.flatten() {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+        n
+    }
+
+    pub fn archive_count(&self) -> usize {
+        self.archive_list("").len()
     }
 
     pub fn active(&self) -> Option<String> {
