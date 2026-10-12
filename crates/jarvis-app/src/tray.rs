@@ -27,6 +27,8 @@ pub fn init_blocking(settings: SettingsManager) {
 
     let _tray_icon = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
+        // a left click opens the window (window.rs), the menu is on the right click
+        .with_menu_on_left_click(false)
         .with_tooltip(i18n::t("tray-tooltip"))
         .with_icon(icon)
         .build()

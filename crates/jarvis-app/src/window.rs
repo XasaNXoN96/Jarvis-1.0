@@ -99,7 +99,8 @@ fn make_window(target: &tao::event_loop::EventLoopWindowTarget<UserEvent>, h: &H
         })
         // the page of Jarvis stays in the window; any other address opens in the browser
         .with_navigation_handler(move |url| {
-            if url.starts_with(&local) || url.starts_with("about:") {
+            // the page itself, and the files it makes for saving (the export of the scenarios: blob: / data:)
+            if url.starts_with(&local) || url.starts_with("about:") || url.starts_with("blob:") || url.starts_with("data:") {
                 true
             } else {
                 open_in_browser(&url);
@@ -118,7 +119,16 @@ fn make_window(target: &tao::event_loop::EventLoopWindowTarget<UserEvent>, h: &H
 fn show(w: &Win) {
     w.window.set_visible(true);
     w.window.set_minimized(false);
+    // the page knows it is on the screen again (it polls the state and notifications count it as seen)
+    let _ = w.webview.set_visible(true);
     w.window.set_focus();
+}
+
+// hidden in the tray: the page is told it is not visible (document.hidden), so notifications are shown and the
+// page stops polling at full speed
+fn hide(w: &Win) {
+    let _ = w.webview.set_visible(false);
+    w.window.set_visible(false);
 }
 
 // Runs the window and the tray messages on the main thread until Jarvis exits.
@@ -141,7 +151,6 @@ pub fn run(h: Hooks) -> ! {
 
     let mut ctx = WebContext::new(h.data_dir.clone());
     let mut win: Option<Win> = None;
-    let mut native_failed = false;
     let mut first_show_done = false;
     // the cross was pressed and the page has not answered yet
     let mut close_asked: Option<Instant> = None;
@@ -163,7 +172,7 @@ pub fn run(h: Hooks) -> ! {
                         close_asked = None;
                         if let Some(w) = &win {
                             log::warn!("Window: the page did not answer the close request, the window goes to the tray");
-                            w.window.set_visible(false);
+                            hide(w);
                         }
                     }
                 }
@@ -175,7 +184,7 @@ pub fn run(h: Hooks) -> ! {
                     close_asked = Some(Instant::now());
                     if !asked {
                         close_asked = None;
-                        w.window.set_visible(false);
+                        hide(w);
                     }
                     *control_flow = ControlFlow::WaitUntil(Instant::now() + CLOSE_ANSWER_TIMEOUT);
                 }
@@ -185,14 +194,14 @@ pub fn run(h: Hooks) -> ! {
                 Some(CloseAction::Hide) => {
                     close_asked = None;
                     if let Some(w) = &win {
-                        w.window.set_visible(false);
+                        hide(w);
                     }
                     log::info!("Window: minimized to the tray, Jarvis keeps running");
                 }
                 Some(CloseAction::Exit) => {
                     close_asked = None;
                     if let Some(w) = &win {
-                        w.window.set_visible(false);
+                        hide(w);
                     }
                     (h.on_exit)();
                     *control_flow = ControlFlow::Exit;
@@ -202,25 +211,36 @@ pub fn run(h: Hooks) -> ! {
                     // a page without the dialog (an old page): the window goes to the tray, as the timeout would do
                     close_asked = None;
                     if let Some(w) = &win {
-                        w.window.set_visible(false);
+                        hide(w);
                     }
                 }
             },
-            Event::UserEvent(UserEvent::Show) => want_show = true,
+            Event::UserEvent(UserEvent::Show) => {
+                // an old close question must not hide the window that was just opened
+                close_asked = None;
+                want_show = true;
+            }
             Event::UserEvent(UserEvent::Hide) => {
                 if let Some(w) = &win {
-                    w.window.set_visible(false);
+                    hide(w);
                 }
+            }
+            // the Windows session ends or the installer asks Jarvis to close (Restart Manager): a full, clean exit
+            Event::LoopDestroyed => {
+                (h.on_exit)();
             }
             Event::UserEvent(UserEvent::Exit) => {
                 (h.on_exit)();
                 *control_flow = ControlFlow::Exit;
             }
             Event::UserEvent(UserEvent::Menu(e)) => match e.id.0.as_str() {
-                "open_ui" => want_show = true,
+                "open_ui" => {
+                    close_asked = None;
+                    want_show = true;
+                }
                 "hide_ui" => {
                     if let Some(w) = &win {
-                        w.window.set_visible(false);
+                        hide(w);
                     }
                 }
                 // "Выход" of the tray: the user chose to exit, no question again
@@ -233,13 +253,11 @@ pub fn run(h: Hooks) -> ! {
             _ => {}
         }
         if want_show {
-            if win.is_none() && !native_failed {
+            // (a failure is tried again next time: after a restart the old WebView2 may still hold its folder)
+            if win.is_none() {
                 match make_window(target, &h, &mut ctx, proxy.clone()) {
                     Ok(w) => win = Some(w),
-                    Err(e) => {
-                        log::warn!("Window: WebView2 is not available ({}), the browser window is used", e);
-                        native_failed = true;
-                    }
+                    Err(e) => log::warn!("Window: WebView2 is not available ({}), the browser window is used", e),
                 }
             }
             match &win {

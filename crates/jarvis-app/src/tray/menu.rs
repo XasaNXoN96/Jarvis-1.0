@@ -57,6 +57,8 @@ pub fn build(settings: &SettingsManager) -> TrayMenu {
     let _ = menu.append(&mic_toggle);
     let _ = menu.append(&PredefinedMenuItem::separator());
     let _ = menu.append(&MenuItem::with_id("open_ui", i18n::t("tray-open-window"), true, None));
+    // the own window that can be hidden exists on Windows only
+    #[cfg(target_os = "windows")]
     let _ = menu.append(&MenuItem::with_id("hide_ui", i18n::t("tray-hide-window"), true, None));
     let _ = menu.append(&MenuItem::with_id("exit", i18n::t("tray-exit"), true, None));
 

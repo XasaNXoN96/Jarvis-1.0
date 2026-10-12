@@ -281,6 +281,21 @@ pub fn shutdown_and_exit() -> ! {
 
 // a second start: the running Jarvis is asked (through its local page server) to show its window
 fn ask_running_to_show() -> bool {
+    // the running copy may still be starting (the speech model loads for seconds before its page server is up):
+    // it is asked again for up to 25 seconds before a browser window is opened as a last resort
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(25);
+    loop {
+        if ask_running_once() {
+            return true;
+        }
+        if std::time::Instant::now() >= until {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+}
+
+fn ask_running_once() -> bool {
     use std::io::{Read, Write};
     let body = r#"{"name":"show_window"}"#;
     let Ok(mut s) = std::net::TcpStream::connect_timeout(&"127.0.0.1:9714".parse().unwrap(), std::time::Duration::from_secs(2)) else { return false };
