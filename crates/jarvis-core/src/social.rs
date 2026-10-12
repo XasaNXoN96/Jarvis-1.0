@@ -55,15 +55,23 @@ fn names_site(text: &str, site: &str) -> bool {
         .any(|host| host == site || host.ends_with(&format!(".{}", site)))
 }
 
-// the network of a notification: by its program, or, for a browser, by the site named in its texts
+// a line of a browser notification that only names the site ("web.whatsapp.com", "via web.whatsapp.com",
+// "https://web.whatsapp.com/"): the browser's own line. A site mentioned inside a message does not count, so a page
+// cannot make its notification look like a message of another network.
+fn site_line(text: &str, site: &str) -> bool {
+    let words = text.split_whitespace().count();
+    words >= 1 && words <= 2 && names_site(text, site)
+}
+
+// the network of a notification: by its program, or, for a browser, by the site line of its texts.
+// A generic word ("messenger", "facebook") loses to a network named in the same program name ("Signal Messenger",
+// "VK Messenger" are Signal and ВКонтакте)
 pub fn detect(app: &str, aumid: &str, texts: &[String]) -> Option<&'static Network> {
     if !is_browser(app, aumid) {
-        if let Some(n) = NETWORKS.iter().find(|n| n.apps.iter().any(|a| crate::notify::app_matches(a, app, aumid))) {
-            return Some(n);
-        }
-        return None;
+        let found: Vec<&'static Network> = NETWORKS.iter().filter(|n| n.apps.iter().any(|a| crate::notify::app_matches(a, app, aumid))).collect();
+        return found.iter().find(|n| n.key != "messenger").or(found.first()).copied();
     }
-    NETWORKS.iter().find(|n| n.sites.iter().any(|s| texts.iter().any(|t| names_site(t, s))))
+    NETWORKS.iter().find(|n| n.sites.iter().any(|s| texts.iter().any(|t| site_line(t, s))))
 }
 
 // the texts of a browser notification without the line that only names the site
@@ -71,9 +79,7 @@ pub fn without_site_lines(net: &Network, texts: &[String]) -> Vec<String> {
     texts
         .iter()
         .filter(|t| {
-            let words: Vec<&str> = t.split_whitespace().collect();
-            let only_site = !words.is_empty() && words.len() <= 2 && net.sites.iter().any(|s| names_site(t, s));
-            !only_site
+            !net.sites.iter().any(|s| site_line(t, s))
         })
         .cloned()
         .collect()
@@ -162,6 +168,9 @@ mod tests {
         assert_eq!(detect("Viber", "", &[]).unwrap().key, "viber");
         assert!(detect("Почта", "microsoft.windowscommunicationsapps", &[]).is_none());
         assert!(detect("Signalr Tool", "", &[]).is_none(), "a whole word, not the start of another word");
+        assert_eq!(detect("Signal Messenger", "", &[]).unwrap().key, "signal", "the named network wins over the word messenger");
+        assert_eq!(detect("Messenger", "", &[]).unwrap().key, "messenger");
+        assert_eq!(detect("Facebook", "", &[]).unwrap().key, "messenger");
     }
 
     #[test]
@@ -172,6 +181,12 @@ mod tests {
         assert!(detect("Google Chrome", "Chrome", &s(&["Скачивание завершено", "file.zip"])).is_none(), "an ordinary browser notification is no network");
         assert!(detect("Google Chrome", "Chrome", &s(&["box.com", "news"])).is_none(), "x.com is not found inside box.com");
         assert!(detect("Google Chrome", "Chrome", &s(&["telegram"])).is_none(), "a browser is judged by the site, not by a word of the text");
+        // lookalike hosts are not the network
+        for fake in ["evil-whatsapp.com", "web.whatsapp.com.evil.ru", "instagram.com.phish.io", "notvk.com", "vk.com-login.top"] {
+            assert!(detect("Google Chrome", "Chrome", &s(&["Новое сообщение", fake])).is_none(), "{}", fake);
+        }
+        // a site named inside the text of another page does not turn it into that network
+        assert!(detect("Google Chrome", "Chrome", &s(&["Акция", "войдите через web.whatsapp.com и получите приз", "promo-site.example"])).is_none());
     }
 
     #[test]
