@@ -65,10 +65,17 @@ fn a_run_stops_at_the_step_that_fails_and_says_which_one() {
     let s = upsert(sc("Тест", "тестовый сценарий", vec![step("pause", "0.1"), step("file", "/no/such/file/ever.txt"), step("pause", "0.1")])).unwrap();
     let r = run(&s);
     assert!(!r.ok);
-    assert_eq!((r.done, r.total), (1, 3));
+    // a missing file is found BEFORE the first step: the chain does not start and stop half-way
+    assert_eq!((r.done, r.total), (0, 3));
     assert!(r.message.contains("Шаг 2") && r.message.contains("не найдены"), "{}", r.message);
     // the run is remembered (history of runs)
-    assert_eq!(get(&s.id).unwrap().last_run.unwrap().done, 1);
+    assert_eq!(get(&s.id).unwrap().last_run.unwrap().done, 0);
+    // a step that fails while running stops the chain there: the next steps are not run
+    let mid = upsert(sc("Середина", "сломанная середина", vec![step("pause", "0.1"), step("link", "https://example.com"), step("pause", "0.1")])).unwrap();
+    let r = run(&mid);
+    if !cfg!(target_os = "windows") {
+        assert!(!r.ok && r.done == 1 && r.message.contains("Шаг 2 (Ссылка)"), "{:?}", r);
+    }
     let ok = upsert(sc("Пауза", "просто пауза", vec![step("pause", "0.1"), step("pause", "0.1")])).unwrap();
     let r = run(&ok);
     assert!(r.ok && r.done == 2, "{:?}", r);
@@ -107,3 +114,41 @@ fn a_program_step_finds_known_programs_by_name() {
     assert!(app_target("блокнот").to_lowercase().contains("notepad"));
     assert_eq!(app_target("какая-то своя программа"), "какая-то своя программа");
 }
+
+#[test]
+fn the_order_of_the_steps_is_kept_exactly_as_moved_and_one_chain_runs_at_a_time() {
+    let _g = LOCK.lock();
+    reset_for_tests();
+    // Steam, volume 60, the game, pause 5 → the volume moved to the end
+    let a = upsert(sc("Игра", "запусти игру", vec![step("app", "steam"), step("volume", "60"), step("app", "game.exe"), step("pause", "5")])).unwrap();
+    let mut moved = a.clone();
+    let vol = moved.steps.remove(1);
+    moved.steps.push(vol);
+    let saved = upsert(moved).unwrap();
+    assert_eq!(saved.id, a.id, "the same scenario is updated, no copy");
+    let kinds: Vec<(String, String)> = get(&a.id).unwrap().steps.into_iter().map(|s| (s.kind, s.param)).collect();
+    assert_eq!(kinds, [("app".into(), "steam".into()), ("app".into(), "game.exe".into()), ("pause".into(), "5".into()), ("volume".into(), "60".into())]);
+    assert_eq!(list().len(), 1);
+    // the stored file keeps the order too (export = the list as it is)
+    let doc = export_json();
+    assert_eq!(doc["scenarios"][0]["steps"][3]["kind"], "volume");
+    assert_eq!(doc["scenarios"][0]["trigger"], "voice");
+    // a second start while it runs is refused, not run twice
+    let long = upsert(sc("Долгий", "долгий сценарий", vec![step("pause", "1.5")])).unwrap();
+    let l2 = long.clone();
+    let h = std::thread::spawn(move || run(&l2));
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert!(running_json()["step"] == 1, "the window can show the current step");
+    let second = run(&long);
+    assert!(!second.ok && second.message.contains("уже выполняется"), "{:?}", second);
+    assert!(h.join().unwrap().ok);
+    assert!(running_json().is_null());
+}
+
+#[test]
+fn an_old_file_without_the_trigger_field_still_loads() {
+    let old: Scenario = serde_json::from_str(r#"{"id":"s1","name":"Старый","phrase":"старый","enabled":true,"steps":[{"kind":"pause","param":"1"}]}"#).unwrap();
+    assert_eq!(old.trigger, "voice");
+    assert!(check(&old).is_ok());
+}
+

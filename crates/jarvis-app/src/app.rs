@@ -607,7 +607,14 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
         jarvis_core::dialog::end(r.ok);
         jarvis_core::uistate::log_action(text, &format!("сценарий «{}»", sc.name), r.ok);
         if jarvis_core::tts::is_enabled() {
-            jarvis_core::tts::speak(if r.ok { "Сценарий выполнен." } else { "Сценарий остановлен, подробности в окне." });
+            // the number of the step that failed (also one found before the start), as the message says it
+            let step: Option<String> = r.message.split("Шаг ").nth(1).map(|t| t.chars().take_while(|c| c.is_ascii_digit()).collect()).filter(|n: &String| !n.is_empty());
+            let spoken = match (r.ok, step) {
+                (true, _) => "Сценарий выполнен.".to_string(),
+                (false, Some(n)) => format!("Сценарий остановлен на шаге {}. Подробности в окне.", n),
+                (false, None) => "Сценарий не запущен, подробности в окне.".to_string(),
+            };
+            jarvis_core::tts::speak(&spoken);
         }
         ipc::send(IpcEvent::Idle);
         return false;

@@ -406,7 +406,7 @@ fn ai_test() -> serde_json::Value {
 
 // ---- scenarios of the "Конструктор" ----
 fn scenarios_json() -> serde_json::Value {
-    json!({ "scenarios": crate::scenario::list(), "kinds": crate::scenario::kinds_json(), "templates": crate::scenario::templates() })
+    json!({ "scenarios": crate::scenario::list(), "kinds": crate::scenario::kinds_json(), "templates": crate::scenario::templates(), "running": crate::scenario::running_json() })
 }
 
 fn scenario_action(body: &serde_json::Value) -> serde_json::Value {
@@ -434,10 +434,19 @@ fn scenario_action(body: &serde_json::Value) -> serde_json::Value {
         "delete" => json!({ "ok": crate::scenario::delete(id) }),
         "enable" => json!({ "ok": crate::scenario::set_enabled(id, body.get("value").and_then(|v| v.as_bool()).unwrap_or(true)) }),
         // a test run of the saved scenario, or of one step that is being edited
-        "test" => match crate::scenario::get(id) {
-            Some(s) => json!({ "ok": true, "result": crate::scenario::run(&s) }),
-            None => json!({ "ok": false, "message": "Сначала сохраните сценарий" }),
-        },
+        // "Тест сценария": what the editor shows now (the order of the steps as they were just moved, even before
+        // saving), through the same run() as the phrase; only the stored scenario keeps the result in its history
+        "test" => {
+            let edited: Option<crate::scenario::Scenario> = body.get("scenario").cloned().and_then(|v| serde_json::from_value(v).ok());
+            match edited.or_else(|| crate::scenario::get(id)) {
+                Some(s) => {
+                    let unsaved = crate::scenario::get(&s.id).map(|stored| stored.steps != s.steps || stored.name != s.name).unwrap_or(true);
+                    json!({ "ok": true, "result": crate::scenario::run(&s), "unsaved": unsaved })
+                }
+                None => json!({ "ok": false, "message": "Добавьте шаги и нажмите «Тест сценария» ещё раз" }),
+            }
+        }
+        "status" => json!({ "ok": true, "running": crate::scenario::running_json() }),
         "test_step" => {
             let st: crate::scenario::Step = match body.get("step").cloned().map(serde_json::from_value) {
                 Some(Ok(s)) => s,

@@ -56,10 +56,18 @@ pub struct Scenario {
     pub id: String,
     pub name: String,
     pub phrase: String, // said after "Джарвис"
+    // what starts it: "voice" = the phrase said after "Джарвис" or typed in the window / on the phone (the only kind
+    // that exists; a scenario saved by an older version has no field and gets it on load)
+    #[serde(default = "default_trigger")]
+    pub trigger: String,
     pub enabled: bool,
     pub steps: Vec<Step>,
     pub updated: u64,
     pub last_run: Option<RunResult>,
+}
+
+fn default_trigger() -> String {
+    "voice".to_string()
 }
 
 fn now() -> u64 {
@@ -122,6 +130,9 @@ pub fn check(sc: &Scenario) -> Result<(), String> {
     if norm(&sc.phrase).is_empty() {
         return Err("Впишите фразу активации, например: начать рабочий день".into());
     }
+    if !sc.trigger.is_empty() && sc.trigger != "voice" {
+        return Err("Этот тип запуска не поддерживается: сценарий запускается фразой (голосом или текстом)".into());
+    }
     if sc.steps.is_empty() {
         return Err("Добавьте хотя бы один шаг".into());
     }
@@ -156,15 +167,10 @@ fn load() -> Vec<Scenario> {
     }
 }
 
-fn save(list: &[Scenario]) {
-    if let Some(p) = file() {
-        if let Ok(text) = serde_json::to_string_pretty(list) {
-            let tmp = p.with_extension("json.tmp");
-            if std::fs::write(&tmp, text).is_ok() {
-                let _ = std::fs::rename(&tmp, &p);
-            }
-        }
-    }
+fn save(list: &[Scenario]) -> Result<(), String> {
+    let p = file().ok_or("нет папки настроек")?;
+    let text = serde_json::to_string_pretty(list).map_err(|e| e.to_string())?;
+    crate::write_atomic(&p, text).map_err(|e| format!("файл сценариев не записан: {}", e))
 }
 
 pub fn list() -> Vec<Scenario> {
@@ -177,6 +183,9 @@ pub fn get(id: &str) -> Option<Scenario> {
 
 // creates (empty id) or replaces a scenario; returns the stored one
 pub fn upsert(mut sc: Scenario) -> Result<Scenario, String> {
+    if sc.trigger.is_empty() {
+        sc.trigger = default_trigger();
+    }
     sc.name = sc.name.trim().chars().take(80).collect();
     sc.phrase = sc.phrase.trim().chars().take(120).collect();
     for s in sc.steps.iter_mut() {
@@ -200,12 +209,26 @@ pub fn upsert(mut sc: Scenario) -> Result<Scenario, String> {
         }
     }
     sc.updated = now();
+    let before = list.clone();
     match list.iter_mut().find(|o| o.id == sc.id) {
         Some(o) => *o = sc.clone(),
         None => list.push(sc.clone()),
     }
-    save(&list);
+    // the file could not be written (no space, no rights): the change is not kept in memory either, and the
+    // user is told — never "saved" when it is not
+    if let Err(e) = save_or_test(&list) {
+        *list = before;
+        return Err(format!("Не удалось сохранить: {}", e));
+    }
     Ok(sc)
+}
+
+// (the tests have no config folder: there the list lives in memory only)
+fn save_or_test(list: &[Scenario]) -> Result<(), String> {
+    if cfg!(test) && file().is_none() {
+        return Ok(());
+    }
+    save(list)
 }
 
 pub fn delete(id: &str) -> bool {
@@ -214,7 +237,7 @@ pub fn delete(id: &str) -> bool {
     list.retain(|s| s.id != id);
     let changed = list.len() != before;
     if changed {
-        save(&list);
+        let _ = save_or_test(&list);
     }
     changed
 }
@@ -224,7 +247,7 @@ pub fn set_enabled(id: &str, on: bool) -> bool {
     match list.iter_mut().find(|s| s.id == id) {
         Some(s) => {
             s.enabled = on;
-            save(&list);
+            let _ = save_or_test(&list);
             true
         }
         None => false,
@@ -242,7 +265,7 @@ pub fn find(text: &str) -> Option<Scenario> {
 
 // export: the scenarios as a JSON document (no ids of this computer needed to import them elsewhere)
 pub fn export_json() -> Value {
-    let list: Vec<Value> = list().into_iter().map(|s| json!({ "name": s.name, "phrase": s.phrase, "enabled": s.enabled, "steps": s.steps })).collect();
+    let list: Vec<Value> = list().into_iter().map(|s| json!({ "name": s.name, "phrase": s.phrase, "trigger": s.trigger, "enabled": s.enabled, "steps": s.steps })).collect();
     json!({ "jarvis_scenarios": 1, "scenarios": list })
 }
 
@@ -263,7 +286,7 @@ pub fn import_json(doc: &Value, replace: bool) -> Result<(usize, Vec<String>), S
     if replace {
         let mut list = LIST.lock();
         list.clear();
-        save(&list);
+        let _ = save_or_test(&list);
     }
     let mut added = 0;
     for sc in parsed {
@@ -279,7 +302,7 @@ pub fn import_json(doc: &Value, replace: bool) -> Result<(usize, Vec<String>), S
 // ready-made scenarios to start from (the user edits them before saving)
 pub fn templates() -> Value {
     let t = |name: &str, phrase: &str, steps: Vec<(&str, &str, &str)>| {
-        json!({ "name": name, "phrase": phrase, "steps": steps.into_iter().map(|(k, p, w)| json!({ "kind": k, "param": p, "window": w })).collect::<Vec<_>>() })
+        json!({ "name": name, "phrase": phrase, "trigger": "voice", "steps": steps.into_iter().map(|(k, p, w)| json!({ "kind": k, "param": p, "window": w })).collect::<Vec<_>>() })
     };
     json!([
         t("Режим работы", "начать рабочий день", vec![("app", "телеграм", ""), ("link", "https://mail.google.com", "max"), ("volume", "30", "")]),
@@ -332,6 +355,34 @@ pub fn app_target(param: &str) -> String {
     }
 }
 
+fn exe_name(target: &str) -> Option<String> {
+    let file = target.rsplit(['\\', '/']).next().unwrap_or("");
+    file.to_lowercase().ends_with(".exe").then(|| file.to_string())
+}
+
+#[cfg(feature = "lua")]
+fn process_running(exe: &str) -> bool {
+    crate::lua::process_running(exe)
+}
+
+#[cfg(not(feature = "lua"))]
+fn process_running(_exe: &str) -> bool {
+    true
+}
+
+fn wait_process(exe: &str, max: Duration) -> bool {
+    let until = std::time::Instant::now() + max;
+    loop {
+        if process_running(exe) {
+            return true;
+        }
+        if std::time::Instant::now() >= until {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+}
+
 pub fn run_step(s: &Step) -> Result<(), String> {
     check_step(s)?;
     let p = s.param.trim();
@@ -344,7 +395,20 @@ pub fn run_step(s: &Step) -> Result<(), String> {
             }
             open(p).map(|_| true)
         }
-        "app" => open(&app_target(p)).map(|_| true).map_err(|e| format!("программа «{}» не запустилась: {}", p, e)),
+        "app" => {
+            let target = app_target(p);
+            let exe = exe_name(&target);
+            let was_running = exe.as_deref().map(process_running).unwrap_or(false);
+            open(&target).map_err(|e| format!("программа «{}» не запустилась: {}", p, e))?;
+            // the program must really appear (not only "Windows took the launch"); not checked when it was already
+            // running or its program file is not known
+            if let (Some(exe), false) = (exe, was_running) {
+                if !wait_process(&exe, Duration::from_secs(8)) {
+                    return Err(format!("программа «{}» не появилась после запуска", p));
+                }
+            }
+            Ok(true)
+        }
         "text" => {
             #[cfg(feature = "lua")]
             {
@@ -386,17 +450,62 @@ pub fn run_step(s: &Step) -> Result<(), String> {
     Ok(())
 }
 
-// runs the whole chain; stops at the first step that fails. The result is remembered (history of runs).
+// What runs now (the window shows "Шаг 2 из 4: Громкость"): (scenario id, step number from 1, steps, step title)
+static RUNNING: Lazy<Mutex<Option<(String, usize, usize, String)>>> = Lazy::new(|| Mutex::new(None));
+
+pub fn running_json() -> Value {
+    match RUNNING.lock().as_ref() {
+        Some((id, step, total, title)) => json!({ "id": id, "step": step, "total": total, "title": title }),
+        None => json!(null),
+    }
+}
+
+// Everything that can be known before the first step: the parameters of all steps and the files that must exist.
+// So a chain never starts and stops in the middle because of a typo in step 5.
+pub fn preflight(sc: &Scenario) -> Result<(), String> {
+    check(sc)?;
+    for (i, s) in sc.steps.iter().enumerate() {
+        if s.kind == "file" && !std::path::Path::new(s.param.trim()).exists() {
+            return Err(format!("Шаг {} ({}): файл или папка не найдены: {}", i + 1, step_title(&s.kind), s.param.trim()));
+        }
+    }
+    Ok(())
+}
+
+// The ONE way a scenario runs: its phrase said or typed, and the "Тест сценария" button. The steps run in their
+// order, each one must report success; the first failure stops the chain with its number, kind and reason.
+// The same chain never runs twice at once (a second start while it runs is refused, not queued).
 pub fn run(sc: &Scenario) -> RunResult {
     let total = sc.steps.len();
+    {
+        let mut running = RUNNING.lock();
+        if let Some((id, step, n, _)) = running.as_ref() {
+            let what = if *id == sc.id { "этот сценарий" } else { "другой сценарий" };
+            return RunResult { at: now(), ok: false, done: 0, total, message: format!("Сценарий «{}» не запущен: {} уже выполняется (шаг {} из {})", sc.name, what, step, n) };
+        }
+        *running = Some((sc.id.clone(), 0, total, String::new()));
+    }
+    struct Done;
+    impl Drop for Done {
+        fn drop(&mut self) {
+            *RUNNING.lock() = None;
+        }
+    }
+    let _done = Done;
+
     let mut done = 0;
     let mut message = String::new();
-    for (i, s) in sc.steps.iter().enumerate() {
-        match run_step(s) {
-            Ok(()) => done += 1,
-            Err(e) => {
-                message = format!("Шаг {} ({}): {}", i + 1, step_title(&s.kind), e);
-                break;
+    if let Err(e) = preflight(sc) {
+        message = e;
+    } else {
+        for (i, s) in sc.steps.iter().enumerate() {
+            *RUNNING.lock() = Some((sc.id.clone(), i + 1, total, step_title(&s.kind).to_string()));
+            match run_step(s) {
+                Ok(()) => done += 1,
+                Err(e) => {
+                    message = format!("Шаг {} ({}): {}", i + 1, step_title(&s.kind), e);
+                    break;
+                }
             }
         }
     }
@@ -411,7 +520,7 @@ pub fn run(sc: &Scenario) -> RunResult {
         let mut list = LIST.lock();
         if let Some(o) = list.iter_mut().find(|o| o.id == sc.id) {
             o.last_run = Some(r.clone());
-            save(&list);
+            let _ = save_or_test(&list);
         }
     }
     crate::uistate::log_event(if ok { "command" } else { "error" }, &r.message);

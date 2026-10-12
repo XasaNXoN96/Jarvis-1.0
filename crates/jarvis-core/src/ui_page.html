@@ -1634,7 +1634,7 @@ function notesList(list) {
 // ---------- scenario builder ----------
 let bData = { scenarios: [], kinds: [], templates: [] }, bCur = null, bStep = -1;
 const scApi = body => api('/scenario', body);
-const blank = () => ({ id: '', name: '', phrase: '', enabled: true, steps: [] });
+const blank = () => ({ id: '', name: '', phrase: '', trigger: 'voice', enabled: true, steps: [] });
 function kindTitle(k) { const x = bData.kinds.find(z => z.kind === k); return x ? x.title : k; }
 async function builderLoad(keepId) {
   try { bData = await (await fetch('/scenarios')).json(); } catch (e) { return; }
@@ -1665,7 +1665,7 @@ function renderBuilder() {
   if (document.activeElement !== $('#b-phrase')) $('#b-phrase').value = bCur.phrase;
   $('#b-enabled').checked = bCur.enabled !== false;
   $('#b-count').textContent = bCur.steps.length;
-  $('#b-delete').disabled = !bCur.id; $('#b-test').disabled = !bCur.id;
+  $('#b-delete').disabled = !bCur.id; $('#b-test').disabled = !bCur.steps.length;
   const box = $('#b-steps'); box.textContent = '';
   if (!bCur.steps.length) box.innerHTML = '<div class="empty">Добавьте первый шаг кнопкой выше.</div>';
   bCur.steps.forEach((st, i) => {
@@ -1709,11 +1709,18 @@ $('#b-save').onclick = async () => {
   if (!r.ok) { bMsg(false, r.message); return; }
   bMsg(true, 'Сохранено. Скажите «Джарвис, ' + r.scenario.phrase + '».' + (r.note ? ' ' + r.note : '')); builderLoad(r.scenario.id);
 };
+// the test runs what is in the editor now (the same engine as the phrase); the current step is shown while it runs
 $('#b-test').onclick = async () => {
-  bMsg(true, 'Выполняю сценарий…');
-  const r = await scApi({ op: 'test', id: bCur.id });
-  if (!r.ok) { bMsg(false, r.message); return; }
-  bMsg(r.result.ok, r.result.message); builderLoad(bCur.id);
+  const btn = $('#b-test'); btn.disabled = true; bMsg(true, 'Выполняю сценарий…');
+  const watch = setInterval(async () => {
+    try { const st = await scApi({ op: 'status' }); if (st.running && st.running.step) bMsg(true, 'Выполняю: шаг ' + st.running.step + ' из ' + st.running.total + ' — ' + st.running.title); } catch (e) {}
+  }, 400);
+  let r = null;
+  try { r = await scApi({ op: 'test', id: bCur.id, scenario: bCur }); } catch (e) {}
+  clearInterval(watch); btn.disabled = false;
+  if (!r || !r.ok) { bMsg(false, (r && r.message) || 'Нет связи с Джарвисом'); return; }
+  bMsg(r.result.ok, r.result.message + (r.unsaved && bCur.id ? ' (проверена несохранённая версия — нажмите «Сохранить»)' : r.unsaved ? ' (сценарий ещё не сохранён)' : ''));
+  if (bCur.id && !r.unsaved) builderLoad(bCur.id);
 };
 $('#b-delete').onclick = async () => {
   if (!bCur.id || !confirm('Удалить сценарий «' + bCur.name + '»?')) return;
