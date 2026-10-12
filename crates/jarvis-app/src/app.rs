@@ -20,6 +20,8 @@ fn say(msg: &str) {
 }
 
 pub fn start(voice_mode: bool, text_cmd_rx: Receiver<String>, rt: &tokio::runtime::Runtime) -> Result<(), ()> {
+    // from here on the queue of typed / remote / Telegram phrases is read
+    jarvis_core::remote::mark_queue_ready();
     if voice_mode {
         match main_loop(&text_cmd_rx, rt) {
             // microphone failed to start: don't die, keep working in text mode

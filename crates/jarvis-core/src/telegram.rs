@@ -71,8 +71,25 @@ pub enum Decision {
 
 static CONFIG: Lazy<Mutex<Config>> = Lazy::new(|| Mutex::new(load()));
 static CODE: Lazy<Mutex<Option<(String, Instant)>>> = Lazy::new(|| Mutex::new(None));
-static WRONG: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+// wrong codes per account: five from one account cancel the code (a stranger cannot cancel it by guessing from
+// many accounts quickly either: each counts on its own, and six digits are never guessed in five tries)
+static WRONG: Lazy<Mutex<std::collections::HashMap<i64, u32>>> = Lazy::new(|| Mutex::new(std::collections::HashMap::new()));
 const MAX_WRONG: u32 = 5;
+// the last update Telegram was told is read (shared by every loop of this run): a restarted loop never runs it again
+static OFFSET: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+
+fn reset_code() {
+    *CODE.lock() = None;
+    WRONG.lock().clear();
+}
+
+// counts a wrong code of an account; true when this account has used up its tries
+pub fn wrong_code(from: i64) -> bool {
+    let mut w = WRONG.lock();
+    let n = w.entry(from).or_insert(0);
+    *n += 1;
+    *n >= MAX_WRONG
+}
 static STATUS: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(String::new()));
 // a new generation stops the loop of the old one (switched off, another token)
 static GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -149,7 +166,11 @@ pub fn decide(owner_id: i64, code: Option<&str>, m: &Incoming) -> Decision {
     if t.chars().count() > MAX_TEXT {
         return Decision::TooLong;
     }
-    Decision::Run(t.trim_start_matches('/').to_string())
+    let cmd = t.trim_start_matches('/').trim();
+    if cmd.is_empty() {
+        return Decision::Help;
+    }
+    Decision::Run(cmd.to_string())
 }
 
 // at most PER_MINUTE phrases in the last minute
@@ -198,8 +219,9 @@ pub fn action(body: &Value) -> Value {
                 Err("Это не похоже на токен бота. Он выглядит так: 123456789:AA… — его выдаёт @BotFather".into())
             } else {
                 let mut c = CONFIG.lock();
-                // another bot: the old owner does not carry over
+                // another bot: the old owner and a waiting code do not carry over
                 if c.token != t {
+                    reset_code();
                     c.owner_id = 0;
                     c.owner_name.clear();
                     c.bot_name.clear();
@@ -236,10 +258,11 @@ pub fn action(body: &Value) -> Value {
         "pair" => {
             let code = new_code();
             *CODE.lock() = Some((code.clone(), Instant::now()));
-            WRONG.store(0, std::sync::atomic::Ordering::SeqCst);
+            WRONG.lock().clear();
             Ok(format!("Отправьте боту код {} в течение 10 минут", code))
         }
         "unpair" => {
+            reset_code();
             let mut c = CONFIG.lock();
             c.owner_id = 0;
             c.owner_name.clear();
@@ -248,6 +271,7 @@ pub fn action(body: &Value) -> Value {
         }
         "forget" => {
             stop();
+            reset_code();
             let mut c = CONFIG.lock();
             *c = Config::default();
             save(&c);
@@ -385,19 +409,23 @@ mod net {
             return;
         };
         let token = CONFIG.lock().token.clone();
-        let mut offset: i64 = 0;
+        let mut offset: i64 = OFFSET.load(std::sync::atomic::Ordering::SeqCst);
         let mut backoff = 5u64;
         let mut times: Vec<Instant> = Vec::new();
         match call(&c, &token, "getMe", &json!({})) {
             Ok(v) => {
                 let name = v["result"]["username"].as_str().unwrap_or("").to_string();
                 let mut cfg = CONFIG.lock();
-                if cfg.bot_name != name {
+                // (a loop that was stopped meanwhile, or a token changed or forgotten, writes nothing)
+                if alive(gen) && cfg.token == token && cfg.bot_name != name {
                     cfg.bot_name = name;
                     save(&cfg);
                 }
             }
             Err(e) => {
+                if !alive(gen) {
+                    return;
+                }
                 set_status(&e);
                 if e.contains("токен") {
                     return;
@@ -431,6 +459,7 @@ mod net {
                     break;
                 }
                 offset = offset.max(m.update_id + 1);
+                OFFSET.fetch_max(offset, std::sync::atomic::Ordering::SeqCst);
                 if too_old(m.date, now_secs()) {
                     log::info!("Telegram: an old message is skipped");
                     continue;
@@ -440,8 +469,8 @@ mod net {
                 match decide(owner, code.as_deref(), &m) {
                     Decision::Ignore => {}
                     Decision::WrongCode => {
-                        if WRONG.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1 >= MAX_WRONG {
-                            *CODE.lock() = None;
+                        if wrong_code(m.from_id) {
+                            reset_code();
                             crate::uistate::log_event("error", "Telegram: код привязки сброшен после 5 неверных попыток");
                             set_status("код привязки сброшен: 5 неверных попыток. Получите новый код");
                         }
@@ -453,7 +482,7 @@ mod net {
                             cfg.owner_name = m.name.clone();
                             save(&cfg);
                         }
-                        *CODE.lock() = None;
+                        reset_code();
                         crate::uistate::log_event("info", "Telegram: телефон привязан");
                         send(&c, &token, m.chat_id, &format!("Готово: этот аккаунт привязан к JARVIS.\n\n{}", HELP));
                     }
@@ -464,8 +493,11 @@ mod net {
                             send(&c, &token, m.chat_id, "Слишком много команд подряд. Подождите минуту.");
                             continue;
                         }
+                        // Telegram is told first that this message is read: a crash or a restart during the command
+                        // never runs it a second time
+                        let _ = call(&c, &token, "getUpdates", &json!({ "offset": offset, "timeout": 0, "limit": 1, "allowed_updates": ["message"] }));
                         let before = chat_snapshot();
-                        if !crate::remote::push_text(&text) {
+                        if !crate::remote::queue_ready() || !crate::remote::push_text(&text) {
                             send(&c, &token, m.chat_id, "Джарвис ещё запускается, команды пока не принимаются.");
                             continue;
                         }
@@ -655,8 +687,36 @@ mod tests {
         // (no command queue in the tests: the owner is told honestly instead of a silence)
         assert!(msgs[2]["text"].as_str().unwrap().contains("ещё запускается"), "{:?}", msgs[2]);
         assert!(CODE.lock().is_none(), "the code works once");
+        assert!(OFFSET.load(std::sync::atomic::Ordering::SeqCst) >= 6, "a restarted loop starts after the updates already read");
         *BASE.lock() = "https://api.telegram.org".into();
         set_for_tests(Config::default());
+    }
+
+    #[test]
+    fn wrong_codes_count_per_account_and_unpair_or_forget_cancel_a_waiting_code() {
+        let _g = TEST_LOCK.lock();
+        reset_code();
+        for _ in 0..MAX_WRONG - 1 {
+            assert!(!wrong_code(99));
+        }
+        assert!(!wrong_code(77), "another account has its own tries: a stranger cannot use them up for the owner");
+        assert!(wrong_code(99), "the fifth wrong code of one account");
+        set_for_tests(Config { token: "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw".into(), owner_id: 77, ..Default::default() });
+        action(&json!({ "op": "pair" }));
+        assert!(CODE.lock().is_some());
+        action(&json!({ "op": "unpair" }));
+        assert!(CODE.lock().is_none(), "a code made before unpair does not stay valid for the next account");
+        action(&json!({ "op": "pair" }));
+        action(&json!({ "op": "forget" }));
+        assert!(CODE.lock().is_none() && WRONG.lock().is_empty());
+        set_for_tests(Config::default());
+    }
+
+    #[test]
+    fn a_lone_slash_is_help_not_an_empty_command() {
+        assert_eq!(decide(77, None, &msg(77, "/", true)), Decision::Help);
+        assert_eq!(decide(77, None, &msg(77, "/ ", true)), Decision::Help);
+        assert_eq!(decide(77, None, &msg(77, "/громкость 30", true)), Decision::Run("громкость 30".into()));
     }
 
     #[test]

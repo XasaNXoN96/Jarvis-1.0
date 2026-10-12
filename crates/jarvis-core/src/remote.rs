@@ -233,6 +233,17 @@ pub fn push_text_would_work_for_tests() -> bool {
     TX.get().is_some()
 }
 
+// the command queue is being read (the main loop of the app runs): before that a phrase would wait unseen
+static QUEUE_READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn mark_queue_ready() {
+    QUEUE_READY.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+pub fn queue_ready() -> bool {
+    QUEUE_READY.load(std::sync::atomic::Ordering::SeqCst) && TX.get().is_some()
+}
+
 pub fn set_sender(tx: Sender<String>) {
     let _ = TX.set(Mutex::new(tx));
 }
