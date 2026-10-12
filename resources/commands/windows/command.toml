@@ -98,3 +98,22 @@ phrases.ru = [
     "смени язык на английский",
     "поменяй язык на английский",
 ]
+
+[[commands]]
+id = "windows_9"
+type = "lua"
+script = "actions.lua"
+sandbox = "full"
+timeout = 15000
+description = "Запись экрана средствами Windows (Xbox Game Bar, Win+Alt+R): начать или остановить"
+triggers.ru = ["запиш экран", "запис экран"]
+triggers.en = ["record the screen", "screen recording"]
+phrases.ru = [
+    "запиши экран",
+    "начни запись экрана",
+    "включи запись экрана",
+    "останови запись экрана",
+    "выключи запись экрана",
+    "запись экрана",
+]
+phrases.en = ["record the screen", "start screen recording", "stop screen recording"]

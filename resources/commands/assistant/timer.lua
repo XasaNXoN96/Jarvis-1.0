@@ -32,4 +32,7 @@ end
 
 local text = fmt_duration(secs)
 jarvis.timer.after(secs, T("Таймер", "Timer"), T("Время вышло: " .. text, "Time is up: " .. text))
-say(T("Таймер", "Timer"), T("Запущен на " .. text, "Started for " .. text), T("Таймер на " .. text, "Timer for " .. text), "timer")
+-- the shown text says when it rings (the clock of this computer); the spoken one stays short
+local ok_at, at = pcall(function() return os.date("%H:%M:%S", os.time() + secs) end)
+local when = (ok_at and at) and T(" — сработает в " .. at, " — rings at " .. at) or ""
+say(T("Таймер", "Timer"), T("Запущен на " .. text, "Started for " .. text) .. when, T("Таймер на " .. text, "Timer for " .. text), "timer")

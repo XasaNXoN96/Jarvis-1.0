@@ -1,5 +1,5 @@
-// The notification window of Jarvis (Windows): a small dark card with an accent line in the bottom right corner of
-// the screen (above the taskbar), in the style of the Jarvis window. It fades and slides in, stays a few seconds
+// The notification window of Jarvis (Windows): a small graphite card "JARVIS // <ЗАГОЛОВОК>" in the top right corner
+// of the screen (under the top edge of the work area), in the style of the Jarvis window. It fades and slides in, stays a few seconds
 // (longer while the mouse is over it), fades out; a click closes it. It never takes the keyboard focus
 // (WS_EX_NOACTIVATE, MA_NOACTIVATE): typing in another program or in the Jarvis window is not interrupted, and it
 // has no buttons, so a click can never run a command again. Notifications are shown one after another.
@@ -133,7 +133,7 @@ unsafe fn screen_scale() -> f32 {
     if dpi > 0 { dpi as f32 / 96.0 } else { 1.0 }
 }
 
-// geometry of a new card (bottom right of the work area, above the taskbar)
+// geometry of a new card (top right of the work area)
 unsafe fn layout(ui: &mut Ui, p: Popup) {
     let s = screen_scale();
     let mut work: RECT = std::mem::zeroed();
@@ -147,7 +147,7 @@ unsafe fn layout(ui: &mut Ui, p: Popup) {
     ui.w = w;
     ui.h = h;
     ui.x = work.right - w - margin;
-    ui.y = work.bottom - h - margin;
+    ui.y = work.top + margin;
     ui.current = Some(p);
     ui.phase = Phase::In(Instant::now());
 }
@@ -242,6 +242,16 @@ unsafe fn text_out(hdc: HDC, text: &str, r: &mut RECT, flags: UINT) {
     DrawTextW(hdc, w.as_ptr(), -1, r, flags | DT_NOPREFIX);
 }
 
+// the header of the card, as in the window: "JARVIS // ТАЙМЕР"
+pub fn header(title: &str) -> String {
+    let t = title.trim();
+    if t.is_empty() {
+        "JARVIS".to_string()
+    } else {
+        format!("JARVIS // {}", t.to_uppercase())
+    }
+}
+
 unsafe fn paint(hwnd: HWND) {
     let mut ps: PAINTSTRUCT = std::mem::zeroed();
     let hdc = BeginPaint(hwnd, &mut ps);
@@ -257,10 +267,10 @@ unsafe fn paint(hwnd: HWND) {
         let bmp = CreateCompatibleBitmap(hdc, w, h);
         let old_bmp = SelectObject(mem, bmp as _);
 
-        let accent = if p.error || p.critical { RGB(255, 107, 122) } else { RGB(90, 209, 255) };
-        // the card: the background of the Jarvis window and a thin accent border
-        let bg = CreateSolidBrush(RGB(11, 19, 48));
-        let pen = CreatePen(PS_SOLID as i32, (1.0 * s).max(1.0) as i32, if p.error || p.critical { RGB(122, 52, 66) } else { RGB(32, 86, 118) });
+        let accent = if p.error || p.critical { RGB(255, 107, 122) } else { RGB(232, 232, 236) };
+        // the card: the graphite background of the Jarvis window and a thin border
+        let bg = CreateSolidBrush(RGB(17, 17, 19));
+        let pen = CreatePen(PS_SOLID as i32, (1.0 * s).max(1.0) as i32, if p.error || p.critical { RGB(110, 46, 56) } else { RGB(52, 52, 58) });
         let old_brush = SelectObject(mem, bg as _);
         let old_pen = SelectObject(mem, pen as _);
         RoundRect(mem, 0, 0, w, h, (16.0 * s) as i32, (16.0 * s) as i32);
@@ -270,7 +280,7 @@ unsafe fn paint(hwnd: HWND) {
         FillRect(mem, &r, bar);
 
         SetBkMode(mem, TRANSPARENT as i32);
-        let f_title = font(15.0 * s, FW_SEMIBOLD);
+        let f_title = font(12.5 * s, FW_SEMIBOLD);
         let f_small = font(12.0 * s, FW_NORMAL);
         let f_text = font(13.5 * s, FW_NORMAL);
         let left = (24.0 * s) as i32;
@@ -278,17 +288,17 @@ unsafe fn paint(hwnd: HWND) {
 
         // time (top right)
         SelectObject(mem, f_small as _);
-        SetTextColor(mem, RGB(127, 141, 181));
+        SetTextColor(mem, RGB(139, 139, 147));
         let mut rt = RECT { left, top: (12.0 * s) as i32, right, bottom: (32.0 * s) as i32 };
         text_out(mem, &p.time, &mut rt, DT_RIGHT | DT_SINGLELINE | DT_VCENTER);
         // title
         SelectObject(mem, f_title as _);
-        SetTextColor(mem, accent);
+        SetTextColor(mem, if p.error || p.critical { accent } else { RGB(160, 160, 168) });
         let mut rt = RECT { left, top: (11.0 * s) as i32, right: right - (48.0 * s) as i32, bottom: (33.0 * s) as i32 };
-        text_out(mem, &p.title, &mut rt, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
+        text_out(mem, &header(&p.title), &mut rt, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
         // message
         SelectObject(mem, f_text as _);
-        SetTextColor(mem, RGB(220, 230, 255));
+        SetTextColor(mem, RGB(236, 236, 238));
         let mut rt = RECT { left, top: (36.0 * s) as i32, right, bottom: h - (12.0 * s) as i32 };
         text_out(mem, &p.text, &mut rt, DT_LEFT | DT_WORDBREAK | DT_EDITCONTROL | DT_END_ELLIPSIS);
 
@@ -327,5 +337,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam:
             0
         }
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_card_header_is_jarvis_and_the_title_in_capitals() {
+        assert_eq!(super::header("Таймер"), "JARVIS // ТАЙМЕР");
+        assert_eq!(super::header("  "), "JARVIS");
     }
 }

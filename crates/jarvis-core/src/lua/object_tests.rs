@@ -550,6 +550,8 @@ fn tasks_talk_mode_translation_speed_test_and_browser_commands_are_routed() {
         // the commands that were there before are not taken over
         ("переведи на английский привет", "assistant_translate"), ("переключи окно", "win_switch"), ("открой заметки", "assistant_note_open"),
         ("запиши идею купить молоко", "assistant_note_add"),
+        // the recording of the screen (Xbox Game Bar) is not a note and not a dictation
+        ("запиши экран", "windows_9"), ("начни запись экрана", "windows_9"), ("останови запись экрана", "windows_9"),
     ] {
         assert_eq!(w.route(phrase).as_deref(), Some(id), "{}", phrase);
     }
