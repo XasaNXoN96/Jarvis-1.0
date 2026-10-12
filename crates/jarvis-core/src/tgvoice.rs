@@ -74,6 +74,14 @@ pub fn decode_ogg_opus(bytes: &[u8]) -> Result<Vec<i16>, String> {
     Ok(out)
 }
 
+// (sample rate, seconds) of a WAV
+pub fn wav_info(wav: &[u8]) -> Result<(u32, f32), String> {
+    let r = hound::WavReader::new(Cursor::new(wav)).map_err(|_| "звук в непонятном формате".to_string())?;
+    let spec = r.spec();
+    let frames = r.duration() as f32;
+    Ok((spec.sample_rate, if spec.sample_rate == 0 { 0.0 } else { frames / spec.sample_rate as f32 }))
+}
+
 // WAV (16-bit PCM, any rate, the first channel) -> 16 kHz mono samples (a linear resampling)
 pub fn wav_to_16k(wav: &[u8]) -> Result<Vec<i16>, String> {
     let mut r = hound::WavReader::new(Cursor::new(wav)).map_err(|_| "звук в непонятном формате".to_string())?;

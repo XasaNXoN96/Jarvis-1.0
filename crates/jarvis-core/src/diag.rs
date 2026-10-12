@@ -435,10 +435,21 @@ fn open_public_page() -> Option<Result<(), String>> {
         crate::tunnel::State::On(u) => u,
         _ => return None,
     };
-    with_timeout(12_000, move || -> Result<(), String> {
-        let c = reqwest::blocking::Client::builder().timeout(Duration::from_secs(10)).build().map_err(|_| "нет сети".to_string())?;
-        let r = c.get(&url).send().map_err(|_| "нет ответа".to_string())?;
-        if r.status().is_success() { Ok(()) } else { Err(format!("ответ {}", r.status().as_u16())) }
+    // a tunnel that was just made needs a few seconds before its address answers: three tries
+    with_timeout(30_000, move || -> Result<(), String> {
+        let c = reqwest::blocking::Client::builder().timeout(Duration::from_secs(6)).build().map_err(|_| "нет сети".to_string())?;
+        let mut last = String::from("нет ответа");
+        for k in 0..3 {
+            if k > 0 {
+                std::thread::sleep(Duration::from_secs(3));
+            }
+            match c.get(&url).send() {
+                Ok(r) if r.status().is_success() => return Ok(()),
+                Ok(r) => last = format!("ответ {}", r.status().as_u16()),
+                Err(_) => last = "нет ответа".into(),
+            }
+        }
+        Err(last)
     })
 }
 

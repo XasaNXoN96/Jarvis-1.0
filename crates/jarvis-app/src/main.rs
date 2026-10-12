@@ -45,6 +45,24 @@ fn selftest_speech() -> String {
         Ok(w) => w,
         Err(e) => return format!("FAIL piper: {}", e),
     };
+    // the sound itself: its rate and length (a phrase of seven words must not last ten seconds), and two short phrases
+    let wav_info = |w: &[u8]| -> String {
+        match jarvis_core::tgvoice::wav_info(w) {
+            Ok((rate, secs)) => format!("{} Hz, {:.1} s", rate, secs),
+            Err(e) => format!("({})", e),
+        }
+    };
+    let mut shorts = String::new();
+    for short in ["открой ютуб", "который час"] {
+        match jarvis_core::tts::synth_to_wav(short) {
+            Ok(w) => {
+                let heard = jarvis_core::tgvoice::wav_to_16k(&w).and_then(|s| jarvis_core::tgvoice::recognize(&s)).unwrap_or_else(|e| format!("(error: {})", e));
+                shorts.push_str(&format!(" [«{}»: {} -> «{}»]", short, wav_info(&w), heard.trim()));
+            }
+            Err(e) => shorts.push_str(&format!(" [«{}»: {}]", short, e)),
+        }
+    }
+    let sound = wav_info(&wav);
     // what Vosk makes of the sound without any codec (to tell a weak recognition from a damaged sound)
     let direct = match jarvis_core::tgvoice::wav_to_16k(&wav).and_then(|s| jarvis_core::tgvoice::recognize(&s)) {
         Ok(t) => t.trim().to_string(),
@@ -60,7 +78,7 @@ fn selftest_speech() -> String {
     };
     match jarvis_core::tgvoice::recognize(&samples) {
         Ok(text) if !text.trim().is_empty() => {
-            format!("OK heard: {} | without the codec: {} | wav {} KB, ogg {} KB, {} samples, {} ms", text.trim(), direct, wav.len() / 1024, ogg.len() / 1024, samples.len(), t0.elapsed().as_millis())
+            format!("OK heard: {} | without the codec: {} | sound: {} |{} | wav {} KB, ogg {} KB, {} samples, {} ms", text.trim(), direct, sound, shorts, wav.len() / 1024, ogg.len() / 1024, samples.len(), t0.elapsed().as_millis())
         }
         Ok(_) => format!("FAIL vosk: nothing recognized (without the codec: {})", direct),
         Err(e) => format!("FAIL vosk: {}", e),
