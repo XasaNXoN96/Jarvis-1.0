@@ -175,16 +175,23 @@ fn deliver(kind: &str, title: &str, text: &str, source: &str, critical: bool, p:
         display(&note);
     }
     if p.speak {
-        if kind == "external" {
-            // a message from another program waits for the current speech (an AI answer is not cut off)
-            crate::tts::speak_queued(say);
-        } else {
+        if interrupts_speech(kind) {
+            // the time has come (a timer, an alarm, a reminder): said at once
             crate::tts::speak(say);
+        } else {
+            // everything else (a message from another program, the result of a command, an error) waits for the
+            // current speech: an AI answer that is being read is not cut off by a notification
+            crate::tts::speak_queued(say);
         }
     } else if p.sound {
         beep();
     }
     id
+}
+
+// only an event whose moment matters interrupts what Jarvis is saying
+pub fn interrupts_speech(kind: &str) -> bool {
+    matches!(kind, "timer" | "alarm" | "reminder")
 }
 
 pub fn recent(n: usize) -> Vec<Note> {

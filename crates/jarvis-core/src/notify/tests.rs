@@ -280,3 +280,14 @@ fn speech_off_dnd_and_a_missing_voice_are_reported_not_hidden() {
     ext_stop();
     uistate::set_for_tests(UiSettings::default());
 }
+
+#[test]
+fn only_a_timer_alarm_or_reminder_interrupts_what_jarvis_is_saying() {
+    for kind in ["timer", "alarm", "reminder"] {
+        assert!(interrupts_speech(kind), "{}", kind);
+    }
+    // an AI answer being read is not cut off by these: they wait in the queue
+    for kind in ["command", "task", "system_error", "external", "system"] {
+        assert!(!interrupts_speech(kind), "{}", kind);
+    }
+}

@@ -994,7 +994,8 @@ fn reply(text: &str, spoken: &str) {
     crate::dialog::reply(text, "command");
     say(text);
     if !spoken.is_empty() {
-        crate::tts::speak(spoken);
+        // the result comes seconds later: it waits for what is being said ("Ищу…", an AI answer) instead of cutting it
+        crate::tts::speak_queued(spoken);
     }
 }
 
