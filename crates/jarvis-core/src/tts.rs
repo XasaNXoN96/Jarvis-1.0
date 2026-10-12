@@ -482,6 +482,7 @@ fn piper_synth(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64
         let _ = stdin.write_all(b"\n");
     }
     // wait here (not in the shared slot: the previous piece is being played at the same time)
+    let mut exit: Option<std::process::ExitStatus> = None;
     loop {
         if GENERATION.load(Ordering::SeqCst) != generation {
             let _ = child.kill();
@@ -489,7 +490,11 @@ fn piper_synth(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64
             return Synth::Cancelled;
         }
         match child.try_wait() {
-            Ok(Some(_)) | Err(_) => break,
+            Ok(Some(st)) => {
+                exit = Some(st);
+                break;
+            }
+            Err(_) => break,
             Ok(None) => std::thread::sleep(std::time::Duration::from_millis(40)),
         }
     }
@@ -501,7 +506,10 @@ fn piper_synth(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64
         let why = std::fs::read_to_string(&err_file).unwrap_or_default();
         let why: String = why.lines().rev().take(3).collect::<Vec<_>>().join(" | ");
         let why: String = why.chars().take(300).collect();
-        note_synth(Err(if why.is_empty() { "Piper не создал звук".into() } else { why.clone() }));
+        // no message of its own: at least the exit code (a missing dll or a crash has no text, only a code)
+        let code = exit.and_then(|st| st.code()).map(|c| format!("Piper завершился с кодом {} (0x{:X}) и не создал звук", c, c as u32));
+        let why = if why.is_empty() { code.unwrap_or_else(|| "Piper не создал звук".into()) } else { why };
+        note_synth(Err(why.clone()));
         Synth::Failed(why)
     }
 }

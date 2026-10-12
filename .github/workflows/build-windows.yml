@@ -237,6 +237,19 @@ jobs:
           }
           if (-not $piper) { throw "the diagnostics did not finish" }
           Write-Host "PIPER synthesis in '$dir': [$($piper.status)] $($piper.detail)"
+          if ($piper.detail -notlike "*синтезирована*") {
+            # what exactly is wrong: the installed piper.exe run by hand, in the install folder and in a plain ASCII copy
+            Write-Host "=== piper by hand in the install folder"
+            $w1 = Join-Path $env:TEMP "direct1.wav"
+            "Проверка голоса." | & "$dir\piper\piper.exe" --model "$dir\piper\voices\ru.onnx" --output_file $w1 2>&1 | Select-Object -First 20 | ForEach-Object { "  $_" }
+            Write-Host "exit code $LASTEXITCODE; wav exists: $(Test-Path $w1)"
+            Write-Host "=== piper by hand in an ASCII copy"
+            Copy-Item "$dir\piper" "C:\piper-ascii" -Recurse
+            $w2 = Join-Path $env:TEMP "direct2.wav"
+            "Проверка голоса." | & "C:\piper-ascii\piper.exe" --model "C:\piper-ascii\voices\ru.onnx" --output_file $w2 2>&1 | Select-Object -First 20 | ForEach-Object { "  $_" }
+            Write-Host "exit code $LASTEXITCODE; wav exists: $(Test-Path $w2)"
+            Get-ChildItem "$dir\piper" | Select-Object -First 30 | ForEach-Object { "  $($_.Name) $($_.Length)" }
+          }
           if ($piper.detail -notlike "*синтезирована*") { throw "Piper could not make a phrase from the installed voice: $($piper.detail)" }
           Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $hh -Body '{"name":"tts_test"}' | Out-Null
           Start-Sleep 10
