@@ -9,8 +9,9 @@
 //   and wrong tries from one address are throttled (remote.rs, `throttle`);
 // - the traffic goes through the servers of Cloudflare (it can see it, like any proxy): the window says so;
 // - the address is new every time the tunnel is switched on: the old one stops working;
-// - cloudflared is downloaded once (about 55 MB) from the official releases of Cloudflare on GitHub, a FIXED version
-//   whose SHA-256 is written here, and on Windows its Authenticode signature must be valid and from Cloudflare;
+// - cloudflared is downloaded once (about 55 MB) from the official releases of Cloudflare on GitHub: a FIXED version
+//   whose SHA-256 is written here and checked at every start (that exact file, signed by Cloudflare, was checked
+//   when the version was chosen); a file with another hash is deleted and never run;
 // - the child process lives in a Windows job object: it ends with Jarvis however Jarvis ends.
 
 use std::io::{BufRead, BufReader, Read};
@@ -81,26 +82,6 @@ pub fn find_url(line: &str) -> Option<String> {
     Some(url.to_string())
 }
 
-// the answer of `Get-AuthenticodeSignature`: "Valid|CN=Cloudflare, Inc., O=Cloudflare, Inc., L=..." (Windows puts
-// quotes round a value with a comma: CN="Cloudflare, Inc.") -> true only for a valid signature whose subject names
-// "Cloudflare, Inc." as a whole field (the common name or the organization)
-pub fn signature_ok(output: &str) -> bool {
-    let out = output.trim();
-    let Some((status, subject)) = out.split_once('|') else { return false };
-    if status.trim() != "Valid" {
-        return false;
-    }
-    let subject = subject.replace('"', "");
-    ["CN=Cloudflare, Inc.", "O=Cloudflare, Inc."].iter().any(|want| {
-        subject.match_indices(want).any(|(i, _)| {
-            let before_ok = i == 0 || subject[..i].ends_with(", ") || subject[..i].ends_with(',');
-            let rest = &subject[i + want.len()..];
-            let after_ok = rest.is_empty() || rest.starts_with(',');
-            before_ok && after_ok
-        })
-    })
-}
-
 pub fn sha256_hex(path: &std::path::Path) -> std::io::Result<String> {
     use sha2::{Digest, Sha256};
     let mut f = std::fs::File::open(path)?;
@@ -120,32 +101,7 @@ fn download_url() -> String {
     format!("https://github.com/cloudflare/cloudflared/releases/download/{}/cloudflared-windows-amd64.exe", VERSION)
 }
 
-#[cfg(target_os = "windows")]
-fn verify_signature(path: &std::path::Path) -> Result<(), String> {
-    use std::os::windows::process::CommandExt;
-    let script = format!("$s = Get-AuthenticodeSignature -LiteralPath '{}'; \"$($s.Status)|$($s.SignerCertificate.Subject)\"", path.display().to_string().replace('\'', "''"));
-    let out = Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", &script])
-        .creation_flags(0x0800_0000)
-        .output()
-        .map_err(|e| format!("не удалось проверить подпись: {}", e))?;
-    let text = String::from_utf8_lossy(&out.stdout).to_string();
-    if signature_ok(&text) {
-        Ok(())
-    } else {
-        // (the status and the name of the signer are not secret: they tell what exactly was wrong)
-        let shown: String = text.trim().chars().take(140).collect();
-        warn!("Tunnel: the signature check said: {}", shown);
-        Err(format!("подпись cloudflared не принадлежит Cloudflare — файл удалён (проверка вернула: {})", shown))
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn verify_signature(_path: &std::path::Path) -> Result<(), String> {
-    Ok(())
-}
-
-// downloads the pinned release into `part` (the percent goes to the state); the caller checks the hash and the signature
+// downloads the pinned release into `part` (the percent goes to the state); the caller checks the hash
 #[cfg(feature = "lua")]
 fn download(part: &std::path::Path, gen: u64) -> Result<(), String> {
     let client = reqwest::blocking::Client::builder().connect_timeout(Duration::from_secs(15)).timeout(Duration::from_secs(600)).build().map_err(|e| e.to_string())?;
@@ -201,17 +157,12 @@ fn ensure_exe(gen: u64) -> Result<PathBuf, String> {
     }
     let dir = exe.parent().ok_or("нет папки")?.to_path_buf();
     std::fs::create_dir_all(&dir).map_err(|e| format!("не удалось создать папку: {}", e))?;
-    // (the extension .exe: Get-AuthenticodeSignature answers "NotSupportedFileFormat" for a file named otherwise)
     let part = dir.join("cloudflared-download.exe");
     download(&part, gen)?;
     let hash = sha256_hex(&part).map_err(|e| e.to_string())?;
     if hash != SHA256 {
         let _ = std::fs::remove_file(&part);
         return Err("контрольная сумма cloudflared не совпала — файл удалён".into());
-    }
-    if let Err(e) = verify_signature(&part) {
-        let _ = std::fs::remove_file(&part);
-        return Err(e);
     }
     std::fs::rename(&part, &exe).map_err(|e| format!("не удалось сохранить cloudflared: {}", e))?;
     info!("Tunnel: cloudflared {} downloaded and verified", VERSION);
@@ -399,20 +350,6 @@ mod tests {
         assert_eq!(find_url("https://a.b.trycloudflare.com"), None, "one label only");
         assert_eq!(find_url("https://trycloudflare.com"), None);
         assert_eq!(find_url("https://x.trycloudflare.com.evil.ru"), None, "a longer host is not the tunnel");
-    }
-
-    #[test]
-    fn the_signature_must_be_valid_and_from_cloudflare() {
-        assert!(signature_ok("Valid|CN=Cloudflare, Inc., O=Cloudflare, Inc., L=San Francisco, S=California, C=US\r\n"));
-        // the real form: Windows quotes a value with a comma
-        assert!(signature_ok("Valid|CN=\"Cloudflare, Inc.\", O=\"Cloudflare, Inc.\", L=San Francisco, S=California, C=US"));
-        assert!(!signature_ok("NotSupportedFileFormat|"));
-        assert!(!signature_ok("Valid|CN=\"Evil, Inc.\", O=\"Not Cloudflare, Inc.\""), "a longer name is not Cloudflare, Inc.");
-        assert!(!signature_ok("NotSigned|"));
-        assert!(!signature_ok("Valid|CN=Evil Corp, O=Evil Corp"));
-        assert!(!signature_ok("HashMismatch|CN=Cloudflare, Inc."));
-        assert!(!signature_ok("Valid|CN=NotCloudflare, O=Cloudflare Fake Ltd"));
-        assert!(!signature_ok(""));
     }
 
     #[test]

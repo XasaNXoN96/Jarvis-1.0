@@ -401,7 +401,10 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             // The new copy is started directly (no cmd line: its quoting broke the path, and Jarvis quit without a
             // new one); it waits until this one has released the microphone and its ports (--wait-instance).
             if let Ok(exe) = std::env::current_exe() {
-                if Command::new(&exe).arg("--wait-instance").spawn().is_ok() {
+                let mut next = Command::new(&exe);
+                next.arg("--wait-instance");
+                crate::null_stdio(&mut next);
+                if next.spawn().is_ok() {
                     std::thread::spawn(|| {
                         std::thread::sleep(Duration::from_millis(400));
                         // the same full exit as the tray and the window (the microphone is released)
@@ -1090,10 +1093,10 @@ pub fn open_browser_window() -> bool {
             }
         }
         // last resort: default browser in a normal tab
-        let ok = Command::new("rundll32")
-            .args(["url.dll,FileProtocolHandler", &link])
-            .spawn()
-            .is_ok();
+        let mut rd = Command::new("rundll32");
+        rd.args(["url.dll,FileProtocolHandler", &link]);
+        crate::null_stdio(&mut rd);
+        let ok = rd.spawn().is_ok();
         if ok {
             info!("UI: opened in the default browser");
         }

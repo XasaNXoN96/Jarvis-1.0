@@ -63,7 +63,36 @@ if closing then
   -- the program is asked to close, like its own cross: Word, Notepad and the others ask about unsaved work.
   -- Killing it (/f) loses that work, so only "закрой … принудительно" does it.
   local force = has_stem("принудит") or has_stem("force")
-  local r = run("taskkill", force and { "/f", "/im", found.process } or { "/im", found.process })
+  -- the names the program may run as: the known one, the file of its installed copy, and the 32/64-bit twin of each
+  -- (Total Commander is TOTALCMD64.EXE or TOTALCMD.EXE depending on the installed copy); the ones that really run
+  local names, seen = {}, {}
+  local function add(n)
+    if n and n ~= "" and not seen[n:lower()] then seen[n:lower()] = true; names[#names + 1] = n end
+  end
+  for _, n in ipairs({ found.process, found.path and exe_of(found.path) or nil }) do
+    if n then
+      add(n)
+      local low = n:lower()
+      if low:match("64%.exe$") then add((low:gsub("64%.exe$", ".exe"))) else add((low:gsub("%.exe$", "")) .. "64.exe") end
+    end
+  end
+  local targets = { found.process }
+  if jarvis.system.can_check_processes() then
+    targets = {}
+    for _, n in ipairs(names) do
+      if jarvis.system.process_running(n) then targets[#targets + 1] = n end
+    end
+    if #targets == 0 then
+      say(T("Программа", "Program"), found.name .. T(" не запущена", " is not running"))
+      return
+    end
+  end
+  local closed, last_code = false, 0
+  for _, n in ipairs(targets) do
+    local r = run("taskkill", force and { "/f", "/im", n } or { "/im", n })
+    if r.success then closed = true else last_code = r.code end
+  end
+  local r = { success = closed, code = last_code }
   if r.success then
     if force then
       say(T("Закрыто", "Closed"), found.name .. T(" (принудительно)", " (forced)"), T("Закрываю " .. found.name, "Closing " .. found.name))

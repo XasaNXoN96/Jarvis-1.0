@@ -1282,7 +1282,10 @@ pub fn reveal_path(path: &Path) -> Result<(), String> {
 fn reveal_in_explorer(path: &Path) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
     // explorer reads `/select,"path"` itself; no shell is involved and a path cannot contain a quote on Windows
-    std::process::Command::new("explorer.exe").raw_arg(format!("/select,\"{}\"", path.display())).spawn().map(|_| ()).map_err(|e| e.to_string())
+    let mut c = std::process::Command::new("explorer.exe");
+    c.raw_arg(format!("/select,\"{}\"", path.display()));
+    crate::null_stdio(&mut c);
+    c.spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
 #[cfg(not(all(target_os = "windows", not(test))))]

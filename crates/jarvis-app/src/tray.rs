@@ -195,7 +195,10 @@ fn restart_app() {
     };
     
     // the new copy waits until this one has quit (only one Jarvis runs at a time)
-    match Command::new(&exe_path).arg("--wait-instance").spawn() {
+    let mut next = Command::new(&exe_path);
+    next.arg("--wait-instance");
+    jarvis_core::null_stdio(&mut next);
+    match next.spawn() {
         Ok(_) => {
             info!("Spawned new instance, exiting current...");
             // the full exit: the microphone and the ports are released for the new copy
@@ -232,7 +235,9 @@ fn launch_gui() {
     
     info!("Launching GUI: {:?}", gui_path);
     
-    match Command::new(&gui_path).spawn() {
+    let mut gui = Command::new(&gui_path);
+    jarvis_core::null_stdio(&mut gui);
+    match gui.spawn() {
         Ok(_) => info!("Launched jarvis-gui"),
         Err(e) => error!("Failed to launch jarvis-gui: {}", e),
     }

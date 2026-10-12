@@ -194,6 +194,8 @@ pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Resul
                     }
                 }
             } else {
+                // (a program started and not waited for shares none of our standard handles)
+                crate::null_stdio(&mut command);
                 match command.spawn() {
                     Ok(_) => result.set("success", true)?,
                     Err(e) => {

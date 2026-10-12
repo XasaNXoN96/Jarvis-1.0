@@ -123,6 +123,15 @@ mod installer_tests;
 
 // Writes a file so that a crash or a power cut in the middle never leaves it cut off: the content goes to a
 // temporary file next to it, which then replaces the old one in one step (settings, timers, tasks, notes).
+// A child process that must not share the handles of Jarvis: no standard input, output or error of ours is passed on.
+// Jarvis is a program without a console; a standard handle it was started with (by the installer, by Explorer, by a
+// terminal) may be of a kind Windows cannot copy into a child, and the start of the child then fails with
+// "os error 50" (the request is not supported). With the three streams closed (null) nothing is copied.
+pub fn null_stdio(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    use std::process::Stdio;
+    cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
+}
+
 pub fn write_atomic(path: &std::path::Path, data: impl AsRef<[u8]>) -> std::io::Result<()> {
     // (a name of its own for every write: two writes of the same file at once never share the temporary file)
     static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);

@@ -329,17 +329,26 @@ fn word_overlap_score(input_words: &[&str], cmd_words: &[&str]) -> f64 {
 
 
 pub fn execute_exe(exe: &str, args: &[String]) -> std::io::Result<Child> {
-    Command::new(exe).args(args).spawn()
+    let mut c = Command::new(exe);
+    c.args(args);
+    crate::null_stdio(&mut c);
+    c.spawn()
 }
 
 pub fn execute_cli(cmd: &str, args: &[String]) -> std::io::Result<Child> {
     debug!("Spawning: cmd /C {} {:?}", cmd, args);
 
-    if cfg!(target_os = "windows") {
-        Command::new("cmd").arg("/C").arg(cmd).args(args).spawn()
+    let mut c = if cfg!(target_os = "windows") {
+        let mut c = Command::new("cmd");
+        c.arg("/C").arg(cmd).args(args);
+        c
     } else {
-        Command::new("sh").arg("-c").arg(cmd).args(args).spawn()
-    }
+        let mut c = Command::new("sh");
+        c.arg("-c").arg(cmd).args(args);
+        c
+    };
+    crate::null_stdio(&mut c);
+    c.spawn()
 }
 
 pub fn execute_command(cmd_path: &PathBuf, cmd_config: &JCommand, phrase: Option<&str>, slots: Option<&HashMap<String, SlotValue>>) -> Result<bool, String> {

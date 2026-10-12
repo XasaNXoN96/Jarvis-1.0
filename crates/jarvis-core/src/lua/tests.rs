@@ -749,8 +749,28 @@ mod tests {
         assert!(shown.ends_with("котиков") && !shown.contains("ютуб"), "{}", shown);
     }
 
+    // Total Commander runs as TOTALCMD.EXE (32-bit copy) or TOTALCMD64.EXE: "закрой Total Commander" finds the one that
+    // really runs; a program that does not run is "не запущена"
+    #[test]
+    fn close_finds_the_process_the_program_really_runs_as() {
+        let _p = PROCESS_LOCK.lock();
+        crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow_mut().clear());
+        *crate::lua::api::system::TEST_PROCESSES.lock() = Some((vec!["TOTALCMD.EXE".into(), "explorer.exe".into()], vec![], 0));
+        let (shown, _) = answer("assistant_program_close", "program.lua", "закрой Total Commander");
+        assert!(!shown.contains("не запущена"), "the 32-bit copy runs: {}", shown);
+        *crate::lua::api::system::TEST_PROCESSES.lock() = Some((vec!["TOTALCMD64.EXE".into()], vec![], 0));
+        let (shown, _) = answer("assistant_program_close", "program.lua", "закрой Total Commander");
+        assert!(!shown.contains("не запущена"), "the 64-bit copy runs: {}", shown);
+        *crate::lua::api::system::TEST_PROCESSES.lock() = Some((vec!["explorer.exe".into()], vec![], 0));
+        let (shown, _) = answer("assistant_program_close", "program.lua", "закрой Total Commander");
+        assert!(shown.contains("не запущена"), "nothing of it runs: {}", shown);
+        *crate::lua::api::system::TEST_PROCESSES.lock() = None;
+    }
+
     #[test]
     fn close_word_asks_the_program_to_close_and_never_kills_unsaved_work() {
+        // (the list of fake processes is global: not together with the tests that set it)
+        let _p = PROCESS_LOCK.lock();
         let (shown, _) = answer("assistant_program_close", "program.lua", "закрой ворд");
         if cfg!(target_os = "windows") {
             // really asked on Windows: Word is not running on the CI machine (taskkill code 128)
@@ -760,7 +780,7 @@ mod tests {
         }
         // the kill is only for the explicit word, and the script asks taskkill without /f otherwise
         let script = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../resources/commands/assistant/program.lua")).unwrap();
-        assert!(script.contains(r#"force and { "/f", "/im", found.process } or { "/im", found.process }"#));
+        assert!(script.contains(r#"force and { "/f", "/im", n } or { "/im", n }"#));
         if !cfg!(target_os = "windows") {
             let (shown, _) = answer("assistant_program_close", "program.lua", "закрой ворд принудительно");
             assert!(shown.contains("принудительно"), "{}", shown);

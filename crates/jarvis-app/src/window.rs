@@ -92,7 +92,10 @@ fn open_in_browser(url: &str) {
         #[cfg(target_os = "windows")]
         {
             use std::os::windows::process::CommandExt;
-            let _ = std::process::Command::new("rundll32").args(["url.dll,FileProtocolHandler", url]).creation_flags(0x0800_0000).spawn();
+            let mut c = std::process::Command::new("rundll32");
+            c.args(["url.dll,FileProtocolHandler", url]).creation_flags(0x0800_0000);
+            jarvis_core::null_stdio(&mut c);
+            let _ = c.spawn();
         }
     }
 }

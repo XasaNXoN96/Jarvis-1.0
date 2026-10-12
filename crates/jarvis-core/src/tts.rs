@@ -63,8 +63,33 @@ pub fn speech_problem() -> Option<String> {
 
 // a player is running right now: only then the window says "SPEAKING" (making a sound file is not speaking)
 pub fn is_playing() -> bool {
-    CURRENT.lock().is_some()
+    CURRENT.lock().is_some() || NATIVE_PLAYING.load(Ordering::SeqCst)
 }
+
+// a sound file is being played by Windows itself (PlaySound), not by a child process
+static NATIVE_PLAYING: AtomicBool = AtomicBool::new(false);
+
+// Plays a WAV file with the Windows sound API in this thread (no PowerShell, no child process) and returns when it is
+// over or purged by stop(). true: played; false: Windows could not (no output device, a file that does not open).
+#[cfg(target_os = "windows")]
+fn play_file_native(wav: &Path) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+    use winapi::um::playsoundapi::{PlaySoundW, SND_FILENAME, SND_NODEFAULT, SND_SYNC};
+    let wide: Vec<u16> = wav.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    unsafe { PlaySoundW(wide.as_ptr(), std::ptr::null_mut(), SND_FILENAME | SND_SYNC | SND_NODEFAULT) != 0 }
+}
+
+// the sound being played is cut off at once (stop, a newer phrase, exit)
+#[cfg(target_os = "windows")]
+fn purge_native() {
+    use winapi::um::playsoundapi::{PlaySoundW, SND_PURGE};
+    unsafe {
+        PlaySoundW(std::ptr::null(), std::ptr::null_mut(), SND_PURGE);
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn purge_native() {}
 
 fn off_flag_path() -> Option<PathBuf> {
     APP_CONFIG_DIR.get().map(|d| d.join("tts_off"))
@@ -114,6 +139,9 @@ pub fn stop() {
     }
     if let Some(mut child) = CURRENT.lock().take() {
         let _ = child.kill();
+    }
+    if NATIVE_PLAYING.load(Ordering::SeqCst) {
+        purge_native();
     }
 }
 
@@ -541,25 +569,21 @@ fn play_wav(wav: &Path, generation: u64) {
     }
     #[cfg(target_os = "windows")]
     {
-        let mut player = Command::new("powershell");
-        player
-            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"])
-            .arg(format!(
-                "(New-Object Media.SoundPlayer '{}').PlaySync()",
-                wav.display().to_string().replace('\'', "''")
-            ));
-        hide_window(&mut player);
-        match player.spawn() {
-            Ok(child) => {
-                if store(child, generation) {
-                    match wait_current(generation) {
-                        Some(true) => note_play(Ok(())),
-                        Some(false) => note_play(Err("проигрыватель Windows не смог воспроизвести звук (нет устройства вывода или файл не открылся)".into())),
-                        None => {} // interrupted on purpose
-                    }
-                }
-            }
-            Err(e) => note_play(Err(format!("PowerShell для воспроизведения не запустился: {}", e))),
+        // interrupted before it started (stop / a newer phrase): nothing is played
+        if GENERATION.load(Ordering::SeqCst) != generation {
+            return;
+        }
+        NATIVE_PLAYING.store(true, Ordering::SeqCst);
+        let ok = play_file_native(wav);
+        NATIVE_PLAYING.store(false, Ordering::SeqCst);
+        // stopped on purpose while it played: neither a success nor a failure
+        if GENERATION.load(Ordering::SeqCst) != generation {
+            return;
+        }
+        if ok {
+            note_play(Ok(()));
+        } else {
+            note_play(Err("Windows не смогла воспроизвести звук (нет устройства вывода звука или файл не открылся)".into()));
         }
     }
     #[cfg(not(target_os = "windows"))]
@@ -651,9 +675,8 @@ fn speak_sapi(text: &str, lang: &str, generation: u64) {
             .env("JARVIS_TTS_RATE", ((crate::uistate::voice_rate() - 1.0) * 10.0).round().clamp(-10.0, 10.0).to_string())
             .env("JARVIS_TTS_VOLUME", crate::uistate::settings().tts_volume.min(100).to_string())
             .env("JARVIS_TTS_VOICE", crate::uistate::voice_name().strip_prefix("win:").unwrap_or(""))
-            .env("JARVIS_TTS_NOTE", &note)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            .env("JARVIS_TTS_NOTE", &note);
+        crate::null_stdio(&mut command);
         hide_window(&mut command);
         match command.spawn() {
             Ok(child) => {

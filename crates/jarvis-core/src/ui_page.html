@@ -1242,7 +1242,7 @@ async function netPoll() {
 setInterval(() => { if (currentPage === 'system' && !document.hidden) netPoll(); }, 2000);
 $('#net-switch').onchange = async e => {
   const on = e.target.checked;
-  if (on && !confirm('Включить доступ к пульту из любой сети?\n\n• Трафик пульта пойдёт через серверы Cloudflare (они технически могут его видеть).\n• Ссылка секретная: у кого она есть, тот управляет компьютером. Никому её не показывайте.\n• Адрес новый при каждом включении, старый перестаёт работать.\n• Один раз скачается программа cloudflared (около 55 МБ) с github.com, её контрольная сумма и подпись Cloudflare проверяются.\n\nВыключить можно в любой момент; при выходе из Джарвиса доступ закрывается.')) { e.target.checked = false; return; }
+  if (on && !confirm('Включить доступ к пульту из любой сети?\n\n• Трафик пульта пойдёт через серверы Cloudflare (они технически могут его видеть).\n• Ссылка секретная: у кого она есть, тот управляет компьютером. Никому её не показывайте.\n• Адрес новый при каждом включении, старый перестаёт работать.\n• Один раз скачается программа cloudflared (около 55 МБ) с github.com, её контрольная сумма сверяется с закреплённой в Джарвисе.\n\nВыключить можно в любой момент; при выходе из Джарвиса доступ закрывается.')) { e.target.checked = false; return; }
   try { const r = await action('remote_tunnel', { value: on }); if (!r.ok) { $('#net-err').textContent = r.message || 'Не удалось'; e.target.checked = false; return; } netRender(r.tunnel); } catch (err) { $('#net-err').textContent = 'Нет связи с Джарвисом'; e.target.checked = false; }
 };
 $('#net-copy').onclick = () => { if (netUrl) copyText(netUrl, $('#net-copy')); };
