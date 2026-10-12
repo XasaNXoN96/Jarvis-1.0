@@ -1093,6 +1093,14 @@ fn announce(q: &Query, items: &[FoundItem], s: &Search, voice: bool, generation:
     if !voice {
         return; // the "Файлы" page shows the list with its own buttons
     }
+    // another conversation was opened while the search ran (dictation, a yes/no question): it is not taken over —
+    // the results are shown and said, and can be opened from the "Файлы" page or with "открой первый" later
+    let other = crate::session::kind().filter(|k| k != "file");
+    if let Some(k) = other {
+        info!("File search finished during the session '{}': the session is kept", k);
+        reply(&msg, &format!("Поиск закончен: найдено {}. Список в окне, на странице «Файлы».", items.len()));
+        return;
+    }
     reply(&msg, &spoken);
     // the answer ("открой", "второй", "покажи папку", "ещё") is taken without the wake word
     crate::session::start("file", 60);
