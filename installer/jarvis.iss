@@ -173,6 +173,7 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
+  Log('Setup step ' + IntToStr(Ord(CurStep)) + ' (ssInstall=0, ssPostInstall=1, ssDone=2)');
   if CurStep = ssPostInstall then
     HardenAppFolder;
 end;
