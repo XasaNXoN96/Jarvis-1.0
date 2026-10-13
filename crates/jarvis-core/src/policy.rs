@@ -789,6 +789,21 @@ fn extra_allowed() -> Vec<PathBuf> {
     TEST_ALLOWED.with(|t| t.borrow().clone())
 }
 
+// the real place of a path (links followed, the missing tail kept): what safefs opens and what the policy judges
+pub(crate) fn real_path(path: &Path) -> Result<PathBuf, String> {
+    spelling_ok(path)?;
+    if !path.is_absolute() {
+        return deny("путь должен быть полным");
+    }
+    canonical_existing(path)
+}
+
+// the verdict of the file rules on a REAL place only (no confirmation, no risk of the command): safefs asks it a second
+// time about the object it really holds, after the first check and before the operation
+pub(crate) fn judge_fs_real(path: &Path, mode: FsMode) -> Result<(), String> {
+    judge_fs(path, mode).map(|_| ())
+}
+
 // the check for the file functions of the Lua API
 pub fn authorize_fs(path: &Path, mode: FsMode) -> Result<(), String> {
     let op = match mode {

@@ -23,9 +23,9 @@ pub fn register(
     let read_fn = lua.create_function(move |_, path: String| {
         let full_path = resolve_path(&cmd_path_read, &path, sandbox_level)?;
         allow(&full_path, FsMode::Read)?;
-        
-        fs::read_to_string(&full_path)
-            .map_err(|e| mlua::Error::runtime(format!("Read error: {}", e)))
+
+        let bytes = crate::safefs::read(&full_path).map_err(|e| mlua::Error::runtime(e.lua_text("Read")))?;
+        String::from_utf8(bytes).map_err(|e| mlua::Error::runtime(format!("Read error: {}", e)))
     })?;
     fs_table.set("read", read_fn)?;
 
@@ -38,7 +38,7 @@ pub fn register(
         if !full_path.exists() {
             return Ok(None);
         }
-        let bytes = fs::read(&full_path).map_err(|e| mlua::Error::runtime(format!("Read error: {}", e)))?;
+        let bytes = crate::safefs::read(&full_path).map_err(|e| mlua::Error::runtime(e.lua_text("Read")))?;
         Ok(Some(crate::filesearch::decode_text(bytes)))
     })?;
     fs_table.set("read_text", read_text_fn)?;
@@ -49,9 +49,8 @@ pub fn register(
         let full_path = resolve_path(&cmd_path_read_bytes, &path, sandbox_level)?;
         allow(&full_path, FsMode::Read)?;
         
-        let bytes = fs::read(&full_path)
-            .map_err(|e| mlua::Error::runtime(format!("Read error: {}", e)))?;
-        
+        let bytes = crate::safefs::read(&full_path).map_err(|e| mlua::Error::runtime(e.lua_text("Read")))?;
+
         Ok(lua.create_string(&bytes)?)
     })?;
     fs_table.set("read_bytes", read_bytes_fn)?;
@@ -66,14 +65,8 @@ pub fn register(
         let full_path = resolve_path(&cmd_path_write, &path, sandbox_level)?;
         allow(&full_path, FsMode::Write)?;
         
-        // ensure parent directory exists
-        if let Some(parent) = full_path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| mlua::Error::runtime(format!("Create dir error: {}", e)))?;
-        }
-        
-        crate::write_atomic(&full_path, content)
-            .map_err(|e| mlua::Error::runtime(format!("Write error: {}", e)))?;
+        // (the folders of the path are created, the folder is held and judged again: see safefs.rs)
+        crate::safefs::write(&full_path, content.as_bytes()).map_err(|e| mlua::Error::runtime(e.lua_text("Write")))?;
         
         Ok(true)
     })?;
@@ -89,15 +82,7 @@ pub fn register(
         let full_path = resolve_path(&cmd_path_append, &path, sandbox_level)?;
         allow(&full_path, FsMode::Write)?;
         
-        use std::io::Write;
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&full_path)
-            .map_err(|e| mlua::Error::runtime(format!("Open error: {}", e)))?;
-        
-        file.write_all(content.as_bytes())
-            .map_err(|e| mlua::Error::runtime(format!("Write error: {}", e)))?;
+        crate::safefs::append(&full_path, content.as_bytes()).map_err(|e| mlua::Error::runtime(e.lua_text("Write")))?;
         
         Ok(true)
     })?;
@@ -136,6 +121,8 @@ pub fn register(
             cmd_path_list.clone()
         };
         
+        allow(&full_path, FsMode::Read)?;
+
         let result = lua.create_table()?;
         
         let entries = fs::read_dir(&full_path)
@@ -169,8 +156,7 @@ pub fn register(
         let full_path = resolve_path(&cmd_path_mkdir, &path, sandbox_level)?;
         allow(&full_path, FsMode::Write)?;
         
-        fs::create_dir_all(&full_path)
-            .map_err(|e| mlua::Error::runtime(format!("Mkdir error: {}", e)))?;
+        crate::safefs::mkdir_all(&full_path).map_err(|e| mlua::Error::runtime(e.lua_text("Mkdir")))?;
         
         Ok(true)
     })?;
@@ -186,14 +172,8 @@ pub fn register(
         let full_path = resolve_path(&cmd_path_remove, &path, sandbox_level)?;
         allow(&full_path, FsMode::Remove)?;
         
-        if full_path.is_dir() {
-            // an empty folder only: a command does not delete a tree
-            fs::remove_dir(&full_path)
-                .map_err(|e| mlua::Error::runtime(format!("Remove error: {}", e)))?;
-        } else {
-            fs::remove_file(&full_path)
-                .map_err(|e| mlua::Error::runtime(format!("Remove error: {}", e)))?;
-        }
+        // a file or an empty folder only: a command does not delete a tree
+        crate::safefs::remove(&full_path).map_err(|e| mlua::Error::runtime(e.lua_text("Remove")))?;
         
         Ok(true)
     })?;
