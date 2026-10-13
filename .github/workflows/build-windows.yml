@@ -280,11 +280,14 @@ jobs:
           $ctl = Join-Path $PWD "control-ru.wav"
           try {
             python -m pip install --quiet edge-tts imageio-ffmpeg 2>&1 | Out-Null
-            python -m edge_tts --voice ru-RU-SvetlanaNeural --text "Привет, Джарвис, включи музыку" --write-media control-ru.mp3 2>&1 | Out-Null
+            python -m edge_tts --voice ru-RU-SvetlanaNeural --text "Привет, Джарвис, включи музыку" --write-media control-ru.mp3 2>&1 | Select-Object -First 3 | ForEach-Object { Write-Host "  edge-tts: $_" }
+            if ((Get-Item control-ru.mp3 -ErrorAction SilentlyContinue).Length -lt 5000) { throw "the online voice gave no recording" }
             $ff = (python -c "import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe())").Trim()
             & $ff -y -loglevel error -i control-ru.mp3 -ar 16000 -ac 1 -c:a pcm_s16le $ctl
             Write-Host "control recording: $((Get-Item $ctl).Length) bytes"
           } catch { Write-Host "the control recording could not be made: $($_.Exception.Message)" }
+          # (the last failed native command above must not become the exit code of this whole step)
+          $global:LASTEXITCODE = 0
           $spArgs = @("--selftest-speech", "`"$st`"")
           if (Test-Path $ctl) { $spArgs += @("--control", "`"$ctl`"") }
           $sp = Start-Process "$dir\jarvis-app.exe" -ArgumentList $spArgs -WorkingDirectory $dir -PassThru -Wait -WindowStyle Hidden

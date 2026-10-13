@@ -34,17 +34,28 @@ static SHOULD_STOP: AtomicBool = AtomicBool::new(false);
 fn selftest_speech(control: Option<String>) -> String {
     let settings = db::init();
     let _ = DB.set(settings.arc().clone());
-    i18n::init(&settings.lock().language);
+    // the phrase is Russian: Piper takes the voice of the language of Jarvis, and the installer of the CI is in English
+    // (its "en" voice read the Russian words and Vosk heard nonsense: the first runs of this test)
+    i18n::init("ru");
     // the registry of the models: the recognizer takes its model from it (the program does this at its start)
     if let Err(e) = models::init() {
         return format!("FAIL models: {}", e);
     }
     let t0 = std::time::Instant::now();
-    let phrase = "открой ютуб и поставь таймер на пять минут";
+    let phrase = "Привет, Джарвис, включи музыку";
+    jarvis_core::tts::set_piper_debug(true);
     let wav = match jarvis_core::tts::synth_to_wav(phrase) {
         Ok(w) => w,
         Err(e) => return format!("FAIL piper: {}", e),
     };
+    jarvis_core::tts::set_piper_debug(false);
+    // which voice file Piper really loaded: a Russian phrase read by another voice is nonsense
+    let log = jarvis_core::tts::last_piper_stderr();
+    let voice_line = log.lines().find(|l| l.contains("Loading voice from")).unwrap_or("").to_string();
+    let voice_file = voice_line.split("Loading voice from").nth(1).and_then(|r| r.split_whitespace().next()).unwrap_or("?").rsplit(['\\', '/']).next().unwrap_or("?").to_string();
+    if voice_file != "ru.onnx" {
+        return format!("FAIL piper voice: the Russian phrase was given to the voice «{}» (expected ru.onnx)", voice_file);
+    }
     // the sound itself: its rate and length (a phrase of seven words must not last ten seconds), and two short phrases
     let wav_info = |w: &[u8]| -> String {
         match jarvis_core::tgvoice::wav_info(w) {
@@ -122,7 +133,7 @@ fn selftest_speech(control: Option<String>) -> String {
     };
     match jarvis_core::tgvoice::recognize(&samples) {
         Ok(text) if !text.trim().is_empty() => {
-            format!("OK heard: {} | without the codec: {} | sound: {} |{} | wav {} KB, ogg {} KB, {} samples, {} ms", text.trim(), direct, sound, shorts, wav.len() / 1024, ogg.len() / 1024, samples.len(), t0.elapsed().as_millis())
+            format!("OK voice {} | heard: {} | without the codec: {} | sound: {} |{} | wav {} KB, ogg {} KB, {} samples, {} ms", voice_file, text.trim(), direct, sound, shorts, wav.len() / 1024, ogg.len() / 1024, samples.len(), t0.elapsed().as_millis())
         }
         Ok(_) => format!("FAIL vosk: nothing recognized (without the codec: {})", direct),
         Err(e) => format!("FAIL vosk: {}", e),
