@@ -47,8 +47,8 @@ fn a_program_is_found_by_its_full_short_and_spoken_name() {
 
 #[test]
 fn an_ambiguous_name_never_starts_a_random_program() {
-    // the list of the question «какую программу открыть» is global: the scripts' tests use it too, one at a time
-    let _g = crate::session::TEST_LOCK.lock();
+    // the list of the question «какую программу открыть» is global: the scripts' tests use it too, one at a time (their own lock)
+    let _g = crate::appindex::TEST_LOCK.lock();
     let mut list = installed();
     list.push(app("Double Commander", "C:\\SM\\Double Commander.lnk"));
     match find_in(&list, &w("командер")) {
