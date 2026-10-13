@@ -115,7 +115,7 @@ pub fn set_enabled(on: bool) {
         if on {
             let _ = std::fs::remove_file(p);
         } else {
-            let _ = std::fs::write(p, b"off");
+            let _ = crate::write_atomic(&p, b"off");
         }
     }
     if !on {

@@ -110,7 +110,7 @@ fn download(part: &std::path::Path, gen: u64) -> Result<(), String> {
         return Err(format!("github.com ответил ошибкой {} при загрузке cloudflared", resp.status().as_u16()));
     }
     let total = resp.content_length().unwrap_or(EXE_SIZE).max(1);
-    let mut f = std::fs::File::create(part).map_err(|e| format!("не удалось записать файл: {}", e))?;
+    let mut f = crate::create_fresh(part).map_err(|e| format!("не удалось записать файл: {}", e))?;
     let mut buf = vec![0u8; 1 << 16];
     let mut got = 0u64;
     loop {

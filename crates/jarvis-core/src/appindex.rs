@@ -134,7 +134,7 @@ fn rescan_inner() -> usize {
     }
     if let Some(f) = cache_file() {
         let text = serde_json::to_string(&*INDEX.read()).unwrap_or_default();
-        if let Err(e) = std::fs::write(&f, text) {
+        if let Err(e) = crate::write_atomic(&f, text) {
             warn!("Programs index not saved: {}", e);
         }
     }

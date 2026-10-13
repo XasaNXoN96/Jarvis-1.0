@@ -57,8 +57,8 @@ pub fn init_with_model(model: Arc<EmbeddingModel>, commands: &[JCommandsList]) -
         
         // cache to disk
         if let Ok(json) = serde_json::to_string(&intents_to_cache(&intents)) {
-            let _ = fs::write(&cache_path, json);
-            let _ = fs::write(&hash_path, &current_hash);
+            let _ = crate::write_atomic(&cache_path, json);
+            let _ = crate::write_atomic(&hash_path, &current_hash);
             info!("Intent vectors cached");
         }
         

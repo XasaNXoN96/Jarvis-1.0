@@ -529,7 +529,7 @@ fn measure_lifecycle() -> Check {
     let writable = match dir {
         Some(d) => {
             let probe = d.join(format!("diag_probe_{}.tmp", std::process::id()));
-            let r = std::fs::write(&probe, b"ok").map_err(|e| e.to_string());
+            let r = crate::create_fresh(&probe).and_then(|mut f| std::io::Write::write_all(&mut f, b"ok")).map_err(|e| e.to_string());
             let _ = std::fs::remove_file(&probe);
             r
         }

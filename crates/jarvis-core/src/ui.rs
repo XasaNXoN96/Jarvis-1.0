@@ -988,7 +988,7 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
             } else if sniff_image(&req.body).is_none() {
                 respond(&mut stream, "400 Bad Request", "text/plain", "not an image");
             } else {
-                match std::fs::write(&path, &req.body) {
+                match crate::write_atomic(&path, &req.body) {
                     Ok(()) => {
                         info!("UI: avatar saved ({} bytes)", req.body.len());
                         respond(&mut stream, "200 OK", "text/plain", "saved");

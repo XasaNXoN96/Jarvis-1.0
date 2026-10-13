@@ -230,10 +230,8 @@ pub fn write_to(p: &std::path::Path, s: &UiSettings) {
     let mut v = serde_json::to_value(s).unwrap_or(Value::Null);
     v["ai_key"] = Value::String(crate::secret::seal(&s.ai_key));
     if let Ok(json) = serde_json::to_string_pretty(&v) {
-        let tmp = p.with_extension("json.tmp");
-        if std::fs::write(&tmp, json).is_ok() {
-            let _ = std::fs::rename(&tmp, p);
-        }
+        // (atomic, never through a link planted under the temporary name: lib.rs write_atomic)
+        let _ = crate::write_atomic(p, json);
     }
 }
 

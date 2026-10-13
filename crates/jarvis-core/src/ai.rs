@@ -313,10 +313,7 @@ impl Store {
             chat.messages.drain(..cut);
         }
         if let Ok(text) = serde_json::to_string(&chat) {
-            let tmp = path.with_extension("tmp");
-            if std::fs::write(&tmp, text).is_ok() {
-                let _ = std::fs::rename(&tmp, &path);
-            }
+            let _ = crate::write_atomic(&path, text);
         }
         bump();
     }
@@ -532,7 +529,7 @@ impl Store {
 
     pub fn set_active(&self, id: &str) {
         if valid_id(id) {
-            let _ = std::fs::write(self.dir.join("active"), id);
+            let _ = crate::write_atomic(&self.dir.join("active"), id);
         }
     }
 

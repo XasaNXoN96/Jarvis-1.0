@@ -40,8 +40,8 @@ pub async fn init(commands: &[JCommandsList]) -> Result<(), String> {
         train_classifier(&model.classifier, &commands).await?;
         
         if let Ok(export) = model.classifier.export_training_data().await {
-            let _ = fs::write(&cache_path, export);
-            let _ = fs::write(&hash_path, &current_hash);
+            let _ = crate::write_atomic(&cache_path, export);
+            let _ = crate::write_atomic(&hash_path, &current_hash);
             info!("Training data cached.");
         }
     } else {

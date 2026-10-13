@@ -144,17 +144,50 @@ pub fn null_stdio(cmd: &mut std::process::Command) -> &mut std::process::Command
     cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
 }
 
+// A file for a download or a probe that is certainly NEW: whatever stood under that name (an old partial file, a file or a link
+// somebody left there) is removed first (a link is removed itself, never followed) and the file is created with create_new,
+// so the bytes cannot go through a link planted between the two steps.
+pub fn create_fresh(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    match std::fs::symlink_metadata(path) {
+        Ok(m) if m.is_dir() => return Err(std::io::Error::new(std::io::ErrorKind::Other, "на этом месте папка")),
+        Ok(_) => {
+            let _ = std::fs::remove_file(path);
+        }
+        Err(_) => {}
+    }
+    std::fs::OpenOptions::new().write(true).create_new(true).open(path)
+}
+
 pub fn write_atomic(path: &std::path::Path, data: impl AsRef<[u8]>) -> std::io::Result<()> {
+    use std::io::Write;
     // (a name of its own for every write: two writes of the same file at once never share the temporary file)
     static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let mut tmp = path.as_os_str().to_owned();
-    tmp.push(format!(".{}-{}.tmp", std::process::id(), SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
-    let tmp = std::path::PathBuf::from(tmp);
-    std::fs::write(&tmp, data)?;
-    std::fs::rename(&tmp, path).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        e
-    })
+    // The temporary file is made with create_new (O_EXCL / CREATE_NEW): a file or a link that somebody put under that name
+    // in advance is never written through; a taken name is skipped. The rename then replaces the NAME of the target (a link
+    // there is replaced, its destination is not touched).
+    let mut last = std::io::Error::new(std::io::ErrorKind::AlreadyExists, "no free temporary name");
+    for _ in 0..16 {
+        let mut tmp = path.as_os_str().to_owned();
+        tmp.push(format!(".{}-{}.tmp", std::process::id(), SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
+        let tmp = std::path::PathBuf::from(tmp);
+        let mut f = match std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp) {
+            Ok(f) => f,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                last = e;
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
+        let res = f.write_all(data.as_ref()).and_then(|_| f.flush());
+        drop(f);
+        let res = res.and_then(|_| std::fs::rename(&tmp, path));
+        if let Err(e) = res {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e);
+        }
+        return Ok(());
+    }
+    Err(last)
 }
 
 #[cfg(test)]
@@ -168,6 +201,61 @@ mod write_atomic_tests {
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "[1, 2]");
         let names: Vec<String> = std::fs::read_dir(dir.path()).unwrap().flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect();
         assert_eq!(names, ["Таймеры пользователя.json"], "no .tmp left behind");
+    }
+
+    // a link planted under the names the temporary file may get is never written through
+    #[cfg(unix)]
+    #[test]
+    fn a_link_planted_as_the_temporary_file_is_not_written_through() {
+        let dir = tempfile::tempdir().unwrap();
+        let victim = dir.path().join("victim.txt");
+        std::fs::write(&victim, "original").unwrap();
+        let p = dir.path().join("settings.json");
+        for n in 0..400u64 {
+            let name = format!("settings.json.{}-{}.tmp", std::process::id(), n);
+            std::os::unix::fs::symlink(&victim, dir.path().join(name)).unwrap();
+        }
+        // (the counter is shared by the whole test run: some of the planted names may never come up, the point is that none is followed)
+        let r = super::write_atomic(&p, "new data");
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "original", "written through a planted link ({:?})", r);
+        if r.is_ok() {
+            assert_eq!(std::fs::read_to_string(&p).unwrap(), "new data");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_fresh_file_is_never_written_through_a_link_or_an_old_file() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let victim = dir.path().join("victim.txt");
+        std::fs::write(&victim, "original").unwrap();
+        let p = dir.path().join("download.part");
+        std::os::unix::fs::symlink(&victim, &p).unwrap();
+        super::create_fresh(&p).unwrap().write_all(b"new").unwrap();
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "original", "written through a link");
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "new");
+        // an old partial file is replaced, a folder is refused
+        super::create_fresh(&p).unwrap().write_all(b"x").unwrap();
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "x");
+        let d = dir.path().join("adir");
+        std::fs::create_dir(&d).unwrap();
+        assert!(super::create_fresh(&d).is_err());
+    }
+
+    // a link in the place of the target is replaced, its destination is untouched
+    #[cfg(unix)]
+    #[test]
+    fn a_link_in_the_place_of_the_target_is_replaced_not_followed() {
+        let dir = tempfile::tempdir().unwrap();
+        let victim = dir.path().join("victim.txt");
+        std::fs::write(&victim, "original").unwrap();
+        let p = dir.path().join("settings.json");
+        std::os::unix::fs::symlink(&victim, &p).unwrap();
+        super::write_atomic(&p, "new data").unwrap();
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "original");
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "new data");
+        assert!(!std::fs::symlink_metadata(&p).unwrap().file_type().is_symlink());
     }
 }
 
