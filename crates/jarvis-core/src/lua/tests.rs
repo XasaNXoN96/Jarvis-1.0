@@ -1021,6 +1021,8 @@ mod tests {
         }
     }
 
+    // (not on Windows: there `run` really starts taskkill)
+    #[cfg(not(target_os = "windows"))]
     // the real path of a command: a script that is not the one of the build runs as a plain low command of the
     // Standard level, so the process it starts is refused and the file it writes is not written
     #[test]
