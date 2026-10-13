@@ -668,10 +668,41 @@ const THROTTLE_TRIES: u32 = 10;
 const THROTTLE_WINDOW: Duration = Duration::from_secs(60);
 static FAILS: Lazy<Mutex<std::collections::HashMap<String, (u32, std::time::Instant)>>> = Lazy::new(|| Mutex::new(std::collections::HashMap::new()));
 
+// The sender behind an address: an IPv6 address is a whole /64 for its holder (rotating inside it costs nothing), an
+// IPv4-mapped one is that IPv4 address; "" (a request on the local network, no Cf-Connecting-Ip) stays "".
+pub fn throttle_key(ip: &str) -> String {
+    let ip = ip.trim();
+    if ip.is_empty() {
+        return String::new();
+    }
+    match ip.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(v4)) => v4.to_string(),
+        Ok(std::net::IpAddr::V6(v6)) => match v6.to_ipv4_mapped() {
+            Some(v4) => v4.to_string(),
+            None => {
+                let o = v6.octets();
+                format!("v6:{:02x}{:02x}:{:02x}{:02x}:{:02x}{:02x}:{:02x}{:02x}", o[0], o[1], o[2], o[3], o[4], o[5], o[6], o[7])
+            }
+        },
+        // not an address at all (a forged header): one bucket for all such senders
+        Err(_) => "invalid".to_string(),
+    }
+}
+
+// wrong secrets from ALL senders together (many addresses, one guesser): past this the wrong ones are answered 429 whoever
+// sends them; a request with the RIGHT secret is never counted here, so the owner is not locked out by someone else
+const SHARED_TRIES: u32 = 60;
+pub const GLOBAL_KEY: &str = "*tunnel";
+pub const LAN_KEY: &str = "*lan";
+
 pub fn throttled(ip: &str, now: std::time::Instant) -> bool {
+    throttled_at(ip, now, THROTTLE_TRIES)
+}
+
+pub fn throttled_at(ip: &str, now: std::time::Instant, limit: u32) -> bool {
     let mut m = FAILS.lock();
     match m.get(ip) {
-        Some((n, since)) if now.duration_since(*since) < THROTTLE_WINDOW => *n >= THROTTLE_TRIES,
+        Some((n, since)) if now.duration_since(*since) < THROTTLE_WINDOW => *n >= limit,
         Some(_) => {
             m.remove(ip);
             false
@@ -970,15 +1001,22 @@ fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
         return Ok(());
     }
     let supplied = req.token_header.clone().or_else(|| token_in_path(&req.path));
-    let net_ip = req.client_ip.as_str();
-    if !net_ip.is_empty() && throttled(net_ip, std::time::Instant::now()) {
+    let key = throttle_key(&req.client_ip);
+    let now = std::time::Instant::now();
+    if !key.is_empty() && throttled(&key, now) {
         respond(stream, "429 Too Many Requests", "text/plain", "too many wrong tries, wait a minute");
         return Ok(());
     }
     if !token_matches(supplied.as_deref(), &token()) {
-        if !net_ip.is_empty() {
-            note_failure(net_ip, std::time::Instant::now());
+        let shared = if key.is_empty() { LAN_KEY } else { GLOBAL_KEY };
+        if throttled_at(shared, now, SHARED_TRIES) {
+            respond(stream, "429 Too Many Requests", "text/plain", "too many wrong tries, wait a minute");
+            return Ok(());
         }
+        if !key.is_empty() {
+            note_failure(&key, now);
+        }
+        note_failure(shared, now);
         // a flood of wrong requests does not flood the log: one line a minute
         if crate::guard::first("remote:wrong-token", Duration::from_secs(60)) {
             warn!("Remote control: request with a wrong token rejected");
@@ -987,8 +1025,8 @@ fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
         return Ok(());
     }
 
-    if !net_ip.is_empty() {
-        note_success(net_ip);
+    if !key.is_empty() {
+        note_success(&key);
     }
     LAST_CLIENT.store(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(1), Ordering::SeqCst);
     let route = req.path.split('?').next().unwrap_or("/");
@@ -1377,6 +1415,91 @@ mod tests {
         note_failure(ip, now);
         note_success(ip);
         assert!(!throttled(ip, now), "the owner who got the secret right starts from zero");
+    }
+
+    // the throttle is by sender, not by spelling: the contract is «ten wrong secrets in a minute close the door (429)»
+    #[test]
+    fn the_throttle_follows_the_sender_not_the_spelling_of_the_address() {
+        // one IPv6 holder owns the whole /64: rotating inside it does not reset the count
+        let a = throttle_key("2001:db8:1:2:aaaa:bbbb:cccc:dddd");
+        assert_eq!(a, throttle_key("2001:db8:1:2:1111:2222:3333:4444"));
+        assert_ne!(a, throttle_key("2001:db8:1:3::1"), "another /64 is another sender");
+        assert_eq!(throttle_key("::ffff:203.0.113.5"), throttle_key("203.0.113.5"), "an IPv4-mapped address is the IPv4 one");
+        assert_eq!(throttle_key(""), "");
+        assert_eq!(throttle_key("not an ip"), throttle_key("<script>"), "forged values share one bucket");
+        let now = std::time::Instant::now();
+        let k = throttle_key("2001:db8:9:9::7");
+        note_success(&k);
+        for i in 0..THROTTLE_TRIES {
+            assert!(!throttled(&throttle_key(&format!("2001:db8:9:9::{:x}", i + 1)), now), "try {} is still allowed", i);
+            note_failure(&throttle_key(&format!("2001:db8:9:9::{:x}", i + 1)), now);
+        }
+        assert!(throttled(&throttle_key("2001:db8:9:9:ffff::1"), now), "ten tries from ten spellings of one /64 closed the door");
+        note_success(&k);
+    }
+
+    // the shared buckets count wrong secrets only, never close the door for the right one, and are bounded by the same minute
+    #[test]
+    fn many_senders_together_cannot_guess_either_and_the_owner_is_not_locked_out() {
+        let now = std::time::Instant::now();
+        note_success(GLOBAL_KEY);
+        for i in 0..SHARED_TRIES {
+            assert!(!throttled_at(GLOBAL_KEY, now, SHARED_TRIES), "wrong try {}", i);
+            note_failure(&throttle_key(&format!("198.51.100.{}", i % 250)), now);
+            note_failure(GLOBAL_KEY, now);
+        }
+        assert!(throttled_at(GLOBAL_KEY, now, SHARED_TRIES), "the shared bucket closes after {} wrong secrets of many senders", SHARED_TRIES);
+        assert!(!throttled(&throttle_key("192.0.2.1"), now), "an address that never failed has its own door");
+        assert!(!throttled_at(GLOBAL_KEY, now + Duration::from_secs(61), SHARED_TRIES), "a minute later it is open again");
+        note_success(GLOBAL_KEY);
+    }
+
+    struct Mock {
+        inp: std::io::Cursor<Vec<u8>>,
+        out: Vec<u8>,
+    }
+    impl Read for Mock {
+        fn read(&mut self, b: &mut [u8]) -> std::io::Result<usize> {
+            self.inp.read(b)
+        }
+    }
+    impl Write for Mock {
+        fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+            self.out.extend_from_slice(b);
+            Ok(b.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    // the status line the server answers to one request (through the real handler)
+    fn status_of(ip: &str, token: &str) -> String {
+        let raw = format!("GET /poll?after=0 HTTP/1.1\r\nHost: x.trycloudflare.com\r\nCf-Connecting-Ip: {}\r\nX-Token: {}\r\n\r\n", ip, token);
+        let mut m = Mock { inp: std::io::Cursor::new(raw.into_bytes()), out: Vec::new() };
+        handle(&mut m).unwrap();
+        String::from_utf8_lossy(&m.out).lines().next().unwrap_or("").to_string()
+    }
+
+    // the whole sequence through the handler: the boundary (the tenth wrong secret is still answered 403, the eleventh 429),
+    // the door of an address that went on guessing, the right secret of another sender, a restart of the count after a minute
+    #[test]
+    fn the_handler_answers_403_ten_times_then_429_and_never_for_another_sender() {
+        let _g = PHONE_TEST_LOCK.lock();
+        RUNNING.store(true, Ordering::SeqCst);
+        let guesser = "2001:db8:aa:bb:1::1";
+        note_success(&throttle_key(guesser));
+        for i in 0..THROTTLE_TRIES {
+            // (a different spelling inside the same /64 every time)
+            let st = status_of(&format!("2001:db8:aa:bb:{:x}::{:x}", i + 2, i + 7), "0000000000000000");
+            assert!(st.contains("403"), "wrong secret {} got {}", i + 1, st);
+        }
+        assert!(status_of("2001:db8:aa:bb:ffff::1", "0000000000000000").contains("429"), "the eleventh wrong secret must be 429");
+        assert!(status_of("2001:db8:aa:bb::5", &token()).contains("429"), "the door of a guessing sender stays closed even for a right secret");
+        let other = status_of("198.51.100.250", &token());
+        assert!(other.contains("200"), "another sender with the right secret is answered: {}", other);
+        assert!(status_of("198.51.100.249", "0000000000000000").contains("403"), "another sender's wrong secret is a plain 403");
+        note_success(&throttle_key(guesser));
+        RUNNING.store(false, Ordering::SeqCst);
     }
 
     #[test]
