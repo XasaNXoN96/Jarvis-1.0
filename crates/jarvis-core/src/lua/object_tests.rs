@@ -54,6 +54,7 @@ impl World {
         std::env::set_var("JARVIS_TEST_TYPED", &typed);
         std::env::set_var("JARVIS_TEST_RUNNER", &runner);
         crate::session::end();
+        crate::objects::with(|e| e.reset());
         // every scenario opens its programs anew: a program opened by the previous scenario is not "a repeat"
         crate::guard::forget_prefix("lua:");
 
@@ -710,4 +711,169 @@ fn timer_phrases_with_any_unit_are_routed_to_the_timer() {
     for p in ["поставь таймер на 5 секунд", "поставь таймер на 30 секунд", "таймер на минуту", "поставь таймер на 5 минут", "таймер на час", "засеки 10 секунд"] {
         assert_eq!(w.route(p).as_deref(), Some("assistant_timer_set"), "{}", p);
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// the state machine in the work mode: stop, pause, continue, losses (scenarios A, C, D of the task)
+// Logic tests against the fake Office: they prove the dialog and the checks, not the real COM calls of Word.
+// ---------------------------------------------------------------------------------------------
+fn start_word_dictation(w: &World) {
+    w.say("открой ворт");
+    w.say("начинаем работу с объектом");
+    w.say("создать новый документ");
+    assert_eq!(w.step(), "object:typing");
+    assert_eq!(crate::objects::state(), crate::objects::State::Dictation);
+}
+
+#[test]
+fn stop_pauses_the_work_without_closing_the_document_and_continue_goes_on() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({}));
+    start_word_dictation(&w);
+    w.say("Первый абзац про информатику");
+    let before = doc_text(&w, "word", 0);
+
+    w.say("Стоп");
+    assert_eq!(crate::objects::state(), crate::objects::State::Paused);
+    assert_eq!(w.step(), "object_resume:ask", "Jarvis asks «Продолжим?»");
+    assert_eq!(w.fake()["word"]["docs"].as_array().unwrap().len(), 1, "the document stays open");
+    assert_eq!(doc_text(&w, "word", 0), before, "the word «стоп» is not written into the document");
+
+    // «да»: the program and the document are checked, then the dictation goes on in the same document
+    w.say("да");
+    assert_eq!(crate::objects::state(), crate::objects::State::Dictation);
+    assert_eq!(w.step(), "object:typing");
+    w.say("Второй абзац");
+    let after = doc_text(&w, "word", 0);
+    assert!(after.contains("Первый абзац") && after.contains("Второй абзац"), "{}", after);
+    assert_eq!(after.matches("Первый абзац").count(), 1, "no duplicated fragment: {}", after);
+    assert_eq!(w.fake()["word"]["docs"].as_array().unwrap().len(), 1);
+    assert_eq!(w.typed(), "");
+}
+
+#[test]
+fn the_word_stop_inside_a_dictated_sentence_is_written_not_obeyed() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({}));
+    start_word_dictation(&w);
+    w.say("На светофоре горит знак стоп и пауза между словами");
+    assert_eq!(crate::objects::state(), crate::objects::State::Dictation, "a long phrase is text");
+    let text = doc_text(&w, "word", 0);
+    assert!(text.contains("стоп") && text.contains("пауза"), "{}", text);
+}
+
+#[test]
+fn pause_then_the_continue_phrase_without_a_question() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({}));
+    start_word_dictation(&w);
+    w.say("Текст до паузы");
+    w.say("Пауза");
+    assert_eq!(crate::objects::state(), crate::objects::State::Paused);
+    assert_eq!(crate::session::kind(), None, "a pause asks nothing");
+    // the phrase is a command of its own now
+    assert_eq!(w.say("Продолжим с объектом"), "assistant_object_resume");
+    assert_eq!(crate::objects::state(), crate::objects::State::Dictation);
+    w.say("Текст после паузы");
+    let text = doc_text(&w, "word", 0);
+    assert!(text.contains("до паузы") && text.contains("после паузы"), "{}", text);
+}
+
+#[test]
+fn a_no_to_the_question_closes_nothing_and_the_context_stays() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({}));
+    start_word_dictation(&w);
+    w.say("Стоп");
+    w.say("нет");
+    assert_eq!(crate::session::kind(), None);
+    assert_eq!(crate::objects::state(), crate::objects::State::Paused);
+    assert_eq!(w.fake()["word"]["docs"].as_array().unwrap().len(), 1, "a «нет» closes and deletes nothing");
+    assert_eq!(w.say("Возобнови работу"), "assistant_object_resume");
+    assert_eq!(crate::objects::state(), crate::objects::State::Dictation);
+}
+
+#[test]
+fn continue_does_not_type_into_another_document() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({}));
+    start_word_dictation(&w);
+    w.say("Мой текст");
+    w.say("Стоп");
+    // the user switched to another document in Word
+    w.set_fake(|v| {
+        v["word"]["docs"].as_array_mut().unwrap().push(json!({ "name": "Другой.docx", "text": "чужой", "path": "", "saved": true }));
+        v["word"]["active"] = json!(1);
+    });
+    w.say("да");
+    assert_eq!(crate::objects::state(), crate::objects::State::Paused, "still paused: the right document is not active");
+    assert_eq!(crate::session::kind(), None);
+    assert_eq!(doc_text(&w, "word", 1), "чужой", "nothing is written into the other document");
+}
+
+#[test]
+fn closing_the_document_during_the_work_is_reported_and_nothing_is_typed() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({}));
+    start_word_dictation(&w);
+    w.say("Текст пока документ есть");
+    // the document disappears while Jarvis is dictating
+    w.set_fake(|v| {
+        v["word"]["docs"] = json!([]);
+        v["word"]["active"] = json!(-1);
+    });
+    w.say("Это уже некуда писать");
+    assert_eq!(crate::objects::state(), crate::objects::State::ErrorRecovery);
+    assert_eq!(w.typed(), "", "never typed into another window");
+    assert!(crate::objects::snapshot()["error"].as_str().unwrap().len() > 3);
+    // the dialog does not leave the work hanging: «нет» finishes it, the program is not touched
+    w.say("нет");
+    assert_eq!(crate::objects::state(), crate::objects::State::AppOpen);
+    assert_eq!(crate::session::kind(), None);
+}
+
+#[test]
+fn continue_after_the_document_was_closed_reports_it() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({}));
+    start_word_dictation(&w);
+    w.say("Какой-то текст");
+    w.say("Стоп");
+    w.set_fake(|v| {
+        v["word"]["docs"] = json!([]);
+        v["word"]["active"] = json!(-1);
+    });
+    w.say("да");
+    assert_eq!(crate::objects::state(), crate::objects::State::ErrorRecovery);
+    assert_eq!(w.typed(), "");
+}
+
+#[test]
+fn a_question_does_not_survive_the_stop() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({ "/docs/План.docx": "старый текст" }));
+    start_word_dictation(&w);
+    w.say("Заканчиваем работу с объектом");
+    assert_eq!(w.step(), "object:ask_end");
+    w.say("удалить");
+    assert_eq!(w.step(), "object:confirm_delete");
+    assert_eq!(crate::objects::state(), crate::objects::State::AwaitingConfirmation);
+    // the user changes their mind: «стоп» is not a «да»
+    w.say("стоп");
+    assert_eq!(w.fake()["word"]["docs"].as_array().unwrap().len(), 1, "nothing was deleted");
+    assert_eq!(w.fake()["recycled"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn a_saved_fact_exists_only_after_the_save_was_confirmed() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({}));
+    start_word_dictation(&w);
+    w.say("Текст для сохранения");
+    assert_eq!(crate::objects::snapshot()["saved"], false);
+    w.say("Заканчиваем работу с объектом");
+    w.say("сохранить");
+    w.say("мой отчёт на рабочем столе");
+    assert_eq!(crate::objects::snapshot()["saved"], true);
+    assert!(crate::objects::snapshot()["saved_path"].as_str().unwrap().contains("Мой отчёт"));
 }

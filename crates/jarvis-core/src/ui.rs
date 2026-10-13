@@ -206,6 +206,18 @@ fn apply_settings(patch: &serde_json::Value) -> serde_json::Value {
 fn run_action(body: &serde_json::Value) -> serde_json::Value {
     let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("");
     match name {
+        // the «Стоп» button of the work with an object: ends the dictation, cancels a running generation (its late result
+        // is dropped), keeps the object. The answer says what really happened.
+        "object_stop" => {
+            let (reply, paused) = crate::objects::with(|e| {
+                let rep = e.pause();
+                (crate::objects::stop_reply(&rep, false), rep.paused)
+            });
+            if paused && matches!(crate::session::kind().as_deref(), Some("object") | Some("dictation") | Some("object_resume")) {
+                crate::session::end();
+            }
+            json!({ "ok": paused, "message": reply })
+        }
         "reaction_preview" => {
             let id = crate::uistate::settings_json()["reaction_voice"].as_str().unwrap_or("").to_string();
             crate::voices::play_preview(&id);
@@ -1186,6 +1198,29 @@ mod tests {
         assert_eq!(close_action("ack"), Some(CloseAction::Ack));
         assert_eq!(close_action("none"), None, "an unknown answer never exits");
         assert_eq!(close_action(""), None);
+    }
+
+    #[test]
+    fn the_stop_button_really_cancels_the_generation_and_keeps_the_object() {
+        let _g = crate::session::TEST_LOCK.lock();
+        let (flag, task) = crate::objects::with(|e| {
+            e.reset();
+            e.open_app("vscode").unwrap();
+            e.bind("vscode", crate::objects::Kind::CodeFile, "calculator.py", None, None, crate::objects::Detect::ProcessTitle).unwrap();
+            let (t, f) = e.start_ai("напиши калькулятор").unwrap();
+            (f, t)
+        });
+        assert_eq!(crate::uistate::state_json()["object"]["state"], "AI_TASK");
+        let r = run_action(&json!({ "name": "object_stop" }));
+        assert_eq!(r["ok"], true, "{}", r);
+        assert!(flag.load(std::sync::atomic::Ordering::SeqCst), "the generation was really told to stop");
+        assert!(r["message"].as_str().unwrap().contains("Генерация отменена"), "{}", r);
+        assert_eq!(crate::uistate::state_json()["object"]["state"], "PAUSED");
+        assert_eq!(crate::uistate::state_json()["object"]["name"], "calculator.py", "the object stays");
+        assert!(!crate::objects::with(|e| e.ai_finished(task, Ok("поздний ответ".into()))), "a late answer is dropped");
+        // nothing to stop any more: the button does not claim success
+        assert_eq!(run_action(&json!({ "name": "object_stop" }))["ok"], false);
+        crate::objects::with(|e| e.reset());
     }
 
     #[test]

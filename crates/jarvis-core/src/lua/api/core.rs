@@ -303,6 +303,61 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
     session.set("set_data", lua.create_function(|_, v: String| { crate::session::set_data(&v); Ok(()) })?)?;
     jarvis.set("session", session)?;
 
+    // jarvis.object: the object Jarvis works with and the state of the work (see objects.rs). Every call that moves the
+    // state returns ok, reason: a forbidden move is a refusal with the reason, never a silent change.
+    let object = lua.create_table()?;
+    object.set("state", lua.create_function(|_, ()| Ok(crate::objects::state().name()))?)?;
+    object.set("open_app", lua.create_function(|_, app: String| Ok(res(crate::objects::with(|e| e.open_app(&app)))))?)?;
+    // bind(app, name, path, detect, project): kind comes from the program
+    object.set("bind", lua.create_function(|_, (app, name, path, detect, project): (String, String, Option<String>, Option<String>, Option<String>)| {
+        let kind = match crate::objects::Kind::for_app(&app) {
+            Some(k) => k,
+            None => return Ok((false, Some(format!("неизвестная программа: {}", app)))),
+        };
+        let path = path.filter(|p| !p.is_empty());
+        let project = project.filter(|p| !p.is_empty());
+        let detect = crate::objects::Detect::parse(detect.as_deref().unwrap_or(""));
+        Ok(res(crate::objects::with(|e| e.bind(&app, kind, &name, path.as_deref(), project.as_deref(), detect).map(|_| ()))))
+    })?)?;
+    object.set("dictation", lua.create_function(|_, on: bool| Ok(res(crate::objects::with(|e| if on { e.start_dictation() } else { e.end_dictation() }))))?)?;
+    // stop(pause): returns the spoken reply, whether the work is paused now
+    object.set("stop", lua.create_function(|_, pause: Option<bool>| {
+        Ok(crate::objects::with(|e| {
+            let pause = pause.unwrap_or(false);
+            let rep = if pause { e.pause() } else { e.stop() };
+            (crate::objects::stop_reply(&rep, !pause), rep.paused)
+        }))
+    })?)?;
+    object.set("classify", lua.create_function(|_, text: String| Ok(crate::objects::control_for(&text).map(|c| c.name())))?)?;
+    object.set("resume", lua.create_function(|_, ()| Ok(res(crate::objects::with(|e| e.resume()))))?)?;
+    object.set("decline_resume", lua.create_function(|_, ()| { crate::objects::with(|e| e.decline_resume()); Ok(()) })?)?;
+    object.set("lost", lua.create_function(|_, why: String| Ok(res(crate::objects::with(|e| e.lost(&why)))))?)?;
+    object.set("app_closed", lua.create_function(|_, ()| Ok(res(crate::objects::with(|e| e.app_closed()))))?)?;
+    object.set("recovered", lua.create_function(|_, ()| Ok(res(crate::objects::with(|e| e.recovered()))))?)?;
+    object.set("release", lua.create_function(|_, ()| Ok(res(crate::objects::with(|e| e.release()))))?)?;
+    object.set("finish", lua.create_function(|_, ()| Ok(res(crate::objects::with(|e| e.finish()))))?)?;
+    object.set("ask", lua.create_function(|_, (id, q): (String, String)| Ok(res(crate::objects::with(|e| e.ask(&id, &q)))))?)?;
+    object.set("answer", lua.create_function(|_, yes: bool| Ok(res(crate::objects::with(|e| e.answer(yes).map(|_| ())))))?)?;
+    object.set("reset", lua.create_function(|_, ()| { crate::objects::with(|e| e.reset()); Ok(()) })?)?;
+    object.set("saved", lua.create_function(|_, path: String| { crate::objects::with(|e| e.saved(&path)); Ok(()) })?)?;
+    object.set("changed", lua.create_function(|_, ()| { crate::objects::with(|e| e.changed()); Ok(()) })?)?;
+    object.set("note", lua.create_function(|_, (role, text): (String, String)| {
+        crate::objects::with(|e| e.note(if role == "jarvis" { "jarvis" } else { "user" }, &text));
+        Ok(())
+    })?)?;
+    // info() -> { state=, app=, kind=, name=, path=, project=, detect=, saved=, resume_prompted=, error= }
+    object.set("info", lua.create_function(|lua, ()| {
+        let v = crate::objects::snapshot();
+        let t = lua.create_table()?;
+        for k in ["state", "app", "kind", "name", "path", "project", "detect", "mode", "error"] {
+            t.set(k, v[k].as_str().unwrap_or("").to_string())?;
+        }
+        t.set("saved", v["saved"].as_bool().unwrap_or(false))?;
+        t.set("resume_prompted", v["resume_prompted"].as_bool().unwrap_or(false))?;
+        Ok(t)
+    })?)?;
+    jarvis.set("object", object)?;
+
     // jarvis.files.search(query): background search on this computer, the answer arrives by itself
     // jarvis.files.results() -> { {path=, name=, dir=, is_dir=}, ... } (last finished search)
     let files = lua.create_table()?;
@@ -416,5 +471,13 @@ mod preview_tests {
         // a combined emoji may be shortened at a joiner, but the result is always valid text
         let family = "👨‍👩‍👧‍👦".repeat(30);
         assert!(std::str::from_utf8(preview(&family, 7).as_bytes()).is_ok());
+    }
+}
+
+// ok, reason for the scripts
+fn res(r: Result<(), crate::objects::Error>) -> (bool, Option<String>) {
+    match r {
+        Ok(()) => (true, None),
+        Err(e) => (false, Some(e.user_text())),
     }
 }

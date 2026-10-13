@@ -1004,6 +1004,21 @@ triggers.en = ["start object mode", "object mode"]
 phrases.ru = ["начинаем работу с объектом", "начни работу с объектом", "режим работы с объектом"]
 phrases.en = ["start object mode"]
 
+# "Продолжим с объектом": goes on with the paused work (the program, the document and the window are checked first)
+[[commands]]
+id = "assistant_object_resume"
+risk = "medium"
+type = "lua"
+script = "office.lua"
+sandbox = "full"
+timeout = 30000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["продолж объект", "продолжим объект", "продолжай объект", "продолж с объект", "продолж с этим файл", "продолжай этим файл", "вернис документ", "продолж писат код", "возобнов работ", "возобнов работ объект"]
+triggers.en = ["continue with the object", "resume the object"]
+phrases.ru = ["продолжим с объектом", "продолжай с этим файлом", "вернись к документу", "продолжай писать код", "возобнови работу"]
+phrases.en = ["continue with the object"]
+
 # used internally: every phrase while a session (dictation, "what to do with the file?") is open; never matched by words
 [[commands]]
 id = "assistant_session"

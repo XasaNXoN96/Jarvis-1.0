@@ -482,6 +482,7 @@ local OBJ_EXT = { word = "docx", excel = "xlsx", notepad = "txt" }
 local OBJ_FIND_EXT = { word = "docx,doc,rtf", excel = "xlsx,xls,xlsm,csv", notepad = "txt,md,log" }
 
 local function obj_say(text, speech)
+  jarvis.object.note("jarvis", text)
   say(OBJ_TITLE, text, speech or text)
 end
 
@@ -530,13 +531,32 @@ end
 
 local function obj_app() return jarvis.state.get("obj_app") end
 -- a step of the dialog: dictation may go on for a long time, a question is not left open for long
+-- the state machine of the work (objects.rs) follows the steps of the dialog: dictation only in the "typing" step, a
+-- question only in the steps that wait for "да" / "нет"
+local function eng_sync(s)
+  local question = (s == "overwrite" or s == "confirm_delete")
+  local st = jarvis.object.state()
+  if question then
+    if st == "DICTATION" or st == "OBJECT_ACTIVE" then jarvis.object.ask(s, s) end
+    return
+  end
+  if st == "AWAITING_CONFIRMATION" then jarvis.object.answer(false); st = jarvis.object.state() end
+  if s == "typing" then
+    if st == "OBJECT_ACTIVE" then jarvis.object.dictation(true) end
+  elseif st == "DICTATION" then
+    jarvis.object.dictation(false)
+  end
+end
+
 local function obj_step(s)
+  eng_sync(s)
   jarvis.session.start("object", s == "typing" and 900 or 180)
   jarvis.session.set_data(s)
   jarvis.state.set("obj_unclear", "0")
 end
 
 local function obj_stop(msg_text, msg_speech)
+  jarvis.object.finish()
   jarvis.session.finish()
   jarvis.state.set("obj_app", "")
   jarvis.state.set("obj_name", "")
@@ -566,7 +586,11 @@ local function obj_info(app)
   return true, { open = true, name = f[2] or "", path = f[3] or "", saved = f[4] == "1", has_path = f[5] == "1" }
 end
 
-local function obj_enter_typing(app, name)
+local function obj_enter_typing(app, name, path)
+  -- a new object: the context of the previous one is replaced (the engine refuses while a question or a generation is open)
+  jarvis.object.reset()
+  jarvis.object.open_app(app)
+  jarvis.object.bind(app, name or "", path, (app == "word" or app == "excel") and "office-com" or "process")
   jarvis.state.set("obj_app", app)
   jarvis.state.set("obj_name", app == "notepad" and "" or (name or ""))
   jarvis.state.set("dict_last", "")
@@ -601,7 +625,7 @@ local function obj_new_document(app)
   local ok, _, err = office(app, "new")
   if not ok then obj_say(tostring(err)); return false end
   local ok2, info = obj_info(app)
-  obj_enter_typing(app, ok2 and info.name or "")
+  obj_enter_typing(app, ok2 and info.name or "", ok2 and info.path or nil)
   return true
 end
 
@@ -611,7 +635,7 @@ local function obj_begin(app)
   local ok, info, err = obj_info(app)
   if not ok then obj_stop(tostring(err)); return end
   if info.open then
-    obj_enter_typing(app, info.name)
+    obj_enter_typing(app, info.name, info.path)
   else
     jarvis.session.start("object", 900)
     obj_step("doc_ask")
@@ -624,6 +648,78 @@ local function obj_app_from(phrase, tokens)
   local found = jarvis.apps.resolve(phrase)
   if found and found.office then return found.office end
   return target_from(tokens)
+end
+
+-- ---- stop / pause / continue (the state machine keeps the object, the program and the document stay open) ----
+-- "стоп", "пауза": the dictation ends, nothing is closed, saved or deleted. After "стоп" Jarvis asks "Продолжим?".
+local function obj_pause(pause_only)
+  local reply, paused = jarvis.object.stop(pause_only)
+  jarvis.object.note("user", pause_only and "пауза" or "стоп")
+  if not paused then
+    obj_say(reply, reply)
+    return
+  end
+  if pause_only then
+    jarvis.session.finish()
+  else
+    jarvis.session.start("object_resume", 120)
+    jarvis.session.set_data("ask")
+  end
+  obj_say(reply, reply)
+end
+
+-- the object is gone (the program or the document was closed during the work): say so, offer to restore, never type elsewhere
+local function obj_lost(why, offer)
+  jarvis.object.lost(why)
+  local info = jarvis.object.info()
+  if info.state ~= "ERROR_RECOVERY" then jarvis.object.app_closed() end
+  jarvis.session.start("object_resume", 180)
+  jarvis.session.set_data(offer and "reopen" or "gone")
+  local msg = why
+  if offer then msg = msg .. T(" Открыть его снова? Скажите да или нет.", " Open it again?") end
+  obj_say(msg, msg)
+end
+
+-- "продолжим с объектом": the program, the document and the window are checked again; only then the work goes on
+local function obj_resume()
+  local info = jarvis.object.info()
+  local app, name = info.app, info.name
+  if app ~= "word" and app ~= "excel" and app ~= "notepad" then
+    jarvis.session.finish()
+    obj_say(T("Нет работы, которую можно продолжить.", "Nothing to continue."))
+    return
+  end
+  if app == "notepad" then
+    if WIN and not jarvis.system.window_exists("Notepad") then
+      return obj_lost(T("Блокнот закрыт.", "Notepad is closed."), false)
+    end
+  else
+    local ok, di, err = obj_info(app)
+    if not ok then
+      return obj_lost(tostring(err) .. ".", false)
+    end
+    if not di.open then
+      return obj_lost(T("Документ «" .. name .. "» закрыт.", "The document is closed."), info.path ~= "")
+    end
+    if name ~= "" and di.name ~= name then
+      -- another document is active: the text must never go there. Stay paused and say what is needed
+      jarvis.session.finish()
+      local m = T("Сейчас активен другой документ «" .. di.name .. "». Нужен «" .. name .. "». Переключитесь на него и скажите «продолжим с объектом».", "Another document is active.")
+      jarvis.object.note("jarvis", m)
+      return say(OBJ_TITLE, m, m)
+    end
+  end
+  local ok, why = jarvis.object.resume()
+  if not ok then
+    jarvis.session.finish()
+    return obj_say(tostring(why))
+  end
+  jarvis.state.set("dict_last", "")
+  jarvis.state.set("obj_app", app)
+  jarvis.state.set("obj_name", name)
+  obj_step("typing")
+  local what = app == "notepad" and T("Блокнот", "Notepad") or ("«" .. name .. "»")
+  obj_say(T("Продолжаем работу с " .. what .. ". Диктуйте.", "Going on with " .. what), T("Продолжаем. Диктуйте", "Going on"))
 end
 
 -- ---- formatting phrases of Word ----
@@ -674,6 +770,10 @@ end
 local function obj_type(phrase)
   local tokens = tokens_of(phrase)
   local app = obj_app()
+  -- "стоп", "пауза": only a whole short phrase, a longer one is the dictated text (objects.rs decides by the state)
+  local ctl = jarvis.object.classify(phrase)
+  if ctl == "stop" or ctl == "cancel" then return obj_pause(false) end
+  if ctl == "pause" then return obj_pause(true) end
   if is_object_end(tokens) then
     obj_step("ask_end")
     obj_say(T("Сохранить документ, удалить его или продолжить редактирование?", "Save the document, delete it or go on editing?"))
@@ -689,9 +789,10 @@ local function obj_type(phrase)
     end
     local text = format_dictation(phrase)
     if text == "" then return end
-    local ok, _, err = office("word", "text", b64(text))
+    local ok, _, err, code = office("word", "text", b64(text))
     if ok then jarvis.out("✎ " .. text:gsub("\n", " ↵ ")) else
       jarvis.state.set("dict_last", "")
+      if code == "NOAPP" or code == "NODOC" then return obj_lost(tostring(err), jarvis.object.info().path ~= "") end
       obj_say(tostring(err), tostring(err))
     end
 
@@ -703,13 +804,16 @@ local function obj_type(phrase)
     end
     local joined = table.concat(tokens, " ")
     local num = (#tokens > 0) and jarvis.parse.number(joined) or nil
-    local ok, out, err
+    local ok, out, err, code
     if num ~= nil then
-      ok, out, err = office("excel", "active", b64(fmt_number(num)), "n")
+      ok, out, err, code = office("excel", "active", b64(fmt_number(num)), "n")
     else
-      ok, out, err = office("excel", "active", b64(cap_first(joined)), "t")
+      ok, out, err, code = office("excel", "active", b64(cap_first(joined)), "t")
     end
-    if ok then say_quiet(T("Ячейка ", "Cell ") .. tostring(out) .. " = " .. joined) else obj_say(tostring(err), tostring(err)) end
+    if ok then say_quiet(T("Ячейка ", "Cell ") .. tostring(out) .. " = " .. joined) else
+      if code == "NOAPP" or code == "NODOC" then return obj_lost(tostring(err), jarvis.object.info().path ~= "") end
+      obj_say(tostring(err), tostring(err))
+    end
 
   else -- Notepad: only the Notepad window, never another program
     local text = format_dictation(phrase)
@@ -717,8 +821,8 @@ local function obj_type(phrase)
     local ok, err = jarvis.system.type_text(text, "Notepad")
     if ok then jarvis.out("✎ " .. text:gsub("\n", " ↵ ")) else
       jarvis.state.set("dict_last", "")
-      local m = T("Блокнот закрыт или не найден. Текст не записан. Откройте Блокнот или завершите работу с объектом.", "Notepad is closed. Nothing was written.")
-      obj_say(m, m)
+      local m = T("Блокнот закрыт или не найден. Текст не записан.", "Notepad is closed. Nothing was written.")
+      obj_lost(m, false)
     end
   end
 end
@@ -755,6 +859,7 @@ local function save_target(phrase, app)
 end
 
 local function obj_saved_ok(app, path)
+  jarvis.object.saved(path)
   obj_stop(T("Документ сохранён: " .. path .. ". Режим работы с объектом завершён.", "Saved: " .. path),
            T("Документ сохранён. Работа с объектом завершена", "The document is saved. Object mode is finished"))
 end
@@ -909,7 +1014,7 @@ local function obj_handle(phrase)
     local ok2, _, err2 = office(app, "open", b64(path))
     if not ok2 then return obj_say(tostring(err2)) end
     local ok3, info = obj_info(app)
-    obj_enter_typing(app, ok3 and info.open and info.name or "")
+    obj_enter_typing(app, ok3 and info.open and info.name or "", ok3 and info.open and info.path or nil)
 
   elseif step == "ask_end" then
     if a.continue or a.cancel then
@@ -1000,6 +1105,16 @@ if id == "assistant_object_start" then
   jarvis.state.set("obj_name", "")
   obj_start(phrase)
 
+elseif id == "assistant_object_resume" then
+  local st = jarvis.object.state()
+  if st == "PAUSED" then
+    obj_resume()
+  elseif st == "ERROR_RECOVERY" then
+    obj_lost(jarvis.object.info().error ~= "" and jarvis.object.info().error or T("Объект потерян.", "The object is lost."), jarvis.object.info().path ~= "")
+  else
+    say(OBJ_TITLE, T("Сейчас нет приостановленной работы с объектом.", "Nothing is paused."))
+  end
+
 elseif id == "assistant_office_dictate" then
   local tokens = tokens_of(phrase)
   local target = target_from(tokens) or jarvis.state.get("office_app")
@@ -1084,6 +1199,45 @@ else -- assistant_session: every phrase while a session is open
     local step = jarvis.session.data()
     if nm and nm ~= "" and (app == "word" or app == "excel") and step ~= "doc_ask" and step ~= "doc_name" and step ~= "app_ask" then BOUND = nm end
     obj_handle(phrase)
+  elseif kind == "object_resume" then
+    -- the answer to "Продолжим?" (or to "Открыть его снова?" after the document was closed)
+    local ctl = jarvis.object.classify(phrase)
+    local step = jarvis.session.data()
+    if step == "reopen" or step == "gone" then
+      local yes = exact_in(tokens_of(phrase), { "да", "ага", "конечно", "давай", "открой" })
+      local no = exact_in(tokens_of(phrase), { "нет", "не", "неа" }) or ctl == "stop" or ctl == "cancel"
+      jarvis.session.finish()
+      if not yes or step == "gone" then
+        jarvis.object.finish()
+        return obj_say(T("Хорошо, ничего не открываю. Работа с объектом завершена.", "Okay."))
+      end
+      local info = jarvis.object.info()
+      local app = info.app
+      local okp = office(app, "open", b64(info.path))
+      if not okp then
+        jarvis.object.finish()
+        return obj_say(T("Не удалось открыть «" .. info.name .. "». Работа с объектом завершена.", "Could not open it."))
+      end
+      local ok3, di = obj_info(app)
+      if not (ok3 and di.open) then
+        jarvis.object.finish()
+        return obj_say(T("Не удалось подтвердить, что документ открыт. Работа с объектом завершена.", "Not confirmed."))
+      end
+      jarvis.object.recovered()
+      jarvis.object.release()
+      return obj_enter_typing(app, di.name, di.path)
+    end
+    if ctl == "yes" or ctl == "resume" then
+      return obj_resume()
+    elseif ctl == "no" or ctl == "stop" then
+      jarvis.object.decline_resume()
+      jarvis.session.finish()
+      return obj_say(T("Хорошо, документ остался открытым. Скажите «продолжим с объектом», когда понадобится.", "Okay, nothing is closed."),
+                     T("Хорошо, ничего не закрываю", "Okay"))
+    end
+    -- not an answer: the question is left, the phrase is an ordinary command
+    jarvis.session.finish()
+    jarvis.app.run_text(phrase)
   elseif kind == "dictation" then
     local tokens = tokens_of(phrase)
     local target = jarvis.session.data()

@@ -140,6 +140,12 @@
   .hs-chip i { width: 8px; height: 8px; border-radius: 50%; background: #6b7280; flex-shrink: 0; }
   .hs-chip[data-s="ok"] i { background: #34d399; } .hs-chip[data-s="warn"] i { background: #fbbf24; } .hs-chip[data-s="bad"] i { background: #f87171; } .hs-chip[data-s="info"] i { background: #60a5fa; }
   .hs-chip b { font-weight: 600; } .hs-chip em { font-style: normal; opacity: .75; }
+  .h-obj { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12px; min-width: 0; }
+  .h-obj[hidden] { display: none; }
+  .h-obj .ho-st { padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line, rgba(255,255,255,.12)); white-space: nowrap; flex-shrink: 0; }
+  .h-obj[data-s="ok"] .ho-st { border-color: #34d399; } .h-obj[data-s="warn"] .ho-st { border-color: #fbbf24; } .h-obj[data-s="bad"] .ho-st { border-color: #f87171; } .h-obj[data-s="info"] .ho-st { border-color: #60a5fa; }
+  .h-obj .ho-t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .85; }
+  .h-obj .btn { flex-shrink: 0; font-size: 12px; padding: 2px 10px; }
   .hs-car { margin-left: auto; opacity: .6; font-size: 12px; transition: transform .15s; }
   .h-sum[data-open="1"] .hs-car { transform: rotate(180deg); }
   .hs-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 6px; }
@@ -532,6 +538,10 @@
           <span class="hs-chip" id="hs-ph" data-s=""><i></i><b>Телефон</b><em>…</em></span>
           <span class="hs-car" aria-hidden="true">▾</span>
         </button>
+        <div class="h-obj" id="h-obj" hidden data-s="">
+          <span class="ho-st" id="ho-st">—</span><span class="ho-t" id="ho-t"></span>
+          <button type="button" class="btn small" id="ho-stop" title="Остановить диктовку или генерацию. Программа и документ остаются открытыми">Стоп</button>
+        </div>
         <div class="hs-cards" id="hs-cards" hidden>
           <div class="hs-card" id="hsc-pc" data-s=""><h4><i></i>Система</h4>
             <div class="l"><span>Процессор</span><b id="hsc-cpu">—</b></div><div class="l"><span>Память</span><b id="hsc-ram">—</b></div>
@@ -1598,7 +1608,30 @@ function applySpeech(s) {
     pollNow();
   };
 }
+// the object Jarvis works with: only what the state machine of the program reports
+const OBJ_ST = { IDLE: ['', ''], APP_OPEN: ['программа открыта', 'info'], OBJECT_ACTIVE: ['объект активен', 'ok'], DICTATION: ['диктовка', 'ok'], AI_TASK: ['ИИ пишет', 'info'],
+  AWAITING_CONFIRMATION: ['ждёт ответа', 'warn'], PAUSED: ['пауза', 'warn'], ERROR_RECOVERY: ['ошибка', 'bad'] };
+const OBJ_APP = { word: 'Word', excel: 'Excel', notepad: 'Блокнот', vscode: 'VS Code', powerpoint: 'PowerPoint', explorer: 'Проводник', browser: 'Браузер' };
+function objectBar(o) {
+  const bar = $('#h-obj'); if (!bar) return;
+  if (!o || o.state === 'IDLE') { bar.hidden = true; return; }
+  const st = OBJ_ST[o.state] || [o.state, '']; bar.hidden = false; bar.dataset.s = st[1];
+  $('#ho-st').textContent = st[0];
+  const parts = [OBJ_APP[o.app] || o.app, o.name].filter(Boolean);
+  if (o.operation) parts.push(o.operation);
+  if (o.pending) parts.push('вопрос: ' + o.pending);
+  if (o.state === 'ERROR_RECOVERY' && o.error) parts.push(o.error);
+  else if (o.saved) parts.push('сохранено' + (o.saved_path ? ': ' + o.saved_path : ''));
+  else if (o.last_result) parts.push(o.last_result);
+  const t = parts.join(' · '); $('#ho-t').textContent = t; $('#ho-t').title = t;
+  $('#ho-stop').disabled = !(o.state === 'DICTATION' || o.state === 'AI_TASK' || o.state === 'AWAITING_CONFIRMATION' || o.state === 'OBJECT_ACTIVE');
+}
+$('#ho-stop').onclick = async () => {
+  let r = null; try { r = await action('object_stop'); } catch (e) {}
+  showToast(r && r.message ? r.message : 'Не удалось остановить'); pollNow();
+};
 function applyState(s) {
+  objectBar(s.object);
   applySession(s); applySpeech(s);
   if (micMuted !== !!s.mic_muted) { micMuted = !!s.mic_muted; renderMic(); }
   applyVoice(s); voiceChip(s.voice_state); healthCard(s.health); aiCard(s.ai);

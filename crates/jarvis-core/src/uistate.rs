@@ -671,6 +671,8 @@ pub fn state_json() -> Value {
         "messages_last": crate::social::last_id(),
         "session": crate::session::kind().unwrap_or_default(),
         "session_data": crate::session::data(),
+        // the object Jarvis works with and the state of the work (only facts of the state machine, nothing invented)
+        "object": crate::objects::snapshot(),
         "mic_muted": crate::MIC_MUTED.load(std::sync::atomic::Ordering::SeqCst),
         "voice_active": crate::VOICE_ACTIVE.load(std::sync::atomic::Ordering::SeqCst),
         "voice_error": crate::VOICE_ERROR.lock().clone(),
