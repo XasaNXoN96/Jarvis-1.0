@@ -85,6 +85,33 @@ pub fn text_hash(s: &str) -> String {
     h.finalize().iter().map(|b| format!("{:02x}", b)).collect()
 }
 
+// The text the way it is compared after Word typed it: Word's own autocorrect (smart quotes, dashes, the ellipsis, non-breaking
+// spaces) is folded to plain characters on both sides, so it is not a mismatch; any other difference is.
+pub fn fold(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in normalize(s).chars() {
+        match c {
+            '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{2032}' => out.push('\''),
+            '\u{201C}' | '\u{201D}' | '\u{201E}' | '\u{2033}' => out.push('"'),
+            '\u{2013}' | '\u{2014}' | '\u{2212}' => out.push('-'),
+            '\u{2026}' => out.push_str("..."),
+            '\u{00A0}' | '\u{202F}' | '\u{2009}' => out.push(' '),
+            c => out.push(c),
+        }
+    }
+    // runs of spaces / tabs inside a line are one space (Word does not keep a typed double space after autocorrect)
+    let mut res = String::with_capacity(out.len());
+    let mut prev_space = false;
+    for c in out.chars() {
+        let sp = c == ' ' || c == '\t';
+        if !(sp && prev_space) {
+            res.push(if sp { ' ' } else { c });
+        }
+        prev_space = sp;
+    }
+    res
+}
+
 const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 pub fn b64_encode(data: &[u8]) -> String {

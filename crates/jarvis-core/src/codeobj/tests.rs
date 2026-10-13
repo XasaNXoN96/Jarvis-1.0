@@ -524,8 +524,13 @@ fn a_phrase_from_the_phone_or_telegram_is_not_taken() {
     let _g = LOCK.lock();
     let w = World::new();
     w.create("calc.py");
-    assert!(handle("напиши калькулятор", "напиши калькулятор", Source::Phone).is_none());
-    assert!(handle("создай python файл", "создай python файл", Source::Telegram).is_none());
+    for door in [Source::Phone, Source::Telegram, Source::Ipc, Source::Script, Source::Internal] {
+        assert!(handle("напиши калькулятор", "напиши калькулятор", door).is_none(), "{:?}", door);
+        assert!(handle("создай python файл", "создай python файл", door).is_none(), "{:?}", door);
+    }
+    for door in [Source::Voice, Source::Window, Source::Console] {
+        assert!(handle("запусти код", "запусти код", door).is_some(), "{:?}", door);
+    }
 }
 
 #[test]

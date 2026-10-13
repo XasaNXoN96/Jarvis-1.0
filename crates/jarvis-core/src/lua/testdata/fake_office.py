@@ -104,7 +104,12 @@ def main():
             p = prog(app); d = check(p, key)
             if d is None:
                 p[key].append({"name": "Document1", "text": "", "fmt": [], "cells": {}, "saved": False}); d = p[key][0]; p["active"] = 0
-            d["text"] += dec(a["Arg1"]); d["saved"] = False
+            t = dec(a["Arg1"])
+            if s.get("autocorrect"):
+                t = t.replace('"', "\u201c", 1).replace('"', "\u201d", 1).replace(" - ", " \u2013 ").replace("...", "\u2026")
+            if s.get("corrupt"):
+                t = t.replace("и", "ы")
+            d["text"] += t; d["saved"] = False
         elif act == "read":
             p = prog(app); d = check(p, key)
             if d is None:

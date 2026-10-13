@@ -122,6 +122,11 @@ impl World {
         id
     }
 
+    // the last thing Jarvis said or showed
+    fn output(&self) -> String {
+        crate::dialog::last_output()
+    }
+
     fn step(&self) -> String {
         format!("{}:{}", crate::session::kind().unwrap_or_default(), crate::session::data())
     }
@@ -1091,4 +1096,58 @@ fn long_dictated_sentences_are_text_not_ai_requests() {
     w.say("в этом абзаце я объясняю как исправить ошибки в программе и сократить время работы");
     assert_eq!(crate::objects::state(), crate::objects::State::Dictation);
     assert!(doc_text(&w, "word", 0).contains("исправить ошибки"));
+}
+
+fn insert_intro(w: &World, answer: &'static str) {
+    set_ai(move |_, _, _| Ok(answer.to_string()));
+    w.say("напиши вступление про кавычки");
+    wait_answer();
+    w.say("objaidone");
+}
+
+#[test]
+fn word_autocorrect_does_not_fail_the_insert_check() {
+    let _g = LOCK.lock();
+    let _off = AiOff;
+    let w = World::new(json!({}));
+    start_word_dictation(&w);
+    w.set_fake(|v| v["autocorrect"] = json!(true));
+    insert_intro(&w, "Он сказал \"привет\" - и ушёл...");
+    let t = doc_text(&w, "word", 0);
+    assert!(t.contains('\u{201c}') && t.contains('\u{2013}'), "the fake Word really changed the text: {}", t);
+    // the check passed: the dialog is back to dictation and said it verified
+    assert_eq!(w.step(), "object:typing");
+    assert!(w.output().contains("проверил чтением"), "{}", w.output());
+}
+
+#[test]
+fn a_real_difference_in_the_inserted_text_is_not_hidden() {
+    let _g = LOCK.lock();
+    let _off = AiOff;
+    let w = World::new(json!({}));
+    start_word_dictation(&w);
+    w.set_fake(|v| v["corrupt"] = json!(true));
+    insert_intro(&w, "Информатика изучает информацию");
+    assert!(w.output().contains("подтвердить вставку чтением не удалось"), "{}", w.output());
+}
+
+#[test]
+fn a_stop_while_the_replacement_waits_drops_the_text_and_a_late_yes_does_nothing() {
+    let _g = LOCK.lock();
+    let _off = AiOff;
+    let w = World::new(json!({}));
+    word_with_text(&w, "Исходный текст");
+    set_ai(|_, _, _| Ok("Новый текст".to_string()));
+    w.say("исправь ошибки");
+    wait_answer();
+    w.say("objaidone");
+    assert_eq!(w.step(), "object:confirm_replace");
+    // the window button (not the dialog) stops the work
+    let rep = crate::objects::with(|e| e.pause());
+    assert!(rep.paused && rep.question_dropped);
+    crate::session::end();
+    assert!(crate::docai::peek().is_none(), "the text of the document must not stay in memory");
+    // a «да» now is an ordinary phrase: nothing is replaced
+    assert!(w.route("да").is_none() || w.route("да").as_deref() != Some("assistant_session"));
+    assert_eq!(doc_text(&w, "word", 0), "Исходный текст");
 }

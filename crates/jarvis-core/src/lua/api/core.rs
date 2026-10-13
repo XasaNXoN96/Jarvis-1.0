@@ -363,7 +363,7 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
     })?)?;
     // b64_contains(doc_b64, part_b64) -> true when the decoded document holds the decoded part (a check that a text really arrived)
     object.set("b64_contains", lua.create_function(|_, (doc, part): (String, String)| {
-        let d = |b: &str| crate::docai::b64_decode(b).and_then(|b| String::from_utf8(b).ok()).map(|t| crate::docai::normalize(&t));
+        let d = |b: &str| crate::docai::b64_decode(b).and_then(|b| String::from_utf8(b).ok()).map(|t| crate::docai::fold(&t));
         Ok(match (d(&doc), d(&part)) {
             (Some(doc), Some(part)) => !part.is_empty() && doc.contains(&part),
             _ => false,

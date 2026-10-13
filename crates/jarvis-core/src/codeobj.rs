@@ -97,6 +97,11 @@ struct Code {
 
 static CODE: Lazy<Mutex<Code>> = Lazy::new(|| Mutex::new(Code { awaiting: None, project: None, file: None, known: None, prev: None, pending: None, retry: None }));
 
+// the answer of a question that was asked is gone with the question (a stop, a cancel, a reset)
+pub fn drop_pending() {
+    CODE.lock().pending = None;
+}
+
 pub fn forget() {
     let mut c = CODE.lock();
     *c = Code { awaiting: None, project: None, file: None, known: None, prev: None, pending: None, retry: None };
@@ -585,8 +590,10 @@ fn current_file() -> Option<PathBuf> {
 // A phrase from the voice / the window / the console. None = not mine: the application goes on with it.
 // `text` is the lower-case phrase the commands see, `original` the words as they were said or typed.
 pub fn handle(text: &str, original: &str, source: Source) -> Option<Reply> {
-    // the work with files through the AI is driven from this computer; a phrase of a phone / chat is not
-    if source.is_remote() {
+    // The work with files through the AI is driven by a person at this computer: the microphone, the window, the console.
+    // A phone, a chat, another local program (Ipc), a scenario / timer (Script) or the program itself (Internal) can neither
+    // start it nor answer its questions.
+    if !matches!(source, Source::Voice | Source::Window | Source::Console) {
         return None;
     }
     let state = objects::state();

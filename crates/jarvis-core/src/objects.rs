@@ -425,12 +425,19 @@ impl Engine {
         Ok(())
     }
 
+    // what waits for an answer or for the adapter dies with the operation: no text of a document, no code is kept
+    fn drop_leftovers(&mut self) {
+        crate::docai::drop_answer();
+        crate::codeobj::drop_pending();
+    }
+
     fn clear_op(&mut self) {
         self.ctx.operation.clear();
         self.ctx.mode.clear();
     }
 
     pub fn reset(&mut self) {
+        self.drop_leftovers();
         self.cancel_task();
         self.state = State::Idle;
         self.ctx = Context::empty();
@@ -584,6 +591,9 @@ impl Engine {
     // object (the program and the document stay open). The context stays for "продолжим".
     pub fn stop(&mut self) -> StopReport {
         let was = self.state;
+        if was != State::Idle {
+            self.drop_leftovers();
+        }
         let mut rep = StopReport {
             was,
             dictation_stopped: was == State::Dictation,
@@ -616,6 +626,9 @@ impl Engine {
 
     // "Отмена": only the running operation (the generation, the question) is cancelled. The object stays active.
     pub fn cancel(&mut self) -> Option<&'static str> {
+        if self.state != State::Idle {
+            self.drop_leftovers();
+        }
         match self.state {
             State::AiTask => {
                 self.cancel_task();
@@ -654,6 +667,7 @@ impl Engine {
 
     // ---- losses and errors ----
     pub fn lost(&mut self, why: &str) -> Result<(), Error> {
+        self.drop_leftovers();
         self.cancel_task();
         self.go(Event::ObjectLost)?;
         self.ctx.error = sanitize(why);
@@ -663,6 +677,7 @@ impl Engine {
     }
 
     pub fn app_closed(&mut self) -> Result<(), Error> {
+        self.drop_leftovers();
         self.cancel_task();
         self.go(Event::AppClosed)?;
         self.ctx.error = "программа закрыта во время работы".to_string();
@@ -680,6 +695,7 @@ impl Engine {
     // The work with the object ends from any state: the running operation is cancelled first (a question is answered
     // "нет", a generation is cancelled), then the program and the document stay open as they are.
     pub fn finish(&mut self) -> Result<(), Error> {
+        self.drop_leftovers();
         match self.state {
             State::AiTask | State::AwaitingConfirmation => {
                 self.cancel();
