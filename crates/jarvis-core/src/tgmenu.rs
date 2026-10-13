@@ -57,6 +57,17 @@ pub const ITEMS: &[Item] = &[
     Item { key: "pwhib", label: "🛌 Гибернация", phrase: "гибернация", ask: Some("Отправить компьютер в гибернацию сейчас? Удалённо его потом не разбудить."), then_yes: true },
     Item { key: "pwlogoff", label: "🚪 Выйти из системы", phrase: "выйди из системы", ask: Some("Выйти из учётной записи Windows? Несохранённые данные могут пропасть."), then_yes: true },
     item("pwcancel", "↩ Отменить выключение", "отмени выключение"),
+    // the answers to a question of Jarvis (shown under an answer that waits for «да / нет»)
+    item("yes", "✅ Да", "да"),
+    item("no", "✖ Нет", "нет"),
+    // the phone remote (the same things the page of the remote has)
+    item("phfind", "📢 Найти телефон", "найди телефон"),
+    item("phstop", "🔕 Остановить сигнал", "останови сигнал телефона"),
+    // local actions (no phrase): the remote of the phone, its address from any network, the link
+    Item { key: "rmon", label: "▶ Включить пульт и доступ из любой сети", phrase: "", ask: Some("Включить пульт телефона и доступ из любой сети? Адрес откроется через бесплатный туннель Cloudflare (в первый раз скачивается около 55 МБ) и будет защищён секретом ссылки. Когда адрес будет готов, я пришлю его сюда."), then_yes: false },
+    Item { key: "rmoff", label: "⏹ Выключить пульт", phrase: "", ask: Some("Выключить пульт телефона и доступ из любой сети?"), then_yes: false },
+    Item { key: "rmlink", label: "🔗 Прислать ссылку пульта", phrase: "", ask: Some("Прислать ссылку пульта в этот чат? В ссылке секрет доступа к компьютеру: не пересылайте её никому."), then_yes: false },
+    Item { key: "rmnew", label: "♻ Новая ссылка (старая перестанет работать)", phrase: "", ask: Some("Сделать новую ссылку пульта? Все телефоны со старой ссылкой потеряют доступ."), then_yes: false },
 ];
 
 pub fn find(key: &str) -> Option<&'static Item> {
@@ -98,6 +109,11 @@ fn back_row() -> Vec<Btn> {
     vec![open("☰ Меню", "main")]
 }
 
+// under an answer that waits for «да / нет»: the two answers (as the phone remote has «да» and «нет» buttons)
+pub fn yes_no() -> Value {
+    keyboard(vec![vec![run("yes"), run("no")], back_row()])
+}
+
 // the keyboard under the answer of a power command: a way to cancel it
 pub fn after_power() -> Value {
     keyboard(vec![vec![run("pwcancel")], back_row()])
@@ -112,6 +128,7 @@ pub fn page(name: &str, allow_screen: bool) -> Option<(String, Value)> {
                 vec![open("🔊 Звук и яркость", "sound"), open("🪟 Окна", "windows")],
                 vec![b("📋 Задачи", "a:tasks".into()), run("time")],
                 vec![open("⚡ Питание ПК", "power"), b("📊 Статус", "a:status".into())],
+                vec![open("📱 Телефон и пульт", "phone")],
             ];
             if allow_screen {
                 rows.push(vec![b("🖼 Снимок экрана", "a:screen".into())]);
@@ -123,6 +140,7 @@ pub fn page(name: &str, allow_screen: bool) -> Option<(String, Value)> {
         "sound" => ("🔊 Звук и яркость", vec![vec![run("vdown"), run("vup")], vec![run("vmute"), run("vunmute")], vec![run("bdown"), run("bup")], back()]),
         "windows" => ("🪟 Окна и ПК", vec![vec![run("wmin"), run("wlock")], vec![run("wtask"), run("wlang")], back()]),
         "power" => ("⚡ Питание ПК — каждое действие спросит подтверждение", vec![vec![run("pwoff"), run("pwrestart")], vec![run("pwhib"), run("pwlogoff")], vec![run("pcsleep"), run("pwcancel")], back()]),
+        "phone" => ("📱 Телефон и пульт — включение, ссылка и поиск телефона", vec![vec![run("phfind"), run("phstop")], vec![run("rmon")], vec![run("rmoff")], vec![run("rmlink")], vec![run("rmnew")], back()]),
         _ => return None,
     };
     Some((text.to_string(), keyboard(rows)))
@@ -229,7 +247,8 @@ mod tests {
     #[test]
     fn every_dangerous_entry_asks_first_and_nothing_else_does() {
         for it in ITEMS {
-            let dangerous = it.phrase.contains("выключи компьютер") || it.phrase.contains("перезагрузи") || it.phrase.contains("гибернац") || it.phrase.contains("выйди из системы") || it.phrase.contains("спящий");
+            // (an entry with no phrase is a local action of the bot: the remote of the phone; it asks as well)
+            let dangerous = it.phrase.is_empty() || it.phrase.contains("выключи компьютер") || it.phrase.contains("перезагрузи") || it.phrase.contains("гибернац") || it.phrase.contains("выйди из системы") || it.phrase.contains("спящий");
             assert_eq!(it.ask.is_some(), dangerous, "{}", it.key);
             if it.then_yes {
                 assert!(it.ask.is_some(), "{}: the answer «да» is only sent after the user's own confirmation", it.key);

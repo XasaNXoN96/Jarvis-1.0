@@ -37,6 +37,8 @@ pub struct Config {
     pub block_voice: bool,
     // the answer is also sent as a voice message (off by default; needs the voice of Jarvis, Piper)
     pub voice_reply: bool,
+    // a timer, an alarm or a reminder is NOT sent to the bot when this is set (they are sent by default)
+    pub no_alerts: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -283,6 +285,7 @@ pub fn json() -> Value {
         "voice_in": !c.block_voice,
         "voice_in_ready": crate::tgvoice::recognition_available(),
         "voice_reply": c.voice_reply,
+        "alerts": !c.no_alerts,
         "voice_reply_ready": crate::tts::can_speak().is_ok() && !crate::uistate::voice_name().starts_with("win:"),
     })
 }
@@ -363,6 +366,9 @@ pub fn action(body: &Value) -> Value {
             }
             if let Some(v) = body["voice_reply"].as_bool() {
                 c.voice_reply = v;
+            }
+            if let Some(v) = body["alerts"].as_bool() {
+                c.no_alerts = !v;
             }
             save(&c);
             Ok("Сохранено".into())
@@ -501,6 +507,11 @@ mod net {
         let _ = call(c, token, "sendMessage", &json!({ "chat_id": chat, "text": text, "disable_web_page_preview": true }));
     }
 
+    // (used from another thread: a timer rang, the address of the tunnel is ready)
+    pub(super) fn send_plain(c: &reqwest::blocking::Client, token: &str, chat: i64, text: &str) {
+        send_kb(c, token, chat, text, &crate::tgmenu::menu_button());
+    }
+
     fn send_kb(c: &reqwest::blocking::Client, token: &str, chat: i64, text: &str, kb: &Value) {
         let text: String = text.chars().take(3800).collect();
         let _ = call(c, token, "sendMessage", &json!({ "chat_id": chat, "text": text, "disable_web_page_preview": true, "reply_markup": kb }));
@@ -592,6 +603,9 @@ mod net {
 
     // the answer as text under a "menu" button, and as a voice message when the user switched that on
     fn reply(cx: &Ctx, chat: i64, answer: &str, kb: &Value) {
+        // an answer that waits for «да / нет» carries the two buttons (the phone remote has them too)
+        let yes_no = crate::tgmenu::yes_no();
+        let kb = if super::confirm_open() && *kb == crate::tgmenu::menu_button() { &yes_no } else { kb };
         send_kb(cx.c, cx.token, chat, answer, kb);
         if CONFIG.lock().voice_reply {
             match speak_reply(cx, chat, answer) {
@@ -673,6 +687,11 @@ mod net {
             }
             Press::Run(key) => {
                 let Some(it) = tgmenu::find(&key) else { return };
+                // «да» / «нет»: only to a question that is open now (an old button never answers a later question)
+                if matches!(key.as_str(), "yes" | "no") && !super::confirm_open() {
+                    answer_cb(cx.c, cx.token, &cb.id, "Сейчас Jarvis ничего не спрашивает.");
+                    return;
+                }
                 match it.ask {
                     Some(q) => {
                         // the question lives for a minute and can be answered once: an old "Да" never runs anything
@@ -694,6 +713,10 @@ mod net {
                 };
                 answer_cb(cx.c, cx.token, &cb.id, "Выполняю");
                 crate::uistate::log_event("info", &format!("Telegram: подтверждено кнопкой «{}»", it.label));
+                if it.phrase.is_empty() {
+                    local_action(cx, chat, it.key);
+                    return;
+                }
                 let Some(first) = run_phrase(cx, chat, it.phrase, offset, times) else { return };
                 let mut answer = first;
                 // the command asked its own «да / нет»: the button was the answer
@@ -738,6 +761,68 @@ mod net {
                 send_tasks(cx, chat);
             }
             Press::Unknown => answer_cb(cx.c, cx.token, &cb.id, "Эта кнопка устарела."),
+        }
+    }
+
+    // the remote of the phone, from the bot: switched on, off, its link, a new link (each one was confirmed by the owner)
+    fn local_action(cx: &Ctx, chat: i64, key: &str) {
+        let kb = crate::tgmenu::menu_button();
+        match key {
+            "rmon" => {
+                if let Err(e) = crate::remote::start() {
+                    send_kb(cx.c, cx.token, chat, &format!("Не удалось включить пульт: {}", e), &kb);
+                    return;
+                }
+                if let Err(e) = crate::tunnel::enable() {
+                    send_kb(cx.c, cx.token, chat, &format!("Пульт включён в вашей сети, но доступ из любой сети не включился: {}", e), &kb);
+                    return;
+                }
+                crate::uistate::log_event("info", "Telegram: пульт и доступ из любой сети включены владельцем");
+                send_kb(cx.c, cx.token, chat, "Пульт включён. Адрес для доступа из любой сети готовится (в первый раз это до пары минут: скачивается cloudflared). Пришлю ссылку, как только она будет готова.", &kb);
+                // the address comes later: a thread of its own waits for it and sends it (the bot goes on meanwhile)
+                let (token, gen) = (cx.token.to_string(), cx.gen);
+                std::thread::spawn(move || {
+                    let Some(c) = client() else { return };
+                    let t0 = Instant::now();
+                    while t0.elapsed() < Duration::from_secs(300) && alive(gen) {
+                        std::thread::sleep(Duration::from_secs(3));
+                        match crate::tunnel::state() {
+                            crate::tunnel::State::On(_) => {
+                                let link = crate::tunnel::public_link().unwrap_or_default();
+                                send_kb(&c, &token, chat, &format!("🔗 Ссылка пульта из любой сети (в ней секрет, не пересылайте):\n{}", link), &crate::tgmenu::menu_button());
+                                return;
+                            }
+                            crate::tunnel::State::Error(e) => {
+                                send_kb(&c, &token, chat, &format!("Доступ из любой сети не включился: {}", e), &crate::tgmenu::menu_button());
+                                return;
+                            }
+                            _ => {}
+                        }
+                    }
+                });
+            }
+            "rmoff" => {
+                crate::tunnel::disable();
+                crate::remote::stop();
+                crate::uistate::log_event("info", "Telegram: пульт и доступ из любой сети выключены владельцем");
+                send_kb(cx.c, cx.token, chat, "Пульт и доступ из любой сети выключены.", &kb);
+            }
+            "rmlink" => {
+                if !crate::remote::is_running() {
+                    send_kb(cx.c, cx.token, chat, "Пульт выключен. Сначала включите его кнопкой «Включить пульт».", &kb);
+                    return;
+                }
+                let text = match crate::tunnel::public_link() {
+                    Some(link) => format!("🔗 Ссылка пульта из любой сети (в ней секрет, не пересылайте):\n{}", link),
+                    None => format!("🔗 Ссылка пульта в вашей Wi-Fi сети (в ней секрет):\n{}\n\nДля доступа из другой сети включите «Пульт и доступ из любой сети».", crate::remote::url()),
+                };
+                send_kb(cx.c, cx.token, chat, &text, &kb);
+            }
+            "rmnew" => match crate::remote::renew_token() {
+                Ok(_) => send_kb(cx.c, cx.token, chat, "Готово: старая ссылка больше не работает. Новую пришлёт кнопка «Прислать ссылку пульта».", &kb),
+                Err(e) => send_kb(cx.c, cx.token, chat, &format!("Не удалось сделать новую ссылку: {}", e), &kb),
+            },
+            _ => {}
         }
     }
 
@@ -912,12 +997,55 @@ pub fn status_text() -> String {
     lines.push(format!("🔈 Озвучка: {}", on(crate::tts::is_enabled())));
     let tasks = crate::tasks::list().map(|l| l.len().to_string()).unwrap_or_else(|_| "?".into());
     lines.push(format!("📋 Задач: {}", tasks));
-    lines.push(format!("📱 Пульт: {}", if crate::remote::is_running() { "включён" } else { "выключен" }));
+    let ph = crate::remote::phone_json();
+    let phone = if ph["online"] == true {
+        let bat = ph["battery"].as_f64().map(|b| format!(", заряд {}%{}", (b * 100.0).round(), if ph["charging"] == true { " ⚡" } else { "" })).unwrap_or_default();
+        format!("на связи{}", bat)
+    } else if crate::remote::is_running() {
+        "пульт включён, телефон не подключён".to_string()
+    } else {
+        "пульт выключен".to_string()
+    };
+    let tunnel = match crate::tunnel::state() {
+        crate::tunnel::State::On(_) => ", доступ из любой сети включён",
+        crate::tunnel::State::Downloading(_) | crate::tunnel::State::Starting => ", доступ из любой сети запускается",
+        _ => "",
+    };
+    lines.push(format!("📱 Телефон: {}{}", phone, tunnel));
     if let Some(mb) = h["self_mb"].as_f64() {
         lines.push(format!("🧠 Jarvis занимает {} МБ памяти", mb));
     }
     lines.push(format!("🕒 На компьютере сейчас {}", chrono::Local::now().format("%H:%M, %d.%m.%Y")));
     lines.join("\n")
+}
+
+// Jarvis waits for «да / нет» to something (a power command, the recycle bin, the tasks)
+fn confirm_open() -> bool {
+    crate::session::kind().as_deref() == Some("confirm")
+}
+
+// A timer, an alarm or a reminder: the paired owner gets it in the bot too (the user who steers the
+// computer from the phone is not at the screen). Nothing is sent when the bot is off, not paired, or the user switched
+// the alerts off. The text is what the user himself asked Jarvis to say.
+pub fn announce(title: &str, text: &str) {
+    #[cfg(feature = "lua")]
+    {
+        let c = CONFIG.lock().clone();
+        if !c.enabled || c.owner_id == 0 || c.token.is_empty() || c.no_alerts {
+            return;
+        }
+        let body = if text.trim().is_empty() { title.to_string() } else if title.trim().is_empty() { text.to_string() } else { format!("{}: {}", title, text) };
+        let msg = format!("⏰ {}", body);
+        std::thread::spawn(move || {
+            if let Some(cl) = net::client() {
+                net::send_plain(&cl, &c.token, c.owner_id, &msg);
+            }
+        });
+    }
+    #[cfg(not(feature = "lua"))]
+    {
+        let _ = (title, text);
+    }
 }
 
 // Jarvis waits for «да / нет» to a power command (not to something else)
@@ -1404,4 +1532,69 @@ mod tests {
         assert!(!is_power_question(Some("word"), "power:/s:60:0"));
         assert!(!is_power_question(None, ""));
     }
+    // a timer that rang goes to the paired owner in the bot, unless the alerts are switched off
+    #[cfg(feature = "lua")]
+    #[test]
+    fn a_timer_that_rang_is_sent_to_the_owner_unless_switched_off() {
+        use api::*;
+        let _g = TEST_LOCK.lock();
+        let m = serve(vec![]);
+        set_for_tests(Config { enabled: true, token: "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw".into(), owner_id: 77, ..Default::default() });
+        announce("Таймер", "Время вышло: чай готов");
+        wait_for(&m, "sendMessage", 1);
+        let sent: Vec<Value> = m.calls.lock().iter().filter(|c| c.0 == "sendMessage").map(|c| c.1.clone()).collect();
+        assert_eq!(sent.len(), 1, "{:?}", sent);
+        assert_eq!(sent[0]["chat_id"], 77);
+        assert_eq!(sent[0]["text"], "⏰ Таймер: Время вышло: чай готов");
+        // alerts off, not paired, bot off: nothing
+        let before = m.calls.lock().len();
+        set_for_tests(Config { enabled: true, token: "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw".into(), owner_id: 77, no_alerts: true, ..Default::default() });
+        announce("Таймер", "x");
+        set_for_tests(Config { enabled: true, token: "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw".into(), owner_id: 0, ..Default::default() });
+        announce("Таймер", "x");
+        set_for_tests(Config { enabled: false, token: "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw".into(), owner_id: 77, ..Default::default() });
+        announce("Таймер", "x");
+        std::thread::sleep(Duration::from_millis(600));
+        assert_eq!(m.calls.lock().len(), before, "nothing was sent");
+        action(&json!({ "op": "options", "alerts": false }));
+        assert_eq!(json()["alerts"], false);
+        *BASE.lock() = "https://api.telegram.org".into();
+        set_for_tests(Config::default());
+    }
+
+    // the remote of the phone from the bot: every action asks first; «да» / «нет» only answer an open question
+    #[cfg(feature = "lua")]
+    #[test]
+    fn the_phone_remote_buttons_ask_first_and_yes_no_need_an_open_question() {
+        use api::*;
+        let _g = TEST_LOCK.lock();
+        crate::remote::phone_for_tests(false, false);
+        let m = serve(vec![json!({ "ok": true, "result": [cb(1, 77, "m:phone"), cb(2, 77, "y:rmlink"), cb(3, 77, "r:rmlink"), cb(4, 77, "y:rmlink"), cb(5, 77, "r:yes"), cb(6, 77, "a:status")] })]);
+        set_for_tests(Config { enabled: true, token: "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw".into(), owner_id: 77, ..Default::default() });
+        *PENDING.lock() = None;
+        start();
+        wait_for(&m, "sendMessage", 2);
+        wait_for(&m, "answerCallbackQuery", 6);
+        std::thread::sleep(Duration::from_millis(400));
+        stop();
+        let calls = m.calls.lock().clone();
+        let by = |n: &str| calls.iter().filter(|c| c.0 == n).map(|c| c.1.clone()).collect::<Vec<_>>();
+        let edits = by("editMessageText");
+        assert!(edits.iter().any(|e| e["text"].as_str().unwrap().contains("Телефон и пульт")), "{:?}", edits);
+        let answers = by("answerCallbackQuery");
+        // a «Да» with no question asked is stale: the link was not sent
+        assert!(answers.iter().any(|a| a["callback_query_id"] == "cb2" && a["text"].as_str().unwrap().contains("устарело")), "{:?}", answers);
+        // the question for the link, then «Да»: with the remote off the owner is told so, no link is invented
+        assert!(edits.iter().any(|e| e["text"].as_str().unwrap().contains("секрет доступа") && e["reply_markup"].to_string().contains("y:rmlink")), "{:?}", edits);
+        let sent = by("sendMessage");
+        assert!(sent.iter().any(|s| s["text"].as_str().unwrap().contains("Пульт выключен")), "{:?}", sent);
+        assert!(!sent.iter().any(|s| s["text"].as_str().unwrap().contains("?t=")), "no link without the remote");
+        // «Да» as a button with no open question
+        assert!(answers.iter().any(|a| a["callback_query_id"] == "cb5" && a["text"].as_str().unwrap().contains("ничего не спрашивает")), "{:?}", answers);
+        // the status names the phone
+        assert!(sent.iter().any(|s| s["text"].as_str().unwrap().contains("📱 Телефон:")), "{:?}", sent);
+        *BASE.lock() = "https://api.telegram.org".into();
+        set_for_tests(Config::default());
+    }
+
 }

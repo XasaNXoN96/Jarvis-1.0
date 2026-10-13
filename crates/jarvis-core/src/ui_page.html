@@ -794,6 +794,8 @@
           <div class="r"><label class="sw"><input type="checkbox" id="tg-voice-in"><span></span></label></div></div>
         <div class="setrow"><div class="l">Голосовой ответ<small id="tg-reply-hint">бот пришлёт ответ ещё и голосовым сообщением голосом Джарвиса (нужен Piper). По умолчанию выключено</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="tg-voice-reply"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Присылать в бот, когда сработал таймер или напоминание<small>если вы управляете компьютером с телефона или из другой сети, сообщение «⏰ Таймер: время вышло» придёт в Telegram. По умолчанию включено</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="tg-alerts"><span></span></label></div></div>
         <div class="setrow"><div class="l">Разрешить боту присылать снимок экрана<small>команда /screen и кнопка «Снимок экрана». Снимок уходит через серверы Telegram и может показать личное, поэтому по умолчанию выключено; снимок получает только привязанный аккаунт</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="tg-screen"><span></span></label></div></div>
         <div class="setrow"><div class="l">Удалить токен и привязку<small>бот перестанет работать с этим компьютером</small></div>
@@ -2336,14 +2338,14 @@ async function tgLoad() {
     : t.pairing ? 'отправьте боту этот код (осталось ' + Math.ceil(t.pairing.left / 60) + ' мин). Бот должен быть включён'
     : 'нажмите «Получить код» и отправьте его своему боту в течение 10 минут';
   $('#tg-unpair').disabled = !t.paired; $('#tg-pair').disabled = !t.token_saved;
-  $('#tg-voice-in').checked = !!t.voice_in; $('#tg-voice-reply').checked = !!t.voice_reply; $('#tg-screen').checked = !!t.allow_screen;
+  $('#tg-alerts').checked = t.alerts !== false; $('#tg-voice-in').checked = !!t.voice_in; $('#tg-voice-reply').checked = !!t.voice_reply; $('#tg-screen').checked = !!t.allow_screen;
   $('#tg-voice-hint').textContent = t.voice_in_ready ? 'отправьте боту голосовое — оно распознаётся на этом компьютере (аудио нигде не сохраняется) и выполняется как команда'
     : 'в этой версии Jarvis нет модели распознавания речи (Lite): бот ответит, что голос не распознан, и попросит написать текстом';
   $('#tg-reply-hint').textContent = t.voice_reply_ready ? 'бот пришлёт ответ ещё и голосовым сообщением голосом Джарвиса. По умолчанию выключено'
     : 'сейчас недоступно: нужен установленный голос Джарвиса (Piper), голос Windows в файл не записывается';
   if (currentPage === 'settings' && (t.enabled || t.pairing)) tgTimer = setTimeout(tgLoad, 3000);
 }
-for (const [id, key] of [['tg-voice-in', 'voice_in'], ['tg-voice-reply', 'voice_reply'], ['tg-screen', 'allow_screen']])
+for (const [id, key] of [['tg-voice-in', 'voice_in'], ['tg-voice-reply', 'voice_reply'], ['tg-screen', 'allow_screen'], ['tg-alerts', 'alerts']])
   $('#' + id).onchange = async e => { const r = await tgApi({ op: 'options', [key]: e.target.checked }); tgMsg(r.ok, r.message); tgLoad(); };
 $('#tg-token-save').onclick = async () => { const r = await tgApi({ op: 'token', token: $('#tg-token').value }); tgMsg(r.ok, r.message); if (r.ok) $('#tg-token').value = ''; tgLoad(); };
 $('#tg-on').onchange = async e => { const r = await tgApi({ op: 'enable', value: e.target.checked }); tgMsg(r.ok, r.message); tgLoad(); };

@@ -556,6 +556,10 @@ impl Store {
         chat.messages.push(ChatMsg { role: role.into(), content: content.into(), ts: now(), rid: rid.into(), src: src.into(), streaming: false });
         chat.updated = now();
         self.save(&chat);
+        // the phone that asked sees (and hears) the answer
+        if role == "assistant" || role == "error" {
+            crate::remote::announce_answer(content);
+        }
         Some(chat)
     }
 }

@@ -452,6 +452,23 @@ jobs:
             Write-Host "command «закрой блокнот»: Notepad ended"
             $cmdOk = "PASS"
           } catch { $cmdWhy = $_.Exception.Message }
+          # a timer must end with an event: «поставь таймер на 5 секунд» -> after five seconds the notification of Jarvis exists
+          # (kind «timer»; «spoken» says whether the voice was asked to say it — that it is HEARD is not tested here: no sound card)
+          $timerOk = "FAIL"; $timerWhy = ""
+          try {
+            Ask "поставь таймер на 5 секунд" | Out-Null
+            $found = $null
+            for ($i = 0; $i -lt 40 -and -not $found; $i++) {
+              Start-Sleep 1
+              $st2 = Invoke-RestMethod http://127.0.0.1:9714/state -TimeoutSec 5
+              $found = @($st2.notes) | Where-Object { $_.kind -eq "timer" } | Select-Object -First 1
+            }
+            if (-not $found) { throw "no notification of kind timer appeared in 40 s" }
+            $timerOk = "PASS"; $timerWhy = "notification: '$($found.title)' / '$($found.text)', shown=$($found.shown), spoken=$($found.spoken)"
+          } catch { $timerWhy = $_.Exception.Message }
+          Write-Host "TIMER E2E: $timerOk $timerWhy"
+          Add-Content evidence.txt "TIMER E2E (a 5-second timer rings through the real queue): $timerOk $timerWhy"
+          if ($timerOk -ne "PASS") { Write-Output "::warning title=timer e2e::$timerWhy" }
           Write-Host "COMMANDS E2E: $cmdOk $cmdWhy"
           Add-Content evidence.txt "COMMANDS E2E (open and close Notepad through the real queue): $cmdOk $cmdWhy"
           if ($cmdOk -ne "PASS") { Write-Output "::warning title=commands e2e::$cmdWhy" }

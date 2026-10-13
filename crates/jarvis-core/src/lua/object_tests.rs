@@ -655,8 +655,11 @@ fn every_phrase_of_the_telegram_menu_reaches_its_command() {
         ("time", "assistant_info_time"), ("taskread", "assistant_task_read"),
         ("pcsleep", "windows_6"), ("pwoff", "assistant_power_off"), ("pwrestart", "assistant_power_restart"),
         ("pwhib", "assistant_power_hibernate"), ("pwlogoff", "assistant_power_logoff"), ("pwcancel", "assistant_power_cancel"),
+        ("phfind", "assistant_phone_find"), ("phstop", "assistant_phone_stop"),
     ];
-    assert_eq!(want.len(), crate::tgmenu::ITEMS.len(), "a new menu entry needs a line here");
+    // («да» and «нет» go to the question that is open; the entries without a phrase are local actions of the bot)
+    let phrased = crate::tgmenu::ITEMS.iter().filter(|i| !i.phrase.is_empty() && !matches!(i.key, "yes" | "no")).count();
+    assert_eq!(want.len(), phrased, "a new menu entry needs a line here");
     for (key, id) in want {
         let it = crate::tgmenu::find(key).unwrap();
         assert_eq!(w.route(it.phrase).as_deref(), Some(id), "{} «{}»", key, it.phrase);

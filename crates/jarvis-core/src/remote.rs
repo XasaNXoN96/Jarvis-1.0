@@ -159,6 +159,49 @@ pub fn send_to_phone(kind: &str, data: &str) -> Result<String, String> {
     })
 }
 
+// What Jarvis answers and what happens on the computer reaches the phone too: the user who steers the computer from the
+// phone (no microphone on the PC, another room, another network through the tunnel) must not have to look at the PC.
+static LAST_PHONE_CMD: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+// an answer belongs to the phone when its command came from the phone not long ago
+const ANSWER_WINDOW_SECS: u64 = 120;
+
+fn note_phone_command() {
+    LAST_PHONE_CMD.store(now_secs().max(1), Ordering::SeqCst);
+}
+
+fn enqueue(kind: &'static str, data: String) {
+    let now = now_secs();
+    let mut ob = OUTBOX.lock();
+    ob.0 += 1;
+    let id = ob.0;
+    ob.1.push_back(Msg { id, kind, data, at: now });
+    while ob.1.len() > 20 {
+        ob.1.pop_front();
+    }
+}
+
+// an answer of Jarvis to a command of the phone (the text is private: only its size goes to the log)
+pub fn announce_answer(text: &str) {
+    let text = text.trim();
+    if text.is_empty() || !is_running() {
+        return;
+    }
+    let last = LAST_PHONE_CMD.load(Ordering::SeqCst);
+    if last == 0 || now_secs().saturating_sub(last) > ANSWER_WINDOW_SECS {
+        return;
+    }
+    enqueue("say", text.chars().take(1000).collect());
+}
+
+// a timer, an alarm, a reminder, a finished task, an error: always (the moment matters, whoever asked)
+pub fn announce_note(kind: &str, title: &str, text: &str) {
+    if !is_running() {
+        return;
+    }
+    let data = serde_json::json!({ "kind": kind, "title": title.chars().take(120).collect::<String>(), "text": text.chars().take(600).collect::<String>() }).to_string();
+    enqueue("note", data);
+}
+
 fn query_param<'a>(path: &'a str, name: &str) -> Option<&'a str> {
     let query = path.split_once('?')?.1;
     query.split('&').find_map(|kv| kv.split_once('=').filter(|(k, _)| *k == name).map(|(_, v)| v))
@@ -178,7 +221,7 @@ fn poll(after: u64) -> serde_json::Value {
         .iter()
         // a page opened just now gets what is still waiting: a link or a text (up to two minutes), a ring only
         // when it is fresh (an old "find my phone" must not start sounding)
-        .filter(|m| if after == 0 { m.kind != "ring" || now.saturating_sub(m.at) <= 30 } else { m.id > after })
+        .filter(|m| if after == 0 { !matches!(m.kind, "ring" | "say" | "note") || now.saturating_sub(m.at) <= 30 } else { m.id > after })
         .map(|m| serde_json::json!({ "id": m.id, "kind": m.kind, "data": m.data }))
         .collect();
     serde_json::json!({ "last": ob.0, "msgs": msgs })
@@ -880,6 +923,7 @@ fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
             } else if let Some(tx) = TX.get() {
                 // what the user typed on the phone is private: only its size goes to the log
                 info!("Remote control command: {} chars", text.chars().count());
+                note_phone_command();
                 let _ = tx.lock().send(text);
                 respond(stream, "200 OK", "text/plain", "ok");
             } else {
@@ -957,6 +1001,7 @@ const PAGE: &str = r#"<!doctype html>
 <section id="g-voice"><h2>Голос</h2>
   <button id="mic" type="button">🎤 Сказать команду</button>
   <label class="sw"><input type="checkbox" id="cont"> Непрерывный режим (слушать команду за командой)</label>
+  <label class="sw"><input type="checkbox" id="spk" checked> Озвучивать ответы Jarvis на этом телефоне</label>
   <div class="row"><span>Микрофон</span><b id="v-state">выключен</b></div>
   <div id="heard"></div>
   <div class="dim">Речь распознаёт сам браузер телефона (в Chrome — сервис Google через интернет). Компьютер получает только готовый текст команды.</div>
@@ -1026,7 +1071,7 @@ async function poll() {
     else if (r.status === 503) { lost('Пульт выключен на компьютере. Включите его на главной странице Jarvis.'); }
     else if (!r.ok) { lost('Компьютер ответил ошибкой ' + r.status + '.'); }
     else { const j = await r.json(); connected(); for (const m of j.msgs) { if (m.id > shownId || j.last < shownId) { handle(m); shownId = m.id; } } lastId = j.last; if (j.last < shownId) shownId = j.last; }
-  } catch (e) { lost('Компьютер не отвечает: Jarvis закрыт, компьютер спит, пульт выключен или телефон в другой сети (из другой сети — только через VPN, см. окно Jarvis). Повторяю автоматически.' + (lastOk ? ' Последняя связь: ' + hhmm(lastOk) + '.' : '')); }
+  } catch (e) { lost('Компьютер не отвечает: Jarvis закрыт, компьютер спит, пульт выключен или телефон в другой сети. Из другой сети пульт открывается по адресу «Доступ из любой сети» (включается в окне Jarvis или кнопкой в Telegram-боте). Повторяю автоматически.' + (lastOk ? ' Последняя связь: ' + hhmm(lastOk) + '.' : '')); }
   polling = false;
   timer = setTimeout(poll, failures ? Math.min(2000 * (failures + 1), 10000) : 2000);
 }
@@ -1096,8 +1141,22 @@ function card(title, body, buttons) {
   while ($('inbox').children.length > 5) $('inbox').lastChild.remove();
   if (navigator.vibrate) navigator.vibrate(120);
 }
+// the answers and events of the computer are said by the phone itself (its own voice), and always shown as a card
+function speakHere(text) {
+  if (!$('spk').checked || !('speechSynthesis' in window)) return;
+  try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang = /^(en|uk)/i.test(navigator.language || '') ? navigator.language : 'ru-RU'; speechSynthesis.speak(u); } catch (e) {}
+}
+try { $('spk').checked = localStorage.getItem('jarvis_spk') !== '0'; } catch (e) {}
+$('spk').onchange = () => { try { localStorage.setItem('jarvis_spk', $('spk').checked ? '1' : '0'); } catch (e) {} if ($('spk').checked) speakHere('Озвучка на телефоне включена'); else if ('speechSynthesis' in window) speechSynthesis.cancel(); };
 function handle(m) {
-  if (m.kind === 'ring') ring();
+  if (m.kind === 'say') { card('Jarvis', m.data, []); speakHere(m.data); }
+  else if (m.kind === 'note') {
+    let n = {}; try { n = JSON.parse(m.data); } catch (e) { n = { title: 'Jarvis', text: m.data }; }
+    card(n.title || 'Jarvis', n.text || '', []);
+    if (['timer', 'alarm', 'reminder'].includes(n.kind)) { unlockSound(); beep(0); setTimeout(() => beep(1), 450); if (navigator.vibrate) navigator.vibrate([300, 150, 300]); }
+    speakHere((n.title ? n.title + '. ' : '') + (n.text || ''));
+  }
+  else if (m.kind === 'ring') ring();
   else if (m.kind === 'stop') stopRing();
   else if (m.kind === 'link' && /^https?:\/\//i.test(m.data)) card('Ссылка с компьютера', m.data, [['Открыть', () => window.open(m.data, '_blank', 'noopener')], ['Копировать', x => copy(m.data, x)]]);
   else if (m.kind === 'text') card('Текст с компьютера', m.data, [['Копировать', x => copy(m.data, x)]]);
@@ -1377,4 +1436,60 @@ mod tests {
         assert_eq!(phone_json()["online"], false);
         *PHONE.lock() = Phone::default();
     }
+    #[test]
+    fn answers_reach_the_phone_that_asked_and_events_reach_it_always() {
+        let _u = crate::uistate::TEST_LOCK.lock();
+        let _g = PHONE_TEST_LOCK.lock();
+        phone_for_tests(true, true);
+        LAST_PHONE_CMD.store(0, Ordering::SeqCst);
+        // an answer to a command typed on the computer is not sent to the phone
+        announce_answer("четыре");
+        assert!(queued_for_tests().is_empty(), "{:?}", queued_for_tests());
+        // after a command of the phone: the answer goes to it, and the phone page says it
+        note_phone_command();
+        announce_answer("  2 плюс 2 будет четыре  ");
+        assert_eq!(queued_for_tests(), vec![("say".to_string(), "2 плюс 2 будет четыре".to_string())]);
+        // an answer long after that command is not the phone's
+        LAST_PHONE_CMD.store(now_secs() - ANSWER_WINDOW_SECS - 5, Ordering::SeqCst);
+        OUTBOX.lock().1.clear();
+        announce_answer("поздний ответ");
+        assert!(queued_for_tests().is_empty());
+        // through the store of the dialogs: an answer of Jarvis (any source) is announced, a question of the user is not
+        note_phone_command();
+        let dir = tempfile::tempdir().unwrap();
+        let store = crate::ai::Store::new(dir.path().to_path_buf());
+        let chat = store.create();
+        store.append(&chat.id, "user", "сколько будет два плюс два");
+        assert!(queued_for_tests().is_empty(), "the question stays on the computer");
+        store.append(&chat.id, "assistant", "Четыре");
+        assert_eq!(queued_for_tests(), vec![("say".to_string(), "Четыре".to_string())]);
+        // a timer, an alarm and the like: always, whoever asked, with the kind, the title and the text
+        OUTBOX.lock().1.clear();
+        LAST_PHONE_CMD.store(0, Ordering::SeqCst);
+        crate::notify::push("timer", "Таймер", "Время вышло: чай готов", false);
+        let q = queued_for_tests();
+        assert_eq!(q.len(), 1, "{:?}", q);
+        assert_eq!(q[0].0, "note");
+        let v: serde_json::Value = serde_json::from_str(&q[0].1).unwrap();
+        assert_eq!((v["kind"].as_str(), v["title"].as_str(), v["text"].as_str()), (Some("timer"), Some("Таймер"), Some("Время вышло: чай готов")));
+        // nothing is queued when the remote is off
+        phone_for_tests(false, false);
+        announce_note("timer", "Таймер", "x");
+        announce_answer("y");
+        assert!(queued_for_tests().is_empty());
+    }
+
+    #[test]
+    fn a_page_opened_late_does_not_say_old_answers() {
+        let _g = PHONE_TEST_LOCK.lock();
+        phone_for_tests(true, true);
+        enqueue("say", "старый ответ".into());
+        OUTBOX.lock().1.back_mut().unwrap().at = now_secs() - 60;
+        enqueue("note", "{\"kind\":\"timer\",\"title\":\"Таймер\",\"text\":\"свежий\"}".into());
+        let r = poll(0);
+        let kinds: Vec<&str> = r["msgs"].as_array().unwrap().iter().map(|m| m["kind"].as_str().unwrap()).collect();
+        assert_eq!(kinds, ["note"], "a fresh page gets only what happened a moment ago");
+        phone_for_tests(false, false);
+    }
+
 }

@@ -164,6 +164,14 @@ fn deliver(kind: &str, title: &str, text: &str, source: &str, critical: bool, p:
         list.truncate(40);
     }
     if kind != "external" {
+        // the phone and the Telegram bot of the user learn about it too (a timer rang, a task finished, an error)
+        // (the result of a command reaches the phone as the answer to its command, not as one more event)
+        if matches!(kind, "timer" | "alarm" | "reminder" | "important" | "system_error" | "ai_error") {
+            crate::remote::announce_note(kind, &note.title, &note.text);
+        }
+        if matches!(kind, "timer" | "alarm" | "reminder") {
+            crate::telegram::announce(&note.title, &note.text);
+        }
         // the event list of the program (diagnostics) never gets the text of other programs' notifications
         crate::uistate::log_event(if kind.ends_with("error") { "error" } else { "info" }, &format!("Уведомление: {} — {}", note.title, note.text));
     }
