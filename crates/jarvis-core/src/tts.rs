@@ -864,6 +864,57 @@ fn build_ps(way: &PsWay, script: &str, envs: &[(&str, String)]) -> Command {
     command
 }
 
+// Diagnostics: every way of starting PowerShell is tried with a harmless command (exit 0), and the answer of each is
+// reported (the way, ok or the exact refusal). The first way that works becomes the way the voice uses.
+pub fn probe_powershell_ways() -> Vec<(String, Result<(), String>)> {
+    #[cfg(target_os = "windows")]
+    {
+        let mut out = Vec::new();
+        let mut first_ok: Option<usize> = None;
+        for (i, way) in PS_WAYS.iter().enumerate() {
+            let r = match build_ps(way, "exit 0", &[]).spawn() {
+                Err(e) => Err(e.to_string()),
+                Ok(mut child) => {
+                    let t0 = std::time::Instant::now();
+                    loop {
+                        match child.try_wait() {
+                            Ok(Some(st)) if st.success() => break Ok(()),
+                            Ok(Some(st)) => break Err(format!("PowerShell завершился с кодом {}", st.code().unwrap_or(-1))),
+                            Ok(None) if t0.elapsed() > std::time::Duration::from_secs(15) => {
+                                let _ = child.kill();
+                                break Err("PowerShell не ответил за 15 секунд".to_string());
+                            }
+                            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
+                            Err(e) => break Err(e.to_string()),
+                        }
+                    }
+                }
+            };
+            if r.is_ok() && first_ok.is_none() {
+                first_ok = Some(i);
+            }
+            out.push((PS_WAYS[i].name.to_string(), r));
+        }
+        if let Some(i) = first_ok {
+            PS_WAY.store(i, std::sync::atomic::Ordering::SeqCst);
+        }
+        out
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Vec::new()
+    }
+}
+
+// which voice file Piper takes for the language, and whether it is a voice OF that language
+// (without one of its own Piper falls back to any voice it has: a Russian phrase read by an English voice is nonsense)
+pub fn piper_voice_info() -> Option<(String, bool)> {
+    let lang = tts_lang();
+    let (_, model) = piper_voice(&lang)?;
+    let file = model.file_name()?.to_string_lossy().to_string();
+    Some((file.clone(), file == format!("{}.onnx", lang)))
+}
+
 fn spawn_powershell(script: &str, envs: &[(&str, String)]) -> Result<Child, String> {
     use std::sync::atomic::Ordering::SeqCst;
     let first = PS_WAY.load(SeqCst).min(PS_WAYS.len() - 1);

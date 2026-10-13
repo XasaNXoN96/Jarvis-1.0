@@ -169,6 +169,44 @@ pub fn windows_voice_check(selected: bool, tts_on: bool, last: Option<(u64, Resu
     }
 }
 
+// the ways of starting PowerShell for the Windows voice, each with its own answer
+pub fn powershell_check(ways: &[(String, Result<(), String>)]) -> Check {
+    let (name, key) = ("Запуск PowerShell (голос Windows)", "powershell");
+    if ways.is_empty() {
+        return check(key, name, Status::Unchecked, "Проверка только для Windows.", "");
+    }
+    let failed: Vec<String> = ways.iter().filter_map(|(w, r)| r.as_ref().err().map(|e| format!("«{}»: {}", w, e))).collect();
+    let working: Vec<&str> = ways.iter().filter(|(_, r)| r.is_ok()).map(|(w, _)| w.as_str()).collect();
+    if failed.is_empty() {
+        return check(key, name, Status::Ok, format!("PowerShell запускается всеми {} способами Jarvis.", ways.len()), "");
+    }
+    if working.is_empty() {
+        return check(key, name, Status::Error, format!("PowerShell не запускается ни одним способом. Отказы: {}.", failed.join("; ")), "Голос Windows не заработает. Выберите голос Jarvis (Piper): Настройки → Голос → «Автоматически». Проверьте, не блокирует ли PowerShell антивирус или политика (AppLocker).");
+    }
+    let first_ok = ways.first().map(|(_, r)| r.is_ok()).unwrap_or(false);
+    check(
+        key,
+        name,
+        if first_ok { Status::Ok } else { Status::Warn },
+        format!("Работает способ «{}». Отказали: {}.", working[0], failed.join("; ")),
+        if first_ok { "" } else { "Jarvis пользуется рабочим способом сам; если голос Windows всё равно молчит — выберите голос Jarvis (Piper)." },
+    )
+}
+
+// the voice of Piper must be a voice of the language of Jarvis
+pub fn piper_language_check(lang: &str, voice: Option<(String, bool)>) -> Option<Check> {
+    match voice {
+        Some((file, false)) => Some(check(
+            "piper_lang",
+            "Язык голоса Piper",
+            Status::Warn,
+            format!("Для языка «{}» нет своего голоса, Piper берёт «{}»: речь будет произноситься неверно (русские слова — английским голосом).", lang, file),
+            "Настройки → Голос → «Установить голос Джарвиса» (нужен голос вашего языка) или смените язык Jarvis.",
+        )),
+        _ => None,
+    }
+}
+
 // which program this is: the commit it was built from, and where it lies (a report of a problem must name the build)
 pub fn build_check() -> Check {
     let exe = std::env::current_exe().ok();
@@ -554,6 +592,8 @@ pub fn run() -> Vec<Check> {
     let piper = piper_check_play(crate::tts::is_enabled(), crate::uistate::voice_name().starts_with("win:"), test, crate::tts::last_synth(), crate::tts::last_play_for(crate::tts::Engine::Piper));
     let windows_voice = windows_voice_check(crate::uistate::voice_name().starts_with("win:"), crate::tts::is_enabled(), crate::tts::last_play_for(crate::tts::Engine::Windows));
     let build = build_check();
+    let powershell = powershell_check(&crate::tts::probe_powershell_ways());
+    let piper_lang = piper_language_check(&crate::i18n::get_language(), crate::tts::piper_voice_info());
     let ai_status = crate::ai::status_json();
     let ai = ai_check(crate::uistate::settings().ai_enabled, &ai_status);
     let latency = latency_check(ai_status.get("timing").filter(|t| !t.is_null()));
@@ -561,7 +601,12 @@ pub fn run() -> Vec<Check> {
     let remote = measure_remote();
     let st = crate::uistate::stats();
     let monitor = monitor_check(st.mem_total_gb, st.cpu, st.disk_total_gb);
-    let checks = vec![build, mic, audio, piper, windows_voice, ai, latency, internet, remote, measure_tunnel(), measure_telegram(), measure_notify(), monitor, measure_resources(), measure_syscmds(), measure_lifecycle()];
+    let mut checks = vec![build, mic, audio, piper, windows_voice, powershell, ai, latency, internet, remote, measure_tunnel(), measure_telegram(), measure_notify(), monitor, measure_resources(), measure_syscmds(), measure_lifecycle()];
+    if let Some(c) = piper_lang {
+        // (right after the card of Piper)
+        let at = checks.iter().position(|c| c.key == "piper").map(|i| i + 1).unwrap_or(checks.len());
+        checks.insert(at, c);
+    }
     *LAST.lock() = Some(Run { at: now(), checks: checks.clone(), os: os_version() });
     checks
 }

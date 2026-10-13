@@ -294,7 +294,9 @@ jobs:
           $rep = if (Test-Path $st) { (Get-Content $st -Raw -Encoding UTF8).Trim() } else { "no report (exit code $($sp.ExitCode))" }
           Write-Host "SPEECH E2E: $rep"
           Add-Content evidence.txt "SPEECH E2E (Piper -> Opus voice message -> Vosk): $rep"
-          if ($rep -notlike "OK*") { Write-Output "::warning title=speech e2e::$rep" }
+          # a hard check: the Russian voice must be the one that speaks, and Vosk must understand the phrase of Jarvis's own voice
+          # (through the Opus voice message and without it)
+          if ($rep -notlike "OK voice ru.onnx*" -or $rep -notlike "*heard: *джарвис*музык**without the codec: *джарвис*музык*") { Write-Output "::error title=speech e2e::$rep"; throw "the speech chain Piper -> Opus -> Vosk failed: $rep" }
           # the secrets of the user (the Telegram token, the phone link) must go with the program; the rest stays
           $data = Join-Path $env:APPDATA "com.priler.jarvis"
           New-Item -ItemType Directory -Force -Path $data | Out-Null

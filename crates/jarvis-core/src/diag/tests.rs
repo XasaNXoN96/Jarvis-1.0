@@ -178,3 +178,29 @@ fn the_new_checks_hold_no_token_and_no_message_text() {
     let all = format!("{} {} {}", t.detail, t.fix, notify_check(true, "on", "").detail);
     assert!(!all.contains("AAH") && !all.contains("dpapi"));
 }
+
+#[test]
+fn powershell_is_judged_by_every_way_with_its_own_refusal() {
+    let ok = |n: &str| (n.to_string(), Ok(()));
+    let bad = |n: &str, e: &str| (n.to_string(), Err(e.to_string()));
+    assert_eq!(powershell_check(&[]).status, Status::Unchecked);
+    assert_eq!(powershell_check(&[ok("a"), ok("b")]).status, Status::Ok);
+    // the way Jarvis uses first refuses, another works: a warning that names the refusal (the exact text of the user's screenshot)
+    let w = powershell_check(&[bad("powershell", "Такой запрос не поддерживается. (os error 50)"), ok("полный путь")]);
+    assert_eq!(w.status, Status::Warn);
+    assert!(w.detail.contains("os error 50") && w.detail.contains("полный путь"), "{}", w.detail);
+    // none works: an error with every refusal and a way out
+    let e = powershell_check(&[bad("a", "os error 50"), bad("b", "os error 5")]);
+    assert_eq!(e.status, Status::Error);
+    assert!(e.detail.contains("os error 50") && e.detail.contains("os error 5") && e.fix.contains("Piper"), "{} / {}", e.detail, e.fix);
+}
+
+#[test]
+fn a_russian_phrase_must_not_be_read_by_an_english_voice() {
+    // the voice of another language than Jarvis's: a warning (this was the «nonsense» of the first speech tests)
+    let c = piper_language_check("ru", Some(("en.onnx".into(), false))).unwrap();
+    assert_eq!(c.status, Status::Warn);
+    assert!(c.detail.contains("en.onnx") && c.detail.contains("ru"), "{}", c.detail);
+    assert!(piper_language_check("ru", Some(("ru.onnx".into(), true))).is_none());
+    assert!(piper_language_check("ru", None).is_none(), "no Piper: the card of Piper says so");
+}
