@@ -5,9 +5,21 @@ use std::path::PathBuf;
 
 use std::process::Command;
 
+// The path comes from the page of the old interface: it must be a full path of something that exists, with nothing
+// that explorer would read as a switch (a leading «/» of an option) or that breaks a command line. This crate is not part of
+// the shipped build (the window of the program is jarvis-app); the check keeps it safe if it is ever used again.
+fn path_is_safe(path: &str) -> bool {
+  let p = std::path::Path::new(path);
+  // (on Windows a path is absolute only with a drive or a share: «/select» and «\\?\GLOBALROOT» style switches are not)
+  p.is_absolute() && p.exists() && !path.chars().any(|c| c.is_control() || c == '"')
+}
+
 // taken from https://github.com/tauri-apps/tauri/issues/4062#issuecomment-1338048169
 #[tauri::command]
 pub fn show_in_folder(path: String) {
+  if !path_is_safe(&path) {
+    return;
+  }
   #[cfg(target_os = "windows")]
   {
     Command::new("explorer")
@@ -48,5 +60,19 @@ pub fn show_in_folder(path: String) {
         .args(["-R", &path])
         .spawn()
         .unwrap();
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::path_is_safe;
+
+  #[test]
+  fn only_a_full_path_of_something_that_exists_is_shown() {
+    let here = std::env::current_dir().unwrap();
+    assert!(path_is_safe(&here.to_string_lossy()));
+    for bad in ["", "relative/file.txt", "/select,evil", "..\\..\\x", "C:\\nonexistent-dir-xyz\\a.txt", "x\"y", "a\nb"] {
+      assert!(!path_is_safe(bad), "{:?}", bad);
+    }
   }
 }

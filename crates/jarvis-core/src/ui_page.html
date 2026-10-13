@@ -124,6 +124,24 @@
   #page-home { padding: 14px 22px 16px; overflow: hidden; align-items: stretch; }
   .h-top { display: flex; align-items: center; gap: 14px; flex-shrink: 0; position: relative; z-index: 3; }
   .h-top .grow { flex: 1; }
+  /* compact summary of the computer, the AI and the phone remote on the home page: the same data as «Система», collapsed by default */
+  .h-sum { flex-shrink: 0; position: relative; z-index: 3; margin: 4px 0 2px; }
+  .hs-chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%; background: none; border: 0; padding: 0; cursor: pointer; font: inherit; color: inherit; text-align: left; }
+  .hs-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 999px; font-size: 12px; background: rgba(255,255,255,.03); white-space: nowrap; }
+  .hs-chip i { width: 8px; height: 8px; border-radius: 50%; background: #6b7280; flex-shrink: 0; }
+  .hs-chip[data-s="ok"] i { background: #34d399; } .hs-chip[data-s="warn"] i { background: #fbbf24; } .hs-chip[data-s="bad"] i { background: #f87171; } .hs-chip[data-s="info"] i { background: #60a5fa; }
+  .hs-chip b { font-weight: 600; } .hs-chip em { font-style: normal; opacity: .75; }
+  .hs-car { margin-left: auto; opacity: .6; font-size: 12px; transition: transform .15s; }
+  .h-sum[data-open="1"] .hs-car { transform: rotate(180deg); }
+  .hs-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 6px; }
+  .hs-cards[hidden] { display: none; }
+  .hs-card { border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 10px; padding: 8px 10px; background: rgba(255,255,255,.03); font-size: 12px; min-width: 0; }
+  .hs-card h4 { margin: 0 0 4px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .hs-card h4 i { width: 8px; height: 8px; border-radius: 50%; background: #6b7280; } .hs-card[data-s="ok"] h4 i { background: #34d399; } .hs-card[data-s="warn"] h4 i { background: #fbbf24; } .hs-card[data-s="bad"] h4 i { background: #f87171; } .hs-card[data-s="info"] h4 i { background: #60a5fa; }
+  .hs-card .l { display: flex; justify-content: space-between; gap: 8px; line-height: 1.5; } .hs-card .l span { opacity: .7; } .hs-card .l b { font-weight: 500; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hs-card .go { margin-top: 4px; font-size: 12px; padding: 2px 8px; }
+  @media (max-width: 760px) { .hs-cards { grid-template-columns: 1fr; } }
+  @media (max-height: 780px) { .hs-cards { display: none !important; } .hs-car { display: none; } }
   .clockbox { text-align: right; line-height: 1.15; } .clk { font-size: 22px; font-weight: 300; letter-spacing: .06em; color: var(--text); font-variant-numeric: tabular-nums; }
   .clk-date { color: var(--dim); font-size: 12px; text-transform: capitalize; }
   .wbox { display: flex; flex-direction: column; align-items: flex-end; border: 0; background: transparent; color: var(--text); padding: 2px 4px; font: inherit; cursor: pointer; text-align: right; line-height: 1.2; }
@@ -496,6 +514,29 @@
         <span class="grow"></span>
         <button type="button" class="wbox" id="wbox" title="Погода: выберите город в настройках"><span class="w-main" id="w-main">Погода…</span><small id="w-city"></small></button>
         <div class="clockbox" title="Время и дата берутся с этого компьютера"><div class="clk" id="clk-time">--:--</div><div class="clk-date" id="clk-date"></div></div>
+      </div>
+      <div class="h-sum" id="h-sum" data-open="0">
+        <button type="button" class="hs-chips" id="hs-toggle" aria-expanded="false" aria-controls="hs-cards" title="Сводка: компьютер, ИИ, телефон. Нажмите, чтобы развернуть">
+          <span class="hs-chip" id="hs-pc" data-s=""><i></i><b>ПК</b><em>…</em></span>
+          <span class="hs-chip" id="hs-ai" data-s=""><i></i><b>ИИ</b><em>…</em></span>
+          <span class="hs-chip" id="hs-ph" data-s=""><i></i><b>Телефон</b><em>…</em></span>
+          <span class="hs-car" aria-hidden="true">▾</span>
+        </button>
+        <div class="hs-cards" id="hs-cards" hidden>
+          <div class="hs-card" id="hsc-pc" data-s=""><h4><i></i>Система</h4>
+            <div class="l"><span>Процессор</span><b id="hsc-cpu">—</b></div><div class="l"><span>Память</span><b id="hsc-ram">—</b></div>
+            <div class="l"><span>Диск</span><b id="hsc-disk">—</b></div><div class="l"><span>Температура</span><b id="hsc-temp">—</b></div>
+            <div class="l"><span>Состояние</span><b id="hsc-pcs">—</b></div>
+            <button type="button" class="btn small go" data-go="system">Подробнее</button></div>
+          <div class="hs-card" id="hsc-ai" data-s=""><h4><i></i>Подключение ИИ</h4>
+            <div class="l"><span>Провайдер</span><b id="hsc-prov">—</b></div><div class="l"><span>Модель</span><b id="hsc-mod">—</b></div>
+            <div class="l"><span>Состояние</span><b id="hsc-ais">—</b></div><div class="l" id="hsc-aid-row" hidden><span>Сообщение</span><b id="hsc-aid"></b></div>
+            <button type="button" class="btn small go" data-go="settings-ai">Настройки ИИ</button> <button type="button" class="btn small go" data-go="diag">Диагностика</button></div>
+          <div class="hs-card" id="hsc-ph" data-s=""><h4><i></i>Пульт телефона</h4>
+            <div class="l"><span>Пульт</span><b id="hsc-rm">—</b></div><div class="l"><span>Телефон</span><b id="hsc-phs">—</b></div>
+            <div class="l"><span>Из любой сети</span><b id="hsc-net">—</b></div>
+            <button type="button" class="btn small go" data-go="system-remote">Подключить / QR</button></div>
+        </div>
       </div>
       <div class="hero">
         <div class="orbwrap"><canvas id="orb" width="900" height="900" title="Нажмите: Джарвис начнёт слушать"></canvas></div>
@@ -1409,6 +1450,53 @@ function healthCard(h) {
   if (h.self_mb != null) $('#perf-mem').textContent = h.self_mb + ' МБ';
   const pc = h.pc_status || 'N/A'; $('#hl-pc').innerHTML = '<span class="pill ' + (pc === 'OK' ? 'ok' : 'warn') + '">' + esc(pc) + '</span>';
 }
+// ---------- the compact summary on the home page: the same state as the «Система» cards, nothing of its own ----------
+function homeSummary(s) {
+  const set = (id, st, text) => { const c = $('#hs-' + id); c.dataset.s = st; c.querySelector('em').textContent = text; const k = $('#hsc-' + id); if (k) k.dataset.s = st; };
+  // computer
+  const h = s.health;
+  if (!h) { set('pc', '', 'нет данных'); }
+  else {
+    const hot = (h.cpu || 0) >= 90 || (h.ram_pct || 0) >= 90 || (h.disk_pct || 0) >= 90 || (h.temperature != null && h.temperature >= 85);
+    const ok = (h.pc_status || '') === 'OK' && !hot;
+    set('pc', ok ? 'ok' : hot ? 'bad' : 'warn', (h.cpu == null ? 'ЦП —' : 'ЦП ' + Math.round(h.cpu) + '%') + ' · ОЗУ ' + (h.ram_total ? Math.round(h.ram_pct) + '%' : '—') + (h.disk_pct != null && h.disk_pct >= 90 ? ' · диск почти полон' : ''));
+    $('#hsc-cpu').textContent = h.cpu == null ? 'N/A' : Math.round(h.cpu) + '%';
+    $('#hsc-ram').textContent = h.ram_total ? Math.round(h.ram_pct) + '% · ' + h.ram_used.toFixed(1) + ' / ' + h.ram_total.toFixed(0) + ' ГБ' : 'N/A';
+    $('#hsc-disk').textContent = h.disk_pct == null ? 'N/A' : Math.round(h.disk_pct) + '% · своб. ' + h.disk_free.toFixed(0) + ' ГБ';
+    $('#hsc-temp').textContent = h.temperature == null ? 'нет данных' : h.temperature.toFixed(0) + ' °C';
+    $('#hsc-pcs').textContent = ok ? 'в порядке' : hot ? 'перегрузка' : (h.pc_status || 'N/A');
+  }
+  // AI
+  const a = s.ai;
+  if (!a || !a.configured) { set('ai', '', 'не настроен'); $('#hsc-ais').textContent = 'не настроен'; }
+  else {
+    const m = { CONNECTED: ['ok', 'подключён'], ERROR: ['bad', 'ошибка'], CHECKING: ['info', 'проверка…'], DISCONNECTED: ['', 'отключён'] }[a.state] || ['', a.state];
+    set('ai', m[0], m[1]); $('#hsc-ais').textContent = m[1];
+  }
+  $('#hsc-prov').textContent = a && a.provider ? a.provider : 'не выбран'; $('#hsc-mod').textContent = a && a.model ? a.model : '—';
+  const bad = a && a.state === 'ERROR' && a.detail; $('#hsc-aid-row').hidden = !bad; $('#hsc-aid').textContent = bad ? a.detail : ''; if (bad) $('#hsc-aid').title = a.detail;
+  // phone remote
+  const p = s.phone || {}, on = !!s.remote;
+  if (!on) set('ph', '', 'пульт выключен');
+  else if (p.online) set('ph', 'ok', 'на связи');
+  else if (p.last_seen) set('ph', 'warn', 'нет связи');
+  else set('ph', '', 'ждёт подключения');
+  $('#hsc-rm').textContent = on ? 'включён' : 'выключен';
+  $('#hsc-phs').textContent = !on ? '—' : p.online ? 'на связи' : p.last_seen ? 'нет связи' : 'не подключён';
+  $('#hsc-net').textContent = !on ? '—' : (s.tunnel && s.tunnel.state === 'on') || ($('#net-switch') && $('#net-switch').checked) ? 'включён' : 'выключен';
+}
+(function () {
+  const box = $('#h-sum'), btn = $('#hs-toggle'), cards = $('#hs-cards');
+  const open = v => { box.dataset.open = v ? '1' : '0'; cards.hidden = !v; btn.setAttribute('aria-expanded', v ? 'true' : 'false'); try { localStorage.setItem('jarvis.hsum', v ? '1' : '0'); } catch (e) {} };
+  try { if (localStorage.getItem('jarvis.hsum') === '1') open(true); } catch (e) {}
+  btn.onclick = () => open(cards.hidden);
+  for (const b of cards.querySelectorAll('[data-go]')) b.onclick = () => {
+    const g = b.dataset.go;
+    if (g === 'settings-ai') $('#ai-settings').click();
+    else if (g === 'system-remote') { show('system'); setTimeout(() => { const el = $('#card-remote'); if (el) el.scrollIntoView({ block: 'center' }); }, 120); }
+    else show(g);
+  };
+})();
 const AI_PILL = { CONNECTED: 'ok', DISCONNECTED: '', ERROR: 'bad', CHECKING: 'info' };
 function aiCard(a) {
   if (!a) return;
@@ -1462,7 +1550,7 @@ function applyState(s) {
   applyVoice(s); voiceChip(s.voice_state); healthCard(s.health); aiCard(s.ai);
   timers = s.timers || []; timersAt = performance.now(); if (currentPage === 'commands') { renderTimers(); commandActions(s.actions); }
   if (currentPage === 'settings') notesList(s.notes);
-  weatherBox(s.weather); remoteCard(s); phoneCard(s.phone); msgBadge();
+  weatherBox(s.weather); remoteCard(s); phoneCard(s.phone); homeSummary(s); msgBadge();
 }
 
 // ---------- panel: computer state, timers, log, modules ----------
