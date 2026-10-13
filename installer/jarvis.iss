@@ -7,9 +7,20 @@
 ; the texts of Jarvis (tasks, shortcuts, the last page) from [CustomMessages] below. The language of the
 ; installer does not change the language of Jarvis itself (that is a setting of the program).
 
+#ifndef BuildSha
+#define BuildSha "local"
+#endif
+#ifndef BuildDate
+#define BuildDate "-"
+#endif
+
 [Setup]
 AppName=Jarvis
 AppVersion=0.1.0
+; the commit and the date are shown in the title of the installer and in "Apps" of Windows: an old build is easy to tell
+AppVerName=Jarvis 0.1.0 (build {#BuildSha}, {#BuildDate})
+VersionInfoVersion=0.1.0.0
+VersionInfoDescription=Jarvis installer, build {#BuildSha}
 AppPublisher=Jarvis
 DefaultDirName={localappdata}\Programs\Jarvis
 DefaultGroupName=Jarvis

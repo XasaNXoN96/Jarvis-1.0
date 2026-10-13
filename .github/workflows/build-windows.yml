@@ -76,7 +76,7 @@ jobs:
         run: |
           choco install innosetup -y --no-progress
           New-Item -ItemType Directory -Force dist | Out-Null
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DSrcDir=build\Jarvis /DOutName=Jarvis-Setup-Lite installer\jarvis.iss 2>&1 | Tee-Object -FilePath iscc-lite.log
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DSrcDir=build\Jarvis /DOutName=Jarvis-Setup-Lite /DBuildSha=$($env:GITHUB_SHA.Substring(0,7)) /DBuildDate=$(Get-Date -Format 'yyyy-MM-dd') installer\jarvis.iss 2>&1 | Tee-Object -FilePath iscc-lite.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # Full installer: adds the Piper neural voice (offline). Change the voice names to switch voices:
@@ -151,7 +151,7 @@ jobs:
         if: steps.piper.outcome == 'success'
         shell: pwsh
         run: |
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DSrcDir=build\JarvisFull /DOutName=Jarvis-Setup installer\jarvis.iss 2>&1 | Tee-Object -FilePath iscc-full.log
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DSrcDir=build\JarvisFull /DOutName=Jarvis-Setup /DBuildSha=$($env:GITHUB_SHA.Substring(0,7)) /DBuildDate=$(Get-Date -Format 'yyyy-MM-dd') installer\jarvis.iss 2>&1 | Tee-Object -FilePath iscc-full.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Without Piper the lite installer is the only one
