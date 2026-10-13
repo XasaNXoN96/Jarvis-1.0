@@ -93,6 +93,17 @@ jobs:
           Copy-Item build\Jarvis build\JarvisFull -Recurse
           $piper = "build\JarvisFull\piper"
           Invoke-WebRequest "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_windows_amd64.zip" -OutFile piper.zip
+          # the archive is unpacked only when it is exactly the release the program pins (the same value as in voice_install.rs),
+          # and only when every name stays under piper/
+          $pinned = "f3c58906402b24f3a96d92145f58acba6d86c9b5db896d207f78dc80811efcea"
+          if ((Get-FileHash piper.zip -Algorithm SHA256).Hash.ToLower() -ne $pinned) { throw "piper.zip does not match the pinned SHA-256" }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $pz = [System.IO.Compression.ZipFile]::OpenRead("$PWD\piper.zip")
+          foreach ($e in $pz.Entries) {
+            $n = $e.FullName.Replace("\", "/")
+            if ($n.StartsWith("/") -or $n.Contains("..") -or $n.Contains(":") -or -not $n.StartsWith("piper/")) { $pz.Dispose(); throw "piper.zip: unsafe name $n" }
+          }
+          $pz.Dispose()
           Expand-Archive piper.zip -DestinationPath build\JarvisFull
           New-Item -ItemType Directory -Force "$piper\voices" | Out-Null
           foreach ($pair in @(@("ru", $env:PIPER_RU_VOICE), @("en", $env:PIPER_EN_VOICE))) {
@@ -102,6 +113,12 @@ jobs:
             $base = "https://huggingface.co/rhasspy/piper-voices/resolve/main/$($parts[0].Split('_')[0])/$($parts[0])/$($parts[1])/$($parts[2])/$name"
             Invoke-WebRequest "$base.onnx" -OutFile "$piper\voices\$lang.onnx"
             Invoke-WebRequest "$base.onnx.json" -OutFile "$piper\voices\$lang.onnx.json"
+            # NOT a verification: the voices come from a branch that changes and no trusted hash is pinned for them yet.
+            # The values are printed so that they can be compared with the voices repository page and then pinned
+            # (VOICE_PINS in voice_install.rs, docs/SECURITY-DOWNLOADS.md).
+            foreach ($f in @("$piper\voices\$lang.onnx", "$piper\voices\$lang.onnx.json")) {
+              Write-Host ("VOICE PIN CANDIDATE (unverified): " + (Split-Path $f -Leaf) + " " + (Get-FileHash $f -Algorithm SHA256).Hash.ToLower())
+            }
             # model card with the voice license: keep it next to the voice and show it in the log
             try {
               $card = "https://huggingface.co/rhasspy/piper-voices/raw/main/$($parts[0].Split('_')[0])/$($parts[0])/$($parts[1])/MODEL_CARD"
@@ -125,6 +142,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $ProgressPreference = "SilentlyContinue"
           Invoke-WebRequest "https://github.com/${{ github.repository }}/releases/download/v0.1/jarvis-master.zip" -OutFile models.zip
+          Write-Host ("VOSK ARCHIVE SHA-256 (unverified, from the own release v0.1): " + (Get-FileHash models.zip -Algorithm SHA256).Hash.ToLower())
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $zip = [System.IO.Compression.ZipFile]::OpenRead("$PWD\models.zip")
           $dstRoot = "$PWD\build\JarvisFull\resources\vosk"
@@ -135,6 +153,8 @@ jobs:
             foreach ($entry in $zip.Entries) {
               if ($entry.FullName.StartsWith($prefix) -and $entry.Name -ne "") {
                 $target = Join-Path $dstRoot $entry.FullName.Substring("jarvis-master/resources/vosk/".Length)
+                # a name with .. must not leave the folder of the models
+                if (-not [System.IO.Path]::GetFullPath($target).StartsWith([System.IO.Path]::GetFullPath($dstRoot) + "\")) { throw "unsafe name in the archive: $($entry.FullName)" }
                 New-Item -ItemType Directory -Force (Split-Path $target) | Out-Null
                 [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $target, $true)
                 $count++
@@ -524,6 +544,26 @@ jobs:
           Write-Host "UI AUTH: $uiAuth $uiWhy"
           Add-Content evidence.txt "UI AUTH (the window server needs its secret): $uiAuth $uiWhy"
           if ($uiAuth -ne "PASS") { Write-Output "::warning title=ui auth::$uiWhy" }
+          # the data folder (keys, the secrets of the window and of the phone remote, the dialogs) is for its user alone:
+          # read back by the system tool, not by Jarvis. Informational: the access list of the program folder as installed.
+          $aclOk = "FAIL"; $aclWhy = ""
+          try {
+            $dd = Join-Path $env:APPDATA 'com.priler.jarvis'
+            $txt = (icacls $dd | Out-String)
+            foreach ($bad in @("Everyone", "BUILTIN\Users", "Authenticated Users")) { if ($txt.Contains($bad)) { throw "$bad is in the access list of the data folder" } }
+            if ($txt.Contains("(I)")) { throw "the data folder inherits access from its parent" }
+            foreach ($f in @("ui_token", "remote_token")) {
+              $p = Join-Path $dd $f
+              if (Test-Path $p) { $t2 = (icacls $p | Out-String); foreach ($bad in @("Everyone", "BUILTIN\Users", "Authenticated Users")) { if ($t2.Contains($bad)) { throw "$bad can read $f" } } }
+            }
+            if (-not (Test-Path (Join-Path $dd 'ui_token'))) { throw "no ui_token file to check" }
+            $aclOk = "PASS"
+          } catch { $aclWhy = $_.Exception.Message }
+          Write-Host "DATA ACL: $aclOk $aclWhy"
+          Add-Content evidence.txt "DATA ACL (the data folder is for its user, SYSTEM and Administrators only): $aclOk $aclWhy"
+          if ($aclOk -ne "PASS") { Write-Output "::warning title=data acl::$aclWhy" }
+          $inst = (icacls "C:\JarvisSmoke" | Out-String) -replace "\s+", " "
+          Add-Content evidence.txt "INSTALL FOLDER ACL (informational, admin install into C:\JarvisSmoke): $inst"
           # real commands of the installed Jarvis (the queue shared by the window, the voice, the phone and Telegram):
           # «открой блокнот» starts Notepad, «закрой блокнот» ends it
           $cmdOk = "FAIL"; $cmdWhy = ""

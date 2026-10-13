@@ -484,7 +484,7 @@ mod net {
         reqwest::blocking::Client::builder().connect_timeout(Duration::from_secs(10)).timeout(Duration::from_secs(40)).build().ok()
     }
 
-    fn call(c: &reqwest::blocking::Client, token: &str, method: &str, body: &Value) -> Result<Value, String> {
+    pub(super) fn call(c: &reqwest::blocking::Client, token: &str, method: &str, body: &Value) -> Result<Value, String> {
         let url = format!("{}/bot{}/{}", BASE.lock(), token, method);
         // (the address holds the token: errors are reported without it)
         let resp = c.post(url).json(body).send().map_err(|e| if e.is_timeout() { "нет ответа от Telegram".to_string() } else if e.is_connect() { "нет связи с api.telegram.org".to_string() } else { "ошибка сети".to_string() })?;
@@ -555,7 +555,7 @@ mod net {
     }
 
     // the file of a voice message (kept in memory; the address holds the token, so errors never show it)
-    fn download(c: &reqwest::blocking::Client, token: &str, file_id: &str) -> Result<Vec<u8>, String> {
+    pub(super) fn download(c: &reqwest::blocking::Client, token: &str, file_id: &str) -> Result<Vec<u8>, String> {
         let info = call(c, token, "getFile", &json!({ "file_id": file_id }))?;
         let path = info["result"]["file_path"].as_str().ok_or("Telegram не отдал файл")?;
         if path.is_empty() || path.len() > 200 || path.contains("..") || !path.chars().all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '/' | '.' | '_' | '-')) {
@@ -1656,4 +1656,40 @@ mod tests {
         assert_eq!(got[0].text, "спящий режим");
     }
 
+
+    // the address of every Bot API call holds the token: whatever goes wrong, the text of the error never shows it
+    #[cfg(feature = "lua")]
+    #[test]
+    fn no_error_of_the_bot_shows_its_token() {
+        use std::io::{Read, Write};
+        let _g = TEST_LOCK.lock();
+        let token = "123456789:AAFakeSecretTokenValue_1234567890abc";
+        let secret_part = "AAFakeSecretTokenValue_1234567890abc";
+        let c = net::client().unwrap();
+        // 1. nobody listens
+        let port = { let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap(); l.local_addr().unwrap().port() };
+        *BASE.lock() = format!("http://127.0.0.1:{}", port);
+        let mut errors = vec![net::call(&c, token, "getMe", &json!({})).unwrap_err(), net::download(&c, token, "f").unwrap_err()];
+        // 2. a server that answers with garbage, with an error and with an address in the body
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        *BASE.lock() = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let t = std::thread::spawn(move || {
+            for answer in ["HTTP/1.1 200 OK\r\nContent-Length: 9\r\nConnection: close\r\n\r\nnot json!", "HTTP/1.1 500 X\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", "HTTP/1.1 200 OK\r\nContent-Length: 34\r\nConnection: close\r\n\r\n{\"ok\":true,\"result\":{\"file_path\":\"..\"}}"] {
+                if let Ok((mut s, _)) = listener.accept() {
+                    let mut buf = [0u8; 4096];
+                    let _ = s.read(&mut buf);
+                    let _ = s.write_all(answer.as_bytes());
+                }
+            }
+        });
+        errors.push(net::call(&c, token, "getMe", &json!({})).unwrap_err());
+        errors.push(net::call(&c, token, "getMe", &json!({})).unwrap_err());
+        errors.push(net::download(&c, token, "f").unwrap_err());
+        let _ = t.join();
+        *BASE.lock() = "https://api.telegram.org".into();
+        assert_eq!(errors.len(), 5);
+        for e in &errors {
+            assert!(!e.contains(token) && !e.contains(secret_part) && !e.contains("/bot"), "the token is in the error: {}", e);
+        }
+    }
 }

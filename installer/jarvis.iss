@@ -139,8 +139,8 @@ begin
 end;
 
 // The data of Jarvis lives outside the program folder (%APPDATA%\com.priler.jarvis, config.rs BUNDLE_IDENTIFIER).
-// After the uninstall the secrets are always removed (the token of the Telegram bot, the secret of the phone remote
-// and its certificate); the rest — settings, conversations, scenarios, logs — only when the user says so (a silent
+// After the uninstall the secrets are always removed (the token of the Telegram bot, the secret of the phone remote,
+// the secret of the window and the certificate); the rest — settings, conversations, scenarios, logs — only when the user says so (a silent
 // uninstall keeps them: the user did not answer). The tasks file in Documents belongs to the user and stays.
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
@@ -153,6 +153,7 @@ begin
     Exit;
   DeleteFile(dir + '\telegram.json');
   DeleteFile(dir + '\remote_token');
+  DeleteFile(dir + '\ui_token');
   DeleteFile(dir + '\remote_key.der');
   DeleteFile(dir + '\remote_cert.der');
   DeleteFile(dir + '\remote_cert.ip');

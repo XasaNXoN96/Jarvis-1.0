@@ -234,6 +234,11 @@ pub fn listed_files() -> usize {
 // A name inside commands-update.zip that is safe to unpack into the resources folder: it stays under `commands/`,
 // is relative, has no `..`, no drive, no stream, no device name, no backslash tricks
 pub fn zip_entry_is_safe(name: &str) -> Result<(), String> {
+    archive_name_is_safe(name, "commands")
+}
+
+// the same rules for any archive: every name stays under the one folder `root`
+pub fn archive_name_is_safe(name: &str, root: &str) -> Result<(), String> {
     let n = name.replace('\\', "/");
     if n.is_empty() || n.contains('\0') {
         return Err("пустое или недопустимое имя".into());
@@ -242,8 +247,8 @@ pub fn zip_entry_is_safe(name: &str) -> Result<(), String> {
         return Err(format!("абсолютный путь: {}", name));
     }
     let parts: Vec<&str> = n.trim_end_matches('/').split('/').collect();
-    if parts.first() != Some(&"commands") {
-        return Err(format!("файл вне папки commands: {}", name));
+    if parts.first() != Some(&root) {
+        return Err(format!("файл вне папки {}: {}", root, name));
     }
     for p in &parts {
         if p.is_empty() || *p == ".." || *p == "." {
@@ -263,8 +268,101 @@ pub fn zip_entry_is_safe(name: &str) -> Result<(), String> {
     Ok(())
 }
 
+// ---- what an archive says it holds (read from its central directory, nothing is unpacked) ------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ZipEntry {
+    pub name: String,
+    pub size: u64,
+    pub is_dir: bool,
+}
+
+fn le16(b: &[u8], at: usize) -> Option<u16> {
+    b.get(at..at + 2).map(|x| u16::from_le_bytes([x[0], x[1]]))
+}
+fn le32(b: &[u8], at: usize) -> Option<u32> {
+    b.get(at..at + 4).map(|x| u32::from_le_bytes([x[0], x[1], x[2], x[3]]))
+}
+
+// The entries of a zip file. It refuses (the answer is an error, never a guess): a file that is not a plain zip, zip64,
+// several disks, an encrypted entry, an entry that is a link or a device (the Unix mode in the attributes), a name that is
+// not UTF-8, a directory listing that does not fit in the file.
+pub fn zip_entries(bytes: &[u8]) -> Result<Vec<ZipEntry>, String> {
+    let bad = |why: &str| Err(format!("архив не принят: {}", why));
+    if bytes.len() < 22 {
+        return bad("слишком короткий файл");
+    }
+    // the end record: the last 22 bytes, or before a comment of up to 65535 bytes
+    let from = bytes.len().saturating_sub(22 + 65535);
+    let eocd = (from..=bytes.len() - 22).rev().find(|&i| le32(bytes, i) == Some(0x0605_4b50));
+    let Some(e) = eocd else { return bad("нет записи конца архива") };
+    let (disk, cd_disk, here, total) = (le16(bytes, e + 4).unwrap_or(1), le16(bytes, e + 6).unwrap_or(1), le16(bytes, e + 8).unwrap_or(0), le16(bytes, e + 10).unwrap_or(0));
+    let (cd_size, cd_off) = (le32(bytes, e + 12).unwrap_or(0), le32(bytes, e + 16).unwrap_or(0));
+    if disk != 0 || cd_disk != 0 || here != total {
+        return bad("архив из нескольких частей");
+    }
+    if total == 0xFFFF || cd_size == 0xFFFF_FFFF || cd_off == 0xFFFF_FFFF {
+        return bad("zip64 не поддерживается");
+    }
+    let (cd_off, cd_size) = (cd_off as usize, cd_size as usize);
+    if cd_off.checked_add(cd_size).map(|end| end > e).unwrap_or(true) {
+        return bad("оглавление не помещается в файл");
+    }
+    let mut out = Vec::new();
+    let mut at = cd_off;
+    for _ in 0..total {
+        if le32(bytes, at) != Some(0x0201_4b50) {
+            return bad("повреждено оглавление");
+        }
+        let made_by = le16(bytes, at + 4).unwrap_or(0);
+        let flags = le16(bytes, at + 8).unwrap_or(0);
+        let usize_ = le32(bytes, at + 24).unwrap_or(0);
+        let (nlen, xlen, clen) = (le16(bytes, at + 28).unwrap_or(0) as usize, le16(bytes, at + 30).unwrap_or(0) as usize, le16(bytes, at + 32).unwrap_or(0) as usize);
+        let attrs = le32(bytes, at + 38).unwrap_or(0);
+        let Some(raw) = bytes.get(at + 46..at + 46 + nlen) else { return bad("имя за пределами файла") };
+        if flags & 1 != 0 {
+            return bad("зашифрованная запись");
+        }
+        let name = match std::str::from_utf8(raw) {
+            Ok(n) => n.to_string(),
+            Err(_) => return bad("имя не в UTF-8"),
+        };
+        // the Unix mode lives in the upper half of the attributes when the archive was made on Unix
+        if made_by >> 8 == 3 {
+            let kind = (attrs >> 16) & 0o170000;
+            if kind != 0 && kind != 0o100000 && kind != 0o040000 {
+                return bad(&format!("запись «{}» не файл и не папка (ссылка или устройство)", name));
+            }
+        }
+        if usize_ == 0xFFFF_FFFF {
+            return bad("zip64 не поддерживается");
+        }
+        out.push(ZipEntry { is_dir: name.ends_with('/'), name, size: usize_ as u64 });
+        at += 46 + nlen + xlen + clen;
+    }
+    Ok(out)
+}
+
+// The whole check before an archive is unpacked: every name under `root`, no links, not too many files, not too big.
+pub fn check_archive(path: &Path, root: &str, max_files: usize, max_total: u64) -> Result<(), String> {
+    let bytes = std::fs::read(path).map_err(|_| "архив не читается".to_string())?;
+    let entries = zip_entries(&bytes)?;
+    if entries.is_empty() || entries.len() > max_files {
+        return Err(format!("в архиве {} записей (допустимо до {})", entries.len(), max_files));
+    }
+    let mut total = 0u64;
+    for e in &entries {
+        archive_name_is_safe(&e.name, root)?;
+        total = total.saturating_add(e.size);
+    }
+    if total > max_total {
+        return Err(format!("распакованный размер {} МБ больше допустимых {} МБ", total / 1_000_000, max_total / 1_000_000));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::fs;
 
@@ -406,5 +504,98 @@ mod tests {
         ] {
             assert!(zip_entry_is_safe(bad).is_err(), "{:?}", bad);
         }
+    }
+
+    // a zip made by hand (stored entries): (name, made_by, attributes, flags)
+    pub(crate) fn make_zip(entries: &[(&str, u16, u32, u16)]) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut cd = Vec::new();
+        for (name, made_by, attrs, flags) in entries {
+            let off = out.len() as u32;
+            out.extend_from_slice(&0x0403_4b50u32.to_le_bytes());
+            out.extend_from_slice(&[20, 0]);
+            out.extend_from_slice(&flags.to_le_bytes());
+            out.extend_from_slice(&[0; 10]); // method, time, date, crc
+            out.extend_from_slice(&5u32.to_le_bytes()); // compressed
+            out.extend_from_slice(&5u32.to_le_bytes()); // uncompressed
+            out.extend_from_slice(&(name.len() as u16).to_le_bytes());
+            out.extend_from_slice(&[0, 0]);
+            out.extend_from_slice(name.as_bytes());
+            out.extend_from_slice(b"hello");
+            cd.extend_from_slice(&0x0201_4b50u32.to_le_bytes());
+            cd.extend_from_slice(&made_by.to_le_bytes());
+            cd.extend_from_slice(&[20, 0]);
+            cd.extend_from_slice(&flags.to_le_bytes());
+            cd.extend_from_slice(&[0; 10]);
+            cd.extend_from_slice(&5u32.to_le_bytes());
+            cd.extend_from_slice(&5u32.to_le_bytes());
+            cd.extend_from_slice(&(name.len() as u16).to_le_bytes());
+            cd.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0]); // extra, comment, disk, internal attrs
+            cd.extend_from_slice(&attrs.to_le_bytes());
+            cd.extend_from_slice(&off.to_le_bytes());
+            cd.extend_from_slice(name.as_bytes());
+        }
+        let cd_off = out.len() as u32;
+        out.extend_from_slice(&cd);
+        out.extend_from_slice(&0x0605_4b50u32.to_le_bytes());
+        out.extend_from_slice(&[0, 0, 0, 0]);
+        out.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+        out.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+        out.extend_from_slice(&(cd.len() as u32).to_le_bytes());
+        out.extend_from_slice(&cd_off.to_le_bytes());
+        out.extend_from_slice(&[0, 0]);
+        out
+    }
+
+    fn check_bytes(bytes: &[u8], root: &str) -> Result<(), String> {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("a.zip");
+        fs::write(&p, bytes).unwrap();
+        check_archive(&p, root, 100, 1_000_000)
+    }
+
+    #[test]
+    fn a_good_archive_is_accepted_and_every_unsafe_one_is_refused_before_unpacking() {
+        let unix_file = (3u16 << 8, 0o100644u32 << 16);
+        let good = make_zip(&[("piper/", 0, 0, 0), ("piper/piper.exe", unix_file.0, unix_file.1, 0), ("piper/espeak-ng-data/voices", 0, 0, 0)]);
+        assert_eq!(zip_entries(&good).unwrap().len(), 3);
+        check_bytes(&good, "piper").unwrap();
+        // a way out of the folder, in every spelling
+        for bad in ["piper/../evil.dll", "../evil.dll", "/evil.dll", "C:/evil.dll", "C:\\evil.dll", "piper\\..\\evil.dll", "other/x.txt", "piper/a.txt:evil", "piper/con", "piper/a/./b", "piper//x", "piper/x."] {
+            let z = make_zip(&[("piper/ok.txt", 0, 0, 0), (bad, 0, 0, 0)]);
+            assert!(check_bytes(&z, "piper").is_err(), "{:?} was accepted", bad);
+        }
+        // a link, a device, an encrypted entry
+        let link = make_zip(&[("piper/l", 3 << 8, 0o120777u32 << 16, 0)]);
+        assert!(check_bytes(&link, "piper").unwrap_err().contains("ссылка"));
+        let dev = make_zip(&[("piper/d", 3 << 8, 0o020666u32 << 16, 0)]);
+        assert!(check_bytes(&dev, "piper").is_err());
+        let enc = make_zip(&[("piper/e", 0, 0, 1)]);
+        assert!(check_bytes(&enc, "piper").unwrap_err().contains("зашифр"));
+        // not a zip, cut in the middle, a listing that points outside the file
+        assert!(check_bytes(b"not a zip at all, just text bytes", "piper").is_err());
+        assert!(check_bytes(&good[..good.len() / 2], "piper").is_err());
+        let mut broken = good.clone();
+        let n = broken.len();
+        broken[n - 6..n - 2].copy_from_slice(&0x7fff_ffffu32.to_le_bytes()); // the offset of the listing
+        assert!(check_bytes(&broken, "piper").is_err());
+        // too many files, too big in total
+        let many: Vec<(String, u16, u32, u16)> = (0..101).map(|i| (format!("piper/f{}", i), 0, 0, 0)).collect();
+        let refs: Vec<(&str, u16, u32, u16)> = many.iter().map(|(a, b, c, d)| (a.as_str(), *b, *c, *d)).collect();
+        assert!(check_bytes(&make_zip(&refs), "piper").is_err());
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("a.zip");
+        fs::write(&p, &good).unwrap();
+        assert!(check_archive(&p, "piper", 100, 10).unwrap_err().contains("МБ"), "a total size limit");
+    }
+
+    // the real archive of Piper, when the test is given one (the CI of the installer downloads it)
+    #[test]
+    fn the_real_piper_archive_passes_when_present() {
+        let Ok(p) = std::env::var("JARVIS_TEST_PIPER_ZIP") else {
+            eprintln!("NOT TESTED: JARVIS_TEST_PIPER_ZIP is not set");
+            return;
+        };
+        check_archive(Path::new(&p), "piper", 5000, 800_000_000).unwrap();
     }
 }

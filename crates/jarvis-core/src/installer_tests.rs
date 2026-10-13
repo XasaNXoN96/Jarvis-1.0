@@ -88,3 +88,15 @@ fn the_last_page_starts_the_normal_jarvis_first_and_the_text_mode_only_on_reques
     let icons = section(&t, "Icons");
     assert!(icons.iter().any(|l| l.starts_with("Name: \"{group}\\Jarvis\"") && !l.contains("--text")));
 }
+
+// Every file with a secret that the program writes into its data folder is removed by the uninstaller whatever the user
+// answers about the rest of the data. The names are the ones the program really uses (its own sources are read for them).
+#[test]
+fn the_uninstaller_removes_every_secret_file_the_program_writes() {
+    let (_, text) = script();
+    let sources = [include_str!("ui_auth.rs"), include_str!("remote.rs"), include_str!("telegram.rs")];
+    for file in ["ui_token", "remote_token", "telegram.json"] {
+        assert!(sources.iter().any(|s| s.contains(&format!("\"{}\"", file))), "{} is not a file of the program any more", file);
+        assert!(text.contains(&format!("DeleteFile(dir + '\\{}')", file)), "the uninstaller keeps {}", file);
+    }
+}

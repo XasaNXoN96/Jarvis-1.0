@@ -217,9 +217,11 @@ fn check_value(script: Script, k: &str, v: &str) -> Result<(), String> {
                 return Err("архив должен лежать в папке Jarvis под своим именем".to_string());
             }
             let h = crate::integrity::sha256_file(&p).map_err(|_| "архив не читается".to_string())?;
-            if h != crate::voice_install::PIPER_ZIP_SHA256 {
+            if h != crate::voice_install::pinned_zip_sha256() {
                 return Err("SHA-256 архива не совпадает с закреплённым: распаковка отклонена".to_string());
             }
+            // and what the archive says it holds: everything under piper/, no links, no strange names, a sane size
+            crate::integrity::check_archive(&p, "piper", 5000, 800_000_000).map_err(|e| format!("архив не прошёл проверку перед распаковкой: {}", e))?;
             Ok(())
         }
         _ => Err(format!("переменная «{}» не для скрипта «{}»", k, script.name())),
@@ -398,6 +400,24 @@ mod tests {
         assert!(authorize(Script::InstallPiper, &envs(&zip, &other)).is_err());
         assert!(authorize(Script::InstallPiper, &envs(&other.join(crate::voice_install::ZIP_NAME), &dest)).is_err());
         assert!(authorize(Script::InstallPiper, &[("JARVIS_ZIP", zip.display().to_string())]).is_err());
+        // a good archive of the right name with its hash pinned: allowed; the same bytes changed after pinning: refused
+        let unix_file = (3u16 << 8, 0o100644u32 << 16);
+        let good = crate::integrity::tests::make_zip(&[("piper/piper.exe", unix_file.0, unix_file.1, 0)]);
+        std::fs::write(&zip, &good).unwrap();
+        crate::voice_install::set_test_pin(Some(crate::integrity::sha256_file(&zip).unwrap()));
+        assert!(authorize(Script::InstallPiper, &envs(&zip, &dest)).is_ok());
+        let mut changed = good.clone();
+        changed[40] ^= 0xff;
+        std::fs::write(&zip, &changed).unwrap();
+        assert!(authorize(Script::InstallPiper, &envs(&zip, &dest)).unwrap_err().contains("SHA-256"));
+        // an archive with a way out of the folder whose hash IS the pinned one is still refused (the names are read first)
+        let evil = crate::integrity::tests::make_zip(&[("piper/piper.exe", unix_file.0, unix_file.1, 0), ("piper/../../evil.dll", 0, 0, 0)]);
+        std::fs::write(&zip, &evil).unwrap();
+        crate::voice_install::set_test_pin(Some(crate::integrity::sha256_file(&zip).unwrap()));
+        let e = authorize(Script::InstallPiper, &envs(&zip, &dest)).unwrap_err();
+        assert!(e.contains("проверку"), "{}", e);
+        crate::voice_install::set_test_pin(None);
+        let _ = std::fs::remove_file(&zip);
     }
 
     #[test]
