@@ -222,6 +222,15 @@ jobs:
           $lnk = Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Jarvis" -Filter *.lnk | ForEach-Object { $_.Name }
           Write-Host "Start menu: $($lnk -join ', ')"
           if (@($lnk).Count -lt 2) { throw "the Start menu shortcuts are missing" }
+          # where every shortcut leads and which icon it has (the target must exist, in the folder with the Cyrillic name)
+          $wsh = New-Object -ComObject WScript.Shell
+          foreach ($l in Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Jarvis" -Filter *.lnk) {
+            $sc = $wsh.CreateShortcut($l.FullName)
+            $line = "SHORTCUT $($l.Name) -> $($sc.TargetPath) $($sc.Arguments) | icon: $($sc.IconLocation)"
+            Write-Host $line
+            Add-Content evidence.txt $line
+            if (-not (Test-Path -LiteralPath $sc.TargetPath)) { throw "the shortcut $($l.Name) leads nowhere: $($sc.TargetPath)" }
+          }
           # uninstall while Jarvis runs in the tray and autostart was switched on from its settings
           $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
           Set-ItemProperty -Path $runKey -Name "Jarvis" -Value "`"$dir\jarvis-app.exe`" --background"

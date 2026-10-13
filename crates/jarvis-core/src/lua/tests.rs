@@ -790,5 +790,36 @@ mod tests {
             assert!(shown.contains("принудительно"), "{}", shown);
         }
     }
+
+    // The trust boundary of the commands: no command pack runs a shell (cmd /C) with anything taken from the phrase.
+    // A "cli" command is a fixed program with fixed arguments, and no Lua script of the packs uses system.exec.
+    #[test]
+    fn no_command_pack_runs_a_shell_with_the_words_of_the_phrase() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../resources/commands");
+        let mut lua_files = 0;
+        let mut stack = vec![root.clone()];
+        while let Some(dir) = stack.pop() {
+            for e in std::fs::read_dir(&dir).unwrap().flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else if p.extension().map(|x| x == "lua").unwrap_or(false) {
+                    lua_files += 1;
+                    let text = std::fs::read_to_string(&p).unwrap();
+                    assert!(!text.contains("system.exec"), "{} runs a shell", p.display());
+                } else if p.file_name().map(|n| n == "command.toml").unwrap_or(false) {
+                    let text = std::fs::read_to_string(&p).unwrap();
+                    for line in text.lines().filter(|l| l.trim_start().starts_with("cli_cmd") || l.trim_start().starts_with("cli_args")) {
+                        assert!(!line.contains('{') && !line.contains('%'), "{}: a cli command takes a placeholder: {}", p.display(), line);
+                        assert!(!line.contains('&') && !line.contains('|') && !line.contains(';'), "{}: shell operators in a cli command: {}", p.display(), line);
+                    }
+                }
+            }
+        }
+        assert!(lua_files > 20, "the packs were found ({} scripts)", lua_files);
+        // and the only Lua door to a shell is closed below the "full" sandbox
+        assert!(!crate::lua::sandbox::SandboxLevel::Standard.allows_exec());
+        assert!(!crate::lua::sandbox::SandboxLevel::from_str("").allows_exec());
+    }
 }
 
