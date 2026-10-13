@@ -138,6 +138,12 @@ pub fn authorize(op: &Op) -> Result<Verdict, String> {
         }
     };
     if let Some(cmd) = running() {
+        // a dangerous operation of a command only inside a run that the user confirmed (confirm.rs)
+        if v.risk == Risk::High && !crate::confirm::is_confirmed(&cmd.id) {
+            let why = format!("операция «{}» опасна и не подтверждена пользователем (команда {})", v.canonical, cmd.id);
+            warn!("Operation refused: {}", why);
+            return Err(why);
+        }
         if v.risk > cmd.risk {
             let why = format!("команда {} имеет риск «{}», а операция «{}» — «{}»", cmd.id, cmd.risk.as_str(), v.canonical, v.risk.as_str());
             warn!("Operation refused: {}", why);
@@ -874,7 +880,13 @@ pub(crate) mod tests {
         }
         {
             let _r = enter_command("high", "high", Path::new("/tmp"));
+            // a dangerous operation needs the confirmation of the user as well as the declared risk
+            assert!(authorize(&forced).is_err(), "not confirmed");
+            let _c = crate::confirm::confirmed_run("high", true);
             assert!(authorize(&forced).is_ok());
+            // a confirmation of another command does not count
+            let _other = crate::confirm::confirmed_run("another", true);
+            assert!(authorize(&forced).is_err());
         }
         // outside of a command (the window, a scenario of the user) only the rules of the operation apply
         assert!(authorize(&forced).is_ok());
@@ -1340,6 +1352,7 @@ pub(crate) mod tests {
         for (_, path, list) in packs() {
             for c in list.commands.iter().filter(|c| c.cmd_type == "cli") {
                 let _r = enter_command(&c.id, &c.risk, &path);
+                let _c = crate::confirm::confirmed_run(&c.id, true);
                 assert!(authorize(&Op::Run { program: c.cli_cmd.clone(), args: c.cli_args.clone() }).is_ok(), "{}: {} {:?}", c.id, c.cli_cmd, c.cli_args);
             }
         }

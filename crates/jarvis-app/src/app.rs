@@ -578,6 +578,27 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
     // every command, script and scenario that runs below knows its door (jarvis_core::origin::current())
     let _door = jarvis_core::origin::enter(source);
     info!("Command door: {}", source.as_str());
+
+    // a question «Подтвердить? да / нет» is open: this phrase answers it (only from the door the request came through)
+    match jarvis_core::confirm::reply(text, source) {
+        jarvis_core::confirm::Reply::Rerun { text: asked, source: asked_source } => {
+            info!("Confirmed from the {} door: the command is run", asked_source.as_str());
+            return execute_command(&asked, asked_source, rt);
+        }
+        jarvis_core::confirm::Reply::Cancelled => {
+            open_request(text, "command");
+            let msg = "Отменено.";
+            say(msg);
+            ipc::send(IpcEvent::Output { text: msg.to_string() });
+            jarvis_core::dialog::reply(msg, "local");
+            jarvis_core::dialog::end(true);
+            jarvis_core::uistate::log_action(text, "подтверждение: нет", true);
+            ipc::send(IpcEvent::Idle);
+            return false;
+        }
+        jarvis_core::confirm::Reply::OtherDoor => info!("A phrase from the {} door does not answer the open question", source.as_str()),
+        jarvis_core::confirm::Reply::NotAnAnswer => {}
+    }
     let commands_list = match COMMANDS_LIST.get() {
         Some(c) => c,
         None => {
@@ -731,6 +752,29 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
             return false;
         }
         
+        // a dangerous (high-risk) command is asked about first; only «да» from the same door runs this very command
+        // (confirm.rs). What counts is the risk of a command whose files are the ones of this build.
+        let risk = commands::effective_risk(&cmd_path, &cmd_config);
+        let confirmed = match jarvis_core::confirm::gate(&cmd_config.id, risk, text, source) {
+            jarvis_core::confirm::Gate::Run { confirmed } => confirmed,
+            jarvis_core::confirm::Gate::Ask { question } => {
+                info!("Command {} (high risk) waits for the confirmation from the {} door", cmd_config.id, source.as_str());
+                say(&question);
+                open_request(text, "command");
+                ipc::send(IpcEvent::Output { text: question.clone() });
+                jarvis_core::dialog::reply(&question, "local");
+                jarvis_core::dialog::end(true);
+                if jarvis_core::tts::can_speak().is_ok() {
+                    jarvis_core::tts::speak("Это опасное действие. Подтвердить? Да или нет?");
+                }
+                jarvis_core::uistate::log_action(text, &format!("{}: ждёт подтверждения", cmd_config.id), true);
+                ipc::send(IpcEvent::Idle);
+                // by voice the answer is heard without the wake word
+                return source == Source::Voice;
+            }
+        };
+        let _confirmed_run = jarvis_core::confirm::confirmed_run(&cmd_config.id, confirmed);
+
         // extract slots if needed
         let extracted_slots = if !cmd_config.slots.is_empty() {
             let s = slots::extract(text, &cmd_config.slots);

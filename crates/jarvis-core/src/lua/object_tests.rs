@@ -115,6 +115,8 @@ impl World {
         let script = path.join(&cmd.script);
         // like the application: the command runs with the risk it declared
         let _running = crate::policy::enter_command(&cmd.id, &cmd.risk, path);
+        // the question «да / нет» of a high command is the application's (confirm.rs): here the user has said yes
+        let _confirmed = crate::confirm::confirmed_run(&cmd.id, true);
         execute(&script, ctx, SandboxLevel::Full, Duration::from_secs(25)).unwrap_or_else(|e| panic!("'{}' failed: {:?}", text, e));
         id
     }
@@ -665,6 +667,11 @@ fn every_phrase_of_the_telegram_menu_reaches_its_command() {
     for (key, id) in want {
         let it = crate::tgmenu::find(key).unwrap();
         assert_eq!(w.route(it.phrase).as_deref(), Some(id), "{} «{}»", key, it.phrase);
+        // a button of a high-risk command asks in the bot first, and the «Да» of the bot answers the question of Jarvis
+        let risk = w.list.iter().flat_map(|l| l.commands.iter()).find(|c| c.id == id).map(|c| c.risk.clone()).unwrap();
+        if risk == "high" {
+            assert!(it.ask.is_some() && it.then_yes, "{}: {} is high risk: the button asks, then answers «да»", key, id);
+        }
     }
 }
 

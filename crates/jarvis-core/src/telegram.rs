@@ -1021,7 +1021,7 @@ pub fn status_text() -> String {
 
 // Jarvis waits for «да / нет» to something (a power command, the recycle bin, the tasks)
 fn confirm_open() -> bool {
-    crate::session::kind().as_deref() == Some("confirm")
+    crate::confirm::pending_for(crate::origin::Source::Telegram) || crate::session::kind().as_deref() == Some("confirm")
 }
 
 // A timer, an alarm or a reminder: the paired owner gets it in the bot too (the user who steers the
@@ -1050,7 +1050,8 @@ pub fn announce(title: &str, text: &str) {
 
 // Jarvis waits for «да / нет» to a power command (not to something else)
 fn power_question_open() -> bool {
-    is_power_question(crate::session::kind().as_deref(), &crate::session::data())
+    // the question of Jarvis about a dangerous command (confirm.rs) that came through this bot, or the old one of a session
+    crate::confirm::pending_for(crate::origin::Source::Telegram) || is_power_question(crate::session::kind().as_deref(), &crate::session::data())
 }
 
 fn is_power_question(kind: Option<&str>, data: &str) -> bool {

@@ -291,15 +291,26 @@ mod tests {
         assert!(run("assistant_task_done", "выполнил задачу 1").contains("купить хлеб"));
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "позвонить врачу 😀\n");
         assert!(run("assistant_task_done", "выполнил задачу 7").contains("номер"), "a wrong number removes nothing");
-        // "стереть все задачи": asks first; "нет" keeps them, "да" deletes them
-        assert!(run("assistant_task_clear", "стереть все задачи").contains("да"));
-        assert_eq!(crate::session::kind().as_deref(), Some("confirm"));
-        run("assistant_session", "нет");
+        // "стереть все задачи" is a high-risk command: Jarvis asks first (confirm.rs, the application does it before the script
+        // runs); "нет" keeps the tasks, "да" from the same door runs the command that was asked about and clears them
+        let _q = crate::confirm::TEST_LOCK.lock();
+        crate::confirm::clear();
+        use crate::confirm::{gate, reply, Gate, Reply};
+        use crate::origin::Source;
+        use crate::policy::Risk;
+        let phrase = "стереть все задачи";
+        assert!(matches!(gate("assistant_task_clear", Risk::High, phrase, Source::Window), Gate::Ask { .. }));
+        assert_eq!(reply("нет", Source::Window), Reply::Cancelled);
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "позвонить врачу 😀\n", "kept after no");
-        run("assistant_task_clear", "стереть все задачи");
-        assert!(run("assistant_session", "да").contains("стёрты"));
+        assert!(matches!(gate("assistant_task_clear", Risk::High, phrase, Source::Window), Gate::Ask { .. }));
+        assert_eq!(reply("да", Source::Voice), Reply::OtherDoor, "a «да» of another door does not confirm it");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "позвонить врачу 😀\n");
+        assert!(matches!(reply("да", Source::Window), Reply::Rerun { .. }));
+        let Gate::Run { confirmed } = gate("assistant_task_clear", Risk::High, phrase, Source::Window) else { panic!("asked again after the yes") };
+        assert!(confirmed);
+        let _c = crate::confirm::confirmed_run("assistant_task_clear", confirmed);
+        assert!(run("assistant_task_clear", phrase).contains("стёрты"));
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
-        crate::session::end();
         // a file saved by Notepad with a BOM: the first task is read without it (as the panel reads it)
         std::fs::write(&file, "\u{feff}с бомом\nвторая\n").unwrap();
         let read = run("assistant_task_read", "озвучь задачи");
@@ -1026,6 +1037,15 @@ mod tests {
         assert_eq!(steam_close.risk, "high");
         // the script of the build: a forced kill of steam is within the declared power (nothing is started here)
         crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow_mut().clear());
+        {
+            // without the confirmation of the user the forced kill is refused even for the script of the build
+            let _n = crate::confirm::confirmed_run("steam_2", false);
+            assert!(crate::commands::execute_command(&pack, &steam_close, Some("закрой стим"), None).is_ok());
+            let said = crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow().last().cloned().unwrap_or_default());
+            assert!(!said.contains("Closed") && !said.contains("Закрыт"), "an unconfirmed kill must not report success: {}", said);
+        }
+        crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow_mut().clear());
+        let _confirmed = crate::confirm::confirmed_run("steam_2", true);
         assert!(crate::commands::execute_command(&pack, &steam_close, Some("закрой стим"), None).is_ok());
         let said = crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow().last().cloned().unwrap_or_default());
         assert!(said.contains("Closed") || said.contains("Закрыт"), "the trusted command ran its kill: {}", said);

@@ -345,6 +345,16 @@ pub fn execute_cli(cmd: &str, args: &[String]) -> std::io::Result<Child> {
     c.spawn()
 }
 
+// The risk that counts for a command: what it declares when its files are the ones of this build, "low" otherwise (such a
+// command is limited to the simple things, see integrity.rs). A risk that is not one of the three words is "low".
+pub fn effective_risk(cmd_path: &Path, cmd_config: &JCommand) -> crate::policy::Risk {
+    let script = if cmd_config.cmd_type == "lua" { if cmd_config.script.is_empty() { "script.lua" } else { cmd_config.script.as_str() } } else { "" };
+    if !crate::integrity::pack_command_is_trusted(cmd_path, script) {
+        return crate::policy::Risk::Low;
+    }
+    crate::policy::Risk::parse(&cmd_config.risk).unwrap_or(crate::policy::Risk::Low)
+}
+
 pub fn execute_command(cmd_path: &PathBuf, cmd_config: &JCommand, phrase: Option<&str>, slots: Option<&HashMap<String, SlotValue>>) -> Result<bool, String> {
     // execute command by the type
     match cmd_config.cmd_type.as_str() {

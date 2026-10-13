@@ -333,7 +333,9 @@ fn open(target: &str) -> Result<(), String> {
 }
 
 #[cfg(not(all(feature = "lua", target_os = "windows")))]
-fn open(_target: &str) -> Result<(), String> {
+fn open(target: &str) -> Result<(), String> {
+    // the rules of policy.rs are asked on every platform (the test of the rules runs on any computer)
+    crate::policy::authorize_open(target)?;
     Err("открытие доступно только в Windows".into())
 }
 
@@ -410,6 +412,9 @@ pub fn run_step(s: &Step) -> Result<(), String> {
 
 fn run_step_in(s: &Step, grid: &mut Vec<isize>) -> Result<(), String> {
     check_step(s)?;
+    // a scenario can do what a medium command does and no more: it cannot ask the user «да / нет» in the middle, so no
+    // dangerous operation (a program from an unknown place, a forced kill) runs in it
+    let _limits = crate::policy::enter_command("scenario", "medium", std::path::Path::new(""));
     let p = s.param.trim();
     let before = if s.window == "grid" { crate::input::foreground_window() } else { None };
     let opened = match s.kind.as_str() {

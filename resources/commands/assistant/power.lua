@@ -12,16 +12,16 @@ if id == "assistant_power_cancel" then
   return
 end
 
--- hibernate and log off are immediate: no delay, only the question
+-- hibernate and log off are immediate: no delay. The question «да / нет» is asked by Jarvis itself before the command runs
+-- (these are high-risk commands: confirm.rs), so here the command only does what was confirmed
 if id == "assistant_power_hibernate" or id == "assistant_power_logoff" then
-  local flag, ask_ru, ask_en = "/h", "Отправить компьютер в гибернацию", "Hibernate the computer"
-  if id == "assistant_power_logoff" then
-    flag, ask_ru, ask_en = "/l", "Выйти из учётной записи Windows (несохранённые данные могут пропасть)", "Sign out of Windows (unsaved data may be lost)"
+  local flag = "/h"
+  if id == "assistant_power_logoff" then flag = "/l" end
+  say(T("Компьютер", "Computer"), flag == "/h" and T("Ухожу в гибернацию", "Hibernating") or T("Выхожу из системы", "Signing out"))
+  local r = run("shutdown", { flag })
+  if not r.success then
+    say(T("Компьютер", "Computer"), T("Не удалось выполнить: ", "Failed: ") .. (r.stderr or ""))
   end
-  jarvis.session.start("confirm", 30)
-  jarvis.session.set_data("power:" .. flag .. ":0:0")
-  say(T("Компьютер", "Computer"), T(ask_ru .. "? Скажите «да» или «нет».", ask_en .. "? Say yes or no."),
-    T(ask_ru .. "? Да или нет?", ask_en .. "? Yes or no?"))
   return
 end
 
@@ -46,10 +46,18 @@ else
   flag, ask_ru, ask_en = "/s", "Выключить компьютер", "Shut down the computer"
 end
 
--- nothing happens before the user says "да": the answer goes to the session (office.lua, confirm_session),
--- which schedules the shutdown. A misheard phrase can never turn the computer off by itself.
-jarvis.session.start("confirm", 30)
-jarvis.session.set_data("power:" .. flag .. ":" .. tostring(secs) .. ":" .. (delayed and "1" or "0"))
-say(T("Компьютер", "Computer"),
-  T(ask_ru .. " через " .. fmt_duration(secs) .. "? Скажите «да» или «нет».", ask_en .. " in " .. fmt_duration(secs) .. "? Say yes or no."),
-  T(ask_ru .. " через " .. fmt_duration(secs) .. "? Да или нет?", ask_en .. " in " .. fmt_duration(secs) .. "? Yes or no?"))
+-- (the confirmation «да» was given before this point, see confirm.rs: a misheard phrase never gets here by itself)
+-- clear a previous schedule first, otherwise Windows refuses with "already in progress"
+run("shutdown", { "/a" })
+local r = run("shutdown", { flag, "/t", tostring(secs), "/c", "Jarvis" })
+if not r.success then
+  say(T("Компьютер", "Computer"), T("Не удалось запланировать: ", "Could not schedule: ") .. (r.stderr or ""))
+  return
+end
+local what_ru, what_en = "Выключение", "Shutdown"
+if flag == "/r" then what_ru, what_en = "Перезагрузка", "Restart" end
+local msg = T(what_ru .. " через " .. fmt_duration(secs), what_en .. " in " .. fmt_duration(secs))
+if not delayed then
+  msg = msg .. T(". Скажите «отмени выключение», чтобы отменить", ". Say \"cancel shutdown\" to cancel")
+end
+say(T("Компьютер", "Computer"), msg, nil, flag == "/s" and "power" or nil)

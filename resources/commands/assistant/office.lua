@@ -325,65 +325,6 @@ local function excel_command(text)
   return true, cell .. " = " .. table.concat(rest, " ")
 end
 
--- ---------- "да" / "нет" for an action that cannot be undone (power.lua, windows/actions.lua ask first) ----------
--- session data: "power:<flag>:<seconds>:<delayed>" or "trash"
-local function confirm_session(text)
-  local tokens = tokens_of(text)
-  local whole = " " .. table.concat(tokens, " ") .. " "
-  local word = function(w) return whole:find(" " .. w .. " ", 1, true) ~= nil end
-  local stem = function(s) return whole:find(s, 1, true) ~= nil end
-  local data = jarvis.session.data()
-  jarvis.session.finish()
-  local negative = word("нет") or word("не") or word("no") or word("not") or stem("отмен") or stem("стоп") or stem("cancel")
-  local positive = not negative and (word("да") or word("yes") or word("конечно") or word("давай") or stem("подтвер") or stem("confirm"))
-
-  local flag, secs, delayed = data:match("^power:(/[srhl]):(%d+):([01])$")
-  local title = flag and T("Компьютер", "Computer") or "Windows"
-  if not positive then
-    if flag then say(title, flag == "/r" and T("Перезагрузка отменена", "Restart cancelled")
-      or flag == "/h" and T("Гибернация отменена", "Hibernate cancelled")
-      or flag == "/l" and T("Выход отменён", "Sign out cancelled")
-      or T("Выключение отменено", "Shutdown cancelled"))
-    elseif data == "tasks_clear" then say(T("Задачи", "Tasks"), T("Задачи оставлены", "Tasks kept"))
-    else say(title, T("Корзину не очищаю", "Not emptying the recycle bin")) end
-    -- something else was said instead of an answer: it is handled as an ordinary command
-    if not negative then jarvis.app.run_text(text) end
-    return
-  end
-
-  if flag == "/h" or flag == "/l" then
-    -- immediate: Windows has no timer for these
-    say(title, flag == "/h" and T("Ухожу в гибернацию", "Hibernating") or T("Выхожу из системы", "Signing out"))
-    local r = run("shutdown", { flag })
-    if not r.success then
-      say(title, T("Не удалось выполнить: ", "Failed: ") .. (r.stderr or ""))
-    end
-    return
-  end
-  if flag then
-    -- clear a previous schedule first, otherwise Windows refuses with "already in progress"
-    run("shutdown", { "/a" })
-    local r = run("shutdown", { flag, "/t", secs, "/c", "Jarvis" })
-    if not r.success then
-      say(title, T("Не удалось запланировать: ", "Could not schedule: ") .. (r.stderr or ""))
-      return
-    end
-    local what_ru, what_en = "Выключение", "Shutdown"
-    if flag == "/r" then what_ru, what_en = "Перезагрузка", "Restart" end
-    local msg = T(what_ru .. " через " .. fmt_duration(tonumber(secs)), what_en .. " in " .. fmt_duration(tonumber(secs)))
-    if delayed == "0" then
-      msg = msg .. T(". Скажите «отмени выключение», чтобы отменить", ". Say \"cancel shutdown\" to cancel")
-    end
-    say(title, msg, nil, flag == "/s" and "power" or nil)
-  elseif data == "trash" then
-    powershell("Clear-RecycleBin -Force -ErrorAction SilentlyContinue")
-    say(title, T("Корзина очищена", "Recycle bin emptied"))
-  elseif data == "tasks_clear" then
-    if write_text(docs_path("Jarvis-tasks.txt"), "") then say(T("Задачи", "Tasks"), T("Все задачи стёрты", "All tasks deleted"))
-    else say(T("Задачи", "Tasks"), T("Не удалось стереть задачи", "Could not delete the tasks")) end
-  end
-end
-
 -- ---------- what to do with a found file ----------
 -- "второй", "седьмую", "номер 3", "пять": the number of a result (whole words: "пятница" is not five)
 local FILE_ORD = { { "перв", 1 }, { "втор", 2 }, { "трет", 3 }, { "четв", 4 }, { "пят", 5 }, { "шест", 6 }, { "седьм", 7 }, { "восьм", 8 }, { "девят", 9 }, { "десят", 10 } }
@@ -1116,8 +1057,6 @@ else -- assistant_session: every phrase while a session is open
   local kind = jarvis.session.kind()
   if kind == "file" then
     file_session(phrase)
-  elseif kind == "confirm" then
-    confirm_session(phrase)
   elseif kind == "app_choice" then
     -- the answer to "какую программу открыть: 1. … 2. …"
     local low = jarvis.text.lower(phrase)

@@ -174,3 +174,31 @@ fn the_auto_grid_is_kept_on_save_and_an_unknown_window_mode_is_dropped() {
     assert_eq!(saved.steps[1].window, "", "an unknown mode is not stored");
     assert!(templates().as_array().unwrap().iter().any(|t| t["steps"].as_array().unwrap().iter().any(|s| s["window"] == "grid")));
 }
+
+// a scenario is what a medium command is: it cannot start a program from an unknown place, press the Run box or kill
+#[test]
+fn a_scenario_cannot_do_what_needs_the_confirmation_of_the_user() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = dir.path().join("setup.exe");
+    let bat = dir.path().join("run.bat");
+    let doc = dir.path().join("note.txt");
+    for f in [&exe, &bat, &doc] {
+        std::fs::write(f, "x").unwrap();
+    }
+    let why = |s: Step| run_step_in(&s, &mut Vec::new()).unwrap_err();
+    // a program or a script from a place that is not an installed-programs place: refused by the rules, not by the platform
+    for f in [&exe, &bat] {
+        let e = why(step("file", &f.to_string_lossy()));
+        assert!(e.contains("не подтверждена"), "{}: {}", f.display(), e);
+    }
+    // a link that is not a web link, the Run box and the secure sequence
+    let e = run_step_in(&step("keys", "win+r"), &mut Vec::new()).unwrap_err();
+    assert!(e.contains("запрещено"), "{}", e);
+    let e = run_step_in(&step("keys", "ctrl+alt+delete"), &mut Vec::new()).unwrap_err();
+    assert!(e.contains("запрещено"), "{}", e);
+    // a document is an ordinary open: it gets as far as the platform ("only on Windows" here)
+    let e = run_step_in(&step("file", &doc.to_string_lossy()), &mut Vec::new()).unwrap_err();
+    assert!(e.contains("Windows"), "{}", e);
+    // the same step outside of a scenario (the rules of the operation alone) would not name the risk of the command
+    assert!(crate::policy::running().is_none(), "the limits of a step end with the step");
+}

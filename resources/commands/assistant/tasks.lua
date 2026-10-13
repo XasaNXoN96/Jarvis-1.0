@@ -75,10 +75,9 @@ if id == "assistant_task_clear" then
     say(TITLE, T("Задач нет", "No tasks"))
     return
   end
-  -- deleted only after "да" (office.lua, confirm_session)
-  jarvis.session.start("confirm", 30)
-  jarvis.session.set_data("tasks_clear")
-  say(TITLE, T("Стереть все задачи? Скажите «да» или «нет».", "Delete all tasks? Say yes or no."))
+  -- Jarvis asks «да / нет» itself before this runs (high risk, confirm.rs)
+  if write_text(docs_path("Jarvis-tasks.txt"), "") then say(TITLE, T("Все задачи стёрты", "All tasks deleted"))
+  else say(TITLE, T("Не удалось стереть задачи", "Could not delete the tasks")) end
   return
 end
 
