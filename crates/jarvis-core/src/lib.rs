@@ -63,6 +63,7 @@ pub mod apps;
 pub mod appindex;
 pub mod dialog;
 pub mod health;
+pub mod devices;
 pub mod weather;
 pub mod session;
 pub mod secret;

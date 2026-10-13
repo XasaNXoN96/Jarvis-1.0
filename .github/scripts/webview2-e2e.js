@@ -21,7 +21,7 @@ const { chromium } = require('playwright-core');
   say('window: ' + vp.join('x'));
 
   // every page opens and is shown
-  for (const name of ['home', 'system', 'chat', 'tasks', 'messages', 'commands', 'builder', 'apps', 'files', 'diag', 'settings']) {
+  for (const name of ['home', 'system', 'devices', 'chat', 'tasks', 'messages', 'commands', 'builder', 'apps', 'files', 'diag', 'settings']) {
     await page.evaluate(n => show(n), name);
     await wait(350);
     const shown = await page.evaluate(n => { const el = document.getElementById('page-' + n); return !!el && el.offsetParent !== null; }, name);

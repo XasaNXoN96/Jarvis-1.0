@@ -131,6 +131,40 @@ pub fn json() -> Value {
     })
 }
 
+// the battery of THIS computer: None when there is none (a desktop) or the system does not say
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Battery {
+    pub percent: u8,
+    pub charging: bool,
+}
+
+#[cfg(target_os = "windows")]
+pub fn battery() -> Option<Battery> {
+    use winapi::um::winbase::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
+    let mut st: SYSTEM_POWER_STATUS = unsafe { std::mem::zeroed() };
+    if unsafe { GetSystemPowerStatus(&mut st) } == 0 {
+        return None;
+    }
+    // flag 128: no system battery; 255: unknown; percent 255: unknown
+    if st.BatteryFlag == 255 || st.BatteryFlag & 128 != 0 || st.BatteryLifePercent > 100 {
+        return None;
+    }
+    Some(Battery { percent: st.BatteryLifePercent, charging: st.BatteryFlag & 8 != 0 })
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn battery() -> Option<Battery> {
+    for entry in std::fs::read_dir("/sys/class/power_supply").ok()?.flatten() {
+        let dir = entry.path();
+        if std::fs::read_to_string(dir.join("type")).map(|t| t.trim() == "Battery").unwrap_or(false) {
+            let percent: u8 = std::fs::read_to_string(dir.join("capacity")).ok()?.trim().parse().ok()?;
+            let charging = std::fs::read_to_string(dir.join("status")).map(|t| t.trim() == "Charging").unwrap_or(false);
+            return Some(Battery { percent: percent.min(100), charging });
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

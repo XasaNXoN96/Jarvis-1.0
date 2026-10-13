@@ -915,6 +915,7 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
         ("GET", "/chats") => respond(&mut stream, "200 OK", "application/json", &chats_json().to_string()),
         ("GET", "/scenarios") => respond(&mut stream, "200 OK", "application/json", &scenarios_json().to_string()),
         ("GET", "/tasks") => respond(&mut stream, "200 OK", "application/json", &crate::tasks::json().to_string()),
+        ("GET", "/devices") => respond(&mut stream, "200 OK", "application/json", &crate::devices::json().to_string()),
         ("GET", "/messages") => respond(&mut stream, "200 OK", "application/json", &crate::social::json().to_string()),
         ("POST", "/messages") => {
             if !req.custom_header {
@@ -1258,7 +1259,7 @@ mod tests {
         answer.lines().next().unwrap_or("")
     }
 
-    const DATA: &[&str] = &["/state", "/remote", "/remote-qr", "/remote-qr-net", "/remote-qr-https", "/diag", "/diag-report", "/settings", "/voices", "/modules", "/chats", "/scenarios", "/tasks", "/messages", "/telegram", "/commands", "/apps", "/files", "/avatar", "/voice-install", "/reaction-voices"];
+    const DATA: &[&str] = &["/state", "/remote", "/remote-qr", "/remote-qr-net", "/remote-qr-https", "/diag", "/diag-report", "/settings", "/voices", "/modules", "/chats", "/scenarios", "/tasks", "/messages", "/telegram", "/commands", "/apps", "/files", "/avatar", "/voice-install", "/reaction-voices", "/devices"];
 
     // a program on this computer (a web page is stopped before, by the Host) sends any header it likes: without the secret of the
     // window nothing is read and nothing is done, whatever else the request says

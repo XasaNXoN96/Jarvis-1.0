@@ -124,6 +124,15 @@
   #page-home { padding: 14px 22px 16px; overflow: hidden; align-items: stretch; }
   .h-top { display: flex; align-items: center; gap: 14px; flex-shrink: 0; position: relative; z-index: 3; }
   .h-top .grow { flex: 1; }
+  /* «Мои устройства» */
+  .dv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  .dv-card h3 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .dv-card .dv-kind { font-size: 12px; opacity: .65; font-weight: 400; }
+  .dv-card .dv-row { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; line-height: 1.6; } .dv-card .dv-row span { opacity: .7; }
+  .dv-card .dv-detail { font-size: 12px; opacity: .8; margin: 4px 0 6px; }
+  .dv-caps { margin: 6px 0 0; padding: 0; list-style: none; font-size: 12px; } .dv-caps li { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; border-top: 1px solid var(--line, rgba(255,255,255,.08)); }
+  .dv-caps li small { opacity: .65; display: block; } .dv-caps .st { white-space: nowrap; opacity: .85; } .dv-caps .st[data-s="available"] { color: #34d399; } .dv-caps .st[data-s="needs_permission"], .dv-caps .st[data-s="in_development"] { color: #fbbf24; } .dv-caps .st[data-s="unavailable"] { color: #f87171; }
+  .dv-card .acts { margin-top: 8px; }
   /* compact summary of the computer, the AI and the phone remote on the home page: the same data as «Система», collapsed by default */
   .h-sum { flex-shrink: 0; position: relative; z-index: 3; margin: 4px 0 2px; }
   .hs-chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%; background: none; border: 0; padding: 0; cursor: pointer; font: inherit; color: inherit; text-align: left; }
@@ -492,6 +501,7 @@
     <button data-page="builder" title="Конструктор"><span class="ei" data-ico="flow"></span><span>Конструктор</span></button>
     <button data-page="apps" title="Программы"><span class="ei" data-ico="apps"></span><span>Программы</span></button>
     <button data-page="files" title="Файлы"><span class="ei" data-ico="folder"></span><span>Файлы</span></button>
+    <button data-page="devices" title="Мои устройства"><span class="ei" data-ico="phone"></span><span>Устройства</span></button>
     <button data-page="system" title="Система"><span class="ei" data-ico="cpu"></span><span>Система</span></button>
     <button data-page="diag" title="Диагностика"><span class="ei" data-ico="pulse"></span><span>Диагностика</span></button>
     <button data-page="settings" title="Настройки"><span class="ei" data-ico="gear"></span><span>Настройки</span></button>
@@ -557,6 +567,13 @@
         <button type="button" class="ib" id="h-mic" title="Микрофон"></button>
         <button type="submit" class="sb" id="h-send">Отправить</button>
       </form>
+    </section>
+
+    <section class="page ds" id="page-devices">
+      <h1>Мои устройства</h1>
+      <p class="lead">Только то, что Jarvis действительно знает: этот компьютер, телефон с пультом (после первого подключения) и микрофоны Windows. Новых устройств здесь не придумывают: то, что устройство не сообщает, помечено «нет данных», а чего пока нет — «не поддерживается» или «в разработке». Скрытого доступа к камере, микрофону и экрану нет.</p>
+      <div class="dv-grid" id="dv-list"><div class="empty">Загрузка…</div></div>
+      <small class="rmhelp" id="dv-note">«Привязано» и «в сети» — разные вещи: привязанное устройство может быть выключено или вне сети. Телефон появляется в списке после того, как его страница пульта хотя бы раз отозвалась в этом запуске Jarvis.</small>
     </section>
 
     <section class="page ds" id="page-system">
@@ -1038,8 +1055,8 @@ function ico(name) { return '<svg viewBox="0 0 24 24" fill="none" stroke="curren
 document.querySelectorAll('[data-ico]').forEach(el => { el.innerHTML = ico(el.dataset.ico); });
 
 // ---------- navigation ----------
-const PAGES = ['home', 'chat', 'tasks', 'messages', 'commands', 'builder', 'apps', 'files', 'system', 'diag', 'settings'];
-const TITLES = { home: ['Главная', 'Neural Interface'], chat: ['Диалоги', 'Conversations'], tasks: ['Задачи', 'Tasks'], messages: ['Сообщения', 'Messages'], system: ['Система', 'System'], commands: ['Команды', 'Command Library'], diag: ['Диагностика', 'Diagnostics'], builder: ['Конструктор', 'Scenario Builder'], apps: ['Программы', 'Applications'], files: ['Файлы', 'File Search'], settings: ['Настройки', 'Settings'] };
+const PAGES = ['home', 'chat', 'tasks', 'messages', 'commands', 'builder', 'apps', 'files', 'devices', 'system', 'diag', 'settings'];
+const TITLES = { home: ['Главная', 'Neural Interface'], chat: ['Диалоги', 'Conversations'], tasks: ['Задачи', 'Tasks'], messages: ['Сообщения', 'Messages'], devices: ['Мои устройства', 'My Devices'], system: ['Система', 'System'], commands: ['Команды', 'Command Library'], diag: ['Диагностика', 'Diagnostics'], builder: ['Конструктор', 'Scenario Builder'], apps: ['Программы', 'Applications'], files: ['Файлы', 'File Search'], settings: ['Настройки', 'Settings'] };
 let currentPage = 'home';
 const curInput = () => currentPage === 'home' ? $('#h-input') : $('#input');
 function show(name) {
@@ -1055,6 +1072,7 @@ function show(name) {
   if (name === 'builder') builderLoad();
   if (name === 'apps') appsLoad();
   if (name === 'files') filesLoad();
+  if (name === 'devices') devicesLoad();
   if (name === 'settings') { loadSettings(); refreshRemote(); tgLoad(); }
   if (name === 'tasks') { tkEdit = -1; tasksLoad(); }
   if (name === 'home') { homeSig = ''; }
@@ -1497,6 +1515,42 @@ function homeSummary(s) {
     else show(g);
   };
 })();
+// ---------- «Мои устройства»: the list comes from the program (/devices); nothing is invented here ----------
+let dvTimer = null;
+function dvAgo(t) { const d = Math.max(0, Math.round(Date.now() / 1000 - t)); return d < 10 ? 'только что' : d < 60 ? d + ' с назад' : d < 3600 ? Math.round(d / 60) + ' мин назад' : new Date(t * 1000).toLocaleString('ru-RU'); }
+function dvRender(list) {
+  const box = $('#dv-list'); box.textContent = '';
+  if (!list.length) { const e = document.createElement('div'); e.className = 'empty'; e.textContent = 'Нет данных об устройствах.'; box.appendChild(e); return; }
+  const ST = { online: 'ok', connecting: 'info', offline: '', error: 'bad' };
+  for (const d of list) {
+    const c = document.createElement('div'); c.className = 'card dv-card'; c.dataset.id = d.id; c.dataset.kind = d.kind;
+    const h = document.createElement('h3'); h.textContent = d.name;
+    const k = document.createElement('span'); k.className = 'dv-kind'; k.textContent = d.kind_label; h.appendChild(k);
+    const pill = document.createElement('span'); pill.className = 'pill ' + (ST[d.status] || ''); pill.textContent = d.status_label; h.appendChild(pill);
+    c.appendChild(h);
+    const row = (a, b) => { const r = document.createElement('div'); r.className = 'dv-row'; const x = document.createElement('span'); x.textContent = a; const y = document.createElement('b'); y.textContent = b; r.append(x, y); c.appendChild(r); };
+    row('Привязано', d.paired ? 'да' : 'нет');
+    row('Последняя связь', d.last_seen ? dvAgo(d.last_seen) : '—');
+    if (d.user) row('Пользователь', d.user);
+    if (d.battery != null) row('Заряд', d.battery + '%' + (d.charging ? ' · заряжается' : ''));
+    const det = document.createElement('div'); det.className = 'dv-detail'; det.textContent = d.detail; c.appendChild(det);
+    const more = document.createElement('details'); const sm = document.createElement('summary'); sm.textContent = 'Подробнее: функции и разрешения'; more.appendChild(sm);
+    const ul = document.createElement('ul'); ul.className = 'dv-caps';
+    for (const f of d.caps) { const li = document.createElement('li'); const l = document.createElement('div'); l.textContent = f.label; if (f.note) { const n = document.createElement('small'); n.textContent = f.note; l.appendChild(n); } const st = document.createElement('span'); st.className = 'st'; st.dataset.s = f.state; st.textContent = f.state_label; li.append(l, st); ul.appendChild(li); }
+    more.appendChild(ul); c.appendChild(more);
+    const acts = document.createElement('div'); acts.className = 'acts';
+    const go = document.createElement('button'); go.type = 'button'; go.className = 'btn small'; go.textContent = d.manage === 'system-remote' ? 'Управление пультом' : d.manage === 'settings' ? 'Настройки звука' : 'Состояние системы';
+    go.onclick = () => { if (d.manage === 'system-remote') { show('system'); setTimeout(() => { const el = $('#card-remote'); if (el) el.scrollIntoView({ block: 'center' }); }, 120); } else show(d.manage); };
+    acts.appendChild(go); c.appendChild(acts);
+    box.appendChild(c);
+  }
+}
+async function devicesLoad() {
+  clearInterval(dvTimer);
+  const once = async () => { try { const r = await (await fetch('/devices')).json(); dvRender(r.devices || []); } catch (e) { $('#dv-list').textContent = 'Нет связи с Джарвисом'; } };
+  await once();
+  dvTimer = setInterval(() => { if (currentPage === 'devices' && !document.hidden) once(); else if (currentPage !== 'devices') clearInterval(dvTimer); }, 5000);
+}
 const AI_PILL = { CONNECTED: 'ok', DISCONNECTED: '', ERROR: 'bad', CHECKING: 'info' };
 function aiCard(a) {
   if (!a) return;
