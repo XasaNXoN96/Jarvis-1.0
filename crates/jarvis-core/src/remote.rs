@@ -1565,7 +1565,9 @@ mod tests {
     #[test]
     fn https_and_http_on_one_port() {
         let _g = PHONE_TEST_LOCK.lock();
-        start().expect("start");
+        // every failure names the stage, the port and what the program thought it was doing (the secret is never printed)
+        let started = start();
+        assert!(started.is_ok(), "stage=start port={} error={:?} running={}", PORT, started.as_ref().err(), is_running());
         std::thread::sleep(Duration::from_millis(500));
         for scheme in ["https", "http"] {
             let out = std::process::Command::new("curl")
@@ -1573,7 +1575,17 @@ mod tests {
                 .output()
                 .expect("curl");
             let text = String::from_utf8_lossy(&out.stdout);
-            assert!(text.contains("Сказать команду"), "{} page: {}", scheme, text);
+            assert!(
+                text.contains("Сказать команду"),
+                "stage=curl-{} address=127.0.0.1:{} curl_status={:?} running={} stdout_len={} stdout_head={:?} stderr={:?}",
+                scheme,
+                PORT,
+                out.status.code(),
+                is_running(),
+                text.len(),
+                text.chars().take(80).collect::<String>(),
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
         }
         stop();
     }
@@ -1665,31 +1677,31 @@ mod tests {
         LAST_PHONE_CMD.store(0, Ordering::SeqCst);
         // an answer to a command typed on the computer is not sent to the phone
         announce_answer("четыре");
-        assert!(queued_for_tests().is_empty(), "{:?}", queued_for_tests());
+        assert!(queued_for_tests().is_empty(), "stage=1 an answer to the computer must not reach the phone: {:?} running={}", queued_for_tests(), is_running());
         // after a command of the phone: the answer goes to it, and the phone page says it
         note_phone_command();
         announce_answer("  2 плюс 2 будет четыре  ");
-        assert_eq!(queued_for_tests(), vec![("say".to_string(), "2 плюс 2 будет четыре".to_string())]);
+        assert_eq!(queued_for_tests(), vec![("say".to_string(), "2 плюс 2 будет четыре".to_string())], "stage=2 the answer to the phone command");
         // an answer long after that command is not the phone's
         LAST_PHONE_CMD.store(now_secs() - ANSWER_WINDOW_SECS - 5, Ordering::SeqCst);
         OUTBOX.lock().1.clear();
         announce_answer("поздний ответ");
-        assert!(queued_for_tests().is_empty());
+        assert!(queued_for_tests().is_empty(), "stage=3 a late answer: {:?}", queued_for_tests());
         // through the store of the dialogs: an answer of Jarvis (any source) is announced, a question of the user is not
         note_phone_command();
         let dir = tempfile::tempdir().unwrap();
         let store = crate::ai::Store::new(dir.path().to_path_buf());
         let chat = store.create();
         store.append(&chat.id, "user", "сколько будет два плюс два");
-        assert!(queued_for_tests().is_empty(), "the question stays on the computer");
+        assert!(queued_for_tests().is_empty(), "stage=4 the question stays on the computer: {:?}", queued_for_tests());
         store.append(&chat.id, "assistant", "Четыре");
-        assert_eq!(queued_for_tests(), vec![("say".to_string(), "Четыре".to_string())]);
+        assert_eq!(queued_for_tests(), vec![("say".to_string(), "Четыре".to_string())], "stage=5 the answer through the store");
         // a timer, an alarm and the like: always, whoever asked, with the kind, the title and the text
         OUTBOX.lock().1.clear();
         LAST_PHONE_CMD.store(0, Ordering::SeqCst);
         crate::notify::push("timer", "Таймер", "Время вышло: чай готов", false);
         let q = queued_for_tests();
-        assert_eq!(q.len(), 1, "{:?}", q);
+        assert_eq!(q.len(), 1, "stage=6 a timer note: {:?}", q);
         assert_eq!(q[0].0, "note");
         let v: serde_json::Value = serde_json::from_str(&q[0].1).unwrap();
         assert_eq!((v["kind"].as_str(), v["title"].as_str(), v["text"].as_str()), (Some("timer"), Some("Таймер"), Some("Время вышло: чай готов")));
@@ -1697,7 +1709,7 @@ mod tests {
         phone_for_tests(false, false);
         announce_note("timer", "Таймер", "x");
         announce_answer("y");
-        assert!(queued_for_tests().is_empty());
+        assert!(queued_for_tests().is_empty(), "stage=7 remote off: {:?}", queued_for_tests());
     }
 
     #[test]

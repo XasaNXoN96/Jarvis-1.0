@@ -139,6 +139,39 @@ const { chromium } = require('playwright-core');
   await wait(300);
   check('Esc on the home page does not close the window', !closedBefore && !page.isClosed());
 
+  // the object bar (Object Interaction Engine). Two different things are checked and named so:
+  //  (a) the REAL program: the state the installed Jarvis reports is IDLE, the bar is hidden, and the «Стоп» request goes to the real
+  //      backend and is answered honestly («nothing to stop», never a success);
+  //  (b) the REAL WebView2 renders the bar for every state from the state table - the state is put into the page by objectBar(),
+  //      it is NOT produced by the backend (the backend cannot be put into AI_TASK without an AI provider and a real document here).
+  await page.evaluate(() => show('home'));
+  await wait(800);
+  const real = await page.evaluate(async () => { const r = await fetch('/state', { headers: { 'X-Jarvis': '1' } }).then(x => x.json()).catch(e => ({ err: String(e) })); return { state: r.object && r.object.state, hidden: document.getElementById('h-obj').hidden, err: r.err || '' }; });
+  check('object bar (real backend): IDLE state, the bar is hidden', real.state === 'IDLE' && real.hidden === true, JSON.stringify(real));
+  const stopAnswer = await page.evaluate(async () => { try { return await action('object_stop'); } catch (e) { return { err: String(e) }; } });
+  check('object bar (real backend): «Стоп» with nothing to stop is answered honestly, not as a success', stopAnswer && stopAnswer.ok === false && typeof stopAnswer.message === 'string' && stopAnswer.message.length > 3, JSON.stringify(stopAnswer));
+  const states = [
+    ['DICTATION', { state: 'DICTATION', app: 'word', name: 'Отчёт.docx', operation: 'dictation' }, true],
+    ['AI_TASK', { state: 'AI_TASK', app: 'vscode', name: 'calculator.py', operation: 'ai:напиши калькулятор на Python с обработкой деления на ноль и тестами и описанием' }, true],
+    ['AWAITING_CONFIRMATION', { state: 'AWAITING_CONFIRMATION', app: 'word', name: 'Отчёт.docx', operation: 'confirm:replace_doc', pending: 'Заменить весь текст документа новым вариантом?' }, true],
+    ['PAUSED', { state: 'PAUSED', app: 'word', name: 'Отчёт.docx' }, false],
+    ['ERROR_RECOVERY', { state: 'ERROR_RECOVERY', app: 'word', name: 'Отчёт.docx', error: 'Документ «Отчёт.docx» закрыт.' }, false],
+  ];
+  for (const [name, obj, stopEnabled] of states) {
+    const m = await page.evaluate(o => {
+      objectBar(Object.assign({ pending: '', saved: false, last_result: '', error: '', operation: '' }, o));
+      const r = sel => { const e = document.querySelector(sel); if (!e) return null; const b = e.getBoundingClientRect(); return { t: b.top, b: b.bottom, l: b.left, r: b.right, w: b.width, h: b.height }; };
+      const hit = (a, c) => a && c && a.w > 0 && c.w > 0 && !(a.b <= c.t || c.b <= a.t || a.r <= c.l || c.r <= a.l);
+      const bar = r('#h-obj'), orb = r('#orb'), form = r('#h-form'), top = r('.h-top'), chips = r('#hs-toggle');
+      const res = { shown: !document.getElementById('h-obj').hidden, label: document.getElementById('ho-st').textContent, stopOff: document.getElementById('ho-stop').disabled,
+        over: hit(bar, orb) || hit(bar, form) || hit(bar, top) || hit(bar, chips), inside: bar && bar.r <= innerWidth + 1 && bar.l >= 0, hscroll: document.documentElement.scrollWidth > innerWidth + 1 };
+      objectBar({ state: 'IDLE' });
+      return res;
+    }, obj);
+    check(`object bar (rendered in WebView2, state set by the page): ${name}`, m.shown && m.label.length > 2 && m.stopOff === !stopEnabled && !m.over && m.inside && !m.hscroll, JSON.stringify(m));
+  }
+  const hiddenAgain = await page.evaluate(() => document.getElementById('h-obj').hidden);
+  check('object bar: hidden again after IDLE', hiddenAgain === true);
   check('no JavaScript errors in the page', errors.length === 0, errors.slice(0, 3).join(' | '));
   say(`WEBVIEW2 E2E: ${failed === 0 ? 'PASS' : 'FAIL (' + failed + ')'}`);
   require('fs').writeFileSync(reportFile, lines.join('\n'));
