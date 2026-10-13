@@ -31,25 +31,73 @@ pub(crate) fn pinned_zip_sha256() -> String {
     PIPER_ZIP_SHA256.to_string()
 }
 
-// The voice files (the model and its settings) come from the voices repository `main` branch, which changes over time, and
-// no hash of them has been pinned yet (the value must come from a trusted source, see docs/SECURITY-DOWNLOADS.md). Until
-// then a file is only checked for shape; with a hash in this table it is checked exactly, and a mismatch deletes it.
-pub(crate) const VOICE_PINS: &[(&str, &str)] = &[];
+// A pin of one voice file: the commit of the voices repository the file is taken from (a URL with a commit, not the branch
+// `main`, which changes), the SHA-256 and the size of exactly that file. Nothing is pinned yet: the values must come from the
+// procedure in docs/SECURITY-DOWNLOADS.md (the «voice-pins» workflow downloads each file at a commit, checks the bytes against
+// the LFS id the repository states for that commit, and prints the lines below for a person to review and commit). A value
+// that was not obtained that way is not entered: it is not a proof of anything.
+//   VoicePin { file: "ru.onnx", revision: "<40 hex>", sha256: "<64 hex>", size: <bytes> },
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VoicePin {
+    pub file: &'static str,
+    pub revision: &'static str,
+    pub sha256: &'static str,
+    pub size: u64,
+}
 
-pub fn voice_pin(file: &str) -> Option<&'static str> {
-    VOICE_PINS.iter().find(|(f, _)| *f == file).map(|(_, h)| *h)
+pub(crate) const VOICE_PINS: &[VoicePin] = &[];
+
+#[cfg(test)]
+thread_local! {
+    static TEST_PINS: std::cell::RefCell<Vec<VoicePin>> = std::cell::RefCell::new(Vec::new());
+}
+#[cfg(test)]
+pub(crate) fn set_test_pins(v: Vec<VoicePin>) {
+    TEST_PINS.with(|t| *t.borrow_mut() = v);
+}
+
+pub fn voice_pin(file: &str) -> Option<VoicePin> {
+    #[cfg(test)]
+    {
+        let t = TEST_PINS.with(|t| t.borrow().clone());
+        if !t.is_empty() {
+            return t.into_iter().find(|p| p.file == file);
+        }
+    }
+    VOICE_PINS.iter().find(|p| p.file == file).cloned()
+}
+
+// is a table entry well formed (a typo in a pin must fail a test, not weaken a download)
+pub fn pin_is_well_formed(p: &VoicePin) -> bool {
+    let hex = |s: &str, n: usize| s.len() == n && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    hex(p.sha256, 64) && hex(p.revision, 40) && p.size > 1000 && matches!(p.file, "ru.onnx" | "ru.onnx.json" | "en.onnx" | "en.onnx.json")
+}
+
+// the address of one voice file: at the pinned commit when there is a pin, else the branch (and the file is only checked for shape)
+pub(crate) fn voice_url(folder: &str, name: &str, suffix: &str, local_file: &str) -> String {
+    let rev = voice_pin(local_file).map(|p| p.revision.to_string()).unwrap_or_else(|| "main".to_string());
+    format!("https://huggingface.co/rhasspy/piper-voices/resolve/{}/{}/{}{}", rev, folder, name, suffix)
+}
+
+// are all the files of the voice pinned (shown in the status: «not pinned» is a visible state, not a hidden one)
+pub fn voice_pinned(lang: &str) -> bool {
+    [format!("{}.onnx", lang), format!("{}.onnx.json", lang)].iter().all(|f| voice_pin(f).is_some())
 }
 
 // the shape of a downloaded voice file; with a pin, the exact hash
 pub(crate) fn verify_voice_file(path: &Path, file: &str) -> Result<(), String> {
-    verify_voice_with(path, file, voice_pin(file))
+    verify_voice_with(path, file, voice_pin(file).as_ref())
 }
 
-pub(crate) fn verify_voice_with(path: &Path, file: &str, pin: Option<&str>) -> Result<(), String> {
+pub(crate) fn verify_voice_with(path: &Path, file: &str, pin: Option<&VoicePin>) -> Result<(), String> {
     let meta = std::fs::metadata(path).map_err(|_| "файл голоса не найден после загрузки".to_string())?;
-    if let Some(want) = pin {
+    if let Some(pin) = pin {
+        // the size first (cheap), then the hash: exactly the pinned file or nothing
+        if meta.len() != pin.size {
+            return Err(format!("размер файла голоса {} не совпал с закреплённым", file));
+        }
         let got = crate::integrity::sha256_file(path).map_err(|e| e.to_string())?;
-        if got != want {
+        if got != pin.sha256 {
             return Err(format!("SHA-256 файла голоса {} не совпал с закреплённым", file));
         }
         return Ok(());
@@ -92,7 +140,9 @@ static STATUS: Lazy<Mutex<Status>> = Lazy::new(|| Mutex::new(Status::default()))
 
 pub fn status_json() -> Value {
     let s = STATUS.lock().clone();
-    json!({ "running": s.running, "done": s.done, "step": s.step, "percent": s.percent, "error": s.error, "installed": crate::tts::piper_available() })
+    json!({ "running": s.running, "done": s.done, "step": s.step, "percent": s.percent, "error": s.error, "installed": crate::tts::piper_available(),
+        // the voice files are checked by a pinned hash only when a pin exists; false is shown as it is, not hidden
+        "voice_pinned": voice_pinned(&match crate::i18n::get_language().as_str() { "ua" => "uk".to_string(), o => o.to_string() }) })
 }
 
 fn set(step: &str, percent: u8) {
@@ -127,7 +177,7 @@ fn download(url: &str, dest: &Path, label: &str, from: u8, to: u8, verify: &dyn 
     if let Some(dir) = dest.parent() {
         std::fs::create_dir_all(dir).map_err(|_| "нет прав записи в папку Jarvis (поставьте Jarvis в папку пользователя или используйте большой установщик)".to_string())?;
     }
-    let mut file = std::fs::File::create(&part).map_err(|_| "нет прав записи в папку Jarvis (поставьте Jarvis в папку пользователя или используйте большой установщик)".to_string())?;
+    let mut file = crate::create_fresh(&part).map_err(|_| "нет прав записи в папку Jarvis (поставьте Jarvis в папку пользователя или используйте большой установщик)".to_string())?;
     let mut buf = [0u8; 64 * 1024];
     let mut done = 0u64;
     loop {
@@ -202,11 +252,10 @@ fn run_install() -> Result<(), String> {
     let voices = piper_dir.join("voices");
     let model = voices.join(format!("{}.onnx", lang));
     if !model.exists() {
-        let base = format!("https://huggingface.co/rhasspy/piper-voices/resolve/main/{}/{}", folder, name);
         let file = format!("{}.onnx", lang);
-        download(&format!("{}.onnx", base), &model, "Голос", 30, 96, &|p| verify_voice_file(p, &file))?;
+        download(&voice_url(folder, name, ".onnx", &file), &model, "Голос", 30, 96, &|p| verify_voice_file(p, &file))?;
         let jfile = format!("{}.onnx.json", lang);
-        download(&format!("{}.onnx.json", base), &voices.join(&jfile), "Настройки голоса", 96, 99, &|p| verify_voice_file(p, &jfile))?;
+        download(&voice_url(folder, name, ".onnx.json", &jfile), &voices.join(&jfile), "Настройки голоса", 96, 99, &|p| verify_voice_file(p, &jfile))?;
         if voice_pin(&file).is_none() {
             warn!("Voice {}: no pinned SHA-256 for this file yet (shape checked only)", file);
         }
@@ -265,9 +314,14 @@ mod tests {
         assert!(verify_voice_with(&model, "ru.onnx", None).is_ok());
         // with a pin only the exact file passes (a shape that would pass is not enough)
         let good = crate::integrity::sha256_file(&model).unwrap();
-        assert!(verify_voice_with(&model, "ru.onnx", Some(&good)).is_ok());
+        let hash: &'static str = Box::leak(good.into_boxed_str());
+        let pin = VoicePin { file: "ru.onnx", revision: "0123456789abcdef0123456789abcdef01234567", sha256: hash, size: 1_500_000 };
+        assert!(pin_is_well_formed(&pin));
+        assert!(verify_voice_with(&model, "ru.onnx", Some(&pin)).is_ok());
         std::fs::write(&model, vec![9u8; 1_500_000]).unwrap();
-        assert!(verify_voice_with(&model, "ru.onnx", Some(&good)).is_err(), "a changed model passed its pin");
+        assert!(verify_voice_with(&model, "ru.onnx", Some(&pin)).unwrap_err().contains("SHA-256"), "a changed model of the same size passed its pin");
+        std::fs::write(&model, vec![8u8; 1_499_999]).unwrap();
+        assert!(verify_voice_with(&model, "ru.onnx", Some(&pin)).unwrap_err().contains("размер"), "a file of another size passed its pin");
         assert!(verify_voice_with(&d.path().join("none"), "x", None).is_err());
     }
 
@@ -277,4 +331,40 @@ mod tests {
         assert!(voice_pin("ru.onnx").is_none() && voice_pin("en.onnx").is_none());
         assert_eq!(PIPER_ZIP_SHA256.len(), 64);
     }
+
+    #[test]
+    fn a_pinned_file_is_taken_at_its_commit_and_an_unpinned_one_from_the_branch() {
+        set_test_pins(Vec::new());
+        assert!(voice_url("ru/ru_RU/irina/medium", "ru_RU-irina-medium", ".onnx", "ru.onnx").contains("/resolve/main/"));
+        assert!(!voice_pinned("ru"));
+        let rev = "0123456789abcdef0123456789abcdef01234567";
+        let sha = "ab".repeat(32);
+        let sha: &'static str = Box::leak(sha.into_boxed_str());
+        set_test_pins(vec![
+            VoicePin { file: "ru.onnx", revision: rev, sha256: sha, size: 60_000_000 },
+            VoicePin { file: "ru.onnx.json", revision: rev, sha256: sha, size: 5_000 },
+        ]);
+        let u = voice_url("ru/ru_RU/irina/medium", "ru_RU-irina-medium", ".onnx", "ru.onnx");
+        assert!(u.contains(&format!("/resolve/{}/", rev)) && !u.contains("/main/"), "{}", u);
+        assert!(voice_pinned("ru") && !voice_pinned("en"), "only the files with a pin count as pinned");
+        set_test_pins(Vec::new());
+    }
+
+    // a table entry that is malformed (a short hash, a branch instead of a commit, an unknown file) must fail here
+    #[test]
+    fn every_entry_of_the_pin_table_is_well_formed() {
+        for p in VOICE_PINS {
+            assert!(pin_is_well_formed(p), "malformed pin: {:?}", p);
+        }
+        let bad = [
+            VoicePin { file: "ru.onnx", revision: "main", sha256: "a".repeat(64).leak(), size: 5000 },
+            VoicePin { file: "ru.onnx", revision: "a".repeat(40).leak(), sha256: "abc", size: 5000 },
+            VoicePin { file: "evil.exe", revision: "a".repeat(40).leak(), sha256: "a".repeat(64).leak(), size: 5000 },
+            VoicePin { file: "ru.onnx", revision: "A".repeat(40).leak(), sha256: "a".repeat(64).leak(), size: 5000 },
+        ];
+        for p in &bad {
+            assert!(!pin_is_well_formed(p), "{:?} was accepted", p);
+        }
+    }
 }
+
