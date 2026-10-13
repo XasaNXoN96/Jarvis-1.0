@@ -38,19 +38,57 @@ const LOST_AFTER_ERRORS: u32 = 50;
 #[cfg(target_os = "windows")]
 static EMBEDDED_LIB: &[u8] = include_bytes!("../../../../lib/windows/amd64/libpv_recorder.dll");
 
-// writes the built-in copy to a temp folder (the program folder may be read-only) and returns its path
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes).iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+// The file `name` in `dir` holding exactly `bytes`: a file that is there is used only when its SHA-256 is the one of the
+// built-in copy (the folder is a shared temporary one: a program that put a file of the same name and size there must not
+// get its code loaded into Jarvis); any other file is replaced by a new one, written under a name of its own and moved
+// over, and checked again afterwards.
+fn ensure_file(dir: &std::path::Path, name: &str, bytes: &[u8]) -> std::io::Result<PathBuf> {
+    use std::io::Write;
+    let path = dir.join(name);
+    let want = sha256_hex(bytes);
+    let same = |p: &std::path::Path| std::fs::read(p).map(|b| sha256_hex(&b) == want).unwrap_or(false);
+    if same(&path) {
+        return Ok(path);
+    }
+    std::fs::create_dir_all(dir)?;
+    let mut nonce = [0u8; 8];
+    {
+        use rand::RngCore;
+        rand::rngs::OsRng.fill_bytes(&mut nonce);
+    }
+    let tmp = dir.join(format!(".{}.{}.tmp", name, nonce.iter().map(|b| format!("{:02x}", b)).collect::<String>()));
+    let mut f = std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp)?;
+    let res = f.write_all(bytes).and_then(|_| f.flush()).and_then(|_| {
+        drop(f);
+        // (a planted FOLDER or link of that name is not followed by a rename: it is replaced or the rename fails)
+        std::fs::rename(&tmp, &path)
+    });
+    if let Err(e) = res {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    if !same(&path) {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "файл после записи не совпал с эталоном"));
+    }
+    Ok(path)
+}
+
+// the built-in copy in a temp folder (the program folder may be read-only), verified by its SHA-256
 #[cfg(target_os = "windows")]
 fn embedded_library() -> Option<PathBuf> {
-    let dir = std::env::temp_dir().join(format!("jarvis-pvrecorder-{}", EMBEDDED_LIB.len()));
-    let path = dir.join("libpv_recorder.dll");
-    let ok = std::fs::metadata(&path).map(|m| m.len() as usize == EMBEDDED_LIB.len()).unwrap_or(false);
-    if !ok {
-        if let Err(e) = std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&path, EMBEDDED_LIB)) {
-            warn!("Could not unpack the built-in microphone library to {}: {}", path.display(), e);
-            return None;
+    let dir = std::env::temp_dir().join(format!("jarvis-pvrecorder-{}", &sha256_hex(EMBEDDED_LIB)[..16]));
+    match ensure_file(&dir, "libpv_recorder.dll", EMBEDDED_LIB) {
+        Ok(p) => Some(p),
+        Err(e) => {
+            warn!("Could not unpack the built-in microphone library to {}: {}", dir.display(), e);
+            None
         }
     }
-    Some(path)
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -348,4 +386,39 @@ pub fn get_audio_device_name(idx: i32) -> String {
 
     // return first device as default, if none were matched
     first_device
+}
+
+#[cfg(test)]
+mod library_tests {
+    use super::*;
+
+    #[test]
+    fn a_planted_file_of_the_same_size_is_replaced_by_the_verified_copy() {
+        let d = tempfile::tempdir().unwrap();
+        let good = b"the real library bytes".to_vec();
+        // nothing there: written
+        let p = ensure_file(d.path(), "lib.dll", &good).unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), good);
+        // a file of the same length with other content (the old size-only check accepted it)
+        let evil = b"EVIL library bytes!!!!".to_vec();
+        assert_eq!(evil.len(), good.len());
+        std::fs::write(&p, &evil).unwrap();
+        let p2 = ensure_file(d.path(), "lib.dll", &good).unwrap();
+        assert_eq!(std::fs::read(&p2).unwrap(), good, "the planted file was kept");
+        // a good file is left alone (no rewrite)
+        let t = std::fs::metadata(&p2).unwrap().modified().unwrap();
+        ensure_file(d.path(), "lib.dll", &good).unwrap();
+        assert_eq!(std::fs::metadata(&p2).unwrap().modified().unwrap(), t);
+        // no temporary file stays
+        let names: Vec<String> = std::fs::read_dir(d.path()).unwrap().flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect();
+        assert_eq!(names, ["lib.dll"]);
+    }
+
+    #[test]
+    fn a_folder_planted_under_the_name_is_not_trusted() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir(d.path().join("lib.dll")).unwrap();
+        assert!(ensure_file(d.path(), "lib.dll", b"x").is_err());
+        assert!(d.path().join("lib.dll").is_dir());
+    }
 }
