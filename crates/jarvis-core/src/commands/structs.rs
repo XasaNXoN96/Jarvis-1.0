@@ -128,6 +128,18 @@ impl JCommand {
         self.resolve_localized(&self.triggers, lang)
     }
 
+    // the triggers of the language itself plus the Russian ones: a Russian phrase must work on an English Windows too
+    // (the system language only picks the default, the user speaks Russian to Jarvis)
+    pub fn get_triggers_with_ru(&self, lang: &str) -> Vec<String> {
+        let mut all = self.get_triggers(lang);
+        if lang != "ru" {
+            if let Some(ru) = self.triggers.get("ru") {
+                all.extend(ru.iter().cloned());
+            }
+        }
+        all
+    }
+
     // get all phrases (for backwards compat)
     pub fn get_all_phrases(&self) -> Vec<String> {
         self.phrases.values().flatten().cloned().collect()

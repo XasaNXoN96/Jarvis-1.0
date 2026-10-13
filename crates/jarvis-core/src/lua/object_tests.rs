@@ -693,3 +693,12 @@ fn stop_stops_and_a_longer_stop_phrase_keeps_its_own_command() {
         assert!(id.is_some() && id.as_deref() != Some("stop_1"), "{} -> {:?}", longer, id);
     }
 }
+
+#[test]
+fn timer_phrases_with_any_unit_are_routed_to_the_timer() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({}));
+    for p in ["поставь таймер на 5 секунд", "поставь таймер на 30 секунд", "таймер на минуту", "поставь таймер на 5 минут", "таймер на час", "засеки 10 секунд"] {
+        assert_eq!(w.route(p).as_deref(), Some("assistant_timer_set"), "{}", p);
+    }
+}

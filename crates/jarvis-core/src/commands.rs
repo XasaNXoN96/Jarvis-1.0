@@ -195,7 +195,7 @@ pub fn fetch_by_triggers<'a>(
             if not_program && is_program_command(&cmd.id) {
                 continue;
             }
-            for trigger in cmd.get_triggers(&lang) {
+            for trigger in cmd.get_triggers_with_ru(&lang) {
                 let stems: Vec<String> = trigger
                     .to_lowercase()
                     .replace('ё', "е")
