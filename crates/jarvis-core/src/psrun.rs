@@ -289,6 +289,10 @@ pub fn command(script: Script, envs: &[(&str, String)], way: Way) -> Result<Comm
 // a command whose window is hidden and whose handles are NUL (the usual case)
 pub fn quiet(script: Script, envs: &[(&str, String)]) -> Result<Command, String> {
     let mut c = command(script, envs, Way::default())?;
+    // A program without a console (the autostart, a shortcut, the installed window) has no valid standard handles to inherit:
+    // CreateProcess then fails with «os error 50» (the voice had it once, and the install of the voice from the program here).
+    // The input is closed always; a caller that reads the output sets its own pipe afterwards (the last setting wins).
+    c.stdin(std::process::Stdio::null());
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;

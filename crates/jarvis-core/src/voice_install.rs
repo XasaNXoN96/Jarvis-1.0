@@ -232,13 +232,14 @@ fn run_install() -> Result<(), String> {
         #[cfg(target_os = "windows")]
         {
             let _ = std::fs::remove_file(&zip.with_extension("part"));
-            let status = crate::psrun::quiet(crate::psrun::Script::InstallPiper, &[("JARVIS_ZIP", zip.display().to_string()), ("JARVIS_DEST", APP_DIR.display().to_string())])
+            let mut unpack = crate::psrun::quiet(crate::psrun::Script::InstallPiper, &[("JARVIS_ZIP", zip.display().to_string()), ("JARVIS_DEST", APP_DIR.display().to_string())])
                 .map_err(|e| {
                     let _ = std::fs::remove_file(&zip);
                     format!("распаковка отклонена защитой: {}", e)
-                })?
-                .status()
-                .map_err(|e| e.to_string())?;
+                })?;
+            // all three standard handles NULL (status() would inherit the output handles: «os error 50» without a console)
+            crate::null_stdio(&mut unpack);
+            let status = unpack.status().map_err(|e| format!("PowerShell не запустился для распаковки: {}", e))?;
             if !status.success() {
                 return Err("не получилось распаковать (нет прав записи в папку Jarvis?)".to_string());
             }
