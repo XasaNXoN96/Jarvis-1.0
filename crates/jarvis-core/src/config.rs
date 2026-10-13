@@ -36,19 +36,24 @@ pub fn init_dirs() -> Result<(), String> {
     let mut config_dir = PathBuf::from(&APP_DIRS.get().unwrap().config_dir);
     let mut log_dir = PathBuf::from(&APP_DIRS.get().unwrap().config_dir);
 
-    // create dirs, if required
-    if !config_dir.exists() {
-        if fs::create_dir_all(&config_dir).is_err() {
-            config_dir = env::current_dir().expect("Cannot infer the config directory");
-            fs::create_dir_all(&config_dir)
-                .expect("Cannot create config directory, access denied?");
-        }
+    // create dirs, if required. When the usual place cannot be made, a folder of Jarvis's own in the current folder is used
+    // (never the current folder itself: its access list is not ours to change, and it may be a shared one)
+    let fallback = |what: &str| -> PathBuf {
+        let base = env::current_dir().unwrap_or_else(|_| env::temp_dir()).join("JarvisData");
+        fs::create_dir_all(&base).unwrap_or_else(|_| panic!("Cannot create {} directory, access denied?", what));
+        base
+    };
+    if !config_dir.exists() && fs::create_dir_all(&config_dir).is_err() {
+        config_dir = fallback("config");
+    }
+    if !log_dir.exists() && fs::create_dir_all(&log_dir).is_err() {
+        log_dir = fallback("log");
     }
 
-    if !log_dir.exists() {
-        if fs::create_dir_all(&log_dir).is_err() {
-            log_dir = env::current_dir().expect("Cannot infer the log directory");
-            fs::create_dir_all(&log_dir).expect("Cannot create log directory, access denied?");
+    // the folder holds the keys, the secrets of the window and of the phone remote and the dialogs: for the user alone
+    for d in [&config_dir, &log_dir] {
+        if let Err(e) = crate::acl::harden_dir(d) {
+            warn!("Data folder {}: the access rights could not be restricted: {}", d.display(), e);
         }
     }
 

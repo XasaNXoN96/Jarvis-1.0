@@ -396,7 +396,9 @@ fn load_or_create_token() -> String {
     }
     let token = new_secret();
     if let Some(p) = token_path() {
-        let _ = std::fs::write(p, &token);
+        if crate::write_atomic(&p, &token).is_ok() {
+            let _ = crate::acl::private_file(&p);
+        }
     }
     token
 }
@@ -408,6 +410,7 @@ pub fn renew_token() -> Result<String, String> {
     let token = new_secret();
     if let Some(p) = token_path() {
         crate::write_atomic(&p, &token).map_err(|e| format!("не удалось сохранить новую ссылку ({}), старая продолжает работать", e))?;
+        let _ = crate::acl::private_file(&p);
     }
     *TOKEN.lock() = token.clone();
     PHONE.lock().last_seen = 0;

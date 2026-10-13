@@ -75,8 +75,11 @@ pub fn init() -> bool {
     };
     if let Some(p) = &file {
         // (an unwritable folder is not fatal: the secret lives in memory, only scripts outside of Jarvis cannot read it)
-        if let Err(e) = crate::write_atomic(p, &new) {
-            warn!("UI: the secret of the window could not be saved: {}", e);
+        match crate::write_atomic(p, &new) {
+            Ok(()) => {
+                let _ = crate::acl::private_file(p);
+            }
+            Err(e) => warn!("UI: the secret of the window could not be saved: {}", e),
         }
     }
     *slot = Some(new);
