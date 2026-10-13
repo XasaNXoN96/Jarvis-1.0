@@ -109,7 +109,7 @@ fn the_installer_closes_the_program_folder_to_other_users() {
     let (_, text) = script();
     let body = text.split("procedure HardenAppFolder;").nth(1).expect("HardenAppFolder").split("procedure CurStepChanged").next().unwrap();
     assert!(body.contains("/inheritance:r"), "the rights of the parent must be cut");
-    for sid in ["*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F", "*S-1-3-4:(OI)(CI)M"] {
+    for sid in ["*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F", "(OI)(CI)M"] {
         assert!(body.contains(sid), "{} is missing", sid);
     }
     assert!(body.contains("*S-1-5-32-545:(OI)(CI)RX"), "other users may read and run outside the profile");
@@ -117,6 +117,8 @@ fn the_installer_closes_the_program_folder_to_other_users() {
     for bad in ["S-1-1-0", "S-1-5-11", "S-1-5-32-545:(OI)(CI)M", "S-1-5-32-545:(OI)(CI)F", "S-1-5-32-545:(OI)(CI)W"] {
         assert!(!body.contains(bad), "{} would widen the rights", bad);
     }
+    // the grants come first: the inheritance is cut only after they succeeded
+    assert!(body.find("/grant:r").unwrap() < body.find("/inheritance:r").unwrap(), "the order of the two icacls calls");
     let step = text.split("procedure CurStepChanged").nth(1).expect("CurStepChanged");
     assert!(step.contains("ssPostInstall") && step.contains("HardenAppFolder;"), "the rights are set after the files are copied");
 }

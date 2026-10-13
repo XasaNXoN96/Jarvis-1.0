@@ -429,6 +429,8 @@ jobs:
           $p = Start-Process dist\Jarvis-Setup-Lite.exe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LANG=russian", "/DIR=$dir", "/LOG=$PWD\install.log" -PassThru -Wait
           Write-Host "installer exit code: $($p.ExitCode)"
           Get-Content install.log -TotalCount 12
+          # what the installer did with the rights of the program folder (the check of the result is below)
+          Select-String -Path install.log -Pattern "Access rights of the program folder" | ForEach-Object { Write-Host $_.Line }
           if ($p.ExitCode -ne 0) { throw "silent install failed" }
           foreach ($f in "jarvis-app.exe", "resources\commands", "unins000.exe") {
             if (-not (Test-Path "$dir\$f")) { throw "not installed: $f" }

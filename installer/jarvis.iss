@@ -147,16 +147,28 @@ end;
 procedure HardenAppFolder;
 var
   rc: Integer;
-  params: String;
-  app, profile: String;
+  grants, app, profile, who: String;
+  icacls: String;
 begin
   app := ExpandConstant('{app}');
   profile := ExpandConstant('{userprofile}');
-  params := '"' + app + '" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F *S-1-3-4:(OI)(CI)M';
+  icacls := ExpandConstant('{sys}\icacls.exe');
+  // the user who installs keeps the right to change (by name, DOMAIN\user: it is also right for a domain account)
+  who := GetEnv('USERDOMAIN') + '\' + GetEnv('USERNAME');
+  grants := '"' + app + '" /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F "' + who + '":(OI)(CI)M';
   if Pos(Lowercase(profile) + '\', Lowercase(app) + '\') <> 1 then
-    params := params + ' *S-1-5-32-545:(OI)(CI)RX';
-  if (not Exec(ExpandConstant('{sys}\icacls.exe'), params, '', SW_HIDE, ewWaitUntilTerminated, rc)) or (rc <> 0) then
-    Log('Access rights of the program folder were not restricted (icacls code ' + IntToStr(rc) + ')');
+    grants := grants + ' *S-1-5-32-545:(OI)(CI)RX';
+  // first the grants, and only when they were written the inherited rights are cut (never the other way: a failed grant after
+  // the cut would leave the installing user without rights)
+  if (not Exec(icacls, grants, '', SW_HIDE, ewWaitUntilTerminated, rc)) or (rc <> 0) then
+  begin
+    Log('Access rights of the program folder were not restricted: grant failed (icacls code ' + IntToStr(rc) + ')');
+    Exit;
+  end;
+  if (not Exec(icacls, '"' + app + '" /inheritance:r', '', SW_HIDE, ewWaitUntilTerminated, rc)) or (rc <> 0) then
+    Log('Access rights of the program folder were not restricted: inheritance not cut (icacls code ' + IntToStr(rc) + ')')
+  else
+    Log('Access rights of the program folder were restricted');
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
