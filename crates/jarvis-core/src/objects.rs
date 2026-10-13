@@ -522,6 +522,11 @@ impl Engine {
         }
     }
 
+    // is this the running, not stopped, task
+    pub fn is_current_task(&self, task: u64) -> bool {
+        matches!(&self.task, Some((n, flag)) if *n == task && !flag.load(Ordering::SeqCst)) && self.state == State::AiTask
+    }
+
     // The generation finished. `true` = the result may be used; `false` = it is dropped (cancelled, paused, stale).
     pub fn ai_finished(&mut self, task: u64, result: Result<String, String>) -> bool {
         let current = matches!(&self.task, Some((n, flag)) if *n == task && !flag.load(Ordering::SeqCst));
@@ -826,6 +831,28 @@ pub fn verify(obj: &Object, probe: &dyn Probe) -> Verify {
     }
 }
 
+// The real windows of this computer (Windows); elsewhere nothing is in front and nothing is running, so a check that needs the
+// real screen never passes by accident.
+pub struct SysProbe;
+
+impl Probe for SysProbe {
+    fn front(&self) -> Option<Front> {
+        crate::input::front_info().map(|(process, title)| Front { process, title })
+    }
+
+    fn running(&self, process: &str) -> bool {
+        #[cfg(all(feature = "lua", target_os = "windows"))]
+        {
+            crate::lua::process_running(process)
+        }
+        #[cfg(not(all(feature = "lua", target_os = "windows")))]
+        {
+            let _ = process;
+            false
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // the voice control words
 // ---------------------------------------------------------------------------------------------
@@ -979,7 +1006,7 @@ pub fn stop_reply(rep: &StopReport, prompt_resume: bool) -> String {
         parts.push("Диктовка остановлена".to_string());
     }
     if rep.ai_cancelled {
-        parts.push("Генерация отменена, её результат не будет вставлен".to_string());
+        parts.push("Генерация отменена. Если ИИ ещё ответит, ответ не будет вставлен".to_string());
     }
     if rep.question_dropped {
         parts.push("Вопрос отменён, ничего не изменено".to_string());

@@ -23,6 +23,15 @@ fn say(msg: &str) {
 pub fn start(voice_mode: bool, text_cmd_rx: Receiver<Incoming>, rt: &tokio::runtime::Runtime) -> Result<(), ()> {
     // from here on the queue of typed / remote / Telegram phrases is read
     jarvis_core::remote::mark_queue_ready();
+    // an answer of the work with a code file that comes later (the end of a generation) reaches the window and the voice
+    jarvis_core::codeobj::set_notifier(Box::new(|text, speech| {
+        ipc::send(IpcEvent::Output { text: text.to_string() });
+        jarvis_core::dialog::reply(text, "command");
+        jarvis_core::uistate::log_event("object", &text.chars().take(120).collect::<String>());
+        if jarvis_core::tts::is_enabled() {
+            jarvis_core::tts::speak(speech);
+        }
+    }));
     if voice_mode {
         match main_loop(&text_cmd_rx, rt) {
             // microphone failed to start: don't die, keep working in text mode
@@ -662,6 +671,22 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
             ipc::send(IpcEvent::Idle);
             return jarvis_core::session::kind().is_some(); // keep listening while the session is open
         }
+    }
+
+    // the work with a code file (VS Code + Python): creating a file, a task for the AI, stop / continue / «да» to a question
+    // (codeobj.rs and objects.rs; only when that object is the one Jarvis works with, other phrases pass)
+    if let Some(r) = jarvis_core::codeobj::handle(text, &shown_text(text), source) {
+        open_request(text, "command");
+        say(&r.text);
+        ipc::send(IpcEvent::Output { text: r.text.clone() });
+        jarvis_core::dialog::reply(&r.text, "command");
+        jarvis_core::dialog::end(true);
+        jarvis_core::uistate::log_action(text, "работа с кодом", true);
+        if jarvis_core::tts::is_enabled() {
+            jarvis_core::tts::speak(&r.speech);
+        }
+        ipc::send(IpcEvent::Idle);
+        return false;
     }
 
     // a scenario of the "Конструктор": its activation phrase runs its chain of steps (before the usual commands:

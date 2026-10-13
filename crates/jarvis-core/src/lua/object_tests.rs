@@ -877,3 +877,14 @@ fn a_saved_fact_exists_only_after_the_save_was_confirmed() {
     assert_eq!(crate::objects::snapshot()["saved"], true);
     assert!(crate::objects::snapshot()["saved_path"].as_str().unwrap().contains("Мой отчёт"));
 }
+
+#[test]
+fn opening_vscode_makes_the_engine_know_the_program() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({}));
+    assert_eq!(crate::objects::state(), crate::objects::State::Idle);
+    assert_eq!(w.say("открой вс код"), "assistant_program_open");
+    let s = crate::objects::snapshot();
+    assert_eq!((s["state"].as_str().unwrap(), s["app"].as_str().unwrap_or("")), ("APP_OPEN", ""), "{}", s);
+    crate::objects::with(|e| e.reset());
+}

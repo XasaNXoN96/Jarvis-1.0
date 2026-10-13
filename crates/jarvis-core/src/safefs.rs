@@ -101,6 +101,19 @@ pub fn write(path: &Path, data: &[u8]) -> Result<(), SafeError> {
     Ok(())
 }
 
+// creates a NEW file: an existing one is never replaced (the error is `AlreadyExists`)
+pub fn create_new(path: &Path, data: &[u8]) -> Result<(), SafeError> {
+    use std::io::Write;
+    let (dir, name, target) = prepare(path, FsMode::Write, true)?;
+    // (the handle of the folder stays open while the file is made)
+    let mut f = std::fs::OpenOptions::new().write(true).create_new(true).open(&target)?;
+    f.write_all(data)?;
+    f.flush()?;
+    drop(dir);
+    let _ = name;
+    Ok(())
+}
+
 pub fn append(path: &Path, data: &[u8]) -> Result<(), SafeError> {
     let (dir, name, _) = prepare(path, FsMode::Write, true)?;
     dir.append(&name, data)?;

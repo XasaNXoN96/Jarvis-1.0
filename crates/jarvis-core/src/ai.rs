@@ -817,6 +817,15 @@ pub fn request_answer(_conf: &ProviderConf, _history: &[ChatMsg], _system: &str)
     Err(AiError::Other("в этой сборке нет сетевого модуля".into()))
 }
 
+// One request that is not a conversation (a piece of code for a file): nothing is stored in the dialogs. The caller owns the
+// cancel flag; a stopped request answers `AiError::Cancelled` and its answer, if it still arrives, is never used.
+pub fn complete(system: &str, user: &str, cancel: &AtomicBool) -> Result<String, AiError> {
+    let conf = conf_from_settings()?;
+    let history = vec![ChatMsg { role: "user".into(), content: user.to_string(), ..Default::default() }];
+    let mut probe = Probe::default();
+    request_answer_stream(&conf, &history, system, cancel, std::time::Instant::now(), &mut probe, &mut |_| {})
+}
+
 // What the timing report needs from inside the request.
 #[derive(Default)]
 pub struct Probe {

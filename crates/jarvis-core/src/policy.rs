@@ -780,6 +780,17 @@ pub(crate) fn set_test_allowed(v: Vec<PathBuf>) {
 pub(crate) fn set_test_data(v: Option<PathBuf>) {
     TEST_DATA.with(|t| *t.borrow_mut() = v);
 }
+// a worker thread of a test uses the places of the test that started it
+#[cfg(test)]
+pub(crate) fn test_places() -> (Vec<PathBuf>, Vec<PathBuf>, Option<PathBuf>) {
+    (TEST_ALLOWED.with(|t| t.borrow().clone()), TEST_PROTECTED.with(|t| t.borrow().clone()), TEST_DATA.with(|t| t.borrow().clone()))
+}
+#[cfg(test)]
+pub(crate) fn apply_test_places(p: (Vec<PathBuf>, Vec<PathBuf>, Option<PathBuf>)) {
+    set_test_allowed(p.0);
+    set_test_protected(p.1);
+    set_test_data(p.2);
+}
 #[cfg(test)]
 fn extra_protected() -> Vec<PathBuf> {
     TEST_PROTECTED.with(|t| t.borrow().clone())

@@ -137,7 +137,11 @@ else
     if found.office then jarvis.state.set("office_app", found.office); jarvis.state.set("dict_last", "") end
     say(T("Открываю", "Opening"), found.name, T("Открываю " .. found.name, "Opening " .. found.name), "program")
     local expected = (launched == found.path and exe_path) or found.process
-    confirm_started(found.name, expected, key, was_running)
+    local started = confirm_started(found.name, expected, key, was_running)
+    -- the program that works with objects is open now: the engine knows it (objects.rs); a refusal (a task is running) is fine
+    if started and (found.id == "vscode" or found.id == "word" or found.id == "excel" or found.id == "notepad" or found.id == "powerpoint") then
+      jarvis.object.open_app(found.id)
+    end
   else
     jarvis.app.forget(key)
     say(T("Программа", "Program"), found.name .. T(": не удалось запустить. Скорее всего, она не установлена на этом компьютере", ": could not start it, probably it is not installed"))

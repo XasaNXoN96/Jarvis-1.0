@@ -80,6 +80,10 @@ mod win {
         String::from_utf16_lossy(&buf[..n.max(0) as usize])
     }
 
+    pub fn title_of(h: isize) -> String {
+        title(h as HWND)
+    }
+
     // the window of Jarvis itself: its page is called "Джарвис" (a browser adds " — Microsoft Edge" and the like);
     // a GitHub page or a folder "Jarvis-1.0" in another program is not it
     pub fn is_jarvis(hwnd: HWND) -> bool {
@@ -405,6 +409,19 @@ pub fn opened_window(before: Option<isize>, same_ok: bool, expected: Option<&str
     #[cfg(not(target_os = "windows"))]
     {
         let _ = (before, same_ok, expected, max);
+        None
+    }
+}
+
+// the program file (lower case) and the title of the normal window in front (not Jarvis); None when there is none
+pub fn front_info() -> Option<(String, String)> {
+    #[cfg(target_os = "windows")]
+    {
+        let h = win::foreground()?;
+        Some((win::process_exe(h)?, win::title_of(h)))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
         None
     }
 }
