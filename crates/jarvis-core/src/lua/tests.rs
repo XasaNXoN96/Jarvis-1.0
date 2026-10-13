@@ -821,5 +821,25 @@ mod tests {
         assert!(!crate::lua::sandbox::SandboxLevel::Standard.allows_exec());
         assert!(!crate::lua::sandbox::SandboxLevel::from_str("").allows_exec());
     }
+    // «поставь таймер на 2 секунды» -> after two seconds the notification of the timer exists (and is meant to be said)
+    #[test]
+    fn a_timer_set_by_voice_ends_with_a_notification() {
+        let _u = crate::uistate::TEST_LOCK.lock();
+        crate::tts::set_enabled(true);
+        let marker = format!("{}", rand::random::<u32>());
+        let (shown, _) = answer("assistant_timer_set", "timer.lua", "поставь таймер на 2 секунды");
+        assert!(shown.contains("Запущен на 2"), "the timer was set: {}", shown);
+        let t0 = std::time::Instant::now();
+        let mut found = None;
+        while t0.elapsed() < Duration::from_secs(8) && found.is_none() {
+            std::thread::sleep(Duration::from_millis(200));
+            found = crate::notify::recent(40).into_iter().find(|n| n.kind == "timer" && n.text.contains("Время вышло"));
+        }
+        let _ = marker;
+        let n = found.expect("no notification of kind timer after the time was up");
+        assert!(n.shown && n.spoken, "shown and said by the settings: {:?}", n);
+        crate::lua::api::timer::cancel_titled("Таймер");
+    }
+
 }
 

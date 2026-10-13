@@ -463,7 +463,10 @@ jobs:
               $st2 = Invoke-RestMethod http://127.0.0.1:9714/state -TimeoutSec 5
               $found = @($st2.notes) | Where-Object { $_.kind -eq "timer" } | Select-Object -First 1
             }
-            if (-not $found) { throw "no notification of kind timer appeared in 40 s" }
+            if (-not $found) {
+              $kinds = (@($st2.notes) | ForEach-Object { "$($_.kind):$($_.title)" }) -join ", "
+              throw "no notification of kind timer appeared in 40 s; last output of Jarvis: '$($st2.last_output)'; notifications: [$kinds]"
+            }
             $timerOk = "PASS"; $timerWhy = "notification: '$($found.title)' / '$($found.text)', shown=$($found.shown), spoken=$($found.spoken)"
           } catch { $timerWhy = $_.Exception.Message }
           Write-Host "TIMER E2E: $timerOk $timerWhy"
