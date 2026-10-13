@@ -698,6 +698,34 @@ jobs:
           Write-Host "TUNNEL E2E: $tun $why"
           Add-Content evidence.txt "TUNNEL E2E (real Cloudflare): $tun $why"
           if ($tun -ne "PASS") { Write-Output "::warning title=tunnel e2e::$why" }
+          # The voice installed by the program itself (the lite installer has no Piper): the download of the pinned Piper archive, its
+          # SHA-256 and the names inside it checked, the unpacking through the one PowerShell gate (psrun), the voice files checked.
+          # This is the only place where that real path runs on Windows. A refusal of the checks is a SECURITY failure; a missing
+          # network (the runner) is NOT TESTED.
+          $vi = "NOT TESTED"; $viWhy = ""
+          try {
+            $r = Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $h -Body '{"name":"voice_install"}'
+            if (-not $r.ok) { throw "NOT TESTED: the install did not start: $($r.message)" }
+            $st = $null
+            for ($i = 0; $i -lt 150; $i++) { Start-Sleep 4; $st = Invoke-RestMethod http://127.0.0.1:9714/voice-install -TimeoutSec 10; if (-not $st.running) { break } }
+            if ($st.running) { throw "NOT TESTED: still running after 10 minutes" }
+            if ($st.error) {
+              if ($st.error -match 'SHA-256|закреплённ|отклонен|не прошёл проверку') { throw "SECURITY: the checks refused the download: $($st.error)" }
+              throw "NOT TESTED: $($st.error)"
+            }
+            if (-not ($st.done -and $st.installed)) { throw "the install ended without an error but the voice is not installed (done=$($st.done), installed=$($st.installed))" }
+            foreach ($f in @("piper\piper.exe")) { if (-not (Test-Path (Join-Path $dir $f))) { throw "missing after the install: $f" } }
+            if (@(Get-ChildItem (Join-Path $dir "piper\voices") -Filter *.onnx -ErrorAction SilentlyContinue).Count -lt 1) { throw "no voice model after the install" }
+            $zip = Join-Path $dir "jarvis_piper.zip"
+            if (Test-Path $zip) { throw "the downloaded archive was not removed" }
+            $vi = "PASS"; $viWhy = "voice_pinned=$($st.voice_pinned) (false: the voice files are checked by shape only, no hash is pinned for them yet)"
+          } catch {
+            $viWhy = $_.Exception.Message
+            $vi = if ($viWhy -like "SECURITY:*") { "FAIL" } elseif ($viWhy -like "NOT TESTED:*") { "NOT TESTED" } else { "FAIL" }
+          }
+          Write-Host "VOICE INSTALL E2E: $vi $viWhy"
+          Add-Content evidence.txt "VOICE INSTALL E2E (the voice from the program: download, SHA-256, names, unpack through psrun): $vi $viWhy"
+          if ($vi -ne "PASS") { Write-Output "::warning title=voice install e2e::$viWhy" }
           # on again, and left ON for the exit below: the full exit must end cloudflared too (checked after it)
           try {
             Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $h -Body '{"name":"remote_tunnel","value":true}' | Out-Null
@@ -755,9 +783,27 @@ jobs:
           # The security checks are a GATE: a failed one fails the job (a warning in a green pipeline hid a missing 429 once).
           # "NOT TESTED" (the network of the runner) is not a failure of security and stays a visible warning.
           if (Test-Path evidence.txt) {
-            $gate = @(Get-Content evidence.txt -Encoding UTF8 | Where-Object { ($_ -match '^(UI AUTH|DATA ACL|INSTALL FOLDER ACL)' -and $_ -match ': FAIL') -or ($_ -match '^TUNNEL E2E' -and $_ -match 'SECURITY:') })
+            $gate = @(Get-Content evidence.txt -Encoding UTF8 | Where-Object { ($_ -match '^(UI AUTH|DATA ACL|INSTALL FOLDER ACL)' -and $_ -match ': FAIL') -or ($_ -match '^(TUNNEL E2E|VOICE INSTALL E2E)' -and $_ -match 'SECURITY:') })
             if ($gate.Count -gt 0) { $gate | ForEach-Object { Write-Output "::error title=security check failed::$_" }; throw "SECURITY CHECKS FAILED: $($gate.Count)" }
           }
+
+  # The old Tauri window (crates/jarvis-gui) is NOT part of the shipped program: the installer carries jarvis-app.exe only, and the
+  # tray of jarvis-app can start a jarvis-gui.exe that stands next to it, if one is there. This job only tells whether the crate
+  # still builds (it needs the Tauri libraries, which the Linux development environment lacks). It does not block anything.
+  gui-check:
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: gui-check
+      - name: cargo check -p jarvis-gui (informational)
+        shell: pwsh
+        run: |
+          cargo check -p jarvis-gui 2>&1 | Tee-Object -FilePath gui-check.log | Select-Object -Last 15
+          if ($LASTEXITCODE -ne 0) { Write-Output "::warning title=jarvis-gui::the crate does not build: see the log"; exit 1 }
 
   publish:
     needs: [test, build]

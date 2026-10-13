@@ -1,0 +1,69 @@
+# Produces the lines that pin the Piper voices (VOICE_PINS in crates/jarvis-core/src/voice_install.rs): the commit of the voices
+# repository, the SHA-256 and the size of every file. It changes NOTHING in the repository: a person reads the output,
+# compares it (docs/SECURITY-DOWNLOADS.md) and commits the lines.
+#
+# The value is not taken on trust from one place: the files are downloaded at ONE commit (not `main`), and their bytes are checked
+# against what the repository itself states for that commit (the LFS id of the model, the git blob id of the small JSON).
+# A mismatch fails the job. What it cannot prove: that the repository itself was not changed by someone who controls it; for that
+# compare the printed commit and hashes with an independent copy (the page of the file at that commit, a second download from
+# another network) before pinning.
+name: Voice pins (manual, changes nothing)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pins:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download at one commit and cross-check
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ProgressPreference = "SilentlyContinue"
+          $repo = "rhasspy/piper-voices"
+          $rev = (Invoke-RestMethod "https://huggingface.co/api/models/$repo").sha
+          if ($rev -notmatch '^[0-9a-f]{40}$') { throw "no commit id from the repository: '$rev'" }
+          Write-Host "commit of $repo : $rev"
+          $voices = @(
+            @{ lang = "ru"; folder = "ru/ru_RU/irina/medium"; name = "ru_RU-irina-medium" },
+            @{ lang = "en"; folder = "en/en_US/amy/medium"; name = "en_US-amy-medium" }
+          )
+          $lines = @()
+          foreach ($v in $voices) {
+            $tree = Invoke-RestMethod "https://huggingface.co/api/models/$repo/tree/$rev/$($v.folder)"
+            foreach ($suffix in @(".onnx", ".onnx.json")) {
+              $remote = "$($v.folder)/$($v.name)$suffix"
+              $entry = $tree | Where-Object { $_.path -eq $remote }
+              if (-not $entry) { throw "$remote is not in the tree of commit $rev" }
+              $tmp = Join-Path $env:RUNNER_TEMP "$($v.lang)$suffix"
+              Invoke-WebRequest "https://huggingface.co/$repo/resolve/$rev/$remote" -OutFile $tmp
+              $bytes = [System.IO.File]::ReadAllBytes($tmp)
+              $sha256 = (Get-FileHash $tmp -Algorithm SHA256).Hash.ToLower()
+              # the repository's own statement about the bytes of that commit
+              if ($entry.lfs) {
+                if ($entry.lfs.oid -ne $sha256) { throw "$remote : SHA-256 of the download ($sha256) differs from the LFS id the repository states ($($entry.lfs.oid))" }
+                $how = "LFS id"
+              } else {
+                $head = [System.Text.Encoding]::ASCII.GetBytes("blob $($bytes.Length)`0")
+                $sha1 = [System.Security.Cryptography.SHA1]::Create().ComputeHash($head + $bytes)
+                $blob = -join ($sha1 | ForEach-Object { $_.ToString("x2") })
+                if ($entry.oid -ne $blob) { throw "$remote : git blob id of the download ($blob) differs from the repository ($($entry.oid))" }
+                $how = "git blob id"
+              }
+              Write-Host "OK $remote size=$($bytes.Length) sha256=$sha256 (checked against the $how of the repository)"
+              $lines += "    VoicePin { file: `"$($v.lang)$suffix`", revision: `"$rev`", sha256: `"$sha256`", size: $($bytes.Length) },"
+            }
+          }
+          "pub(crate) const VOICE_PINS: &[VoicePin] = &[" | Out-File voice-pins.txt -Encoding utf8
+          $lines | Out-File voice-pins.txt -Append -Encoding utf8
+          "];" | Out-File voice-pins.txt -Append -Encoding utf8
+          Write-Host "===== lines for voice_install.rs (review, compare, then commit) ====="
+          Get-Content voice-pins.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: voice-pins
+          path: voice-pins.txt
