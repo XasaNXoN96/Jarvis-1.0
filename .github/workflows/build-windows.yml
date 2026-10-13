@@ -251,6 +251,19 @@ jobs:
         timeout-minutes: 10
         shell: pwsh
         run: |
+          # the window server answers only with its secret (the file ui_token of the data folder): every call of the checks
+          # below to 127.0.0.1:9714 carries it, the tests of the refusal say so explicitly
+          function JT { $f = Join-Path $env:APPDATA 'com.priler.jarvis\ui_token'; if (Test-Path $f) { (Get-Content $f -Raw).Trim() } else { '' } }
+          function Invoke-RestMethod {
+            [CmdletBinding()] param([Parameter(Position=0)][string]$Uri, [string]$Method, $Headers, $Body, [string]$ContentType, [int]$TimeoutSec)
+            $p = @{ Uri = $Uri }
+            foreach ($k in 'Method', 'Body', 'ContentType', 'TimeoutSec') { if ($PSBoundParameters.ContainsKey($k)) { $p[$k] = $PSBoundParameters[$k] } }
+            $hdr = @{}
+            if ($Headers) { foreach ($k in $Headers.Keys) { $hdr[$k] = $Headers[$k] } }
+            if ($Uri -like 'http://127.0.0.1:9714*' -and -not $hdr.ContainsKey('X-Jarvis-Token')) { $t = JT; if ($t) { $hdr['X-Jarvis-Token'] = $t } }
+            if ($hdr.Count) { $p['Headers'] = $hdr }
+            Microsoft.PowerShell.Utility\Invoke-RestMethod @p
+          }
           $ErrorActionPreference = "Stop"
           $dir = "C:\Jarvis Тест Full"
           $p = Start-Process dist\Jarvis-Setup.exe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LANG=english", "/DIR=`"$dir`"", "/LOG=$PWD\install-full.log" -PassThru -Wait
@@ -378,6 +391,19 @@ jobs:
         timeout-minutes: 10
         shell: pwsh
         run: |
+          # the window server answers only with its secret (the file ui_token of the data folder): every call of the checks
+          # below to 127.0.0.1:9714 carries it, the tests of the refusal say so explicitly
+          function JT { $f = Join-Path $env:APPDATA 'com.priler.jarvis\ui_token'; if (Test-Path $f) { (Get-Content $f -Raw).Trim() } else { '' } }
+          function Invoke-RestMethod {
+            [CmdletBinding()] param([Parameter(Position=0)][string]$Uri, [string]$Method, $Headers, $Body, [string]$ContentType, [int]$TimeoutSec)
+            $p = @{ Uri = $Uri }
+            foreach ($k in 'Method', 'Body', 'ContentType', 'TimeoutSec') { if ($PSBoundParameters.ContainsKey($k)) { $p[$k] = $PSBoundParameters[$k] } }
+            $hdr = @{}
+            if ($Headers) { foreach ($k in $Headers.Keys) { $hdr[$k] = $Headers[$k] } }
+            if ($Uri -like 'http://127.0.0.1:9714*' -and -not $hdr.ContainsKey('X-Jarvis-Token')) { $t = JT; if ($t) { $hdr['X-Jarvis-Token'] = $t } }
+            if ($hdr.Count) { $p['Headers'] = $hdr }
+            Microsoft.PowerShell.Utility\Invoke-RestMethod @p
+          }
           $ErrorActionPreference = "Stop"
           $dir = "C:\JarvisSmoke"
           $p = Start-Process dist\Jarvis-Setup-Lite.exe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LANG=russian", "/DIR=$dir", "/LOG=$PWD\install.log" -PassThru -Wait
@@ -477,6 +503,27 @@ jobs:
           $tg = Invoke-RestMethod http://127.0.0.1:9714/telegram -TimeoutSec 5
           Write-Host "messages: $(@($m.messages).Count), networks: $(@($m.networks).Count); telegram: enabled=$($tg.enabled) available=$($tg.available)"
           if ($tg.enabled) { throw "the Telegram bot must be off by default" }
+          # the window server without its secret: nothing is read, nothing is done (the leak of the link of the phone remote included)
+          $uiAuth = "FAIL"; $uiWhy = ""
+          try {
+            $bare = @('/state', '/remote', '/remote-qr', '/diag-report', '/settings', '/chats', '/tasks', '/telegram', '/commands')
+            foreach ($u in $bare) {
+              $x = Microsoft.PowerShell.Utility\Invoke-WebRequest "http://127.0.0.1:9714$u" -SkipHttpErrorCheck -TimeoutSec 5
+              if ([int]$x.StatusCode -ne 403) { throw "$u answered $([int]$x.StatusCode) without the secret" }
+            }
+            $x = Microsoft.PowerShell.Utility\Invoke-WebRequest "http://127.0.0.1:9714/action" -Method Post -Headers @{ "X-Jarvis" = "1" } -Body '{"name":"app_exit"}' -SkipHttpErrorCheck -TimeoutSec 5
+            if ([int]$x.StatusCode -ne 403) { throw "POST /action answered $([int]$x.StatusCode) with X-Jarvis but without the secret" }
+            $x = Microsoft.PowerShell.Utility\Invoke-WebRequest "http://127.0.0.1:9714/state" -Headers @{ "X-Jarvis-Token" = ("0" * 64) } -SkipHttpErrorCheck -TimeoutSec 5
+            if ([int]$x.StatusCode -ne 403) { throw "a wrong secret answered $([int]$x.StatusCode)" }
+            $x = Microsoft.PowerShell.Utility\Invoke-WebRequest "http://127.0.0.1:9714/state" -Headers @{ "X-Jarvis-Token" = (JT) } -SkipHttpErrorCheck -TimeoutSec 5
+            if ([int]$x.StatusCode -ne 200) { throw "the right secret answered $([int]$x.StatusCode)" }
+            $x = Microsoft.PowerShell.Utility\Invoke-WebRequest "http://127.0.0.1:9714/" -SkipHttpErrorCheck -TimeoutSec 5
+            if ([int]$x.StatusCode -ne 200 -or $x.Content.Contains((JT))) { throw "the page must open and must not contain the secret" }
+            $uiAuth = "PASS"
+          } catch { $uiWhy = $_.Exception.Message }
+          Write-Host "UI AUTH: $uiAuth $uiWhy"
+          Add-Content evidence.txt "UI AUTH (the window server needs its secret): $uiAuth $uiWhy"
+          if ($uiAuth -ne "PASS") { Write-Output "::warning title=ui auth::$uiWhy" }
           # real commands of the installed Jarvis (the queue shared by the window, the voice, the phone and Telegram):
           # «открой блокнот» starts Notepad, «закрой блокнот» ends it
           $cmdOk = "FAIL"; $cmdWhy = ""

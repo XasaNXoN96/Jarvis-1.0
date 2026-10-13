@@ -125,7 +125,17 @@ fn check_origin(
         "http://tauri.localhost",
         "https://tauri.localhost",
     ];
-    match req.headers().get("origin").and_then(|v| v.to_str().ok()) {
+    // The Origin only tells which web page asks; a program on this computer sends any Origin (or none). The socket carries
+    // the phrases and the events of Jarvis (what was heard and said) and takes phrases and «stop» back, so it is for the
+    // holder of the secret of the window only (ui_auth.rs), in the address of the connection: ws://127.0.0.1:9712/?jt=…
+    let origin = req.headers().get("origin").and_then(|v| v.to_str().ok());
+    if !crate::ui_auth::socket_allowed(req.uri().query(), origin) {
+        warn!("IPC: a connection without the secret of the window (or from a foreign origin) was refused");
+        let mut err = ErrorResponse::new(Some("forbidden".to_string()));
+        *err.status_mut() = tokio_tungstenite::tungstenite::http::StatusCode::FORBIDDEN;
+        return Err(err);
+    }
+    match origin {
         None => Ok(response),
         Some(origin) if ALLOWED.contains(&origin) => Ok(response),
         Some(origin) => {

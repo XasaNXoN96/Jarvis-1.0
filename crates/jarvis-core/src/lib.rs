@@ -53,6 +53,7 @@ pub mod integrity;
 pub mod policy;
 pub mod remote;
 pub mod ui;
+pub mod ui_auth;
 pub mod uistate;
 pub mod route;
 pub mod apps;

@@ -684,6 +684,10 @@ pub fn sanitize(text: &str) -> String {
     if token.len() >= 6 {
         out = out.replace(&token, "***");
     }
+    // the secret of the window server too (it is in the address that opens the window)
+    if let Some(t) = crate::ui_auth::token() {
+        out = out.replace(&t, "***");
+    }
     let mut prev_bearer = false;
     let words: Vec<String> = out
         .split(' ')

@@ -17,11 +17,19 @@ pub const PORT: u16 = 9714;
 const PAGE: &str = include_str!("ui_page.html");
 const ICON: &[u8] = include_bytes!("../../../resources/icons/128x128.png");
 
-pub fn url() -> String {
+// the address of the page (no secret: for the log and for people)
+pub fn base_url() -> String {
     format!("http://127.0.0.1:{}/", PORT)
 }
 
+// the address that OPENS the window: the secret after the # (ui_auth.rs)
+pub fn url() -> String {
+    crate::ui_auth::with_token(&base_url())
+}
+
 pub fn start() {
+    // the secret of the window is made before the first request is answered; without it every request is refused
+    crate::ui_auth::init();
     let listener = match TcpListener::bind(("127.0.0.1", PORT)) {
         Ok(l) => l,
         Err(e) => {
@@ -29,7 +37,7 @@ pub fn start() {
             return;
         }
     };
-    info!("UI: window page on {}", url());
+    info!("UI: window page on {}", base_url());
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             std::thread::spawn(move || {
@@ -688,6 +696,8 @@ struct Request {
     query: String,
     host_ok: bool,
     custom_header: bool,
+    // the secret of the window (header X-Jarvis-Token, or jt= in the address for images)
+    token: Option<String>,
     body: Vec<u8>,
 }
 
@@ -719,6 +729,7 @@ fn read_request(stream: &mut TcpStream) -> std::io::Result<Request> {
 
     let mut host_ok = false;
     let mut custom_header = false;
+    let mut token = crate::ui_auth::from_query(&query);
     let mut content_length = 0usize;
     for line in lines {
         if let Some((k, v)) = line.split_once(':') {
@@ -728,6 +739,7 @@ fn read_request(stream: &mut TcpStream) -> std::io::Result<Request> {
                 "content-length" => content_length = v.parse().unwrap_or(0),
                 // a web page on another site cannot add this header without our permission
                 "x-jarvis" => custom_header = v == "1",
+                "x-jarvis-token" => token = Some(v.to_string()),
                 _ => {}
             }
         }
@@ -743,7 +755,7 @@ fn read_request(stream: &mut TcpStream) -> std::io::Result<Request> {
         buf.extend_from_slice(&chunk[..n]);
     }
     let end = buf.len().min(header_end + content_length);
-    Ok(Request { method, path, query, host_ok, custom_header, body: buf[header_end..end].to_vec() })
+    Ok(Request { method, path, query, host_ok, custom_header, token, body: buf[header_end..end].to_vec() })
 }
 
 fn respond_bytes(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]) {
@@ -774,6 +786,17 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
 
     // only our own pages: protects against DNS-rebinding tricks from web pages
     if !req.host_ok {
+        respond(&mut stream, "403 Forbidden", "text/plain", "forbidden");
+        return Ok(());
+    }
+    // the page and its icon are open (they hold no data and no secret); everything else needs the secret of the window.
+    // A Host check and the X-Jarvis header only stop a web page; a program sends any header, so the secret decides
+    // (ui_auth.rs). No secret could be made: nothing passes.
+    let open = req.method == "GET" && matches!(req.path.as_str(), "/" | "/icon.png" | "/favicon.ico");
+    if !open && !crate::ui_auth::check(req.token.as_deref()) {
+        if crate::guard::first("ui:no-secret", Duration::from_secs(60)) {
+            warn!("UI: a request without the secret of the window was refused ({} {})", req.method, req.path);
+        }
         respond(&mut stream, "403 Forbidden", "text/plain", "forbidden");
         return Ok(());
     }
@@ -1133,7 +1156,7 @@ pub fn open_browser_window() -> bool {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        info!("UI: open {} in a browser", link);
+        info!("UI: open {} in a browser", base_url());
         let _ = Command::new("xdg-open").arg(&link).spawn();
         false
     }
@@ -1204,6 +1227,108 @@ mod tests {
         assert_eq!(got[0].source, crate::origin::Source::Window);
         assert!(!got[0].via_script);
         assert_eq!(got[0].text, "открой блокнот");
+    }
+
+    // one request through the real handler of the page server, over a real local connection
+    fn http(raw: &str) -> String {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let _ = handle(stream);
+        });
+        let mut c = std::net::TcpStream::connect(addr).unwrap();
+        c.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+        c.write_all(raw.as_bytes()).unwrap();
+        let mut bytes = Vec::new();
+        let _ = c.read_to_end(&mut bytes);
+        let _ = server.join();
+        String::from_utf8_lossy(&bytes).to_string()
+    }
+
+    fn get(path: &str, extra: &str) -> String {
+        http(&format!("GET {} HTTP/1.1\r\nHost: 127.0.0.1:9714\r\n{}Connection: close\r\n\r\n", path, extra))
+    }
+
+    fn post(path: &str, body: &str, extra: &str) -> String {
+        http(&format!("POST {} HTTP/1.1\r\nHost: 127.0.0.1:9714\r\nX-Jarvis: 1\r\n{}Content-Length: {}\r\nConnection: close\r\n\r\n{}", path, extra, body.len(), body))
+    }
+
+    fn status(answer: &str) -> &str {
+        answer.lines().next().unwrap_or("")
+    }
+
+    const DATA: &[&str] = &["/state", "/remote", "/remote-qr", "/remote-qr-net", "/remote-qr-https", "/diag", "/diag-report", "/settings", "/voices", "/modules", "/chats", "/scenarios", "/tasks", "/messages", "/telegram", "/commands", "/apps", "/files", "/avatar", "/voice-install", "/reaction-voices"];
+
+    // a program on this computer (a web page is stopped before, by the Host) sends any header it likes: without the secret of the
+    // window nothing is read and nothing is done, whatever else the request says
+    #[test]
+    fn without_the_secret_of_the_window_nothing_is_read_and_nothing_is_done() {
+        let _g = crate::ui_auth::TEST_LOCK.lock();
+        crate::ui_auth::reset_for_tests(None, false);
+        crate::ui_auth::init();
+        let secret = crate::ui_auth::token().unwrap();
+        for path in DATA {
+            let a = get(path, "");
+            assert_eq!(status(&a), "HTTP/1.1 403 Forbidden", "{} without the secret: {}", path, a);
+            assert!(a.ends_with("forbidden"), "{}: no data in a refusal", path);
+            // the X-Jarvis header, an Origin of the window and a guess are not the secret
+            for extra in ["X-Jarvis: 1\r\n".to_string(), "Origin: http://127.0.0.1:9714\r\nReferer: http://127.0.0.1:9714/\r\n".to_string(), format!("X-Jarvis-Token: {}\r\n", "0".repeat(64)), "X-Jarvis-Token: \r\n".to_string(), format!("X-Jarvis-Token: {}\r\n", &secret[..63])] {
+                assert_eq!(status(&get(path, &extra)), "HTTP/1.1 403 Forbidden", "{} with {:?}", path, extra);
+            }
+            assert_eq!(status(&get(&format!("{}?jt={}", path, "1".repeat(64)), "")), "HTTP/1.1 403 Forbidden", "{} with a wrong jt=", path);
+        }
+        for (path, body) in [("/action", r#"{"name":"app_exit"}"#), ("/action", r#"{"name":"remote_on"}"#), ("/action", r#"{"name":"remote_tunnel","value":true}"#), ("/chat", r#"{"op":"ask","text":"выключи компьютер"}"#), ("/tasks", r#"{"op":"clear"}"#), ("/scenario", r#"{"op":"test_step"}"#), ("/settings", r#"{"ai_key":"x"}"#), ("/telegram", r#"{"op":"forget"}"#), ("/messages", r#"{"op":"clear"}"#), ("/avatar", "x"), ("/window-closed", "")] {
+            let a = post(path, body, "");
+            assert_eq!(status(&a), "HTTP/1.1 403 Forbidden", "POST {} with X-Jarvis but without the secret: {}", path, a);
+        }
+        // the page and its icon are open, and hold no secret
+        let page = get("/", "");
+        assert_eq!(status(&page), "HTTP/1.1 200 OK");
+        assert!(!page.contains(&secret), "the page does not contain the secret");
+        assert_eq!(status(&get("/icon.png", "")), "HTTP/1.1 200 OK");
+        assert_eq!(status(&get("/favicon.ico", "")), "HTTP/1.1 200 OK");
+        // a POST to the page is not the open GET
+        assert_eq!(status(&post("/", "", "")), "HTTP/1.1 403 Forbidden");
+        crate::ui_auth::reset_for_tests(None, false);
+    }
+
+    #[test]
+    fn with_the_secret_the_window_works_as_before_and_the_host_check_still_applies() {
+        let _g = crate::ui_auth::TEST_LOCK.lock();
+        crate::ui_auth::reset_for_tests(None, false);
+        crate::ui_auth::init();
+        let t = crate::ui_auth::token().unwrap();
+        let a = get("/state", &format!("X-Jarvis-Token: {}\r\n", t));
+        assert_eq!(status(&a), "HTTP/1.1 200 OK", "{}", a);
+        assert!(a.contains("application/json"));
+        // an image cannot send a header: the secret in the address
+        assert_ne!(status(&get(&format!("/avatar?jt={}&t=1", t), "")), "HTTP/1.1 403 Forbidden");
+        assert_eq!(status(&get(&format!("/state?jt={}", t), "")), "HTTP/1.1 200 OK");
+        // a POST still needs X-Jarvis as well as the secret (a page of a web site cannot add it)
+        let raw = format!("POST /tasks HTTP/1.1\r\nHost: 127.0.0.1:9714\r\nX-Jarvis-Token: {}\r\nContent-Length: 14\r\nConnection: close\r\n\r\n{{\"op\":\"clear\"}}", t);
+        assert_eq!(status(&http(&raw)), "HTTP/1.1 403 Forbidden", "the secret alone does not open a POST");
+        // the Host check (DNS rebinding) still applies with the right secret
+        let rebind = http(&format!("GET /state HTTP/1.1\r\nHost: evil.example:9714\r\nX-Jarvis-Token: {}\r\nConnection: close\r\n\r\n", t));
+        assert_eq!(status(&rebind), "HTTP/1.1 403 Forbidden");
+        crate::ui_auth::reset_for_tests(None, false);
+    }
+
+    // the secret could not be made (or the file is gone and memory is empty): the server is closed, not open
+    #[test]
+    fn when_the_protection_is_unavailable_the_server_refuses_everything_but_the_page() {
+        let _g = crate::ui_auth::TEST_LOCK.lock();
+        crate::ui_auth::reset_for_tests(None, true);
+        assert!(!crate::ui_auth::init());
+        for path in DATA {
+            for extra in ["", "X-Jarvis-Token: \r\n", "X-Jarvis: 1\r\n"] {
+                assert_eq!(status(&get(path, extra)), "HTTP/1.1 403 Forbidden", "{} {:?}", path, extra);
+            }
+            assert_eq!(status(&get(&format!("{}?jt=", path), "")), "HTTP/1.1 403 Forbidden", "{} with an empty jt=", path);
+        }
+        assert_eq!(status(&post("/action", r#"{"name":"app_exit"}"#, "X-Jarvis-Token: \r\n")), "HTTP/1.1 403 Forbidden");
+        assert_eq!(status(&get("/", "")), "HTTP/1.1 200 OK", "the page itself opens (it can say that the secret is missing)");
+        crate::ui_auth::reset_for_tests(None, false);
     }
 
 }

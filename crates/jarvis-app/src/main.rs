@@ -470,8 +470,11 @@ fn ask_running_once() -> bool {
     let body = r#"{"name":"show_window"}"#;
     let Ok(mut s) = std::net::TcpStream::connect_timeout(&"127.0.0.1:9714".parse().unwrap(), std::time::Duration::from_secs(2)) else { return false };
     let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(4)));
+    // the running Jarvis answers only with its secret: the second start reads it from the data folder of the user
+    let token = jarvis_core::ui_auth::read_saved().unwrap_or_default();
     let req = format!(
-        "POST /action HTTP/1.1\r\nHost: 127.0.0.1:9714\r\nX-Jarvis: 1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        "POST /action HTTP/1.1\r\nHost: 127.0.0.1:9714\r\nX-Jarvis: 1\r\nX-Jarvis-Token: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        token,
         body.len(),
         body
     );

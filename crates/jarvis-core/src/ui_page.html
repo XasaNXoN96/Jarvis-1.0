@@ -944,6 +944,18 @@
 </div></div>
 <script>
 const $ = s => document.querySelector(s);
+// The secret of the window (ui_auth.rs): the window opens the page with it after the #; it is kept in the memory of this tab,
+// removed from the address bar and added to every request. A page opened without it can show itself and nothing else.
+let JTOKEN = '';
+try {
+  const m = /[#&]t=([0-9a-f]{64})/.exec(location.hash);
+  if (m) { JTOKEN = m[1]; sessionStorage.setItem('jarvis.tok', JTOKEN); history.replaceState(null, '', location.pathname + location.search); }
+  else JTOKEN = sessionStorage.getItem('jarvis.tok') || '';
+} catch (e) {}
+const _fetch = window.fetch.bind(window);
+window.fetch = (u, o) => { o = o || {}; const h = new Headers(o.headers || {}); if (JTOKEN) h.set('X-Jarvis-Token', JTOKEN); o.headers = h; return _fetch(u, o); };
+// images cannot send a header: the secret goes in the address (jt=; the t= of these addresses only defeats the cache)
+const withTok = u => u + (u.includes('?') ? '&' : '?') + 'jt=' + JTOKEN;
 const WS_URL = 'ws://127.0.0.1:9712';
 let ws = null, connected = false;
 let state = 'idle', stateUntil = 0;
@@ -1032,7 +1044,7 @@ function setState(name, ms) {
 
 // ---------- connection ----------
 function connect() {
-  try { ws = new WebSocket(WS_URL); } catch (e) { setTimeout(connect, 2000); return; }
+  try { ws = new WebSocket(WS_URL + '/?jt=' + JTOKEN); } catch (e) { setTimeout(connect, 2000); return; }
   ws.onopen = () => {
     connected = true; $('#dot').classList.add('on');
     setState('idle');
@@ -1300,7 +1312,7 @@ async function remoteCard(s) {
     if (seen !== remoteSeen) {
       remoteSeen = seen; remoteLink = link;
       $('#rm-url').textContent = link; $('#rm-err').textContent = '';
-      $('#rm-qr').src = '/remote-qr?ip=' + encodeURIComponent(remoteIp) + '&t=' + Date.now();
+      $('#rm-qr').src = withTok('/remote-qr?ip=' + encodeURIComponent(remoteIp) + '&t=' + Date.now());
       const box = $('#rm-addrs'); box.textContent = '';
       if (addrs.length > 1) for (const a of addrs) {
         const b = document.createElement('button'); b.type = 'button'; b.className = 'btn small' + (a.ip === remoteIp ? ' on' : '');
@@ -1368,7 +1380,7 @@ function netRender(t) {
   $('#net-err').textContent = st === 'error' ? t.error : (t.available === false ? 'Доступно только в Windows' : '');
   $('#net-on').style.display = st === 'on' && t.url ? 'block' : 'none';
   if (st === 'on' && t.url && t.url !== netUrl) {
-    netUrl = t.url; $('#net-url').textContent = t.url; $('#net-qr').src = '/remote-qr-net?t=' + Date.now();
+    netUrl = t.url; $('#net-url').textContent = t.url; $('#net-qr').src = withTok('/remote-qr-net?t=' + Date.now());
   }
   if (st !== 'on') netUrl = '';
 }
@@ -2299,7 +2311,7 @@ async function refreshRemote() {
     const r = await (await fetch('/remote')).json();
     const box = $('#remote-box');
     if (r.enabled) {
-      if (remoteShown !== r.url) { $('#remote-qr').src = '/remote-qr?' + Date.now(); $('#remote-url').textContent = r.url; remoteShown = r.url; }
+      if (remoteShown !== r.url) { $('#remote-qr').src = withTok('/remote-qr?' + Date.now()); $('#remote-url').textContent = r.url; remoteShown = r.url; }
       box.style.display = 'block';
     } else { box.style.display = 'none'; remoteShown = ''; }
   } catch (e) {}
@@ -2670,7 +2682,7 @@ function loadAvatar() {
   const img = new Image();
   img.onload = () => { avatarImg = img; buildAvatar(); };
   img.onerror = () => { avatarImg = null; avatarCanvas = null; };
-  img.src = '/avatar?' + Date.now();
+  img.src = withTok('/avatar?' + Date.now());
 }
 [avThr, avInv].forEach(el => el.oninput = el.onchange = () => {
   try { localStorage.setItem('jarvis-av-thr', avThr.value); localStorage.setItem('jarvis-av-inv', avInv.checked ? '1' : '0'); } catch (e) {}
