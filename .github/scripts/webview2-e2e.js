@@ -114,6 +114,29 @@ const { chromium } = require('playwright-core');
   await wait(300);
   await page.keyboard.press('Escape');
   await wait(300);
+  // the compact summary of the home page: three chips with real text, nothing overlaps the orb, the composer or the buttons,
+  // it expands and collapses, and the full «Система» page keeps its cards and controls
+  await page.evaluate(() => show('home'));
+  await wait(600);
+  const sum = async () => page.evaluate(() => {
+    const r = sel => { const e = document.querySelector(sel); if (!e) return null; const b = e.getBoundingClientRect(); return { t: b.top, b: b.bottom, l: b.left, r: b.right, w: b.width, h: b.height }; };
+    const hit = (a, c) => a && c && a.w > 0 && c.w > 0 && !(a.b <= c.t || c.b <= a.t || a.r <= c.l || c.r <= a.l);
+    const sm = r('#h-sum'), cards = r('#hs-cards'), orb = r('#orb'), form = r('#h-form');
+    return { chips: [...document.querySelectorAll('.hs-chip')].map(c => c.textContent.trim()), states: [...document.querySelectorAll('.hs-chip')].map(c => c.dataset.s),
+      overOrb: hit(sm, orb) || hit(cards, orb), overForm: hit(sm, form) || hit(cards, form), orbH: orb ? orb.h : 0, hscroll: document.documentElement.scrollWidth > innerWidth + 1,
+      mic: !!document.querySelector('#h-mic') && !!document.querySelector('#h-send') && !!document.querySelector('#h-input') };
+  });
+  const s1 = await sum();
+  check('home summary: three chips with text', s1.chips.length === 3 && s1.chips.every(t => t.length > 3), s1.chips.join(' | '));
+  check('home summary: does not cover the orb, the input or the buttons, no horizontal scroll', !s1.overOrb && !s1.overForm && s1.mic && !s1.hscroll && s1.orbH > 100, 'orb height ' + Math.round(s1.orbH));
+  await page.click('#hs-toggle'); await wait(300);
+  const s2 = await sum();
+  check('home summary: expanded, still no overlap', !s2.overOrb && !s2.overForm && s2.mic && !s2.hscroll);
+  await page.click('#hs-toggle'); await wait(200);
+  const sysCards = await page.evaluate(() => { show('system'); return ['card-health', 'card-ai', 'card-remote', 'rm-switch', 'ai-check', 'ai-settings', 'rm-renew', 'net-switch', 'ph-ring', 'ph-form'].filter(id => !document.getElementById(id)); });
+  check('«Система» keeps all its cards and controls', sysCards.length === 0, sysCards.join(','));
+  await page.evaluate(() => show('home'));
+  await wait(300);
   check('Esc on the home page does not close the window', !closedBefore && !page.isClosed());
 
   check('no JavaScript errors in the page', errors.length === 0, errors.slice(0, 3).join(' | '));

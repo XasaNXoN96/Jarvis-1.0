@@ -100,3 +100,23 @@ fn the_uninstaller_removes_every_secret_file_the_program_writes() {
         assert!(text.contains(&format!("DeleteFile(dir + '\\{}')", file)), "the uninstaller keeps {}", file);
     }
 }
+
+// The program folder gets its own rights after the files are copied: no inheritance from a wide parent, SYSTEM and
+// Administrators and the owner only, other users read and run at most. (The real rights of an installed folder are read back
+// by the CI with Get-Acl; this keeps the script from drifting.)
+#[test]
+fn the_installer_closes_the_program_folder_to_other_users() {
+    let (_, text) = script();
+    let body = text.split("procedure HardenAppFolder;").nth(1).expect("HardenAppFolder").split("procedure CurStepChanged").next().unwrap();
+    assert!(body.contains("/inheritance:r"), "the rights of the parent must be cut");
+    for sid in ["*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F", "*S-1-3-4:(OI)(CI)M"] {
+        assert!(body.contains(sid), "{} is missing", sid);
+    }
+    assert!(body.contains("*S-1-5-32-545:(OI)(CI)RX"), "other users may read and run outside the profile");
+    // nothing that lets Users, Authenticated Users or Everyone change files
+    for bad in ["S-1-1-0", "S-1-5-11", "S-1-5-32-545:(OI)(CI)M", "S-1-5-32-545:(OI)(CI)F", "S-1-5-32-545:(OI)(CI)W"] {
+        assert!(!body.contains(bad), "{} would widen the rights", bad);
+    }
+    let step = text.split("procedure CurStepChanged").nth(1).expect("CurStepChanged");
+    assert!(step.contains("ssPostInstall") && step.contains("HardenAppFolder;"), "the rights are set after the files are copied");
+}

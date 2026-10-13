@@ -138,6 +138,33 @@ begin
   end;
 end;
 
+// The program folder is changeable only by SYSTEM, Administrators and its owner (the user who installed it). A folder made
+// under a wide parent (C:\ gives "Authenticated Users" the right to change in it) would let any other user of the
+// computer replace jarvis-app.exe, a library or a command file that the owner then runs. The inherited rights are cut and
+// the list is written anew: SIDs, so it does not depend on the language of Windows. Other users of the computer may
+// read and run (a folder outside the profile of the installing user), never change. Inside the profile nothing is added
+// (its usual list is the user's own already). The folder of the settings (%APPDATA%) is closed by the program itself.
+procedure HardenAppFolder;
+var
+  rc: Integer;
+  params: String;
+  app, profile: String;
+begin
+  app := ExpandConstant('{app}');
+  profile := ExpandConstant('{userprofile}');
+  params := '"' + app + '" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F *S-1-3-4:(OI)(CI)M';
+  if Pos(Lowercase(profile) + '\', Lowercase(app) + '\') <> 1 then
+    params := params + ' *S-1-5-32-545:(OI)(CI)RX';
+  if (not Exec(ExpandConstant('{sys}\icacls.exe'), params, '', SW_HIDE, ewWaitUntilTerminated, rc)) or (rc <> 0) then
+    Log('Access rights of the program folder were not restricted (icacls code ' + IntToStr(rc) + ')');
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+    HardenAppFolder;
+end;
+
 // The data of Jarvis lives outside the program folder (%APPDATA%\com.priler.jarvis, config.rs BUNDLE_IDENTIFIER).
 // After the uninstall the secrets are always removed (the token of the Telegram bot, the secret of the phone remote,
 // the secret of the window and the certificate); the rest — settings, conversations, scenarios, logs — only when the user says so (a silent
