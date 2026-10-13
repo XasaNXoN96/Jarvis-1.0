@@ -31,7 +31,7 @@ mod window;
 static SHOULD_STOP: AtomicBool = AtomicBool::new(false);
 
 // the report of --selftest-speech: "OK heard: ..." or "FAIL <step>: <reason>"
-fn selftest_speech() -> String {
+fn selftest_speech(control: Option<String>) -> String {
     let settings = db::init();
     let _ = DB.set(settings.arc().clone());
     i18n::init(&settings.lock().language);
@@ -72,7 +72,31 @@ fn selftest_speech() -> String {
             Err(e) => shorts.push_str(&format!(" [{}: {}]", if json { "json" } else { "utf8" }, e)),
         }
     }
-    let sound = format!("{}, length_scale {:.2}", wav_info(&wav), jarvis_core::tts::length_scale());
+    // the control: a Russian recording that Piper had nothing to do with (a known-good voice, made by the CI)
+    let control_report = match control.as_deref().map(std::fs::read) {
+        Some(Ok(bytes)) => match jarvis_core::tgvoice::wav_to_16k(&bytes) {
+            Ok(samples) => {
+                let (peak, rms, loud) = jarvis_core::tgvoice::sound_stats(&samples, 16000);
+                let heard = jarvis_core::tgvoice::recognize(&samples).unwrap_or_else(|e| format!("(error: {})", e));
+                format!(" CONTROL (not Piper) {:.1} s, peak {}, rms {:.0} -> «{}» ;", samples.len() as f32 / 16000.0, peak, rms, heard.trim())
+            }
+            Err(e) => format!(" CONTROL unreadable: {} ;", e),
+        },
+        Some(Err(e)) => format!(" CONTROL missing: {} ;", e),
+        None => String::new(),
+    };
+    // what Piper says about the phrase it got (--debug: the text and the phonemes), for plain bytes and for JSON
+    jarvis_core::tts::set_piper_debug(true);
+    let mut piper_says = String::new();
+    for json in [false, true] {
+        if let Ok(w) = jarvis_core::tts::synth_to_wav_input("открой ютуб", json) {
+            let (peak, rms, loud) = jarvis_core::tgvoice::wav_to_16k(&w).map(|s| jarvis_core::tgvoice::sound_stats(&s, 16000)).unwrap_or((0, 0.0, 0.0));
+            let log: String = jarvis_core::tts::last_piper_stderr().lines().filter(|l| l.contains("debug") || l.contains("Phoneme") || l.contains("text")).take(6).collect::<Vec<_>>().join(" / ");
+            piper_says.push_str(&format!(" PIPER[{}] peak {}, rms {:.0}, non-silent {:.1} s: {} ;", if json { "json" } else { "utf8" }, peak, rms, loud, log));
+        }
+    }
+    jarvis_core::tts::set_piper_debug(false);
+    let sound = format!("{}{}{}, length_scale {:.2}", wav_info(&wav), control_report, piper_says, jarvis_core::tts::length_scale());
     // the same phrases at exactly 1.0 and at 0.7 (faster): is the speed the reason for the poor recognition?
     for scale in [1.0f32, 0.7] {
         match jarvis_core::tts::synth_to_wav_scaled("открой ютуб", scale) {
@@ -123,7 +147,8 @@ fn main() -> Result<(), String> {
     if let Some(i) = std::env::args().position(|a| a == "--selftest-speech") {
         let out = std::env::args().nth(i + 1).unwrap_or_else(|| "selftest-speech.txt".into());
         // (a panic is reported in the file as well: the CI must see the reason, not only an exit code)
-        let report = match std::panic::catch_unwind(selftest_speech) {
+        let control = std::env::args().position(|a| a == "--control").and_then(|i| std::env::args().nth(i + 1));
+        let report = match std::panic::catch_unwind(move || selftest_speech(control)) {
             Ok(r) => r,
             Err(e) => format!("FAIL panic: {}", e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default()),
         };

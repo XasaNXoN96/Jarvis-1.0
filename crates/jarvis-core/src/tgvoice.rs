@@ -74,6 +74,15 @@ pub fn decode_ogg_opus(bytes: &[u8]) -> Result<Vec<i16>, String> {
     Ok(out)
 }
 
+// peak, RMS and the seconds that are not silence (louder than 2% of the peak): a look at what a sound really holds
+pub fn sound_stats(samples: &[i16], rate: u32) -> (i16, f64, f32) {
+    let peak = samples.iter().map(|s| s.unsigned_abs()).max().unwrap_or(0) as i32;
+    let rms = (samples.iter().map(|&x| (x as f64) * (x as f64)).sum::<f64>() / samples.len().max(1) as f64).sqrt();
+    let limit = (peak as f64 * 0.02).max(1.0);
+    let loud = samples.iter().filter(|s| (s.unsigned_abs() as f64) > limit).count();
+    (peak.min(i16::MAX as i32) as i16, rms, loud as f32 / rate.max(1) as f32)
+}
+
 // (sample rate, seconds) of a WAV
 pub fn wav_info(wav: &[u8]) -> Result<(u32, f32), String> {
     let r = hound::WavReader::new(Cursor::new(wav)).map_err(|_| "звук в непонятном формате".to_string())?;
@@ -241,6 +250,16 @@ mod tests {
         assert!((back.len() as i64 - want.len() as i64).abs() < 1600, "{} vs {}", back.len(), want.len());
         let (eb, ew) = (energy(&back), energy(&want));
         assert!((eb / ew - 1.0).abs() < 0.25, "loudness {} vs {}", eb, ew);
+    }
+
+    #[test]
+    fn the_stats_of_a_sound_tell_silence_from_speech() {
+        let silence = vec![0i16; 16000];
+        assert_eq!(sound_stats(&silence, 16000).0, 0);
+        let tone: Vec<i16> = (0..16000).map(|i| ((i as f64 * 0.1).sin() * 8000.0) as i16).collect();
+        let (peak, rms, loud) = sound_stats(&tone, 16000);
+        assert!(peak > 7900 && rms > 5000.0 && loud > 0.9, "{} {} {}", peak, rms, loud);
+        assert_eq!(wav_info(&[]).is_err(), true);
     }
 
     #[test]

@@ -275,7 +275,19 @@ jobs:
           Invoke-RestMethod http://127.0.0.1:9714/settings -Method Post -Headers $hh -ContentType "application/json" -Body '{"voice_name":""}' | Out-Null
           # the voice of the Telegram bot with the REAL engines: Piper -> voice message (Opus) -> Vosk, in the Cyrillic folder
           $st = Join-Path $PWD "selftest-speech.txt"
-          $sp = Start-Process "$dir\jarvis-app.exe" -ArgumentList "--selftest-speech", "`"$st`"" -WorkingDirectory $dir -PassThru -Wait -WindowStyle Hidden
+          # a CONTROL: a Russian phrase by a known-good voice that has nothing to do with Piper (Microsoft's online voice,
+          # no key needed), cut to 16 kHz mono. Vosk must understand it; if it does not, the fault is in the recognizer.
+          $ctl = Join-Path $PWD "control-ru.wav"
+          try {
+            python -m pip install --quiet edge-tts imageio-ffmpeg 2>&1 | Out-Null
+            python -m edge_tts --voice ru-RU-SvetlanaNeural --text "Привет, Джарвис, включи музыку" --write-media control-ru.mp3 2>&1 | Out-Null
+            $ff = (python -c "import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe())").Trim()
+            & $ff -y -loglevel error -i control-ru.mp3 -ar 16000 -ac 1 -c:a pcm_s16le $ctl
+            Write-Host "control recording: $((Get-Item $ctl).Length) bytes"
+          } catch { Write-Host "the control recording could not be made: $($_.Exception.Message)" }
+          $spArgs = @("--selftest-speech", "`"$st`"")
+          if (Test-Path $ctl) { $spArgs += @("--control", "`"$ctl`"") }
+          $sp = Start-Process "$dir\jarvis-app.exe" -ArgumentList $spArgs -WorkingDirectory $dir -PassThru -Wait -WindowStyle Hidden
           $rep = if (Test-Path $st) { (Get-Content $st -Raw -Encoding UTF8).Trim() } else { "no report (exit code $($sp.ExitCode))" }
           Write-Host "SPEECH E2E: $rep"
           Add-Content evidence.txt "SPEECH E2E (Piper -> Opus voice message -> Vosk): $rep"

@@ -498,6 +498,18 @@ pub fn piper_json_line(text: &str) -> String {
     out
 }
 
+static PIPER_DEBUG: AtomicBool = AtomicBool::new(false);
+static LAST_PIPER_STDERR: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(String::new()));
+
+// for the self-test only: Piper's own account of the last phrase (with --debug: the text it got and its phonemes)
+pub fn set_piper_debug(on: bool) {
+    PIPER_DEBUG.store(on, Ordering::SeqCst);
+}
+
+pub fn last_piper_stderr() -> String {
+    LAST_PIPER_STDERR.lock().clone()
+}
+
 // for the self-test only: the same phrase with the text given as JSON or as plain bytes
 pub fn synth_to_wav_input(text: &str, json: bool) -> Result<Vec<u8>, String> {
     *JSON_INPUT.lock() = Some(json);
@@ -550,6 +562,7 @@ fn piper_synth(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64
         .arg("--length_scale")
         .arg(format!("{:.2}", length_scale()))
         .args(if json_input() { vec!["--json-input"] } else { Vec::new() })
+        .args(if PIPER_DEBUG.load(Ordering::SeqCst) { vec!["--debug"] } else { Vec::new() })
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(std::fs::File::create(&err_file).map(Stdio::from).unwrap_or_else(|_| Stdio::null()));
@@ -596,6 +609,8 @@ fn piper_synth(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64
             Ok(None) => std::thread::sleep(std::time::Duration::from_millis(40)),
         }
     }
+    // what Piper said about itself stays in memory only (the self-test shows it; it is never written to the log)
+    *LAST_PIPER_STDERR.lock() = std::fs::read_to_string(&err_file).unwrap_or_default().chars().take(6000).collect();
     if wav.exists() {
         let _ = std::fs::remove_file(&err_file);
         note_synth(Ok(()));
