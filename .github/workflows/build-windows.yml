@@ -222,14 +222,17 @@ jobs:
           $lnk = Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Jarvis" -Filter *.lnk | ForEach-Object { $_.Name }
           Write-Host "Start menu: $($lnk -join ', ')"
           if (@($lnk).Count -lt 2) { throw "the Start menu shortcuts are missing" }
-          # where every shortcut leads and which icon it has (the target must exist, in the folder with the Cyrillic name)
-          $wsh = New-Object -ComObject WScript.Shell
-          foreach ($l in Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Jarvis" -Filter *.lnk) {
-            $sc = $wsh.CreateShortcut($l.FullName)
-            $line = "SHORTCUT $($l.Name) -> $($sc.TargetPath) $($sc.Arguments) | icon: $($sc.IconLocation)"
+          # where every shortcut leads and which icon it has (the target must exist, in the folder with the Cyrillic name).
+          # (WScript.Shell gives the target in the ANSI code page: Cyrillic letters become «?», so the Unicode shell link is read)
+          $shellApp = New-Object -ComObject Shell.Application
+          $lnkDir = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Jarvis"
+          foreach ($l in Get-ChildItem $lnkDir -Filter *.lnk) {
+            $link = $shellApp.NameSpace($lnkDir).ParseName($l.Name).GetLink
+            $icon = ""; try { $ix = 0; $icon = "$($link.GetIconLocation([ref]$ix)),$ix" } catch {}
+            $line = "SHORTCUT $($l.Name) -> $($link.Path) $($link.Arguments) | icon: $icon"
             Write-Host $line
             Add-Content evidence.txt $line
-            if (-not (Test-Path -LiteralPath $sc.TargetPath)) { throw "the shortcut $($l.Name) leads nowhere: $($sc.TargetPath)" }
+            if (-not (Test-Path -LiteralPath $link.Path)) { throw "the shortcut $($l.Name) leads nowhere: $($link.Path)" }
           }
           # uninstall while Jarvis runs in the tray and autostart was switched on from its settings
           $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
