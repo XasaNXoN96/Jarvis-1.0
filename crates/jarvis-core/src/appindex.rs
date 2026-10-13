@@ -635,6 +635,43 @@ fn open(target: &str) -> Result<(), String> {
     Ok(())
 }
 
+// The group of an entry for the page "Программы". Only facts about WHERE it is and WHAT it is are used, never its name:
+//  system  - a component of Windows: a Windows app package (its id starts with Microsoft.Windows / Windows. /
+//            MicrosoftWindows.), a file in the Windows folder, a shortcut in the Start menu folders Windows creates itself
+//            («Windows Accessories», «Windows System», «Windows PowerShell», «Administrative Tools»)
+//  user    - a shortcut of the Start menu or the desktop that an installer or the user made, a program in Program Files or in
+//            the Programs folder of the user
+//  other   - a registered app of another publisher, a program of the registry found elsewhere
+//  unknown - the file to start is missing or nothing says what it is
+pub fn category(a: &IndexedApp, launchable_now: bool) -> &'static str {
+    let l = a.launch.replace('/', "\\").to_lowercase();
+    if !launchable_now {
+        return "unknown";
+    }
+    if let Some(id) = l.strip_prefix("shell:appsfolder\\") {
+        return if id.starts_with("microsoft.windows") || id.starts_with("windows.") || id.starts_with("microsoftwindows.") { "system" } else { "other" };
+    }
+    const WINDOWS_FOLDERS: &[&str] = &["\\windows accessories\\", "\\windows system\\", "\\windows powershell\\", "\\administrative tools\\", "\\windows tools\\", "\\accessibility\\", "\\system tools\\", "\\стандартные - windows\\", "\\служебные - windows\\"];
+    if WINDOWS_FOLDERS.iter().any(|f| l.contains(f)) || l.contains(":\\windows\\") {
+        return "system";
+    }
+    match a.source.as_str() {
+        "start_menu" | "desktop" => "user",
+        _ if l.contains("\\program files") || l.contains("\\appdata\\local\\programs\\") => "user",
+        "registered" | "app_paths" => "other",
+        _ => "unknown",
+    }
+}
+
+pub fn category_title(category: &str) -> &'static str {
+    match category {
+        "system" => "Системные инструменты и компоненты Windows",
+        "user" => "Программы, установленные пользователем",
+        "other" => "Другие обнаруженные приложения",
+        _ => "Не определено",
+    }
+}
+
 pub fn source_title(source: &str) -> &'static str {
     match source {
         "start_menu" => "меню «Пуск»",

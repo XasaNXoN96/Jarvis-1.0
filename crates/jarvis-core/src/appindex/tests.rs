@@ -157,3 +157,36 @@ fn the_program_file_of_an_entry_is_known_only_when_it_really_is_an_exe() {
     assert_eq!(exe_name(&app("C:\\Users\\Сергей\\Desktop\\Krita.lnk", "")), None);
     assert_eq!(exe_name(&app("shell:AppsFolder\\Microsoft.WindowsCalculator!App", "")), None);
 }
+
+fn entry(launch: &str, source: &str) -> IndexedApp {
+    IndexedApp { name: "x".into(), launch: launch.into(), source: source.into(), exe: String::new() }
+}
+
+// the group of a program comes from where it is and what it is, never from its name
+#[test]
+fn the_group_of_a_program_comes_from_its_place_and_kind() {
+    let c = |l: &str, s: &str, ok: bool| category(&entry(l, s), ok);
+    // Windows components
+    assert_eq!(c("shell:AppsFolder\\Microsoft.WindowsCalculator_8wekyb3d8bbwe!App", "registered", true), "system");
+    assert_eq!(c("shell:AppsFolder\\MicrosoftWindows.Client.CBS_cw5n1h2txyewy!App", "registered", true), "system");
+    assert_eq!(c("C:\\Windows\\System32\\notepad.exe", "app_paths", true), "system");
+    assert_eq!(c("C:/ProgramData/Microsoft/Windows/Start Menu/Programs/Windows Accessories/Paint.lnk", "start_menu", true), "system");
+    assert_eq!(c("C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Windows PowerShell\\Windows PowerShell.lnk", "start_menu", true), "system");
+    // installed by the user
+    assert_eq!(c("C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Total Commander\\Total Commander.lnk", "start_menu", true), "user");
+    assert_eq!(c("C:\\Users\\a\\Desktop\\Double Commander.lnk", "desktop", true), "user");
+    assert_eq!(c("C:\\Program Files\\Krita (x64)\\bin\\krita.exe", "app_paths", true), "user");
+    assert_eq!(c("C:\\Users\\a\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe", "app_paths", true), "user");
+    // other
+    assert_eq!(c("shell:AppsFolder\\SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify", "registered", true), "other");
+    assert_eq!(c("D:\\Soft\\Portable\\tool.exe", "app_paths", true), "other");
+    // nothing known: the file is gone, or nothing says what it is
+    assert_eq!(c("C:\\gone\\old.lnk", "app_paths", false), "unknown");
+    assert_eq!(c("D:\\x\\y.lnk", "weird", true), "unknown");
+    // the name does not decide: a program that calls itself "Windows Something" in the Start menu is the user's
+    let mut a = entry("C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Windows Helper Pro\\Windows Helper Pro.lnk", "start_menu");
+    a.name = "Windows Helper Pro".into();
+    assert_eq!(category(&a, true), "user");
+    assert_eq!(category_title("system"), "Системные инструменты и компоненты Windows");
+    assert_eq!(category_title("unknown"), "Не определено");
+}

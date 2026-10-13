@@ -212,9 +212,11 @@ fn an_allowed_telegram_notification_goes_to_the_voice_queue_and_the_rest_does_no
 
     // a real-looking Telegram notification: display name "Telegram Desktop", the user's list says "Telegram"
     let t = format!("Привет! Как дела? 👋 {}", r());
+    let spoken_before = crate::tts::TEST_SPOKEN.lock().len();
     handle_line_for_tests(&format!(r#"{{"type":"note","id":"tg{}","app":"Telegram Desktop","aumid":"TelegramMessengerLLP.TelegramDesktop_t4vj0pshhgkwm!Telegram.TelegramDesktop.Store","texts":["Анна","{}"],"initial":false}}"#, r(), t));
     let n = last_note_with(&t).expect("shown");
     assert!(n.spoken, "handed to the voice queue");
+    assert!(crate::tts::TEST_SPOKEN.lock()[spoken_before..].iter().any(|s| s.starts_with("Уведомление от Telegram Desktop.") && s.contains(&t)), "the text of a message of another program really reaches the voice");
     assert_eq!(n.source, "Telegram Desktop");
     let st = ext_stats();
     assert_eq!(st.queued_speech, before.queued_speech + 1);
@@ -358,3 +360,72 @@ fn a_network_without_its_own_voice_is_shown_silently() {
     *crate::tts::TEST_CAN_SPEAK.lock() = None;
     uistate::set_for_tests(UiSettings::default());
 }
+
+// the whole way: notification -> the settings -> the voice (what the voice of the tests received is what would be said)
+fn spoken_since(before: usize) -> Vec<String> {
+    crate::tts::TEST_SPOKEN.lock()[before..].to_vec()
+}
+
+#[test]
+fn a_notification_reaches_the_voice_once_and_the_settings_decide_whether() {
+    let _g = uistate::TEST_LOCK.lock();
+    let r = || rand::random::<u32>();
+    crate::tts::set_enabled(true);
+    uistate::set_for_tests(UiSettings { notify_show: true, notify_speak: true, dnd: false, ..UiSettings::default() });
+
+    // a timer (said at once) and an error (waits its turn): each reaches the voice exactly once, with its whole text
+    let (t_timer, t_err) = (format!("Время вышло {}", r()), format!("Не получилось {}", r()));
+    let before = crate::tts::TEST_SPOKEN.lock().len();
+    push("timer", "Таймер", &t_timer, false);
+    push("ai_error", "Ошибка ИИ", &t_err, false);
+    let got = spoken_since(before);
+    assert_eq!(got.iter().filter(|s| **s == t_timer).count(), 1, "{:?}", got);
+    assert_eq!(got.iter().filter(|s| **s == t_err).count(), 1, "{:?}", got);
+
+    // several in a row: every one is said, none twice, the order is kept
+    let texts: Vec<String> = (0..4).map(|i| format!("письмо {} {}", i, r())).collect();
+    let before = crate::tts::TEST_SPOKEN.lock().len();
+    for t in &texts {
+        push("important", "Важно", t, false);
+    }
+    let got: Vec<String> = spoken_since(before).into_iter().filter(|s| texts.contains(s)).collect();
+    assert_eq!(got, texts, "four notifications in a row: each once, in order");
+
+    // the voice has already said it (a reply of a command): not said again
+    let said = format!("ответ {}", r());
+    let before = crate::tts::TEST_SPOKEN.lock().len();
+    push("command", "Джарвис", &said, true);
+    assert!(!spoken_since(before).contains(&said), "an answer that was said is not said by the notification too");
+
+    // the user's switches: reading of notifications off, do not disturb, the voice off
+    for (label, s, tts_on) in [
+        ("озвучивание уведомлений выключено", UiSettings { notify_speak: false, ..UiSettings::default() }, true),
+        ("не беспокоить", UiSettings { dnd: true, ..UiSettings::default() }, true),
+        ("голос выключен", UiSettings::default(), false),
+    ] {
+        uistate::set_for_tests(s);
+        crate::tts::set_enabled(tts_on);
+        let t = format!("{} {}", label, r());
+        let before = crate::tts::TEST_SPOKEN.lock().len();
+        push("important", "Важно", &t, false);
+        assert!(!spoken_since(before).contains(&t), "{}: nothing is said", label);
+        let n = last_note_with(&t).expect("the notification itself stays in the list");
+        assert!(!n.spoken, "{}", label);
+    }
+    crate::tts::set_enabled(true);
+    uistate::set_for_tests(UiSettings::default());
+}
+
+// the same text twice within a few seconds is one notification (and so one phrase of the voice)
+#[test]
+fn a_repeated_notification_is_said_once() {
+    let _g = uistate::TEST_LOCK.lock();
+    crate::tts::set_enabled(true);
+    uistate::set_for_tests(UiSettings::default());
+    let t = format!("повтор {}", rand::random::<u32>());
+    let before = crate::tts::TEST_SPOKEN.lock().len();
+    push("important", "Важно", &t, false);
+    push("important", "Важно", &t, false);
+    assert_eq!(spoken_since(before).iter().filter(|s| **s == t).count(), 1);
+}
+

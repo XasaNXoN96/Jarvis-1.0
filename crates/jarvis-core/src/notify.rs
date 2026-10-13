@@ -175,11 +175,9 @@ fn deliver(kind: &str, title: &str, text: &str, source: &str, critical: bool, p:
         // the event list of the program (diagnostics) never gets the text of other programs' notifications
         crate::uistate::log_event(if kind.ends_with("error") { "error" } else { "info" }, &format!("Уведомление: {} — {}", note.title, note.text));
     }
-    // the automatic tests decide and record, but never open windows, speak or beep on the test machine
-    if cfg!(test) {
-        return id;
-    }
-    if p.show {
+    // the automatic tests never open windows or beep on the test machine; the voice they DO reach: the voice of the tests
+    // records what was handed to it (tts::TEST_SPOKEN), so the whole way from a notification to the voice is checked
+    if p.show && !cfg!(test) {
         display(&note);
     }
     if p.speak {
@@ -191,7 +189,7 @@ fn deliver(kind: &str, title: &str, text: &str, source: &str, critical: bool, p:
             // current speech: an AI answer that is being read is not cut off by a notification
             crate::tts::speak_queued(say);
         }
-    } else if p.sound {
+    } else if p.sound && !cfg!(test) {
         beep();
     }
     id

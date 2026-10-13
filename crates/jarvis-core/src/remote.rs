@@ -1226,7 +1226,8 @@ function card(title, body, buttons) {
   for (const [label, fn] of buttons) { const x = document.createElement('button'); x.type = 'button'; x.textContent = label; x.onclick = () => fn(x); a.appendChild(x); }
   const close = document.createElement('button'); close.type = 'button'; close.className = 'sec'; close.textContent = '✕'; close.onclick = () => d.remove(); a.appendChild(close);
   d.append(h, b, a); $('inbox').prepend(d);
-  while ($('inbox').children.length > 5) $('inbox').lastChild.remove();
+  // no history of messages on the page: only the one thing that can be tapped (a link, a text) stays, until it is closed or replaced
+  while ($('inbox').children.length > 1) $('inbox').lastChild.remove();
   if (navigator.vibrate) navigator.vibrate(120);
 }
 // the answers and events of the computer are said by the phone itself (its own voice), and always shown as a card
@@ -1236,11 +1237,17 @@ function speakHere(text) {
 }
 try { $('spk').checked = localStorage.getItem('jarvis_spk') !== '0'; } catch (e) {}
 $('spk').onchange = () => { try { localStorage.setItem('jarvis_spk', $('spk').checked ? '1' : '0'); } catch (e) {} if ($('spk').checked) speakHere('Озвучка на телефоне включена'); else if ('speechSynthesis' in window) speechSynthesis.cancel(); };
+// what Jarvis said is not kept on the page (no list of messages): one short line that goes out by itself
+let flashTimer = 0;
+function flash(text) {
+  const st = $('status'); st.textContent = String(text || '').slice(0, 160);
+  clearTimeout(flashTimer); flashTimer = setTimeout(() => { st.textContent = ''; }, 8000);
+}
 function handle(m) {
-  if (m.kind === 'say') { card('Jarvis', m.data, []); speakHere(m.data); }
+  if (m.kind === 'say') { flash('Jarvis: ' + m.data); speakHere(m.data); }
   else if (m.kind === 'note') {
     let n = {}; try { n = JSON.parse(m.data); } catch (e) { n = { title: 'Jarvis', text: m.data }; }
-    card(n.title || 'Jarvis', n.text || '', []);
+    flash((n.title ? n.title + ': ' : '') + (n.text || ''));
     if (['timer', 'alarm', 'reminder'].includes(n.kind)) { unlockSound(); beep(0); setTimeout(() => beep(1), 450); if (navigator.vibrate) navigator.vibrate([300, 150, 300]); }
     speakHere((n.title ? n.title + '. ' : '') + (n.text || ''));
   }
@@ -1678,6 +1685,22 @@ mod tests {
                 let own_queue = code.replace("BROADCAST_TX", "");
                 assert!(!own_queue.contains("TX.get()") && !own_queue.contains("tx.lock().send"), "{}: the queue is filled outside remote::submit", name);
             }
+        }
+    }
+
+    // the page of the phone shows no list of what Jarvis said; the controls stay (the queue of the server is untouched)
+    #[test]
+    fn the_phone_page_keeps_no_history_of_jarvis_messages_and_keeps_its_controls() {
+        assert!(!PAGE.contains("card('Jarvis'"), "answers are not stacked as cards");
+        assert!(!PAGE.contains("children.length > 5"), "no list of the last five messages");
+        assert!(PAGE.contains("children.length > 1"), "at most the one link or text that can be tapped");
+        assert!(PAGE.contains("function flash("), "what was said is one line that goes out by itself");
+        for id in ["g-conn", "c-state", "c-retry", "p-bat", "snd", "inbox", "f", "t", "quick", "media", "mic", "spk", "ringbox", "ringstop"] {
+            assert!(PAGE.contains(&format!("id=\"{}\"", id)), "the control {} is gone", id);
+        }
+        // the answers and events still reach the phone as before (the queue of the server)
+        for kind in ["'say'", "'note'", "'ring'", "'stop'", "'link'", "'text'"] {
+            assert!(PAGE.contains(&format!("m.kind === {}", kind)), "{} is not handled", kind);
         }
     }
 

@@ -786,7 +786,7 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
         ("GET", "/apps") => {
             let list: Vec<serde_json::Value> = crate::appindex::apps()
                 .iter()
-                .map(|a| json!({ "name": a.name, "launch": a.launch, "source": crate::appindex::source_title(&a.source), "ok": crate::appindex::launchable(a) }))
+                .map(|a| json!({ "name": a.name, "launch": a.launch, "source": crate::appindex::source_title(&a.source), "ok": crate::appindex::launchable(a), "category": crate::appindex::category(a, crate::appindex::launchable(a)) }))
                 .collect();
             let body = json!({
                 "apps": list,
