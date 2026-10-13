@@ -94,6 +94,9 @@ const { chromium } = require('playwright-core');
     check('dialogs: delete removes it from the list', after === before - 1, `${before} -> ${after}`);
     await page.evaluate(() => show('settings'));
     await wait(900);
+    // the archive is in the category «Безопасность и данные» of the settings
+    await page.click('#set-cats button[data-cat=privacy]');
+    await wait(300);
     const cnt = await page.textContent('#ar-count');
     check('archive: the deleted dialog is in the archive card', /В архиве диалогов: [1-9]/.test(cnt), cnt);
     await page.click('#ar-list .conv');

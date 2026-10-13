@@ -488,7 +488,12 @@ jobs:
             for ($i = 0; $i -lt 25 -and -not $started; $i++) { Start-Sleep 1; if (@(Get-Process notepad -ErrorAction SilentlyContinue).Count -gt $n0) { $started = $true } }
             if (-not $started) { throw "«открой блокнот» did not start Notepad (answer: $($r | ConvertTo-Json -Compress))" }
             Write-Host "command «открой блокнот»: Notepad started"
+            # closing a program is a high-risk command: Jarvis asks first, and only «да» from the same door runs it
             Ask "закрой блокнот" | Out-Null
+            Start-Sleep 4
+            if (@(Get-Process notepad -ErrorAction SilentlyContinue).Count -le $n0) { throw "«закрой блокнот» ended Notepad WITHOUT the confirmation" }
+            Write-Host "command «закрой блокнот»: Jarvis asked first, Notepad is still open"
+            Ask "да" | Out-Null
             $ended = $false
             for ($i = 0; $i -lt 25 -and -not $ended; $i++) { Start-Sleep 1; if (@(Get-Process notepad -ErrorAction SilentlyContinue).Count -le $n0) { $ended = $true } }
             if (-not $ended) { throw "«закрой блокнот» did not end Notepad" }
