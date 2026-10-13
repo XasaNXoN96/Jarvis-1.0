@@ -477,8 +477,7 @@ pub fn ext_stop() {
 
 // The script uses only the documented API and only reads the notifications Windows lets it read.
 // ASCII only (Windows PowerShell 5 reads a script without BOM in the ANSI code page); the output is UTF-8 JSON lines.
-const EXT_SCRIPT: &str = r#"
-param([int]$ParentPid = 0)
+pub(crate) const EXT_BODY: &str = r#"
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 function Emit($o) { [Console]::Out.WriteLine(($o | ConvertTo-Json -Compress -Depth 4)); [Console]::Out.Flush() }
@@ -577,30 +576,19 @@ fn handle_line(line: &str) {
 #[cfg(target_os = "windows")]
 fn ext_start() {
     use std::io::{BufRead, BufReader};
-    use std::os::windows::process::CommandExt;
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
     if EXT_CHILD.lock().is_some() {
         return;
     }
     let gen = EXT_GEN.fetch_add(1, Ordering::SeqCst) + 1;
-    let Some(script) = crate::APP_CONFIG_DIR.get().map(|d| d.join("ext_notifications.ps1")) else {
-        ext_set("error", "Нет папки настроек");
-        return;
-    };
-    if let Err(e) = std::fs::write(&script, EXT_SCRIPT) {
-        ext_set("error", &format!("Не удалось подготовить проверку уведомлений: {}", e));
-        return;
+    // an older version left the watcher as a file in the settings folder: it is not run any more, and it is removed
+    if let Some(old) = crate::APP_CONFIG_DIR.get().map(|d| d.join("ext_notifications.ps1")) {
+        let _ = std::fs::remove_file(old);
     }
     ext_set("starting", "Запрашиваю у Windows доступ к уведомлениям…");
-    let child = Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
-        .arg(&script)
-        .args(["-ParentPid", &std::process::id().to_string()])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .creation_flags(0x0800_0000)
-        .spawn();
+    let child = crate::psrun::quiet(crate::psrun::Script::NotifyWatcher, &[("JARVIS_PARENT_PID", std::process::id().to_string())]).and_then(|mut c| {
+        c.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().map_err(|e| e.to_string())
+    });
     let mut child = match child {
         Ok(c) => c,
         Err(e) => {
@@ -631,7 +619,7 @@ fn ext_start() {
 
 #[cfg(not(target_os = "windows"))]
 fn ext_start() {
-    let _ = EXT_SCRIPT;
+    let _ = EXT_BODY;
     ext_set("unsupported", "Уведомления других программ доступны только в Windows 10 и 11.");
 }
 

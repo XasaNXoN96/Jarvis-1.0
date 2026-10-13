@@ -363,19 +363,7 @@ fn scan() -> Vec<IndexedApp> {
 fn registered_apps() -> Result<String, String> {
     use std::io::Read;
     use std::os::windows::process::CommandExt;
-    const SCRIPT: &str = r#"[Console]::OutputEncoding = [Text.Encoding]::UTF8
-$r = [ordered]@{ start = @(); paths = @() }
-try { $r.start = @(Get-StartApps | Select-Object Name, AppID) } catch {}
-foreach ($k in 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths', 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths') {
-  Get-ChildItem $k -ErrorAction SilentlyContinue | ForEach-Object {
-    $d = $_.GetValue('')
-    if ($d) { $r.paths += [pscustomobject]@{ exe = $_.PSChildName; path = [Environment]::ExpandEnvironmentVariables(([string]$d).Trim('"')) } }
-  }
-}
-$r | ConvertTo-Json -Depth 3 -Compress"#;
-    let mut child = std::process::Command::new("powershell")
-        // the script as UTF-16 base64: no quoting or line-break questions on the command line
-        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", &encoded_command(SCRIPT)])
+    let mut child = crate::psrun::command(crate::psrun::Script::AppIndex, &[], crate::psrun::Way::default())?
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .creation_flags(0x0800_0000)
@@ -404,10 +392,6 @@ $r | ConvertTo-Json -Depth 3 -Compress"#;
 }
 
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-pub(crate) fn encoded_command(script: &str) -> String {
-    let bytes: Vec<u8> = script.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
-    crate::ai::base64(&bytes)
-}
 
 #[cfg(not(target_os = "windows"))]
 fn registered_apps() -> Result<String, String> {

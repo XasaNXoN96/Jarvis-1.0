@@ -11,6 +11,10 @@ use serde_json::{json, Value};
 use crate::APP_DIR;
 
 const PIPER_ZIP: &str = "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_windows_amd64.zip";
+// the archive of that release; nothing else is unpacked (checked by psrun right before the unpacking)
+pub(crate) const PIPER_ZIP_SHA256: &str = "f3c58906402b24f3a96d92145f58acba6d86c9b5db896d207f78dc80811efcea";
+// it lies in the folder of the program (not in the shared temporary folder), where only the owner of the program writes
+pub(crate) const ZIP_NAME: &str = "jarvis_piper.zip";
 
 #[derive(Default, Clone)]
 struct Status {
@@ -94,16 +98,17 @@ fn run_install() -> Result<(), String> {
     let exe = piper_dir.join(if cfg!(windows) { "piper.exe" } else { "piper" });
 
     if !exe.exists() {
-        let zip = std::env::temp_dir().join("jarvis_piper.zip");
+        let zip = APP_DIR.join(ZIP_NAME);
         download(PIPER_ZIP, &zip, "Программа голоса", 0, 25)?;
         set("Распаковываю…", 26);
         #[cfg(target_os = "windows")]
         {
-            use std::os::windows::process::CommandExt;
-            let status = std::process::Command::new("powershell")
-                .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"])
-                .arg(format!("Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force", zip.display().to_string().replace('\'', "''"), APP_DIR.display().to_string().replace('\'', "''")))
-                .creation_flags(0x0800_0000)
+            let _ = std::fs::remove_file(&zip.with_extension("part"));
+            let status = crate::psrun::quiet(crate::psrun::Script::InstallPiper, &[("JARVIS_ZIP", zip.display().to_string()), ("JARVIS_DEST", APP_DIR.display().to_string())])
+                .map_err(|e| {
+                    let _ = std::fs::remove_file(&zip);
+                    format!("распаковка отклонена защитой: {}", e)
+                })?
                 .status()
                 .map_err(|e| e.to_string())?;
             if !status.success() {

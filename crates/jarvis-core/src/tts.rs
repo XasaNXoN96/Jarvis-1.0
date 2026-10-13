@@ -780,7 +780,7 @@ fn speak_piper(exe: &Path, model: &Path, text: &str, generation: u64) -> bool {
     true
 }
 
-const SAPI_SCRIPT: &str = r#"
+pub(crate) const SAPI_SCRIPT: &str = r#"
 Add-Type -AssemblyName System.Speech
 $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
 $s.Rate = [int]$env:JARVIS_TTS_RATE
@@ -824,35 +824,8 @@ const PS_WAYS: [PsWay; 6] = [
 
 static PS_WAY: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-// the script with the values written into it (the text as base64: no quote of the text can break the command)
-pub fn inline_env_script(script: &str, envs: &[(&str, String)]) -> String {
-    let mut out = String::new();
-    for (k, v) in envs {
-        out.push_str(&format!("$env:{} = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{}'))\n", k, crate::ai::base64(v.as_bytes())));
-    }
-    out.push_str(script);
-    out
-}
-
-fn powershell_path() -> PathBuf {
-    let root = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("C:\\Windows"));
-    root.join("System32").join("WindowsPowerShell").join("v1.0").join("powershell.exe")
-}
-
-fn build_ps(way: &PsWay, script: &str, envs: &[(&str, String)]) -> Command {
-    let mut command = Command::new(if way.absolute { powershell_path() } else { PathBuf::from("powershell") });
-    command.args(["-NoProfile", "-ExecutionPolicy", "Bypass"]);
-    if way.no_flags {
-        command.args(["-WindowStyle", "Hidden"]);
-    }
-    if way.inline_env {
-        command.args(["-EncodedCommand", &crate::appindex::encoded_command(&inline_env_script(script, envs))]);
-    } else {
-        command.args(["-Command", script]);
-        for (k, v) in envs {
-            command.env(k, v);
-        }
-    }
+fn build_ps(way: &PsWay, script: crate::psrun::Script, envs: &[(&str, String)]) -> Result<Command, String> {
+    let mut command = crate::psrun::command(script, envs, crate::psrun::Way { absolute: way.absolute, inline_env: way.inline_env, no_flags: way.no_flags })?;
     if way.piped {
         command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
     } else {
@@ -861,7 +834,7 @@ fn build_ps(way: &PsWay, script: &str, envs: &[(&str, String)]) -> Command {
     if !way.no_flags {
         hide_window(&mut command);
     }
-    command
+    Ok(command)
 }
 
 // Diagnostics: every way of starting PowerShell is tried with a harmless command (exit 0), and the answer of each is
@@ -872,8 +845,8 @@ pub fn probe_powershell_ways() -> Vec<(String, Result<(), String>)> {
         let mut out = Vec::new();
         let mut first_ok: Option<usize> = None;
         for (i, way) in PS_WAYS.iter().enumerate() {
-            let r = match build_ps(way, "exit 0", &[]).spawn() {
-                Err(e) => Err(e.to_string()),
+            let r = match build_ps(way, crate::psrun::Script::Probe, &[]).and_then(|mut c| c.spawn().map_err(|e| e.to_string())) {
+                Err(e) => Err(e),
                 Ok(mut child) => {
                     let t0 = std::time::Instant::now();
                     loop {
@@ -915,13 +888,13 @@ pub fn piper_voice_info() -> Option<(String, bool)> {
     Some((file.clone(), file == format!("{}.onnx", lang)))
 }
 
-fn spawn_powershell(script: &str, envs: &[(&str, String)]) -> Result<Child, String> {
+fn spawn_powershell(script: crate::psrun::Script, envs: &[(&str, String)]) -> Result<Child, String> {
     use std::sync::atomic::Ordering::SeqCst;
     let first = PS_WAY.load(SeqCst).min(PS_WAYS.len() - 1);
     let mut refusals: Vec<String> = Vec::new();
     for k in 0..PS_WAYS.len() {
         let i = (first + k) % PS_WAYS.len();
-        match build_ps(&PS_WAYS[i], script, envs).spawn() {
+        match build_ps(&PS_WAYS[i], script, envs).and_then(|mut c| c.spawn().map_err(|e| e.to_string())) {
             Ok(child) => {
                 if i != first || !refusals.is_empty() {
                     info!("TTS: PowerShell started the way «{}» after {} refusal(s)", PS_WAYS[i].name, refusals.len());
@@ -961,7 +934,7 @@ fn speak_sapi(text: &str, lang: &str, generation: u64) {
             ("JARVIS_TTS_VOICE", crate::uistate::voice_name().strip_prefix("win:").unwrap_or("").to_string()),
             ("JARVIS_TTS_NOTE", note.display().to_string()),
         ];
-        match spawn_powershell(SAPI_SCRIPT, &envs) {
+        match spawn_powershell(crate::psrun::Script::Speak, &envs) {
             Ok(child) => {
                 let result = if store(child, generation) { wait_current(generation) } else { None };
                 if result == Some(true) && !note.exists() {
@@ -1035,12 +1008,15 @@ pub fn diagnose() {
         }
         #[cfg(target_os = "windows")]
         {
-            let mut command = Command::new("powershell");
-            command
-                .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-                    "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).GetInstalledVoices() | Where-Object { $_.Enabled } | ForEach-Object { $_.VoiceInfo.Name + ' | ' + $_.VoiceInfo.Culture.Name + ' | ' + $_.VoiceInfo.Gender }"])
-                .stdout(Stdio::piped())
-                .stderr(Stdio::null());
+            let command = crate::psrun::command(crate::psrun::Script::VoicesReport, &[], crate::psrun::Way::default());
+            let mut command = match command {
+                Ok(c) => c,
+                Err(e) => {
+                    tell(&format!("Не удалось опросить голоса Windows: {}", e));
+                    return;
+                }
+            };
+            command.stdout(Stdio::piped()).stderr(Stdio::null());
             hide_window(&mut command);
             match command.output() {
                 Ok(out) => {
@@ -1152,12 +1128,9 @@ pub fn list_voices() -> Vec<(String, String)> {
     list.push(("piper".to_string(), if piper_available() { "Jarvis (Piper, нейросеть)".to_string() } else { "Jarvis (Piper) — не установлен, нажмите «Установить голос»".to_string() }));
     #[cfg(target_os = "windows")]
     {
-        let mut command = Command::new("powershell");
-        command
-            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-                "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).GetInstalledVoices() | Where-Object { $_.Enabled } | ForEach-Object { $_.VoiceInfo.Name + '|' + $_.VoiceInfo.Culture.Name + '|' + $_.VoiceInfo.Gender }"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+        let command = crate::psrun::command(crate::psrun::Script::VoicesPicker, &[], crate::psrun::Way::default());
+        let Ok(mut command) = command else { return list };
+        command.stdout(Stdio::piped()).stderr(Stdio::null());
         hide_window(&mut command);
         if let Ok(out) = command.output() {
             for line in String::from_utf8_lossy(&out.stdout).lines() {
@@ -1362,7 +1335,7 @@ mod engine_tests {
     #[test]
     fn the_values_go_into_the_script_as_base64_and_the_ways_cover_every_difference() {
         let envs = vec![("JARVIS_TTS_TEXT", "он сказал 'привет' \"мир\" $x `n".to_string()), ("JARVIS_TTS_LANG", "ru".to_string())];
-        let s = inline_env_script("$s.Speak($env:JARVIS_TTS_TEXT)", &envs);
+        let s = crate::psrun::inline_env_script("$s.Speak($env:JARVIS_TTS_TEXT)", &envs);
         assert!(s.starts_with("$env:JARVIS_TTS_TEXT = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"));
         assert!(!s.contains("привет") && !s.contains('"'), "the text itself never stands in the command: {}", s);
         assert!(s.ends_with("$s.Speak($env:JARVIS_TTS_TEXT)"));

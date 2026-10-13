@@ -54,6 +54,7 @@ pub mod policy;
 pub mod remote;
 pub mod ui;
 pub mod ui_auth;
+pub mod psrun;
 pub mod uistate;
 pub mod route;
 pub mod apps;

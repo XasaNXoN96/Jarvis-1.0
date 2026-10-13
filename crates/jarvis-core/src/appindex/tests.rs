@@ -119,7 +119,7 @@ fn shortcuts_are_collected_without_junk_and_registered_apps_are_read() {
     let wrapped = try_parse_registered(r#"{"start":{"value":[{"Name":"Paint","AppID":"Microsoft.Paint!App"}],"Count":1},"paths":null}"#).unwrap();
     assert_eq!(wrapped.len(), 1, "the {{value, Count}} form of PowerShell 5.1");
     assert!(try_parse_registered(r#"{"start":null,"paths":[]}"#).unwrap().is_empty());
-    assert_eq!(encoded_command("ab"), "YQBiAA==", "UTF-16LE base64 for -EncodedCommand");
+    assert_eq!(crate::psrun::encoded_command("ab"), "YQBiAA==", "UTF-16LE base64 for -EncodedCommand");
     assert!(parse_registered("\u{feff}{\"start\":{\"Name\":\"Paint\",\"AppID\":\"Microsoft.Paint!App\"}}").len() == 1, "one element without a list");
 
     // the same program from two places is kept once, the Start menu first, the program file name is kept

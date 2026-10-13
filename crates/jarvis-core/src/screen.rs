@@ -4,28 +4,15 @@
 // JPEG of the primary screen, at most 1600 px wide (enough to read the interface, small enough to send)
 #[cfg(target_os = "windows")]
 pub fn capture() -> Result<Vec<u8>, String> {
-    use std::os::windows::process::CommandExt;
-    let path = std::env::temp_dir().join(format!("jarvis_screen_{}.jpg", std::process::id()));
-    let script = format!(
-        "Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool SetProcessDPIAware();' -Name Dpi -Namespace Jarvis; \
-         [void][Jarvis.Dpi]::SetProcessDPIAware(); \
-         Add-Type -AssemblyName System.Windows.Forms,System.Drawing; \
-         $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; \
-         $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height; \
-         $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size); \
-         $w = [Math]::Min(1600, $b.Width); $h = [int]($b.Height * $w / $b.Width); \
-         $small = New-Object System.Drawing.Bitmap $bmp, $w, $h; \
-         $enc = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object {{ $_.MimeType -eq 'image/jpeg' }}; \
-         $p = New-Object System.Drawing.Imaging.EncoderParameters 1; \
-         $p.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter ([System.Drawing.Imaging.Encoder]::Quality), 70L; \
-         $small.Save('{}', $enc, $p)",
-        path.display().to_string().replace('\'', "''")
-    );
-    let out = std::process::Command::new("powershell")
-        // DPI-aware first: with display scaling above 100% the picture would be only a part of the screen;
-        // the script goes as UTF-16 base64, so its quotes need no escaping on the command line
-        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", &crate::appindex::encoded_command(&script)])
-        .creation_flags(0x0800_0000)
+    // a name nobody can guess (a planted file or link of the same name would be written through)
+    let mut nonce = [0u8; 8];
+    {
+        use rand::RngCore;
+        rand::rngs::OsRng.fill_bytes(&mut nonce);
+    }
+    let path = std::env::temp_dir().join(format!("jarvis_screen_{}_{}.jpg", std::process::id(), nonce.iter().map(|b| format!("{:02x}", b)).collect::<String>()));
+    let out = crate::psrun::quiet(crate::psrun::Script::Screen, &[("JARVIS_SCREEN_OUT", path.display().to_string())])
+        .map_err(|e| format!("снимок экрана отклонён защитой: {}", e))?
         .output()
         .map_err(|e| format!("PowerShell не запустился: {}", e))?;
     let data = std::fs::read(&path);

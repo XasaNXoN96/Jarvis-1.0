@@ -42,14 +42,9 @@ pub fn celsius_from(raw: &str) -> Option<f32> {
 
 #[cfg(target_os = "windows")]
 fn read_temperature() -> Option<f32> {
-    use std::os::windows::process::CommandExt;
     // two sources: the thermal zone counters (no admin needed on most PCs) and ACPI (often needs admin)
-    let scripts = [
-        "(Get-CimInstance Win32_PerfFormattedData_Counters_ThermalZoneInformation -ErrorAction Stop | Select-Object -First 1).Temperature",
-        "(Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature -ErrorAction Stop | Select-Object -First 1).CurrentTemperature",
-    ];
-    for script in scripts {
-        let out = std::process::Command::new("powershell").args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script]).creation_flags(0x0800_0000).output().ok()?;
+    for script in [crate::psrun::Script::ThermalZones, crate::psrun::Script::ThermalAcpi] {
+        let out = crate::psrun::quiet(script, &[]).ok()?.output().ok()?;
         if out.status.success() {
             if let Some(c) = celsius_from(&String::from_utf8_lossy(&out.stdout)) {
                 return Some(c);
