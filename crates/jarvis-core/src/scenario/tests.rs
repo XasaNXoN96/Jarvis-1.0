@@ -196,9 +196,12 @@ fn a_scenario_cannot_do_what_needs_the_confirmation_of_the_user() {
     assert!(e.contains("запрещено"), "{}", e);
     let e = run_step_in(&step("keys", "ctrl+alt+delete"), &mut Vec::new()).unwrap_err();
     assert!(e.contains("запрещено"), "{}", e);
-    // a document is an ordinary open: it gets as far as the platform ("only on Windows" here)
-    let e = run_step_in(&step("file", &doc.to_string_lossy()), &mut Vec::new()).unwrap_err();
-    assert!(e.contains("Windows"), "{}", e);
+    // a document is an ordinary open: it gets as far as the platform ("only on Windows" here; on Windows it would really open)
+    #[cfg(not(target_os = "windows"))]
+    {
+        let e = run_step_in(&step("file", &doc.to_string_lossy()), &mut Vec::new()).unwrap_err();
+        assert!(e.contains("Windows"), "{}", e);
+    }
     // the same step outside of a scenario (the rules of the operation alone) would not name the risk of the command
     assert!(crate::policy::running().is_none(), "the limits of a step end with the step");
 }
