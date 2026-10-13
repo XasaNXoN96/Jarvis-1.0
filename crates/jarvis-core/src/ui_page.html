@@ -1618,7 +1618,7 @@ function objectBar(o) {
   const st = OBJ_ST[o.state] || [o.state, '']; bar.hidden = false; bar.dataset.s = st[1];
   $('#ho-st').textContent = st[0];
   const parts = [OBJ_APP[o.app] || o.app, o.name].filter(Boolean);
-  if (o.operation) parts.push(o.operation);
+  if (o.operation) parts.push(o.operation === 'dictation' ? 'диктовка' : o.operation.startsWith('ai:') ? 'ИИ: ' + o.operation.slice(3) : o.operation.startsWith('confirm:') ? 'ждёт ответа' : o.operation);
   if (o.pending) parts.push('вопрос: ' + o.pending);
   if (o.state === 'ERROR_RECOVERY' && o.error) parts.push(o.error);
   else if (o.saved) parts.push('сохранено' + (o.saved_path ? ': ' + o.saved_path : ''));

@@ -888,3 +888,207 @@ fn opening_vscode_makes_the_engine_know_the_program() {
     assert_eq!((s["state"].as_str().unwrap(), s["app"].as_str().unwrap_or("")), ("APP_OPEN", ""), "{}", s);
     crate::objects::with(|e| e.reset());
 }
+
+// ---------------------------------------------------------------------------------------------
+// the AI at work on the document text (docai.rs + office.lua). The AI is a test double; Word is the fake.
+// ---------------------------------------------------------------------------------------------
+fn set_ai(f: impl Fn(&str, &str, &std::sync::atomic::AtomicBool) -> Result<String, String> + Send + Sync + 'static) {
+    *crate::codeobj::GENERATOR.lock() = Some(Box::new(f));
+}
+
+fn wait_answer() {
+    let t0 = std::time::Instant::now();
+    while crate::docai::peek().is_none() && t0.elapsed() < Duration::from_secs(5) {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(crate::docai::peek().is_some(), "the answer of the AI did not arrive");
+}
+
+struct AiOff;
+impl Drop for AiOff {
+    fn drop(&mut self) {
+        *crate::codeobj::GENERATOR.lock() = None;
+        crate::docai::drop_answer();
+        crate::objects::with(|e| e.reset());
+    }
+}
+
+fn word_with_text(w: &World, text: &str) {
+    start_word_dictation(w);
+    w.say(text);
+}
+
+#[test]
+fn ai_fix_replaces_the_text_only_after_yes_and_verifies_it() {
+    let _g = LOCK.lock();
+    let _off = AiOff;
+    let w = World::new(json!({}));
+    word_with_text(&w, "Превет мир");
+    let before = doc_text(&w, "word", 0);
+    set_ai(|sys, user, _| {
+        assert!(sys.contains("Исправь"), "{}", sys);
+        assert!(user.contains("Превет мир"), "the AI got the document text: {}", user);
+        Ok("Привет, мир".to_string())
+    });
+    w.say("исправь ошибки в документе");
+    assert_eq!(w.step(), "object:ai", "the dialog waits for the AI (the task itself may already be done)");
+    wait_answer();
+    w.say("objaidone");
+    assert_eq!(w.step(), "object:confirm_replace");
+    assert_eq!(crate::objects::state(), crate::objects::State::AwaitingConfirmation);
+    assert_eq!(doc_text(&w, "word", 0), before, "nothing is replaced before «да»");
+
+    w.say("да");
+    assert_eq!(doc_text(&w, "word", 0), "Привет, мир");
+    assert_eq!(w.step(), "object:typing");
+    assert_eq!(crate::objects::state(), crate::objects::State::Dictation);
+    assert_eq!(crate::objects::snapshot()["saved"], false, "a replaced text is not a saved one");
+    assert!(crate::docai::peek().is_none());
+}
+
+#[test]
+fn ai_fix_with_no_leaves_the_document_alone() {
+    let _g = LOCK.lock();
+    let _off = AiOff;
+    let w = World::new(json!({}));
+    word_with_text(&w, "Текст как есть");
+    set_ai(|_, _, _| Ok("Совсем другой текст".to_string()));
+    w.say("сократи текст");
+    wait_answer();
+    w.say("objaidone");
+    w.say("нет");
+    assert_eq!(doc_text(&w, "word", 0), "Текст как есть");
+    assert_eq!(w.step(), "object:typing");
+    assert!(crate::docai::peek().is_none());
+}
+
+#[test]
+fn stop_cancels_the_text_task_and_nothing_is_typed_meanwhile() {
+    let _g = LOCK.lock();
+    let _off = AiOff;
+    let w = World::new(json!({}));
+    word_with_text(&w, "Исходный текст");
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    let tx = parking_lot::Mutex::new(tx);
+    set_ai(move |_, _, cancel| {
+        let t0 = std::time::Instant::now();
+        while !cancel.load(std::sync::atomic::Ordering::SeqCst) && t0.elapsed() < Duration::from_secs(5) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let _ = tx.lock().send(());
+        Ok("ПОЗДНИЙ ОТВЕТ".to_string())
+    });
+    w.say("перепиши текст официально");
+    assert_eq!(crate::objects::state(), crate::objects::State::AiTask);
+    // a phrase said while the AI works is not dictated into the document
+    w.say("а вот ещё одно предложение");
+    assert_eq!(doc_text(&w, "word", 0), "Исходный текст");
+    w.say("стоп");
+    assert_eq!(crate::objects::state(), crate::objects::State::Paused);
+    rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(crate::docai::peek().is_none(), "the late answer was dropped");
+    assert_eq!(doc_text(&w, "word", 0), "Исходный текст");
+    assert_eq!(w.step(), "object_resume:ask");
+}
+
+#[test]
+fn a_document_that_changed_while_the_ai_wrote_is_not_replaced() {
+    let _g = LOCK.lock();
+    let _off = AiOff;
+    let w = World::new(json!({}));
+    word_with_text(&w, "Первая версия");
+    set_ai(|_, _, _| Ok("Исправленная версия".to_string()));
+    w.say("исправь ошибки");
+    wait_answer();
+    w.say("objaidone");
+    // the user types into the document before saying «да»
+    w.set_fake(|v| v["word"]["docs"][0]["text"] = json!("Первая версия, дописано вручную"));
+    w.say("да");
+    assert_eq!(doc_text(&w, "word", 0), "Первая версия, дописано вручную", "the manual change survives");
+    assert_eq!(w.step(), "object:typing");
+}
+
+#[test]
+fn an_unavailable_ai_leaves_the_document_and_the_dictation_going() {
+    let _g = LOCK.lock();
+    let _off = AiOff;
+    let w = World::new(json!({}));
+    word_with_text(&w, "Мой текст");
+    set_ai(|_, _, _| Err("ИИ недоступен: нет сети.".to_string()));
+    w.say("исправь ошибки");
+    wait_answer();
+    w.say("objaidone");
+    assert_eq!(doc_text(&w, "word", 0), "Мой текст");
+    assert_eq!(w.step(), "object:typing");
+    assert_eq!(crate::objects::state(), crate::objects::State::Dictation);
+    w.say("Дальше пишем");
+    assert!(doc_text(&w, "word", 0).contains("альше пишем"), "{}", doc_text(&w, "word", 0));
+}
+
+#[test]
+fn ai_intro_is_inserted_and_read_back() {
+    let _g = LOCK.lock();
+    let _off = AiOff;
+    let w = World::new(json!({}));
+    start_word_dictation(&w);
+    set_ai(|sys, user, _| {
+        assert!(sys.contains("вступление"));
+        assert!(user.contains("информатик"));
+        Ok("Информатика — наука об информации.".to_string())
+    });
+    w.say("напиши вступление про информатику");
+    wait_answer();
+    w.say("objaidone");
+    assert!(doc_text(&w, "word", 0).contains("Информатика — наука об информации."), "{}", doc_text(&w, "word", 0));
+    assert_eq!(w.step(), "object:typing");
+    assert!(crate::docai::peek().is_none());
+}
+
+#[test]
+fn a_document_with_a_secret_is_not_sent_to_the_ai() {
+    let _g = LOCK.lock();
+    let _off = AiOff;
+    let w = World::new(json!({}));
+    start_word_dictation(&w);
+    w.set_fake(|v| v["word"]["docs"][0]["text"] = json!("мой пароль: hunter22 и всё"));
+    let called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let c2 = called.clone();
+    set_ai(move |_, _, _| {
+        c2.store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok("x".into())
+    });
+    w.say("исправь ошибки");
+    assert!(!called.load(std::sync::atomic::Ordering::SeqCst), "the secret reached the AI");
+    assert_eq!(crate::objects::state(), crate::objects::State::Dictation);
+}
+
+#[test]
+fn translate_asks_for_the_language() {
+    let _g = LOCK.lock();
+    let _off = AiOff;
+    let w = World::new(json!({}));
+    word_with_text(&w, "Привет");
+    set_ai(|_, user, _| {
+        assert!(user.contains("английский"), "{}", user);
+        Ok("Hello".to_string())
+    });
+    w.say("переведи текст");
+    assert_eq!(crate::objects::state(), crate::objects::State::Dictation, "no language: nothing started");
+    w.say("переведи на английский");
+    wait_answer();
+    w.say("objaidone");
+    w.say("да");
+    assert_eq!(doc_text(&w, "word", 0), "Hello");
+}
+
+#[test]
+fn long_dictated_sentences_are_text_not_ai_requests() {
+    let _g = LOCK.lock();
+    let _off = AiOff;
+    let w = World::new(json!({}));
+    start_word_dictation(&w);
+    w.say("в этом абзаце я объясняю как исправить ошибки в программе и сократить время работы");
+    assert_eq!(crate::objects::state(), crate::objects::State::Dictation);
+    assert!(doc_text(&w, "word", 0).contains("исправить ошибки"));
+}

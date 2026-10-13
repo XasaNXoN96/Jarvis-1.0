@@ -117,11 +117,11 @@ type Launcher = Box<dyn Fn(&Path) -> Result<(), String> + Send + Sync>;
 static LAUNCH: Lazy<Mutex<Option<Launcher>>> = Lazy::new(|| Mutex::new(None));
 
 #[cfg(test)]
-type Generator = Box<dyn Fn(&str, &str, &AtomicBool) -> Result<String, String> + Send + Sync>;
+pub(crate) type Generator = Box<dyn Fn(&str, &str, &AtomicBool) -> Result<String, String> + Send + Sync>;
 #[cfg(test)]
-static GENERATOR: Lazy<Mutex<Option<Generator>>> = Lazy::new(|| Mutex::new(None));
+pub(crate) static GENERATOR: Lazy<Mutex<Option<Generator>>> = Lazy::new(|| Mutex::new(None));
 
-fn generate(system: &str, user: &str, cancel: &AtomicBool) -> Result<String, String> {
+pub(crate) fn generate(system: &str, user: &str, cancel: &AtomicBool) -> Result<String, String> {
     #[cfg(test)]
     if let Some(g) = GENERATOR.lock().as_ref() {
         return g(system, user, cancel);
@@ -132,7 +132,7 @@ fn generate(system: &str, user: &str, cancel: &AtomicBool) -> Result<String, Str
     })
 }
 
-fn ai_ready() -> Result<(), String> {
+pub(crate) fn ai_ready() -> Result<(), String> {
     #[cfg(test)]
     if GENERATOR.lock().is_some() {
         return Ok(());

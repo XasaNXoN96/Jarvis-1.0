@@ -49,6 +49,8 @@ local function office(app, action, a1, a2, a3)
   elseif err:find("DOCCHANGED") then
     local other = err:match("DOCCHANGED:([^\r\n]*)") or ""
     return false, "", T("Сейчас активен другой документ «" .. other .. "». Текст не записан: вернитесь к своему документу", "Another document is active now. Nothing was written"), "DOCCHANGED"
+  elseif err:find("TEXTCHANGED") then
+    return false, "", T("Текст документа изменился, пока я работал. Ничего не заменено.", "The document text changed meanwhile. Nothing replaced."), "TEXTCHANGED"
   elseif err:find("NEEDNAME") then
     return false, "", "NEEDNAME", "NEEDNAME"
   elseif err:find("EXISTS") then
@@ -534,7 +536,7 @@ local function obj_app() return jarvis.state.get("obj_app") end
 -- the state machine of the work (objects.rs) follows the steps of the dialog: dictation only in the "typing" step, a
 -- question only in the steps that wait for "да" / "нет"
 local function eng_sync(s)
-  local question = (s == "overwrite" or s == "confirm_delete")
+  local question = (s == "overwrite" or s == "confirm_delete" or s == "confirm_replace")
   local st = jarvis.object.state()
   if question then
     if st == "DICTATION" or st == "OBJECT_ACTIVE" then jarvis.object.ask(s, s) end
@@ -722,6 +724,112 @@ local function obj_resume()
   obj_say(T("Продолжаем работу с " .. what .. ". Диктуйте.", "Going on with " .. what), T("Продолжаем. Диктуйте", "Going on"))
 end
 
+-- ---- the AI at work on the text of the document (docai.rs): the script reads and writes, Rust asks the AI ----
+local AI_LANGS = { { "английск", "английский" }, { "русск", "русский" }, { "узбекск", "узбекский" }, { "немецк", "немецкий" }, { "французск", "французский" },
+                  { "испанск", "испанский" }, { "турецк", "турецкий" }, { "итальянск", "итальянский" } }
+
+-- a short whole phrase only: a long one is the dictated text
+local function doc_ai_intent(tokens)
+  local n = #tokens
+  if n == 0 or n > 9 then return nil end
+  local function has(stems) return stems_in(tokens, stems) end
+  if has({ "исправ", "поправ", "проверь" }) and has({ "ошибк", "орфограф", "грамматик", "текст", "документ" }) then return "fix" end
+  if has({ "перепиш", "сдела", "измен" }) and has({ "официальн", "формальн", "делов" }) then return "formal" end
+  if has({ "переведи", "перевед", "перевод" }) then return "translate" end
+  if has({ "сократи", "укороти", "короче", "покороче" }) then return "shorten" end
+  if has({ "вступлен" }) and has({ "напиши", "добавь", "сделай", "составь" }) then return "intro" end
+  if has({ "объявлени" }) and has({ "напиши", "составь", "сделай", "добавь" }) then return "announce" end
+  return nil
+end
+
+local function obj_doc_ai(kind, phrase, tokens)
+  local instr = phrase
+  if kind == "translate" then
+    local lang
+    for _, l in ipairs(AI_LANGS) do if stems_in(tokens, { l[1] }) then lang = l[2] end end
+    if not lang then return obj_say(T("На какой язык перевести? Например: «переведи на английский».", "Which language?")) end
+    instr = "Переведи на " .. lang .. " язык"
+  end
+  local doc_b64 = ""
+  if kind ~= "intro" and kind ~= "announce" then
+    local ok, out, err, code = office("word", "read")
+    if not ok then
+      if code == "NOAPP" or code == "NODOC" then return obj_lost(tostring(err), jarvis.object.info().path ~= "") end
+      return obj_say(tostring(err))
+    end
+    doc_b64 = out
+  end
+  local started, why = jarvis.object.doc_ai(kind, instr, doc_b64)
+  if not started then return obj_say(tostring(why)) end
+  obj_step("ai")
+  obj_say(T("Работаю над текстом. Скажите «стоп», чтобы отменить: документ не изменится.", "Working on the text."), T("Работаю над текстом. Скажите стоп, чтобы отменить", "Working"))
+end
+
+-- the answer of the AI has come (the internal phrase of docai.rs): insert it, or ask before replacing the text
+local function obj_ai_done()
+  local r = jarvis.object.doc_ai_peek()
+  if not r then return end
+  if not r.ok then
+    jarvis.object.doc_ai_drop()
+    jarvis.object.recovered()
+    obj_step("typing")
+    return obj_say(tostring(r.error) .. T(" Документ не тронут. Продолжайте диктовать или повторите просьбу позже.", " The document is untouched."),
+                   T("ИИ не ответил. Документ не тронут", "The AI did not answer"))
+  end
+  if r.replaces then
+    obj_step("confirm_replace")
+    return obj_say(T("Готов заменить весь текст документа новым вариантом (" .. r.chars .. " символов). Заменить? Скажите да или нет.", "Replace the text?"),
+                   T("Готов заменить текст документа. Заменить? Скажите да или нет", "Replace the text?"))
+  end
+  -- an addition at the cursor
+  local ok, _, err, code = office("word", "text", r.text_b64)
+  if not ok then
+    jarvis.object.doc_ai_drop()
+    if code == "NOAPP" or code == "NODOC" then return obj_lost(tostring(err), jarvis.object.info().path ~= "") end
+    obj_step("typing")
+    return obj_say(tostring(err))
+  end
+  -- the fact of the insertion: the text is read back from the document
+  local rok, rout = office("word", "read")
+  local verified = rok and jarvis.object.b64_contains(rout, r.text_b64)
+  jarvis.object.changed()
+  jarvis.object.doc_ai_drop()
+  obj_step("typing")
+  if verified then
+    obj_say(T("Вставил текст в документ (" .. r.chars .. " символов), проверил чтением. Он ещё не сохранён.", "Inserted and verified."), T("Вставил текст в документ", "Inserted"))
+  else
+    obj_say(T("Текст отправлен в документ, но подтвердить вставку чтением не удалось. Проверьте документ.", "Sent, but could not verify."), T("Проверьте документ: вставку не удалось подтвердить", "Check the document"))
+  end
+end
+
+-- «да» / «нет» to «Заменить?»: written only when the document still has the text the AI was given; the result is read back
+local function obj_replace_answer(a)
+  local r = jarvis.object.doc_ai_peek()
+  if not r or not r.ok then
+    obj_step("typing")
+    return obj_say(T("Нечего заменять.", "Nothing to replace."))
+  end
+  if a.yes and not a.no then
+    local ok, out, err, code = office("word", "replace", r.text_b64, r.old_hash)
+    jarvis.object.doc_ai_drop()
+    if not ok then
+      if code == "NOAPP" or code == "NODOC" then return obj_lost(tostring(err), jarvis.object.info().path ~= "") end
+      obj_step("typing")
+      return obj_say(tostring(err), tostring(err))
+    end
+    obj_step("typing")
+    jarvis.object.changed()
+    if out == jarvis.object.text_hash(r.text_b64) then
+      return obj_say(T("Готово: текст заменён и проверен чтением. Если не понравилось, скажите «отмени последнее действие». Документ ещё не сохранён.", "Replaced and verified."),
+                     T("Готово, текст заменён", "Replaced"))
+    end
+    return obj_say(T("Текст заменён, но проверка чтением не совпала. Проверьте документ.", "Replaced, but the check did not match."), T("Проверьте документ: проверка не совпала", "Check the document"))
+  end
+  jarvis.object.doc_ai_drop()
+  obj_step("typing")
+  obj_say(T("Хорошо, ничего не заменил.", "Not replaced."), T("Ничего не заменил", "Not replaced"))
+end
+
 -- ---- formatting phrases of Word ----
 local function word_format(tokens)
   local n = #tokens
@@ -774,6 +882,10 @@ local function obj_type(phrase)
   local ctl = jarvis.object.classify(phrase)
   if ctl == "stop" or ctl == "cancel" then return obj_pause(false) end
   if ctl == "pause" then return obj_pause(true) end
+  if app == "word" then
+    local kind = doc_ai_intent(tokens)
+    if kind then return obj_doc_ai(kind, phrase, tokens) end
+  end
   if is_object_end(tokens) then
     obj_step("ask_end")
     obj_say(T("Сохранить документ, удалить его или продолжить редактирование?", "Save the document, delete it or go on editing?"))
@@ -973,6 +1085,18 @@ local function obj_handle(phrase)
   if step == "typing" then
     return obj_type(phrase)
 
+  elseif step == "ai" then
+    -- the AI is working: nothing is typed into the document meanwhile
+    local ctl = jarvis.object.classify(phrase)
+    if ctl == "stop" or ctl == "cancel" then return obj_pause(false) end
+    if ctl == "pause" then return obj_pause(true) end
+    obj_say(T("Я ещё работаю над текстом. Скажите «стоп», чтобы отменить.", "Still working. Say stop to cancel."), T("Ещё работаю над текстом. Скажите стоп, чтобы отменить", "Still working"))
+
+  elseif step == "confirm_replace" then
+    local ctl = jarvis.object.classify(phrase)
+    if ctl == "stop" or ctl == "pause" then jarvis.object.doc_ai_drop(); return obj_pause(ctl == "pause") end
+    obj_replace_answer(a)
+
   elseif step == "app_ask" then
     if a.cancel then return obj_stop(T("Хорошо, режим работы с объектом не включён.", "Okay, cancelled.")) end
     local target = obj_app_from(phrase, tokens)
@@ -1105,6 +1229,9 @@ if id == "assistant_object_start" then
   jarvis.state.set("obj_name", "")
   obj_start(phrase)
 
+elseif id == "assistant_object_ai_done" then
+  obj_ai_done()
+
 elseif id == "assistant_object_resume" then
   local st = jarvis.object.state()
   if st == "PAUSED" then
@@ -1170,7 +1297,9 @@ elseif id == "assistant_office_new" then
 
 else -- assistant_session: every phrase while a session is open
   local kind = jarvis.session.kind()
-  if kind == "file" then
+  if phrase:find("objaidone", 1, true) then
+    obj_ai_done()
+  elseif kind == "file" then
     file_session(phrase)
   elseif kind == "app_choice" then
     -- the answer to "какую программу открыть: 1. … 2. …"

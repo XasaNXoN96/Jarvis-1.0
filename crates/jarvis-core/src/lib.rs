@@ -68,6 +68,7 @@ pub mod weather;
 pub mod session;
 pub mod objects;
 pub mod codeobj;
+pub mod docai;
 pub mod secret;
 pub mod voice_install;
 pub mod ai;

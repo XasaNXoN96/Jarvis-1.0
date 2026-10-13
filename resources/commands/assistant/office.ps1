@@ -48,6 +48,16 @@ function Assert-Doc([string]$name, [string]$actual) {
     if ($want -ne '' -and $want -ne $actual) { [Console]::Error.WriteLine("DOCCHANGED:" + $actual); exit 6 }
 }
 
+# the text of a document the way Jarvis compares it: paragraphs are "`n", no trailing whitespace
+function Norm-Text([string]$s) {
+    return ($s -replace "`r`n", "`n" -replace "`r", "`n").TrimEnd()
+}
+function Text-Hash([string]$s) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $bytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes((Norm-Text $s)))
+    return (($bytes | ForEach-Object { $_.ToString('x2') }) -join '')
+}
+
 function Word-Doc($w) {
     if ($w.Documents.Count -eq 0) { return $null }
     return $w.ActiveDocument
@@ -183,6 +193,26 @@ try {
                 "size"         { $s.Font.Size = [double]$Arg2 }
                 default        { [Console]::Error.WriteLine("unknown format $Arg1"); exit 3 }
             }
+        }
+        # the text of the active document (Base64 of UTF-8, paragraphs "`n"): for the AI
+        "word/read" {
+            $w = Get-OfficeApp "Word"
+            $d = Word-Doc $w
+            if (-not $d) { [Console]::Error.WriteLine("NODOC"); exit 5 }
+            Assert-Doc "Word" $d.Name
+            Write-Output ([Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes((Norm-Text $d.Content.Text))))
+        }
+        # replace the whole text of the active document; Arg1 = new text (Base64), Arg2 = hash of the text it was made from.
+        # A document that changed meanwhile is not touched (exit 10). Prints the hash of the text after the replacement.
+        "word/replace" {
+            $w = Get-OfficeApp "Word"
+            $d = Word-Doc $w
+            if (-not $d) { [Console]::Error.WriteLine("NODOC"); exit 5 }
+            Assert-Doc "Word" $d.Name
+            if ((Text-Hash $d.Content.Text) -ne $Arg2) { [Console]::Error.WriteLine("TEXTCHANGED"); exit 10 }
+            $new = ((Decode $Arg1) -replace "`r`n", "`n") -replace "`n", "`r"
+            $d.Content.Text = $new
+            Write-Output (Text-Hash $d.Content.Text)
         }
         # save: a document that already has a file is saved in place; a new one needs a name (exit 7 = NEEDNAME)
         "word/save" {

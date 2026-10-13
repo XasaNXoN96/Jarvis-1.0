@@ -28,6 +28,13 @@ def expand(p):
             return d + p[len(tag):]
     return p
 
+def norm(t):
+    return t.replace("\r\n", "\n").replace("\r", "\n").rstrip()
+
+def text_hash(t):
+    import hashlib
+    return hashlib.sha256(norm(t).encode("utf-8")).hexdigest()
+
 def parse(argv):
     a = {"Arg1": "", "Arg2": "", "Arg3": "", "Strict": False, "Expect": ""}
     i = 0
@@ -98,6 +105,19 @@ def main():
             if d is None:
                 p[key].append({"name": "Document1", "text": "", "fmt": [], "cells": {}, "saved": False}); d = p[key][0]; p["active"] = 0
             d["text"] += dec(a["Arg1"]); d["saved"] = False
+        elif act == "read":
+            p = prog(app); d = check(p, key)
+            if d is None:
+                fail("NODOC", 5)
+            print(base64.b64encode(norm(d["text"]).encode("utf-8")).decode("ascii"))
+        elif act == "replace":
+            p = prog(app); d = check(p, key)
+            if d is None:
+                fail("NODOC", 5)
+            if text_hash(d["text"]) != a["Arg2"]:
+                fail("TEXTCHANGED", 10)
+            d["text"] = dec(a["Arg1"]); d["saved"] = False
+            print(text_hash(d["text"]))
         elif act == "format":
             p = prog(app); d = check(p, key); d["fmt"].append(a["Arg1"] + (":" + a["Arg2"] if a["Arg2"] else ""))
         elif act in ("value", "formula"):

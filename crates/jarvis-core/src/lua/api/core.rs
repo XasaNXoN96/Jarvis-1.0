@@ -335,6 +335,40 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
     object.set("app_closed", lua.create_function(|_, ()| Ok(res(crate::objects::with(|e| e.app_closed()))))?)?;
     object.set("recovered", lua.create_function(|_, ()| Ok(res(crate::objects::with(|e| e.recovered()))))?)?;
     object.set("release", lua.create_function(|_, ()| Ok(res(crate::objects::with(|e| e.release()))))?)?;
+    // the AI at work on the text of a document (docai.rs): the script reads and writes the document, Rust asks the AI
+    object.set("doc_ai", lua.create_function(|_, (kind, instruction, doc): (String, String, String)| {
+        let Some(k) = crate::docai::Kind::parse(&kind) else { return Ok((false, Some(format!("неизвестная задача: {}", kind)))) };
+        Ok(match crate::docai::start(k, &instruction, &doc) {
+            Ok(()) => (true, None),
+            Err(why) => (false, Some(why)),
+        })
+    })?)?;
+    // doc_ai_peek() -> { ok=, kind=, text_b64=, old_hash=, replaces=, chars=, error= } | nil (the answer stays until dropped)
+    object.set("doc_ai_peek", lua.create_function(|lua, ()| {
+        let Some(a) = crate::docai::peek() else { return Ok(mlua::Value::Nil) };
+        let t = lua.create_table()?;
+        t.set("ok", a.ok)?;
+        t.set("kind", format!("{:?}", a.kind).to_lowercase())?;
+        t.set("text_b64", crate::docai::b64_encode(a.text.as_bytes()))?;
+        t.set("old_hash", a.old_hash.clone())?;
+        t.set("replaces", a.kind.replaces())?;
+        t.set("chars", a.text.chars().count())?;
+        t.set("error", a.error.clone())?;
+        Ok(mlua::Value::Table(t))
+    })?)?;
+    object.set("doc_ai_drop", lua.create_function(|_, ()| { crate::docai::drop_answer(); Ok(()) })?)?;
+    // text_hash(b64) -> the hash of the (normalized) text, as office.ps1 computes it for the document
+    object.set("text_hash", lua.create_function(|_, b64: String| {
+        Ok(crate::docai::b64_decode(&b64).and_then(|b| String::from_utf8(b).ok()).map(|t| crate::docai::text_hash(&t)))
+    })?)?;
+    // b64_contains(doc_b64, part_b64) -> true when the decoded document holds the decoded part (a check that a text really arrived)
+    object.set("b64_contains", lua.create_function(|_, (doc, part): (String, String)| {
+        let d = |b: &str| crate::docai::b64_decode(b).and_then(|b| String::from_utf8(b).ok()).map(|t| crate::docai::normalize(&t));
+        Ok(match (d(&doc), d(&part)) {
+            (Some(doc), Some(part)) => !part.is_empty() && doc.contains(&part),
+            _ => false,
+        })
+    })?)?;
     object.set("finish", lua.create_function(|_, ()| Ok(res(crate::objects::with(|e| e.finish()))))?)?;
     object.set("ask", lua.create_function(|_, (id, q): (String, String)| Ok(res(crate::objects::with(|e| e.ask(&id, &q)))))?)?;
     object.set("answer", lua.create_function(|_, yes: bool| Ok(res(crate::objects::with(|e| e.answer(yes).map(|_| ())))))?)?;

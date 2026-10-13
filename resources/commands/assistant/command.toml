@@ -1004,6 +1004,17 @@ triggers.en = ["start object mode", "object mode"]
 phrases.ru = ["начинаем работу с объектом", "начни работу с объектом", "режим работы с объектом"]
 phrases.en = ["start object mode"]
 
+# used internally: the AI has answered a task on the text of the document (docai.rs sends this word to itself)
+[[commands]]
+id = "assistant_object_ai_done"
+risk = "medium"
+type = "lua"
+script = "office.lua"
+sandbox = "full"
+timeout = 30000
+triggers.ru = ["objaidone"]
+triggers.en = ["objaidone"]
+
 # "Продолжим с объектом": goes on with the paused work (the program, the document and the window are checked first)
 [[commands]]
 id = "assistant_object_resume"

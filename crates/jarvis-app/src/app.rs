@@ -652,7 +652,7 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
             jarvis_core::session::touch();
             // the questions and answers of a dialog (what to do with the file, save / delete / continue) are part of the
             // conversation; the dictated text itself is not (it goes into the document)
-            let record = kind == "file" || kind == "confirm" || kind == "app_choice" || (kind == "object" && (jarvis_core::session::data() != "typing" || text.contains("объект")));
+            let record = !text.contains(jarvis_core::docai::DONE_MARKER) && (kind == "file" || kind == "confirm" || kind == "app_choice" || (kind == "object" && (jarvis_core::session::data() != "typing" || text.contains("объект"))));
             if record {
                 open_request(text, "command");
             }
