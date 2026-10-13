@@ -379,7 +379,8 @@ pub fn execute_command(cmd_path: &PathBuf, cmd_config: &JCommand, phrase: Option
             }
 
             // a program of the command's own folder and only a command that said "high": nothing else starts from here
-            let _running = crate::policy::enter_command(&cmd_config.id, &cmd_config.risk, cmd_path);
+            let declared = if crate::integrity::pack_command_is_trusted(cmd_path, "") { cmd_config.risk.as_str() } else { "low" };
+            let _running = crate::policy::enter_command(&cmd_config.id, declared, cmd_path);
             crate::policy::authorize_own_program(exe_path)?;
             execute_exe(exe_path.to_str().unwrap(), &cmd_config.exe_args)
                 .map(|_| false)
@@ -389,7 +390,8 @@ pub fn execute_command(cmd_path: &PathBuf, cmd_config: &JCommand, phrase: Option
         // CLI command type: a program from the short list of policy.rs with parameters of a known shape, started
         // directly (never through `cmd /C`)
         "cli" => {
-            let _running = crate::policy::enter_command(&cmd_config.id, &cmd_config.risk, cmd_path);
+            let declared = if crate::integrity::pack_command_is_trusted(cmd_path, "") { cmd_config.risk.as_str() } else { "low" };
+            let _running = crate::policy::enter_command(&cmd_config.id, declared, cmd_path);
             crate::policy::authorize(&crate::policy::Op::Run { program: cmd_config.cli_cmd.clone(), args: cmd_config.cli_args.clone() })?;
             execute_cli(&cmd_config.cli_cmd, &cmd_config.cli_args)
                 .map(|_| false)
@@ -462,8 +464,11 @@ fn execute_lua_command(
         return Err(format!("Lua script not found: {}", script_path.display()));
     }
     
-    // parse sandbox level
-    let sandbox = SandboxLevel::from_str(&cmd_config.sandbox);
+    // parse sandbox level. A command whose files are not the ones of this build (changed, new, another build) runs as a
+    // plain low command of the Standard level whatever it declares (integrity.rs)
+    let trusted = crate::integrity::pack_command_is_trusted(cmd_path, script_name);
+    let sandbox = if trusted { SandboxLevel::from_str(&cmd_config.sandbox) } else { SandboxLevel::Standard };
+    let declared_risk: &str = if trusted { &cmd_config.risk } else { "low" };
 
     // create context
     let context = CommandContext {
@@ -481,7 +486,7 @@ fn execute_lua_command(
           cmd_config.id, sandbox, timeout);
     
     // the command runs with the risk it declared: an operation riskier than that is refused (policy.rs)
-    let _running = crate::policy::enter_command(&cmd_config.id, &cmd_config.risk, cmd_path);
+    let _running = crate::policy::enter_command(&cmd_config.id, declared_risk, cmd_path);
 
     // execute
     match lua::execute(&script_path, context, sandbox, timeout) {

@@ -48,6 +48,7 @@ pub mod audio_buffer;
 pub mod tts;
 
 pub mod origin;
+pub mod integrity;
 pub mod policy;
 pub mod remote;
 pub mod ui;

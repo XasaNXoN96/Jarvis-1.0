@@ -1669,6 +1669,8 @@ mod tests {
             ("scenario.rs", include_str!("scenario.rs")),
         ];
         for (name, text) in files {
+            // (the files of a Windows checkout have CRLF line ends)
+            let text = text.replace("\r\n", "\n");
             let code = text.split("#[cfg(test)]\nmod tests").next().unwrap();
             assert!(!code.contains("push_text"), "{}: the old unlabeled entrance came back", name);
             assert!(!code.contains("INTERNAL_MARK"), "{}: an in-band mark came back", name);

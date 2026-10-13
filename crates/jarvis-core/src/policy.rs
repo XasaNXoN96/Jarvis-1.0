@@ -364,6 +364,9 @@ fn judge_powershell(args: &[String]) -> Result<Verdict, String> {
             if !is_ps1 || !path_starts_with(&script_path, &folder) {
                 return deny("-File: только файл .ps1 из папки самой команды");
             }
+            if !crate::integrity::file_is_listed(&script_path) {
+                return deny("-File: файл не из этой сборки Jarvis (изменён или новый)");
+            }
             if extra.iter().any(|a| a.contains('\0') || a.chars().count() > 4096) {
                 return deny("-File: недопустимый параметр");
             }
@@ -597,6 +600,11 @@ fn spelling_ok(path: &Path) -> Result<(), String> {
         return deny("недопустимый путь");
     }
     let s = text.replace('/', "\\");
+    // `..` by its spelling (in a path with the \\?\ prefix Windows does not treat it as a parent, but a program that
+    // later strips the prefix does)
+    if s.split('\\').any(|part| part == "..") {
+        return deny("«..» в пути запрещено");
+    }
     if s.starts_with("\\\\") && !s.starts_with("\\\\?\\") {
         return deny("сетевые пути и пути устройств запрещены");
     }
@@ -807,7 +815,7 @@ pub fn authorize_open(target: &str) -> Result<(), String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::fs;
 
@@ -1099,6 +1107,12 @@ mod tests {
 
     // ---- files -------------------------------------------------------------------------------------------------
 
+    // canonicalize gives \\?\C:\… on Windows, which does not take "/" in a name: the tests spell their paths plainly
+    pub(crate) fn plain(p: &Path) -> PathBuf {
+        let s = p.to_string_lossy().to_string();
+        PathBuf::from(s.strip_prefix("\\\\?\\").unwrap_or(&s).to_string())
+    }
+
     struct Places {
         _root: tempfile::TempDir,
         home: PathBuf,
@@ -1109,7 +1123,7 @@ mod tests {
     // a "Windows" folder, a user folder and a place that is neither
     fn places() -> Places {
         let root = tempfile::tempdir().unwrap();
-        let base = fs::canonicalize(root.path()).unwrap();
+        let base = plain(&fs::canonicalize(root.path()).unwrap());
         let home = base.join("home").join("Documents");
         let protected = base.join("Windows");
         let outside = base.join("elsewhere");

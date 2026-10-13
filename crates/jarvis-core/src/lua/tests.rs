@@ -932,7 +932,7 @@ mod tests {
     #[test]
     fn the_file_functions_of_a_script_follow_the_protected_places() {
                 let pack = tempdir().unwrap();
-        let base = std::fs::canonicalize(pack.path()).unwrap();
+        let base = crate::policy::tests::plain(&std::fs::canonicalize(pack.path()).unwrap());
         let (home, windows, elsewhere) = (base.join("Documents"), base.join("Windows"), base.join("elsewhere"));
         for d in [&home, &windows, &elsewhere] {
             std::fs::create_dir_all(d).unwrap();
@@ -996,6 +996,46 @@ mod tests {
         crate::policy::set_test_protected(Vec::new());
         assert!(r2.is_ok(), "{:?}", r2);
         assert!(!base.join("own.txt").exists());
+    }
+
+    fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for e in std::fs::read_dir(from).unwrap().flatten() {
+            let (a, b) = (e.path(), to.join(e.file_name()));
+            if a.is_dir() {
+                copy_tree(&a, &b);
+            } else {
+                std::fs::copy(&a, &b).unwrap();
+            }
+        }
+    }
+
+    // the real path of a command: a script that is not the one of the build runs as a plain low command of the
+    // Standard level, so the process it starts is refused and the file it writes is not written
+    #[test]
+    fn a_command_whose_script_is_not_the_one_of_the_build_runs_without_its_powers() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("commands");
+        copy_tree(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../resources/commands"), &root);
+        let list = crate::integrity::parse(include_str!(concat!(env!("OUT_DIR"), "/commands_manifest.txt")));
+        let _s = crate::integrity::TestSetup::new(&root, list);
+        let pack = root.join("steam");
+        let toml_text = std::fs::read_to_string(pack.join("command.toml")).unwrap();
+        let file: crate::commands::JCommandsList = toml::from_str(&toml_text).unwrap();
+        let steam_close = file.commands.iter().find(|c| c.id == "steam_2").unwrap().clone();
+        assert_eq!(steam_close.risk, "high");
+        // the script of the build: a forced kill of steam is within the declared power (nothing is started here)
+        crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow_mut().clear());
+        assert!(crate::commands::execute_command(&pack, &steam_close, Some("закрой стим"), None).is_ok());
+        let said = crate::lua::api::core::TEST_REPLIES.with(|r| r.borrow().last().cloned().unwrap_or_default());
+        assert!(said.contains("Closed") || said.contains("Закрыт"), "the trusted command ran its kill: {}", said);
+        // the same command with a script that is not the build's: it may not start anything
+        std::fs::write(pack.join("actions.lua"), r#"local r = run("taskkill", { "/f", "/im", "steam.exe" }); if r.denied then error("DENIED: " .. tostring(r.stderr)) end"#).unwrap();
+        let err = crate::commands::execute_command(&pack, &steam_close, Some("закрой стим"), None).unwrap_err();
+        assert!(err.contains("DENIED"), "{}", err);
+        // and the Full-level functions are gone for it (the Standard level has no jarvis.system.run)
+        std::fs::write(pack.join("actions.lua"), r#"if jarvis.system.run ~= nil or jarvis.system.clipboard.set ~= nil then error("FULL LEVEL") end"#).unwrap();
+        assert!(crate::commands::execute_command(&pack, &steam_close, Some("закрой стим"), None).is_ok(), "an untrusted script runs at the Standard level");
     }
 
 }

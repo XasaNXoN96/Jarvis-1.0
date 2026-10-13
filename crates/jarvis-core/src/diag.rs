@@ -221,6 +221,34 @@ pub fn build_check() -> Check {
     check("build", "Установленная сборка", status, format!("Версия {}. Файл {} изменён {}.", crate::config::build_id(), exe.map(|p| p.display().to_string()).unwrap_or_default(), when), hint)
 }
 
+// the files of the commands against the list of this build (integrity.rs)
+pub fn integrity_check() -> Check {
+    let (name, key) = ("Файлы команд", "integrity");
+    if !crate::integrity::enforced() {
+        return check(key, name, Status::Unchecked, "Сборка без метки коммита (локальная): файлы команд не сверяются.", "");
+    }
+    let r = crate::integrity::scan();
+    integrity_card(key, name, &r)
+}
+
+pub fn integrity_card(key: &'static str, name: &'static str, r: &crate::integrity::Report) -> Check {
+    if r.clean() {
+        return check(key, name, Status::Ok, format!("Все {} файлов команд — из этой сборки.", r.checked), "");
+    }
+    let list = |v: &[String]| v.iter().take(6).cloned().collect::<Vec<_>>().join(", ");
+    let mut parts = Vec::new();
+    if !r.modified.is_empty() {
+        parts.push(format!("изменены ({}): {}", r.modified.len(), list(&r.modified)));
+    }
+    if !r.extra.is_empty() {
+        parts.push(format!("лишние ({}): {}", r.extra.len(), list(&r.extra)));
+    }
+    if !r.missing.is_empty() {
+        parts.push(format!("нет ({}): {}", r.missing.len(), list(&r.missing)));
+    }
+    check(key, name, Status::Warn, format!("Команды не совпадают с этой сборкой — {}. Такие команды работают только как простые (без запуска программ, записи файлов и клавиш).", parts.join("; ")), "Установите Jarvis заново или распакуйте commands-update.zip ТОЙ ЖЕ сборки, что и программа.")
+}
+
 pub fn ai_check(ai_enabled: bool, status: &Value) -> Check {
     let (name, key) = ("ИИ-провайдер", "ai");
     if !ai_enabled {
@@ -601,7 +629,7 @@ pub fn run() -> Vec<Check> {
     let remote = measure_remote();
     let st = crate::uistate::stats();
     let monitor = monitor_check(st.mem_total_gb, st.cpu, st.disk_total_gb);
-    let mut checks = vec![build, mic, audio, piper, windows_voice, powershell, ai, latency, internet, remote, measure_tunnel(), measure_telegram(), measure_notify(), monitor, measure_resources(), measure_syscmds(), measure_lifecycle()];
+    let mut checks = vec![build, integrity_check(), mic, audio, piper, windows_voice, powershell, ai, latency, internet, remote, measure_tunnel(), measure_telegram(), measure_notify(), monitor, measure_resources(), measure_syscmds(), measure_lifecycle()];
     if let Some(c) = piper_lang {
         // (right after the card of Piper)
         let at = checks.iter().position(|c| c.key == "piper").map(|i| i + 1).unwrap_or(checks.len());

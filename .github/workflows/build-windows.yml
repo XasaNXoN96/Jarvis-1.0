@@ -164,6 +164,49 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path resources\commands -DestinationPath dist\commands-update.zip -Force
 
+      # the archive is unpacked by hand into the resources folder of an installed Jarvis: every name stays under commands/,
+      # nothing leads out with .., a drive, a stream or a backslash, no duplicates, and each file is the file of this commit
+      - name: Check the commands update archive
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zipPath = (Resolve-Path dist\commands-update.zip).Path
+          $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+          $bad = New-Object System.Collections.Generic.List[string]
+          $seen = @{}
+          $files = 0
+          try {
+            foreach ($e in $zip.Entries) {
+              $n = $e.FullName
+              if ($n.Contains('\')) { $bad.Add("backslash in the name: $n") }
+              $p = $n.Replace('\', '/')
+              if ($p -notmatch '^commands/') { $bad.Add("outside commands/: $n") }
+              if ($p -match '(^|/)\.\.?(/|$)') { $bad.Add("dot part: $n") }
+              if ($p.StartsWith('/') -or $p -match '^[A-Za-z]:') { $bad.Add("absolute: $n") }
+              if ($p.Contains(':')) { $bad.Add("stream or drive: $n") }
+              if ($p -match '//') { $bad.Add("empty part: $n") }
+              if ($p -match '(^|/)(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|/|$)') { $bad.Add("device name: $n") }
+              if ($seen.ContainsKey($p.ToLower())) { $bad.Add("duplicate: $n") }
+              $seen[$p.ToLower()] = $true
+              if ($p.EndsWith('/')) { continue }
+              $files++
+              $src = Join-Path (Get-Location) ('resources\' + $p)
+              if (-not (Test-Path $src)) { $bad.Add("not a file of this commit: $n"); continue }
+              $stream = $e.Open()
+              try {
+                $sha = [System.Security.Cryptography.SHA256]::Create()
+                $inZip = [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-', '')
+              } finally { $stream.Dispose() }
+              $onDisk = (Get-FileHash $src -Algorithm SHA256).Hash
+              if ($inZip -ne $onDisk) { $bad.Add("content differs from the commit: $n") }
+            }
+          } finally { $zip.Dispose() }
+          $expected = @(Get-ChildItem resources\commands -Recurse -File).Count
+          if ($files -ne $expected) { $bad.Add("the archive has $files files, the commit has $expected") }
+          if ($bad.Count -gt 0) { $bad | ForEach-Object { Write-Host "BAD: $_" }; throw "commands-update.zip is not safe to unpack" }
+          Write-Host "commands-update.zip: $files files, all under commands/, all equal to the commit"
+          "COMMANDS ARCHIVE: PASS ($files files)" | Add-Content evidence.txt
+
       - name: List dist
         shell: pwsh
         run: Get-ChildItem dist | Format-Table Name, Length

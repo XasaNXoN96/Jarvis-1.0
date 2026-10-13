@@ -60,6 +60,9 @@ opus-rs = "0.1.37"
 winapi = { version = "0.3", features = ["shellapi", "winuser", "sysinfoapi", "fileapi", "processthreadsapi", "winnt", "combaseapi", "objbase", "mmdeviceapi", "endpointvolume", "winerror", "objidl", "unknwnbase", "handleapi", "winbase", "minwindef", "dpapi", "wincrypt", "wingdi", "libloaderapi", "synchapi", "errhandlingapi", "winreg", "shlobj", "knownfolders", "fileapi", "tlhelp32", "iphlpapi", "iptypes", "ws2def", "inaddr", "ifdef", "nldef", "ipifcons", "psapi", "jobapi2", "playsoundapi", "mmsystem"] }
 winrt-notification = { workspace = true, optional = true }
 
+[build-dependencies]
+sha2.workspace = true
+
 [features]
 default = ["jarvis_app"]
 jarvis_app = [
