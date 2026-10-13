@@ -151,7 +151,7 @@ var
   icacls: String;
 begin
   app := ExpandConstant('{app}');
-  profile := ExpandConstant('{userprofile}');
+  profile := GetEnv('USERPROFILE');
   icacls := ExpandConstant('{sys}\icacls.exe');
   // the user who installs keeps the right to change (by name, DOMAIN\user: it is also right for a domain account)
   who := GetEnv('USERDOMAIN') + '\' + GetEnv('USERNAME');
@@ -173,7 +173,7 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  Log('Setup step ' + IntToStr(Ord(CurStep)) + ' (ssInstall=0, ssPostInstall=1, ssDone=2)');
+  Log('Setup step ' + IntToStr(Ord(CurStep)) + ' (ssInstall=1, ssPostInstall=2, ssDone=3)');
   if CurStep = ssPostInstall then
     HardenAppFolder;
 end;

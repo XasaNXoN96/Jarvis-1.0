@@ -122,3 +122,21 @@ fn the_installer_closes_the_program_folder_to_other_users() {
     let step = text.split("procedure CurStepChanged").nth(1).expect("CurStepChanged");
     assert!(step.contains("ssPostInstall") && step.contains("HardenAppFolder;"), "the rights are set after the files are copied");
 }
+
+// An unknown Inno constant is a RUNTIME error (the installer still ends with code 0 in a silent run, and the rights were never
+// set: the CI caught exactly that). Every constant used in the script must be one Inno Setup knows.
+#[test]
+fn every_inno_constant_in_the_script_is_a_known_one() {
+    let (_, text) = script();
+    let known = ["app", "sys", "win", "tmp", "localappdata", "userappdata", "userdocs", "userdesktop", "userstartup", "autopf", "group", "cm", "src", "pf", "commonappdata", "computername", "username", "uninstallexe", "srcexe", "sd", "cf", "fonts", "autodesktop", "userprograms", "userstartmenu", "autoprograms", "usercf", "userpf", "autocf", "autoappdata", "autodocs", "commondocs", "dao", "language", "log", "wizardhwnd", "dotnet20", "dotnet40", "dotnet20", "syswow64", "sys32", "sysnative", "pf32", "pf64", "cf32", "cf64", "userfavorites", "usersavedgames", "usertemplates", "commontemplates", "commonstartmenu", "commonprograms", "commonstartup", "commondesktop", "commonfavorites", "commonpf", "commoncf", "commonpf32", "commonpf64", "commoncf32", "commoncf64", "usercf", "autostartmenu", "autostartup", "autotemplates", "autofavorites", "drive", "param", "ini", "reg", "code", "special", "uninstallexe", "userprograms"];
+    for chunk in text.split('{').skip(1) {
+        let Some(end) = chunk.find('}') else { continue };
+        let name = &chunk[..end];
+        // (only simple words: «{app}», «{sys}»; texts of the messages and the Pascal code have braces of other kinds)
+        if name.is_empty() || !name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()) || name.starts_with("cm") {
+            continue;
+        }
+        assert!(known.contains(&name), "«{{{}}}» is not an Inno constant (a runtime error in the installer)", name);
+    }
+}
+
