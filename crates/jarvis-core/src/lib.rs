@@ -47,6 +47,7 @@ pub mod audio_buffer;
 
 pub mod tts;
 
+pub mod origin;
 pub mod remote;
 pub mod ui;
 pub mod uistate;

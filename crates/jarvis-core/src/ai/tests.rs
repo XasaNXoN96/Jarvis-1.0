@@ -296,7 +296,7 @@ fn text_chat_does_not_need_the_microphone_or_the_voice() {
     out.handle.join().unwrap();
     assert_eq!(messages(store, &out.chat_id).last().unwrap().content, "ответ без голоса");
     // the answer is not a command: nothing was pushed into the queue of typed commands
-    assert!(!crate::remote::push_text_would_work_for_tests());
+    assert!(!crate::remote::command_queue_connected_for_tests());
     crate::tts::set_enabled(true);
 }
 

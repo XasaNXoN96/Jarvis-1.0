@@ -184,8 +184,9 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
         crate::guard::forget(&format!("lua:{}", key));
         Ok(())
     })?)?;
-    // jarvis.app.run_text(text): handle a phrase as an ordinary command (it goes to the queue of typed commands)
-    app.set("run_text", lua.create_function(|_, text: String| Ok(crate::remote::push_text(&text)))?)?;
+    // jarvis.app.run_text(text): handle a phrase as an ordinary command (it goes to the queue of typed commands).
+    // The phrase keeps the door of the command that asked: a script cannot make its phrase more trusted than itself
+    app.set("run_text", lua.create_function(|_, text: String| Ok(crate::remote::submit_from_script(&text)))?)?;
     // jarvis.app.show_page("commands"): switch the Jarvis window to a page
     app.set("show_page", lua.create_function(|_, page: String| {
         #[cfg(feature = "jarvis_app")]

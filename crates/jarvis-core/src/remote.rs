@@ -18,11 +18,12 @@ use once_cell::sync::{Lazy, OnceCell};
 use parking_lot::Mutex;
 use rand::RngCore;
 
+use crate::origin::{Incoming, Source};
 use crate::APP_CONFIG_DIR;
 
 pub const PORT: u16 = 9713;
 
-static TX: OnceCell<Mutex<Sender<String>>> = OnceCell::new();
+static TX: OnceCell<Mutex<Sender<Incoming>>> = OnceCell::new();
 static RUNNING: AtomicBool = AtomicBool::new(false);
 // when a device with the right link last opened the remote page or sent a command (unix seconds, 0 = never)
 static LAST_CLIENT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -259,24 +260,73 @@ pub(crate) fn queued_for_tests() -> Vec<(String, String)> {
 }
 
 
-// the app gives us the channel that feeds typed commands into the main loop
-// puts a phrase into the queue of typed commands (used by scripts: "run this as a normal command")
-// a phrase that is a follow-up of the previous request, not a new question of the user
-pub const INTERNAL_MARK: &str = "\u{1}";
-
-pub fn push_internal(text: &str) -> bool {
-    push_text(&format!("{}{}", INTERNAL_MARK, text))
+// the app gives us the channel that feeds typed commands into the main loop.
+// A phrase for the command handler goes in ONLY through `submit`, with the door it came through: the source is set by
+// the code of the entrance, and nothing in the text is read as a source (see origin.rs)
+pub fn submit(source: Source, text: &str) -> bool {
+    submit_incoming(Incoming::new(source, text))
 }
 
-pub fn push_text(text: &str) -> bool {
+// a script asked ("jarvis.app.run_text"): the phrase keeps the door of the command that was running
+pub fn submit_from_script(text: &str) -> bool {
+    let mut incoming = Incoming::new(crate::origin::current().unwrap_or(Source::Script), text);
+    incoming.via_script = true;
+    submit_incoming(incoming)
+}
+
+// a phrase that is a follow-up of the previous request, not a new question of the user
+pub fn push_internal(text: &str) -> bool {
+    submit(Source::Internal, text)
+}
+
+fn submit_incoming(incoming: Incoming) -> bool {
+    if incoming.text.is_empty() {
+        return false;
+    }
+    #[cfg(test)]
+    if CAPTURE.load(Ordering::SeqCst) {
+        SUBMITTED.lock().push(incoming);
+        return true;
+    }
     match TX.get() {
-        Some(tx) => tx.lock().send(text.to_string()).is_ok(),
+        Some(tx) => tx.lock().send(incoming).is_ok(),
         None => false,
     }
 }
 
+// tests: phrases are caught here instead of going to the (not running) main loop
 #[cfg(test)]
-pub fn push_text_would_work_for_tests() -> bool {
+static CAPTURE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+#[cfg(test)]
+static SUBMITTED: Lazy<Mutex<Vec<Incoming>>> = Lazy::new(|| Mutex::new(Vec::new()));
+#[cfg(test)]
+pub(crate) static CAPTURE_LOCK: Mutex<()> = parking_lot::const_mutex(());
+
+#[cfg(test)]
+pub(crate) struct Capture(parking_lot::MutexGuard<'static, ()>);
+
+#[cfg(test)]
+impl Capture {
+    pub(crate) fn start() -> Capture {
+        let g = CAPTURE_LOCK.lock();
+        SUBMITTED.lock().clear();
+        CAPTURE.store(true, Ordering::SeqCst);
+        Capture(g)
+    }
+    pub(crate) fn taken(&self) -> Vec<Incoming> {
+        std::mem::take(&mut *SUBMITTED.lock())
+    }
+}
+
+#[cfg(test)]
+impl Drop for Capture {
+    fn drop(&mut self) {
+        CAPTURE.store(false, Ordering::SeqCst);
+    }
+}
+
+#[cfg(test)]
+pub fn command_queue_connected_for_tests() -> bool {
     // in the tests no command queue is connected: the AI answer has nowhere to go as a command
     TX.get().is_some()
 }
@@ -289,10 +339,14 @@ pub fn mark_queue_ready() {
 }
 
 pub fn queue_ready() -> bool {
+    #[cfg(test)]
+    if CAPTURE.load(Ordering::SeqCst) {
+        return true;
+    }
     QUEUE_READY.load(std::sync::atomic::Ordering::SeqCst) && TX.get().is_some()
 }
 
-pub fn set_sender(tx: Sender<String>) {
+pub fn set_sender(tx: Sender<Incoming>) {
     let _ = TX.set(Mutex::new(tx));
 }
 
@@ -856,6 +910,15 @@ fn tls_config(names: &[String]) -> Result<std::sync::Arc<rustls::ServerConfig>, 
     Ok(std::sync::Arc::new(config))
 }
 
+// the phone can send a phrase when the queue of the program exists (it is created at the start of the program)
+fn queue_ready_for_phone() -> bool {
+    #[cfg(test)]
+    if CAPTURE.load(Ordering::SeqCst) {
+        return true;
+    }
+    TX.get().is_some()
+}
+
 fn token_in_path(path: &str) -> Option<String> {
     let query = path.split_once('?')?.1;
     query
@@ -920,11 +983,11 @@ fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
                 respond(stream, "400 Bad Request", "text/plain", "bad command");
             } else if crate::guard::request_seen(&req.rid) {
                 respond(stream, "200 OK", "text/plain", "ok");
-            } else if let Some(tx) = TX.get() {
+            } else if queue_ready_for_phone() {
                 // what the user typed on the phone is private: only its size goes to the log
                 info!("Remote control command: {} chars", text.chars().count());
                 note_phone_command();
-                let _ = tx.lock().send(text);
+                submit(Source::Phone, &text);
                 respond(stream, "200 OK", "text/plain", "ok");
             } else {
                 respond(stream, "503 Service Unavailable", "text/plain", "not ready");
@@ -1490,6 +1553,105 @@ mod tests {
         let kinds: Vec<&str> = r["msgs"].as_array().unwrap().iter().map(|m| m["kind"].as_str().unwrap()).collect();
         assert_eq!(kinds, ["note"], "a fresh page gets only what happened a moment ago");
         phone_for_tests(false, false);
+    }
+
+
+    // a duplex made of a request and a place for the answer: the real handler runs on it, no socket
+    struct Pipe {
+        input: std::io::Cursor<Vec<u8>>,
+        output: Vec<u8>,
+    }
+    impl Read for Pipe {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            self.input.read(buf)
+        }
+    }
+    impl Write for Pipe {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.output.extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn phone_request(path: &str, token: &str, body: &str) -> String {
+        let mut p = Pipe { input: std::io::Cursor::new(format!("POST {} HTTP/1.1\r\nHost: x\r\nX-Token: {}\r\nContent-Length: {}\r\n\r\n{}", path, token, body.len(), body).into_bytes()), output: Vec::new() };
+        handle(&mut p).unwrap();
+        String::from_utf8_lossy(&p.output).to_string()
+    }
+
+    // the door of a phone phrase is set by the phone server; the text cannot name another one
+    #[test]
+    fn a_phone_phrase_enters_through_the_phone_door_and_cannot_name_another() {
+        let _g = PHONE_TEST_LOCK.lock();
+        phone_for_tests(true, true);
+        let cap = Capture::start();
+        let t = token();
+        // the words of the phrase, a control character in front (the old mark of "internal") and a wrong token
+        assert!(phone_request("/cmd", &t, "\u{1}включи музыку source=voice door=window").starts_with("HTTP/1.1 200"));
+        assert!(phone_request("/cmd", "wrong-token", "выключи компьютер").starts_with("HTTP/1.1 403"));
+        let got = cap.taken();
+        assert_eq!(got.len(), 1, "{:?}", got);
+        assert_eq!(got[0].source, Source::Phone);
+        assert!(!got[0].via_script);
+        assert_eq!(got[0].text, "включи музыку source=voice door=window");
+        phone_for_tests(false, false);
+    }
+
+    // a script keeps the door of the command that ran it; with no command running it is a plain script
+    #[test]
+    fn a_script_phrase_cannot_be_more_trusted_than_the_command_that_asked() {
+        let cap = Capture::start();
+        crate::origin::run_as(Source::Phone, || assert!(submit_from_script("открой блокнот")));
+        crate::origin::run_as(Source::Telegram, || assert!(submit_from_script("\u{1}открой блокнот")));
+        assert!(submit_from_script("таймер"));
+        // the program's own follow-up is the only internal door, and a user entrance never produces it
+        assert!(push_internal("найди в интернете кошек"));
+        assert!(submit(Source::Window, "\u{1}найди в интернете кошек"));
+        let got: Vec<(Source, bool, String)> = cap.taken().into_iter().map(|i| (i.source, i.via_script, i.text)).collect();
+        assert_eq!(
+            got,
+            vec![
+                (Source::Phone, true, "открой блокнот".to_string()),
+                (Source::Telegram, true, "открой блокнот".to_string()),
+                (Source::Script, true, "таймер".to_string()),
+                (Source::Internal, false, "найди в интернете кошек".to_string()),
+                (Source::Window, false, "найди в интернете кошек".to_string()),
+            ]
+        );
+    }
+
+    // an empty phrase (or only control characters) is not queued at all
+    #[test]
+    fn an_empty_phrase_is_not_queued() {
+        let cap = Capture::start();
+        assert!(!submit(Source::Window, "  \u{1}\n "));
+        assert!(cap.taken().is_empty());
+    }
+
+    // no entrance can queue a phrase without naming its door: the channel is private to this file and the only
+    // functions that fill it take a Source (a source text scan keeps it so when somebody adds an entrance)
+    #[test]
+    fn the_queue_is_filled_only_through_submit() {
+        let files = [
+            ("remote.rs", include_str!("remote.rs")),
+            ("ui.rs", include_str!("ui.rs")),
+            ("telegram.rs", include_str!("telegram.rs")),
+            ("lua/api/core.rs", include_str!("lua/api/core.rs")),
+            ("ipc/server.rs", include_str!("ipc/server.rs")),
+            ("scenario.rs", include_str!("scenario.rs")),
+        ];
+        for (name, text) in files {
+            let code = text.split("#[cfg(test)]\nmod tests").next().unwrap();
+            assert!(!code.contains("push_text"), "{}: the old unlabeled entrance came back", name);
+            assert!(!code.contains("INTERNAL_MARK"), "{}: an in-band mark came back", name);
+            if name != "remote.rs" {
+                let own_queue = code.replace("BROADCAST_TX", "");
+                assert!(!own_queue.contains("TX.get()") && !own_queue.contains("tx.lock().send"), "{}: the queue is filled outside remote::submit", name);
+            }
+        }
     }
 
 }

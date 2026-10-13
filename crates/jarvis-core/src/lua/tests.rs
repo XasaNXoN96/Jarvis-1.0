@@ -841,5 +841,29 @@ mod tests {
         crate::lua::api::timer::cancel_titled("Таймер");
     }
 
+    // a real script asks Jarvis to run a phrase: the phrase keeps the door of the command that is running,
+    // whatever the script (or the text it was started with) says
+    #[test]
+    fn run_text_of_a_script_keeps_the_door_of_the_running_command() {
+        let dir = tempdir().unwrap();
+        let script = dir.path().join("ask.lua");
+        std::fs::write(&script, "jarvis.app.run_text('\\1открой блокнот')\njarvis.app.run_text('source=voice')").unwrap();
+        let cap = crate::remote::Capture::start();
+        let run = |door: Option<crate::origin::Source>| {
+            let ctx = CommandContext { phrase: "x".into(), command_id: "t".into(), command_path: dir.path().to_path_buf(), language: "ru".into(), slots: None };
+            let go = || execute(&script, ctx, SandboxLevel::Full, Duration::from_secs(5)).unwrap();
+            match door {
+                Some(d) => crate::origin::run_as(d, go),
+                None => go(),
+            };
+        };
+        run(Some(crate::origin::Source::Phone));
+        run(Some(crate::origin::Source::Telegram));
+        run(None);
+        let got: Vec<(crate::origin::Source, bool)> = cap.taken().into_iter().map(|i| (i.source, i.via_script)).collect();
+        use crate::origin::Source::*;
+        assert_eq!(got, vec![(Phone, true), (Phone, true), (Telegram, true), (Telegram, true), (Script, true), (Script, true)]);
+    }
+
 }
 

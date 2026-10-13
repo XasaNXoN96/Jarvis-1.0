@@ -624,7 +624,7 @@ fn chat_action(body: &serde_json::Value) -> serde_json::Value {
             if crate::guard::request_seen(rid) {
                 return json!({ "ok": true, "id": store.active().unwrap_or_default(), "repeat": true });
             }
-            if crate::remote::push_text(text) {
+            if crate::remote::submit(crate::origin::Source::Window, text) {
                 json!({ "ok": true, "id": store.active().unwrap_or_default() })
             } else {
                 json!({ "ok": false, "message": "Jarvis ещё запускается: повторите через секунду." })
@@ -777,6 +777,8 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
         respond(&mut stream, "403 Forbidden", "text/plain", "forbidden");
         return Ok(());
     }
+    // everything this server does (a phrase, a scenario test, an action) comes through the door of the window
+    let _door = crate::origin::enter(crate::origin::Source::Window);
 
     match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/") => respond(&mut stream, "200 OK", "text/html", PAGE),
@@ -1190,4 +1192,18 @@ mod tests {
         assert!(crate::uistate::settings().dnd, "nothing was reset");
         crate::uistate::set_for_tests(Default::default());
     }
+
+    // the window server: every request is in the door of the window, a "source" field of the request changes nothing
+    #[test]
+    fn a_window_phrase_enters_through_the_window_door_and_ignores_a_source_field() {
+        let cap = crate::remote::Capture::start();
+        let r = chat_action(&json!({ "op": "ask", "text": "\u{1}открой блокнот", "rid": "door-test-1", "source": "voice", "door": "internal", "internal": true }));
+        assert_eq!(r["ok"], true, "{}", r);
+        let got = cap.taken();
+        assert_eq!(got.len(), 1, "{:?}", got);
+        assert_eq!(got[0].source, crate::origin::Source::Window);
+        assert!(!got[0].via_script);
+        assert_eq!(got[0].text, "открой блокнот");
+    }
+
 }

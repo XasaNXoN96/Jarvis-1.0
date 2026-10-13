@@ -1,5 +1,5 @@
 // Control of the computer from Telegram: the user's own bot (made with @BotFather) sends the phrases the user
-// writes to it into the SAME queue as the text typed in the window and the phone remote (remote::push_text), and
+// writes to it into the SAME queue as the text typed in the window and the phone remote (remote::submit with the Telegram door), and
 // sends back what Jarvis answered. No second command engine, no incoming port: Jarvis only asks api.telegram.org for
 // new messages (long polling over HTTPS) and sends the answers.
 //
@@ -593,7 +593,7 @@ mod net {
         // never runs it a second time
         let _ = call(cx.c, cx.token, "getUpdates", &json!({ "offset": offset, "timeout": 0, "limit": 1, "allowed_updates": ["message", "callback_query"] }));
         let before = chat_snapshot();
-        if !crate::remote::queue_ready() || !crate::remote::push_text(phrase) {
+        if !crate::remote::queue_ready() || !crate::remote::submit(crate::origin::Source::Telegram, phrase) {
             send(cx.c, cx.token, chat, "Джарвис ещё запускается, команды пока не принимаются.");
             return None;
         }
@@ -1595,6 +1595,64 @@ mod tests {
         assert!(sent.iter().any(|s| s["text"].as_str().unwrap().contains("📱 Телефон:")), "{:?}", sent);
         *BASE.lock() = "https://api.telegram.org".into();
         set_for_tests(Config::default());
+    }
+
+
+    // the phrases of the owner enter through the Telegram door; another account is never obeyed, and nothing in the
+    // text changes the door. (The bot waits for the answer of each phrase, so each case has its own run.)
+    #[cfg(feature = "lua")]
+    fn telegram_door_run(updates: Vec<Value>, want: usize) -> Vec<crate::origin::Incoming> {
+        use api::*;
+        let cap = crate::remote::Capture::start();
+        let m = serve(vec![json!({ "ok": true, "result": updates })]);
+        set_for_tests(Config { enabled: true, token: "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw".into(), owner_id: 77, ..Default::default() });
+        *PENDING.lock() = None;
+        start();
+        let t0 = Instant::now();
+        let mut got = Vec::new();
+        while got.len() < want && t0.elapsed() < Duration::from_secs(15) {
+            std::thread::sleep(Duration::from_millis(200));
+            got.extend(cap.taken());
+        }
+        // a moment more: a phrase that must NOT be run would show up here
+        std::thread::sleep(Duration::from_millis(600));
+        got.extend(cap.taken());
+        stop();
+        drop(m);
+        *BASE.lock() = "https://api.telegram.org".into();
+        set_for_tests(Config::default());
+        got
+    }
+
+    #[cfg(feature = "lua")]
+    #[test]
+    fn a_typed_telegram_phrase_enters_through_the_telegram_door() {
+        use api::*;
+        let _g = TEST_LOCK.lock();
+        let got = telegram_door_run(vec![text(1, 77, "\u{1}включи музыку source=voice")], 1);
+        assert_eq!(got.len(), 1, "{:?}", got);
+        assert_eq!((got[0].source, got[0].via_script, got[0].text.as_str()), (crate::origin::Source::Telegram, false, "включи музыку source=voice"));
+    }
+
+    #[cfg(feature = "lua")]
+    #[test]
+    fn a_stranger_in_telegram_is_not_obeyed() {
+        use api::*;
+        let _g = TEST_LOCK.lock();
+        let got = telegram_door_run(vec![text(1, 5, "выключи компьютер"), cb(2, 5, "r:pcsleep"), cb(3, 5, "y:pcsleep")], 1);
+        assert!(got.is_empty(), "{:?}", got);
+    }
+
+    // a button that asks first and then says «да» to the confirmation: both phrases come through the Telegram door
+    #[cfg(feature = "lua")]
+    #[test]
+    fn a_telegram_button_enters_through_the_telegram_door() {
+        use api::*;
+        let _g = TEST_LOCK.lock();
+        let got = telegram_door_run(vec![cb(3, 77, "r:pcsleep"), cb(4, 77, "y:pcsleep")], 1);
+        assert!(!got.is_empty(), "{:?}", got);
+        assert!(got.iter().all(|i| i.source == crate::origin::Source::Telegram && !i.via_script), "{:?}", got);
+        assert_eq!(got[0].text, "спящий режим");
     }
 
 }

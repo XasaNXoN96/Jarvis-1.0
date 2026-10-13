@@ -2,6 +2,7 @@ use std::sync::mpsc::Receiver;
 use std::time::SystemTime;
 
 use jarvis_core::{audio_buffer::AudioRingBuffer, audio_processing, commands, config, listener, recorder, stt, COMMANDS_LIST, intent, voices, ipc::{self, IpcEvent}, i18n, slots};
+use jarvis_core::origin::{Incoming, Source};
 use rand::seq::SliceRandom;
 
 use crate::should_stop;
@@ -19,7 +20,7 @@ fn say(msg: &str) {
     let _ = writeln!(std::io::stdout(), "{}", msg);
 }
 
-pub fn start(voice_mode: bool, text_cmd_rx: Receiver<String>, rt: &tokio::runtime::Runtime) -> Result<(), ()> {
+pub fn start(voice_mode: bool, text_cmd_rx: Receiver<Incoming>, rt: &tokio::runtime::Runtime) -> Result<(), ()> {
     // from here on the queue of typed / remote / Telegram phrases is read
     jarvis_core::remote::mark_queue_ready();
     if voice_mode {
@@ -37,7 +38,7 @@ pub fn start(voice_mode: bool, text_cmd_rx: Receiver<String>, rt: &tokio::runtim
 }
 
 // read commands typed in the console and pass them to the main loop
-pub fn console_input(tx: std::sync::mpsc::Sender<String>) {
+pub fn console_input(tx: std::sync::mpsc::Sender<Incoming>) {
     let stdin = std::io::stdin();
     let mut line = String::new();
     loop {
@@ -53,7 +54,7 @@ pub fn console_input(tx: std::sync::mpsc::Sender<String>) {
                     // the whole Jarvis ends (not only the voice loop with the window and the tray left behind)
                     crate::shutdown_and_exit();
                 }
-                if tx.send(text.to_string()).is_err() {
+                if tx.send(Incoming::new(Source::Console, text)).is_err() {
                     return;
                 }
             }
@@ -62,7 +63,7 @@ pub fn console_input(tx: std::sync::mpsc::Sender<String>) {
 }
 
 // text-only mode: no microphone / speech recognition, commands come from console or GUI
-fn text_loop(text_cmd_rx: &Receiver<String>, rt: &tokio::runtime::Runtime) -> Result<(), ()> {
+fn text_loop(text_cmd_rx: &Receiver<Incoming>, rt: &tokio::runtime::Runtime) -> Result<(), ()> {
     info!("TEXT mode: type a command and press Enter ('exit' to quit).");
     say("Jarvis: text mode. Type a command and press Enter ('exit' to quit).");
     voices::play_greet();
@@ -71,7 +72,7 @@ fn text_loop(text_cmd_rx: &Receiver<String>, rt: &tokio::runtime::Runtime) -> Re
     loop {
         // run all queued commands first, stop only when the queue is empty
         match text_cmd_rx.recv_timeout(std::time::Duration::from_millis(200)) {
-            Ok(text) => process_text_command(&text, rt),
+            Ok(incoming) => process_text_command(incoming, rt),
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 if should_stop() {
                     info!("Stop signal received, shutting down...");
@@ -86,7 +87,7 @@ fn text_loop(text_cmd_rx: &Receiver<String>, rt: &tokio::runtime::Runtime) -> Re
     Ok(())
 }
 
-fn main_loop(text_cmd_rx: &Receiver<String>, rt: &tokio::runtime::Runtime) -> Result<(), ()> {
+fn main_loop(text_cmd_rx: &Receiver<Incoming>, rt: &tokio::runtime::Runtime) -> Result<(), ()> {
     let frame_length: usize = 512;
     let sample_rate: usize = 16000;
     let mut frame_buffer: Vec<i16> = vec![0; frame_length];
@@ -127,8 +128,8 @@ fn main_loop(text_cmd_rx: &Receiver<String>, rt: &tokio::runtime::Runtime) -> Re
             break;
         }
 
-        if let Ok(text) = text_cmd_rx.try_recv() {
-            process_text_command(&text, &rt);
+        if let Ok(incoming) = text_cmd_rx.try_recv() {
+            process_text_command(incoming, &rt);
             continue 'wake_word;
         }
 
@@ -447,7 +448,7 @@ fn recognize_command(
                     *ORIGINAL.lock() = recognized_voice.clone();
                     // nothing listens while the command runs: the window does not say "слушаю"
                     jarvis_core::VOICE_LISTENING.store(false, std::sync::atomic::Ordering::SeqCst);
-                    let should_chain = execute_command(&recognized_voice, rt);
+                    let should_chain = execute_command(&recognized_voice, Source::Voice, rt);
                     jarvis_core::VOICE_LISTENING.store(should_chain, std::sync::atomic::Ordering::SeqCst);
                     VOICE_INPUT.store(false, std::sync::atomic::Ordering::SeqCst);
                     
@@ -511,13 +512,13 @@ fn remove_phrases(text: &str, phrases: &[&str]) -> String {
     padded.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-fn process_text_command(text: &str, rt: &tokio::runtime::Runtime) {
+fn process_text_command(incoming: Incoming, rt: &tokio::runtime::Runtime) {
     // an internal follow-up of the previous request (the search after an AI failure): no new question is stored,
-    // its replies join the request it belongs to
-    let (internal, text) = match text.strip_prefix(jarvis_core::remote::INTERNAL_MARK) {
-        Some(rest) => (true, rest),
-        None => (false, text),
-    };
+    // its replies join the request it belongs to. It is internal only when the program itself queued it
+    // (the door is set by the entrance, never read from the text)
+    let internal = incoming.source == Source::Internal;
+    let source = incoming.source;
+    let text = incoming.text.as_str();
     info!("Processing text command: {} chars", text.chars().count());
     
     if internal {
@@ -545,7 +546,7 @@ fn process_text_command(text: &str, rt: &tokio::runtime::Runtime) {
     }
     
     // text commands never chain
-    execute_command(filtered, rt);
+    execute_command(filtered, source, rt);
     INTERNAL.store(false, std::sync::atomic::Ordering::SeqCst);
 }
 
@@ -573,7 +574,10 @@ fn open_request(text: &str, src: &str) {
 }
 
 // Execute command, returns true if chaining should continue
-fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
+fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> bool {
+    // every command, script and scenario that runs below knows its door (jarvis_core::origin::current())
+    let _door = jarvis_core::origin::enter(source);
+    info!("Command door: {}", source.as_str());
     let commands_list = match COMMANDS_LIST.get() {
         Some(c) => c,
         None => {

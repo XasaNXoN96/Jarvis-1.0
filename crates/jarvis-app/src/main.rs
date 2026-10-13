@@ -307,7 +307,7 @@ fn main() -> Result<(), String> {
     ipc::init();
 
     // channel for text commands (manually written in the GUI)
-    let (text_cmd_tx, text_cmd_rx) = mpsc::channel::<String>();
+    let (text_cmd_tx, text_cmd_rx) = mpsc::channel::<jarvis_core::origin::Incoming>();
     let console_tx = text_cmd_tx.clone();
     // phone / remote control feeds commands through the same channel (off until enabled)
     jarvis_core::remote::set_sender(text_cmd_tx.clone());
@@ -337,7 +337,7 @@ fn main() -> Result<(), String> {
             }
             IpcAction::TextCommand { text } => {
                 info!("Received text command: {} chars", text.chars().count());
-                if let Err(e) = text_cmd_tx.send(text) {
+                if let Err(e) = text_cmd_tx.send(jarvis_core::origin::Incoming::new(jarvis_core::origin::Source::Ipc, &text)) {
                     error!("Failed to send text command to app: {}", e);
                 }
             }
