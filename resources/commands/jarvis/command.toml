@@ -1,5 +1,6 @@
 [[commands]]
 id = "jarvis_2"
+risk = "low"
 type = "voice"
 sounds.ru = ["stupid"]
 phrases.ru = [
@@ -11,6 +12,7 @@ phrases.ru = [
 
 [[commands]]
 id = "jarvis_3"
+risk = "low"
 type = "voice"
 sounds.ru = ["thanks"]
 phrases.ru = [
@@ -27,6 +29,7 @@ phrases.ru = [
 
 [[commands]]
 id = "jarvis_4"
+risk = "low"
 type = "voice"
 sounds.ru = ["joke1", "joke2", "joke3", "joke4", "joke5"]
 phrases.ru = [
@@ -49,6 +52,7 @@ phrases.ru = [
 
 [[commands]]
 id = "jarvis_5"
+risk = "low"
 type = "voice"
 sounds.ru = ["thanks"]
 phrases.ru = [

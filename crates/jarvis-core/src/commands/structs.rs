@@ -47,6 +47,11 @@ pub struct JCommand {
     #[serde(default)]
     pub sandbox: String,
 
+    // Risk of the command: "low" | "medium" | "high". It is the most the command may do (see policy.rs): a command
+    // that does not say is "low". Every command of the packs of Jarvis names its risk (a test checks it).
+    #[serde(default)]
+    pub risk: String,
+
     // Script timeout in milliseconds (default 10000 = 10s)
     #[serde(default)]
     pub timeout: u64,
@@ -95,6 +100,7 @@ impl Clone for JCommand {
 
             script: self.script.clone(),
             sandbox: self.sandbox.clone(),
+            risk: self.risk.clone(),
             timeout: self.timeout.clone(),
 
             sounds: self.sounds.clone(),

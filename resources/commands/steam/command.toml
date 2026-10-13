@@ -1,5 +1,6 @@
 [[commands]]
 id = "steam_1"
+risk = "medium"
 type = "lua"
 script = "actions.lua"
 sandbox = "full"
@@ -16,6 +17,7 @@ phrases.ru = [
 
 [[commands]]
 id = "steam_2"
+risk = "high"
 type = "lua"
 script = "actions.lua"
 sandbox = "full"

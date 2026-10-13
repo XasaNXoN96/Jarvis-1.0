@@ -213,7 +213,12 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
                 t.set("start", m.app.start)?;
                 t.set("process", m.app.process)?;
                 t.set("office", m.app.office)?;
-                t.set("path", crate::apps::locate(m.app))?;
+                let located = crate::apps::locate(m.app);
+                if let Some(p) = &located {
+                    // the system named this program: starting it is an ordinary start wherever it is installed
+                    crate::policy::note_known_program(p);
+                }
+                t.set("path", located)?;
                 // the website of the same program (Discord, Telegram, Spotify): opened when the program is not installed
                 t.set("web", crate::sites::by_id(m.app.id).map(|s| s.url))?;
                 Ok(mlua::Value::Table(t))
@@ -227,6 +232,7 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
                         t.set("name", a.name.clone())?;
                         t.set("indexed", true)?;
                         t.set("launch", a.launch.clone())?;
+                        crate::policy::note_known_program(&a.launch);
                         t.set("source", crate::appindex::source_title(&a.source))?;
                         crate::appindex::set_pending(vec![a]);
                         Ok(mlua::Value::Table(t))

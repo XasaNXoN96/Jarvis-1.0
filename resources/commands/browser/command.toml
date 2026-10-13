@@ -1,5 +1,6 @@
 [[commands]]
 id = "browser_open"
+risk = "medium"
 type = "lua"
 script = "actions.lua"
 sandbox = "full"
@@ -38,6 +39,7 @@ phrases.ua = [
 
 [[commands]]
 id = "browser_close"
+risk = "high"
 type = "lua"
 script = "actions.lua"
 sandbox = "full"
@@ -68,6 +70,7 @@ phrases.ua = [
 
 [[commands]]
 id = "open_google"
+risk = "medium"
 type = "lua"
 script = "actions.lua"
 sandbox = "full"

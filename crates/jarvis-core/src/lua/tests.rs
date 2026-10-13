@@ -825,6 +825,9 @@ mod tests {
     #[test]
     fn a_timer_set_by_voice_ends_with_a_notification() {
         let _u = crate::uistate::TEST_LOCK.lock();
+        // the phone is off while the timer rings: its note must not land in the queue a phone test is reading
+        let _p = crate::remote::PHONE_TEST_LOCK.lock();
+        crate::remote::phone_for_tests(false, false);
         crate::tts::set_enabled(true);
         let marker = format!("{}", rand::random::<u32>());
         let (shown, _) = answer("assistant_timer_set", "timer.lua", "поставь таймер на 2 секунды");
@@ -863,6 +866,136 @@ mod tests {
         let got: Vec<(crate::origin::Source, bool)> = cap.taken().into_iter().map(|i| (i.source, i.via_script)).collect();
         use crate::origin::Source::*;
         assert_eq!(got, vec![(Phone, true), (Phone, true), (Telegram, true), (Telegram, true), (Script, true), (Script, true)]);
+    }
+
+    // a script the test writes: it raises an error when something it expects is not so
+    fn run_script(body: &str, sandbox: SandboxLevel) -> Result<(), String> {
+        let dir = tempdir().unwrap();
+        let script = dir.path().join("t.lua");
+        std::fs::write(&script, body).unwrap();
+        let ctx = CommandContext { phrase: "x".into(), command_id: "t".into(), command_path: dir.path().to_path_buf(), language: "ru".into(), slots: None };
+        execute(&script, ctx, sandbox, Duration::from_secs(5)).map(|_| ()).map_err(|e| e.to_string())
+    }
+
+    // io.popen / io.open / os.execute / os.getenv / require / load: the ways around every rule of policy.rs
+    #[test]
+    fn a_script_has_no_io_no_os_that_acts_and_no_way_to_load_code() {
+        for sandbox in [SandboxLevel::Minimal, SandboxLevel::Standard, SandboxLevel::Full] {
+            let r = run_script(
+                r#"
+                for _, name in ipairs({ "io", "package", "require", "debug", "load", "loadstring", "loadfile", "dofile" }) do
+                  if _G[name] ~= nil then error(name .. " is available") end
+                end
+                if os ~= nil then
+                  for _, name in ipairs({ "execute", "exit", "remove", "rename", "setlocale", "getenv", "tmpname" }) do
+                    if os[name] ~= nil then error("os." .. name .. " is available") end
+                  end
+                  if type(os.time()) ~= "number" or type(os.date("%H")) ~= "string" then error("the clock is gone") end
+                end
+                "#,
+                sandbox,
+            );
+            assert!(r.is_ok(), "{:?}: {:?}", sandbox, r);
+        }
+    }
+
+    // jarvis.system.exec no longer runs a line of text; run() takes a named program with parameters of a known shape
+    #[test]
+    fn exec_is_refused_and_run_is_limited_to_the_named_operations() {
+                let _r = crate::policy::enter_command("t", "medium", std::path::Path::new("/tmp"));
+        let r = run_script(
+            r#"
+            local ok, err = pcall(jarvis.system.exec, "calc")
+            if ok then error("exec ran") end
+            if not tostring(err):find("Запрещено") then error("exec: " .. tostring(err)) end
+            local r = jarvis.system.run("cmd", { "/C", "calc" })
+            if not r.denied or r.success then error("cmd /C ran") end
+            r = jarvis.system.run("sh", { "-c", "id" })
+            if not r.denied then error("sh ran") end
+            r = jarvis.system.run("powershell", { "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "calc" })
+            if not r.denied then error("a free PowerShell script ran") end
+            -- a forced kill is riskier than a medium command
+            r = jarvis.system.run("taskkill", { "/f", "/im", "notepad.exe" })
+            if not r.denied then error("a medium command ended a process by force") end
+            r = jarvis.system.run("taskkill", { "/im", "csrss.exe" })
+            if not r.denied then error("a protected process") end
+            -- a named operation within the risk is not refused (the program does not exist here: it fails, it is not denied)
+            r = jarvis.system.run("shutdown", { "/a" })
+            if r.denied then error("shutdown /a was refused: " .. tostring(r.stderr)) end
+            "#,
+            SandboxLevel::Full,
+        );
+        assert!(r.is_ok(), "{:?}", r);
+    }
+
+    // the file functions of a script: the user's folders yes, Windows / Jarvis / links out of them no
+    #[test]
+    fn the_file_functions_of_a_script_follow_the_protected_places() {
+                let pack = tempdir().unwrap();
+        let base = std::fs::canonicalize(pack.path()).unwrap();
+        let (home, windows, elsewhere) = (base.join("Documents"), base.join("Windows"), base.join("elsewhere"));
+        for d in [&home, &windows, &elsewhere] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        crate::policy::set_test_allowed(vec![home.clone()]);
+        crate::policy::set_test_protected(vec![windows.clone()]);
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&windows, home.join("link")).unwrap();
+        let q = |p: &std::path::Path| p.to_string_lossy().replace('\\', "\\\\");
+        let body = format!(
+            r#"
+            local function denied(f, ...)
+              local ok, err = pcall(f, ...)
+              if ok then error("allowed: " .. tostring(select(1, ...))) end
+              if not tostring(err):find("Запрещено") then error("not a policy refusal: " .. tostring(err)) end
+            end
+            -- the user's folder
+            if not jarvis.fs.write("{h}/tasks.txt", "a") then error("write") end
+            if not jarvis.fs.append("{h}/tasks.txt", "b") then error("append") end
+            if jarvis.fs.read_text("{h}/tasks.txt") ~= "ab" then error("read") end
+            if not jarvis.fs.mkdir("{h}/sub/deeper") then error("mkdir") end
+            if not jarvis.fs.remove("{h}/tasks.txt") then error("remove") end
+            -- Windows, a place that is not the user's, a way out with dots, a relative path, a link
+            denied(jarvis.fs.write, "{w}/a.txt", "x")
+            denied(jarvis.fs.mkdir, "{w}/new")
+            denied(jarvis.fs.write, "{e}/a.txt", "x")
+            denied(jarvis.fs.write, "{h}/../Windows/a.txt", "x")
+            denied(jarvis.fs.write, "a.txt", "x")
+            denied(jarvis.fs.remove, "{h}")
+            denied(jarvis.fs.write, "{h}/CON", "x")
+            if "{link}" ~= "" then denied(jarvis.fs.write, "{h}/link/a.txt", "x") end
+            "#,
+            h = q(&home),
+            w = q(&windows),
+            e = q(&elsewhere),
+            link = if cfg!(unix) { "yes" } else { "" }
+        );
+        let ctx = CommandContext { phrase: "x".into(), command_id: "t".into(), command_path: pack.path().to_path_buf(), language: "ru".into(), slots: None };
+        let script = pack.path().join("t.lua");
+        std::fs::write(&script, body).unwrap();
+        let r = execute(&script, ctx, SandboxLevel::Full, Duration::from_secs(5)).map(|_| ()).map_err(|e| e.to_string());
+        crate::policy::set_test_allowed(Vec::new());
+        crate::policy::set_test_protected(Vec::new());
+        assert!(r.is_ok(), "{:?}", r);
+        assert!(!windows.join("a.txt").exists() && !windows.join("new").exists() && !elsewhere.join("a.txt").exists());
+    }
+
+    // the same file functions of a script of the Standard level, which can reach only its own folder
+    #[test]
+    fn a_script_of_the_standard_level_cannot_write_into_the_folder_of_its_command() {
+                let pack = tempdir().unwrap();
+        let base = std::fs::canonicalize(pack.path()).unwrap();
+        // the folder of a command is a part of the installed Jarvis
+        crate::policy::set_test_protected(vec![base.clone()]);
+        let r2 = {
+            let ctx = CommandContext { phrase: "x".into(), command_id: "t".into(), command_path: base.clone(), language: "ru".into(), slots: None };
+            let script = base.join("t.lua");
+            std::fs::write(&script, r#"local ok, err = pcall(jarvis.fs.write, "own.txt", "x"); if ok then error("wrote into the folder of the command") end"#).unwrap();
+            execute(&script, ctx, SandboxLevel::Standard, Duration::from_secs(5)).map(|_| ()).map_err(|e| e.to_string())
+        };
+        crate::policy::set_test_protected(Vec::new());
+        assert!(r2.is_ok(), "{:?}", r2);
+        assert!(!base.join("own.txt").exists());
     }
 
 }

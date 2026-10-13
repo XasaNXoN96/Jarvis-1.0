@@ -1,5 +1,6 @@
 [[commands]]
 id = "counter"
+risk = "low"
 type = "lua"
 script = "script.lua"
 sandbox = "standard"

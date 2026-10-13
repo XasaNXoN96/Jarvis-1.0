@@ -1,5 +1,6 @@
 [[commands]]
 id = "terminate_1"
+risk = "medium"
 type = "terminate"
 sounds.ru = ["False"]
 phrases.ru = [

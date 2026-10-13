@@ -1,5 +1,6 @@
 [[commands]]
 id = "stop_1"
+risk = "low"
 type = "stop_chaining"
 sounds.ru = ["thanks", "ok1"]
 # "Джарвис, стоп" while he reads or listens (a longer phrase like "стоп поиск" keeps its own command)

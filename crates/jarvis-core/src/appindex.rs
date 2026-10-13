@@ -624,6 +624,8 @@ pub fn launch(a: &IndexedApp) -> Result<(), String> {
 
 #[cfg(all(feature = "lua", target_os = "windows", not(test)))]
 fn open(target: &str) -> Result<(), String> {
+    // an entry of the index (checked by the caller): an ordinary start wherever the program is installed
+    crate::policy::note_known_program(target);
     crate::lua::shell_open(target)
 }
 

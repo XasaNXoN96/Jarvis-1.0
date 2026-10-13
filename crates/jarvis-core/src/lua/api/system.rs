@@ -12,6 +12,7 @@ use crate::lua::sandbox::SandboxLevel;
 // the default one opens the site (and the log says why)
 #[cfg(target_os = "windows")]
 pub fn shell_open(target: &str) -> Result<(), String> {
+    crate::policy::authorize_open(target)?;
     let lower = target.to_lowercase();
     if lower.starts_with("http://") || lower.starts_with("https://") {
         if let Some(exe) = crate::uistate::browser_exe(&crate::uistate::settings().browser) {
@@ -77,6 +78,10 @@ fn open_target(target: &str) -> bool {
 
 #[cfg(not(target_os = "windows"))]
 fn open_target(target: &str) -> bool {
+    if let Err(why) = crate::policy::authorize_open(target) {
+        log::warn!("[Lua] open '{}' refused: {}", target, why);
+        return false;
+    }
     let result = if cfg!(target_os = "macos") {
         Command::new("open").arg(target).spawn()
     } else {
@@ -163,11 +168,21 @@ pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Resul
     // wait = false: starts it and returns { success }
     if sandbox.allows_exec() {
         let run_fn = lua.create_function(|lua, (program, args, wait): (String, Option<Table>, Option<bool>)| {
+            let arg_list: Vec<String> = args.map(|t| t.sequence_values::<String>().flatten().collect()).unwrap_or_default();
+            // only a program of the short list with parameters of a known shape, within the risk of the command
+            // (policy.rs); a refusal is a failed run that says why, the script goes on
+            if let Err(why) = crate::policy::authorize(&crate::policy::Op::Run { program: program.clone(), args: arg_list.clone() }) {
+                let result = lua.create_table()?;
+                result.set("success", false)?;
+                result.set("code", -1)?;
+                result.set("stdout", "")?;
+                result.set("stderr", format!("Запрещено правилами безопасности: {}", why))?;
+                result.set("denied", true)?;
+                return Ok(result);
+            }
             let mut command = Command::new(&program);
-            if let Some(args_table) = args {
-                for arg in args_table.sequence_values::<String>().flatten() {
-                    command.arg(arg);
-                }
+            for arg in &arg_list {
+                command.arg(arg);
             }
 
             #[cfg(target_os = "windows")]
@@ -209,36 +224,12 @@ pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Resul
         })?;
         system.set("run", run_fn)?;
 
-        let exec_fn = lua.create_function(|lua, (cmd, args): (String, Option<Table>)| {
-            let mut command = if cfg!(target_os = "windows") {
-                let mut c = Command::new("cmd");
-                c.args(["/C", &cmd]);
-                c
-            } else {
-                let mut c = Command::new("sh");
-                c.args(["-c", &cmd]);
-                c
-            };
-            
-            // add extra args if provided
-            if let Some(args_table) = args {
-                for pair in args_table.sequence_values::<String>() {
-                    if let Ok(arg) = pair {
-                        command.arg(arg);
-                    }
-                }
-            }
-            
-            let output = command.output()
-                .map_err(|e| mlua::Error::runtime(e.to_string()))?;
-            
-            let result = lua.create_table()?;
-            result.set("success", output.status.success())?;
-            result.set("code", output.status.code().unwrap_or(-1))?;
-            result.set("stdout", String::from_utf8_lossy(&output.stdout).to_string())?;
-            result.set("stderr", String::from_utf8_lossy(&output.stderr).to_string())?;
-            
-            Ok(result)
+        // jarvis.system.exec(cmd, args?) used to run `cmd /C <text>`: any text, any program. It no longer does: it always
+        // answers with an error. A command asks for a named operation through run() instead (policy.rs).
+        let exec_fn = lua.create_function(|_, (cmd, _args): (String, Option<Table>)| -> mlua::Result<Table> {
+            let why = crate::policy::judge(&crate::policy::Op::Shell(cmd)).err().unwrap_or_default();
+            log::warn!("[Lua] jarvis.system.exec refused: {}", why);
+            Err(mlua::Error::runtime(format!("Запрещено правилами безопасности: {}", why)))
         })?;
         system.set("exec", exec_fn)?;
     }
@@ -252,6 +243,9 @@ pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Resul
 
     // jarvis.system.type_text(text, window_class?) -> true | nil, error
     system.set("type_text", lua.create_function(|_, (text, class): (String, Option<String>)| {
+        if let Err(why) = crate::policy::authorize(&crate::policy::Op::Input("type_text".into())) {
+            return Ok((false, Some(format!("запрещено: {}", why))));
+        }
         match type_text(&text, class.as_deref()) {
             Ok(()) => Ok((true, None::<String>)),
             Err(e) => Ok((false, Some(e))),
@@ -300,7 +294,12 @@ pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Resul
     system.set("volume", volume_fn)?;
 
     // jarvis.system.copy_selection() -> true when Ctrl+C was sent to another program
-    system.set("copy_selection", lua.create_function(|_, ()| Ok(send_copy()))?)?;
+    system.set("copy_selection", lua.create_function(|_, ()| {
+        if crate::policy::authorize(&crate::policy::Op::Input("copy_selection".into())).is_err() {
+            return Ok(false);
+        }
+        Ok(send_copy())
+    })?)?;
 
     // jarvis.system.keys("ctrl+t") / jarvis.system.mouse("click" | "double" | "right" | "up" | ..., px)
     // / jarvis.system.window("maximize" | "minimize" | "restore") -> true | false, reason
@@ -310,11 +309,37 @@ pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Resul
             crate::input::Outcome::Done => (true, None),
             crate::input::Outcome::NoTarget => (false, Some("нет окна, в котором можно выполнить действие: откройте нужную программу".into())),
             crate::input::Outcome::Unknown(k) => (false, Some(format!("неизвестное действие или клавиша: {}", k))),
+            crate::input::Outcome::Forbidden(why) => (false, Some(format!("запрещено: {}", why))),
         }
     }
     system.set("keys", lua.create_function(|_, combo: String| Ok(outcome(crate::input::keys(&combo))))?)?;
-    system.set("mouse", lua.create_function(|_, (action, amount): (String, Option<i32>)| Ok(outcome(crate::input::mouse(&action, amount.unwrap_or(0)))))?)?;
-    system.set("window", lua.create_function(|_, action: String| Ok(outcome(crate::input::window(&action))))?)?;
+    system.set("mouse", lua.create_function(|_, (action, amount): (String, Option<i32>)| {
+        if let Err(why) = crate::policy::authorize(&crate::policy::Op::Input("mouse".into())) {
+            return Ok((false, Some(format!("запрещено: {}", why))));
+        }
+        Ok(outcome(crate::input::mouse(&action, amount.unwrap_or(0))))
+    })?)?;
+    system.set("window", lua.create_function(|_, action: String| {
+        if let Err(why) = crate::policy::authorize(&crate::policy::Op::Input("window".into())) {
+            return Ok((false, Some(format!("запрещено: {}", why))));
+        }
+        Ok(outcome(crate::input::window(&action)))
+    })?)?;
+    // jarvis.system.check_run(program, args?) / check_open(target) -> true | false, why: the rules of policy.rs for an operation
+    // that is not started here (the prelude asks it on a computer without Windows, where nothing is started)
+    system.set("check_run", lua.create_function(|_, (program, args): (String, Option<Table>)| {
+        let arg_list: Vec<String> = args.map(|t| t.sequence_values::<String>().flatten().collect()).unwrap_or_default();
+        Ok(match crate::policy::authorize(&crate::policy::Op::Run { program, args: arg_list }) {
+            Ok(_) => (true, None::<String>),
+            Err(why) => (false, Some(why)),
+        })
+    })?)?;
+    system.set("check_open", lua.create_function(|_, target: String| {
+        Ok(match crate::policy::authorize_open(&target) {
+            Ok(()) => (true, None::<String>),
+            Err(why) => (false, Some(why)),
+        })
+    })?)?;
 
     // jarvis.system.clipboard - subtable
     let clipboard = lua.create_table()?;
@@ -365,6 +390,7 @@ pub fn register(lua: &Lua, jarvis: &Table, sandbox: SandboxLevel) -> mlua::Resul
     // jarvis.system.clipboard.set(text) - only in full sandbox
     if sandbox.allows_clipboard_write() {
         let clipboard_set_fn = lua.create_function(|_, text: String| {
+            crate::policy::authorize(&crate::policy::Op::Input("clipboard_set".into())).map_err(|why| mlua::Error::runtime(format!("Запрещено правилами безопасности: {}", why)))?;
             #[cfg(target_os = "windows")]
             {
                 set_clipboard_text(&text).map_err(|e| mlua::Error::runtime(e))?;

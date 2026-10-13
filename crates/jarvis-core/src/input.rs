@@ -65,6 +65,8 @@ pub enum Outcome {
     // the Jarvis window was in front and no other window could be found to work in
     NoTarget,
     Unknown(String),
+    // the policy refuses this combination (policy.rs)
+    Forbidden(String),
 }
 
 #[cfg(target_os = "windows")]
@@ -261,6 +263,9 @@ mod win {
 // presses a shortcut ("ctrl+t") in the user's window
 pub fn keys(combo: &str) -> Outcome {
     let Some(codes) = parse_combo(combo) else { return Outcome::Unknown(combo.to_string()) };
+    if let Err(why) = crate::policy::authorize(&crate::policy::Op::Keys(combo.to_string())) {
+        return Outcome::Forbidden(why);
+    }
     #[cfg(target_os = "windows")]
     unsafe {
         if !win::focus_target() {

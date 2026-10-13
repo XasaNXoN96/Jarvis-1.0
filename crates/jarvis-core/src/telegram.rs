@@ -1603,7 +1603,7 @@ mod tests {
     #[cfg(feature = "lua")]
     fn telegram_door_run(updates: Vec<Value>, want: usize) -> Vec<crate::origin::Incoming> {
         use api::*;
-        let cap = crate::remote::Capture::start();
+        let cap = crate::remote::Capture::start_for(crate::origin::Source::Telegram);
         let m = serve(vec![json!({ "ok": true, "result": updates })]);
         set_for_tests(Config { enabled: true, token: "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw".into(), owner_id: 77, ..Default::default() });
         *PENDING.lock() = None;

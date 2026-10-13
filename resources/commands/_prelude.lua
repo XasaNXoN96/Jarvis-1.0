@@ -11,6 +11,11 @@ local function run(program, args)
     return jarvis.system.run(jarvis.test_runner, args or {})
   end
   if not WIN then
+    -- nothing is started here, but the rules of the program are asked all the same: the tests see a refusal
+    local allowed, why = jarvis.system.check_run(program, args or {})
+    if not allowed then
+      return { success = false, code = -1, stdout = "", stderr = tostring(why), denied = true }
+    end
     jarvis.log("info", "[not windows, skipped] " .. program .. " " .. table.concat(args or {}, " "))
     return { success = true, code = 0, stdout = "", stderr = "" }
   end
@@ -20,6 +25,10 @@ end
 -- start a program and do not wait for it (explorer, GUI tools): a waiting run() would freeze Jarvis
 local function launch(program, args)
   if not WIN then
+    local allowed, why = jarvis.system.check_run(program, args or {})
+    if not allowed then
+      return { success = false, stderr = tostring(why), denied = true }
+    end
     jarvis.log("info", "[not windows, skipped] launch " .. program .. " " .. table.concat(args or {}, " "))
     return { success = true }
   end
@@ -29,6 +38,10 @@ end
 -- open a URL / file / program through the shell
 local function open(target)
   if not WIN then
+    local allowed, why = jarvis.system.check_open(target)
+    if not allowed then
+      error(T("Не удалось открыть: ", "Could not open: ") .. target .. " (" .. tostring(why) .. ")")
+    end
     jarvis.log("info", "[not windows, skipped] open " .. target)
     return true
   end

@@ -113,6 +113,8 @@ impl World {
         }
         let ctx = CommandContext { phrase: text.to_string(), command_id: cmd.id.clone(), command_path: path.clone(), language: "ru".into(), slots: None };
         let script = path.join(&cmd.script);
+        // like the application: the command runs with the risk it declared
+        let _running = crate::policy::enter_command(&cmd.id, &cmd.risk, path);
         execute(&script, ctx, SandboxLevel::Full, Duration::from_secs(25)).unwrap_or_else(|e| panic!("'{}' failed: {:?}", text, e));
         id
     }

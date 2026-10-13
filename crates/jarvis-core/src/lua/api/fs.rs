@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::fs;
 
 use crate::lua::sandbox::SandboxLevel;
+use crate::policy::FsMode;
 
 pub fn register(
     lua: &Lua,
@@ -21,6 +22,7 @@ pub fn register(
     let cmd_path_read = cmd_path.clone();
     let read_fn = lua.create_function(move |_, path: String| {
         let full_path = resolve_path(&cmd_path_read, &path, sandbox_level)?;
+        allow(&full_path, FsMode::Read)?;
         
         fs::read_to_string(&full_path)
             .map_err(|e| mlua::Error::runtime(format!("Read error: {}", e)))
@@ -32,6 +34,7 @@ pub fn register(
     let cmd_path_text = cmd_path.clone();
     let read_text_fn = lua.create_function(move |_, path: String| {
         let full_path = resolve_path(&cmd_path_text, &path, sandbox_level)?;
+        allow(&full_path, FsMode::Read)?;
         if !full_path.exists() {
             return Ok(None);
         }
@@ -44,6 +47,7 @@ pub fn register(
     let cmd_path_read_bytes = cmd_path.clone();
     let read_bytes_fn = lua.create_function(move |lua, path: String| {
         let full_path = resolve_path(&cmd_path_read_bytes, &path, sandbox_level)?;
+        allow(&full_path, FsMode::Read)?;
         
         let bytes = fs::read(&full_path)
             .map_err(|e| mlua::Error::runtime(format!("Read error: {}", e)))?;
@@ -60,6 +64,7 @@ pub fn register(
         }
         
         let full_path = resolve_path(&cmd_path_write, &path, sandbox_level)?;
+        allow(&full_path, FsMode::Write)?;
         
         // ensure parent directory exists
         if let Some(parent) = full_path.parent() {
@@ -82,6 +87,7 @@ pub fn register(
         }
         
         let full_path = resolve_path(&cmd_path_append, &path, sandbox_level)?;
+        allow(&full_path, FsMode::Write)?;
         
         use std::io::Write;
         let mut file = fs::OpenOptions::new()
@@ -161,6 +167,7 @@ pub fn register(
         }
         
         let full_path = resolve_path(&cmd_path_mkdir, &path, sandbox_level)?;
+        allow(&full_path, FsMode::Write)?;
         
         fs::create_dir_all(&full_path)
             .map_err(|e| mlua::Error::runtime(format!("Mkdir error: {}", e)))?;
@@ -177,9 +184,11 @@ pub fn register(
         }
         
         let full_path = resolve_path(&cmd_path_remove, &path, sandbox_level)?;
+        allow(&full_path, FsMode::Remove)?;
         
         if full_path.is_dir() {
-            fs::remove_dir_all(&full_path)
+            // an empty folder only: a command does not delete a tree
+            fs::remove_dir(&full_path)
                 .map_err(|e| mlua::Error::runtime(format!("Remove error: {}", e)))?;
         } else {
             fs::remove_file(&full_path)
@@ -193,6 +202,11 @@ pub fn register(
     jarvis.set("fs", fs_table)?;
     
     Ok(())
+}
+
+// the rules of policy.rs: user folders only for writing and deleting, no Windows, programs, Jarvis or links out of them
+fn allow(path: &Path, mode: FsMode) -> mlua::Result<()> {
+    crate::policy::authorize_fs(path, mode).map_err(|why| mlua::Error::runtime(format!("Запрещено правилами безопасности: {}", why)))
 }
 
 // Resolve path relative to command folder, with sandbox checks

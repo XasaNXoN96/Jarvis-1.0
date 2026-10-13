@@ -1,5 +1,6 @@
 [[commands]]
 id = "calculator_1"
+risk = "medium"
 type = "cli"
 cli_cmd = "calc"
 sounds.ru = ["ok1", "ok2", "ok3"]
@@ -13,6 +14,7 @@ phrases.ru = [
 
 [[commands]]
 id = "calculator_2"
+risk = "high"
 type = "cli"
 cli_cmd = "taskkill"
 cli_args = ["/f", "/im", "CalculatorApp.exe"]

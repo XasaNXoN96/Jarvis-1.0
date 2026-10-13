@@ -1,5 +1,6 @@
 [[commands]]
 id = "web_tab_new"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -11,6 +12,7 @@ triggers.ru = ["нов вкладк"]
 
 [[commands]]
 id = "web_tab_close"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -22,6 +24,7 @@ triggers.ru = ["закр вкладк"]
 
 [[commands]]
 id = "web_tab_reopen"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -33,6 +36,7 @@ triggers.ru = ["верн вкладк", "восстанов вкладк"]
 
 [[commands]]
 id = "web_tab_next"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -44,6 +48,7 @@ triggers.ru = ["вкладк вправ", "следующ вкладк"]
 
 [[commands]]
 id = "web_tab_prev"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -55,6 +60,7 @@ triggers.ru = ["вкладк влев", "предыдущ вкладк"]
 
 [[commands]]
 id = "web_back"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -66,6 +72,7 @@ triggers.ru = ["назад", "страниц назад"]
 
 [[commands]]
 id = "web_forward"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -77,6 +84,7 @@ triggers.ru = ["вперед"]
 
 [[commands]]
 id = "web_refresh"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -88,6 +96,7 @@ triggers.ru = ["обнов страниц", "перезагруз страниц
 
 [[commands]]
 id = "web_history"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -99,6 +108,7 @@ triggers.ru = ["истори браузер", "откр истори", "откр
 
 [[commands]]
 id = "web_downloads"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -110,6 +120,7 @@ triggers.ru = ["загрузк браузер"]
 
 [[commands]]
 id = "web_bookmark"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -121,6 +132,7 @@ triggers.ru = ["добав закладк"]
 
 [[commands]]
 id = "web_incognito"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -132,6 +144,7 @@ triggers.ru = ["инкогнито"]
 
 [[commands]]
 id = "web_window_new"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -143,6 +156,7 @@ triggers.ru = ["нов окн"]
 
 [[commands]]
 id = "web_address"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -154,6 +168,7 @@ triggers.ru = ["адресн строк"]
 
 [[commands]]
 id = "web_find"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -165,6 +180,7 @@ triggers.ru = ["найд на страниц", "поиск по страниц"]
 
 [[commands]]
 id = "key_undo"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -176,6 +192,7 @@ triggers.ru = ["верн назад", "отмен действ"]
 
 [[commands]]
 id = "key_redo"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -187,6 +204,7 @@ triggers.ru = ["повтор действ", "повтор отмен"]
 
 [[commands]]
 id = "key_select_all"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -198,6 +216,7 @@ triggers.ru = ["выдел все"]
 
 [[commands]]
 id = "key_copy"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -209,6 +228,7 @@ triggers.ru = ["скопиру"]
 
 [[commands]]
 id = "key_paste"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -220,6 +240,7 @@ triggers.ru = ["встав"]
 
 [[commands]]
 id = "key_cut"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -231,6 +252,7 @@ triggers.ru = ["выреж"]
 
 [[commands]]
 id = "key_page_top"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -242,6 +264,7 @@ triggers.ru = ["начал страниц", "наверх страниц"]
 
 [[commands]]
 id = "key_page_end"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -253,6 +276,7 @@ triggers.ru = ["конец страниц", "конц страниц", "вниз
 
 [[commands]]
 id = "key_print"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -264,6 +288,7 @@ triggers.ru = ["напечата", "распечата"]
 
 [[commands]]
 id = "key_save"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -275,6 +300,7 @@ triggers.ru = ["сохран документ", "сохран файл"]
 
 [[commands]]
 id = "key_clipboard"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -286,6 +312,7 @@ triggers.ru = ["откр буфер", "истори буфер"]
 
 [[commands]]
 id = "key_enter"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -297,6 +324,7 @@ triggers.ru = ["нажм энтер", "нажм ввод"]
 
 [[commands]]
 id = "key_escape"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -308,6 +336,7 @@ triggers.ru = ["нажм эскейп", "нажм escape"]
 
 [[commands]]
 id = "mouse_click"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -319,6 +348,7 @@ triggers.ru = ["клик", "кликн", "нажм мышк"]
 
 [[commands]]
 id = "mouse_double"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -330,6 +360,7 @@ triggers.ru = ["двойн клик"]
 
 [[commands]]
 id = "mouse_right"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -341,6 +372,7 @@ triggers.ru = ["прав клик", "прав кнопк"]
 
 [[commands]]
 id = "mouse_up"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -352,6 +384,7 @@ triggers.ru = ["курсор вверх"]
 
 [[commands]]
 id = "mouse_down"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -363,6 +396,7 @@ triggers.ru = ["курсор вниз"]
 
 [[commands]]
 id = "mouse_left"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -374,6 +408,7 @@ triggers.ru = ["курсор влев"]
 
 [[commands]]
 id = "mouse_right_move"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -385,6 +420,7 @@ triggers.ru = ["курсор вправ"]
 
 [[commands]]
 id = "mouse_scroll_up"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -396,6 +432,7 @@ triggers.ru = ["прокрут вверх", "листа вверх"]
 
 [[commands]]
 id = "mouse_scroll_down"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -407,6 +444,7 @@ triggers.ru = ["прокрут вниз", "листа вниз"]
 
 [[commands]]
 id = "win_switch"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -418,6 +456,7 @@ triggers.ru = ["переключ окн", "следующ окн"]
 
 [[commands]]
 id = "win_maximize"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -429,6 +468,7 @@ triggers.ru = ["разверн окн", "на весь экран"]
 
 [[commands]]
 id = "win_minimize"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"
@@ -440,6 +480,7 @@ triggers.ru = ["сверн окн", "сверн это"]
 
 [[commands]]
 id = "win_restore"
+risk = "medium"
 type = "lua"
 script = "input.lua"
 sandbox = "full"

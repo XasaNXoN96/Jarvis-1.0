@@ -284,7 +284,7 @@ fn submit_incoming(incoming: Incoming) -> bool {
         return false;
     }
     #[cfg(test)]
-    if CAPTURE.load(Ordering::SeqCst) {
+    if capturing(Some(incoming.source)) {
         SUBMITTED.lock().push(incoming);
         return true;
     }
@@ -294,13 +294,31 @@ fn submit_incoming(incoming: Incoming) -> bool {
     }
 }
 
-// tests: phrases are caught here instead of going to the (not running) main loop
+// tests: phrases are caught here instead of going to the (not running) main loop. A test catches the phrases of its own
+// thread; the Telegram bot works on a thread of its own, so a test of it catches the phrases of that door from any thread
+// (what other tests submit at the same time never lands in a list that is being read)
 #[cfg(test)]
-static CAPTURE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+struct CaptureSpec {
+    thread: Option<std::thread::ThreadId>,
+    only: Option<Source>,
+}
+#[cfg(test)]
+static CAPTURE: Mutex<Option<CaptureSpec>> = parking_lot::const_mutex(None);
 #[cfg(test)]
 static SUBMITTED: Lazy<Mutex<Vec<Incoming>>> = Lazy::new(|| Mutex::new(Vec::new()));
 #[cfg(test)]
 pub(crate) static CAPTURE_LOCK: Mutex<()> = parking_lot::const_mutex(());
+
+#[cfg(test)]
+fn capturing(source: Option<Source>) -> bool {
+    match CAPTURE.lock().as_ref() {
+        Some(spec) => match spec.thread {
+            Some(t) => t == std::thread::current().id(),
+            None => source.is_none() || spec.only == source,
+        },
+        None => false,
+    }
+}
 
 #[cfg(test)]
 pub(crate) struct Capture(parking_lot::MutexGuard<'static, ()>);
@@ -310,7 +328,14 @@ impl Capture {
     pub(crate) fn start() -> Capture {
         let g = CAPTURE_LOCK.lock();
         SUBMITTED.lock().clear();
-        CAPTURE.store(true, Ordering::SeqCst);
+        *CAPTURE.lock() = Some(CaptureSpec { thread: Some(std::thread::current().id()), only: None });
+        Capture(g)
+    }
+    // the phrases of one door from any thread (the Telegram bot)
+    pub(crate) fn start_for(source: Source) -> Capture {
+        let g = CAPTURE_LOCK.lock();
+        SUBMITTED.lock().clear();
+        *CAPTURE.lock() = Some(CaptureSpec { thread: None, only: Some(source) });
         Capture(g)
     }
     pub(crate) fn taken(&self) -> Vec<Incoming> {
@@ -321,7 +346,7 @@ impl Capture {
 #[cfg(test)]
 impl Drop for Capture {
     fn drop(&mut self) {
-        CAPTURE.store(false, Ordering::SeqCst);
+        *CAPTURE.lock() = None;
     }
 }
 
@@ -340,7 +365,7 @@ pub fn mark_queue_ready() {
 
 pub fn queue_ready() -> bool {
     #[cfg(test)]
-    if CAPTURE.load(Ordering::SeqCst) {
+    if capturing(None) {
         return true;
     }
     QUEUE_READY.load(std::sync::atomic::Ordering::SeqCst) && TX.get().is_some()
@@ -913,7 +938,7 @@ fn tls_config(names: &[String]) -> Result<std::sync::Arc<rustls::ServerConfig>, 
 // the phone can send a phrase when the queue of the program exists (it is created at the start of the program)
 fn queue_ready_for_phone() -> bool {
     #[cfg(test)]
-    if CAPTURE.load(Ordering::SeqCst) {
+    if capturing(None) {
         return true;
     }
     TX.get().is_some()

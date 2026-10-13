@@ -26,7 +26,9 @@ impl LuaEngine {
                 StdLib::TABLE | StdLib::STRING | StdLib::MATH | StdLib::UTF8
             }
             SandboxLevel::Full => {
-                StdLib::TABLE | StdLib::STRING | StdLib::MATH | StdLib::UTF8 | StdLib::OS | StdLib::IO
+                // no `io` (io.open / io.popen would read, write and run anything around the rules of policy.rs): files go
+                // through jarvis.fs, programs through jarvis.system.run. `os` stays for the time and the date only.
+                StdLib::TABLE | StdLib::STRING | StdLib::MATH | StdLib::UTF8 | StdLib::OS
             }
         };
         
@@ -43,20 +45,19 @@ impl LuaEngine {
             let _ = globals.set("load", Value::Nil);
             let _ = globals.set("loadstring", Value::Nil);
             
-            // remove io unless full sandbox
-            if !matches!(sandbox, SandboxLevel::Full) {
-                let _ = globals.set("io", Value::Nil);
-            }
-            
-            // remove os.execute, os.exit, os.setlocale even in full mode
-            // for SECURITY REASONS!!!
+            // no io at any level (see above)
+            let _ = globals.set("io", Value::Nil);
+            let _ = globals.set("package", Value::Nil);
+            let _ = globals.set("require", Value::Nil);
+            let _ = globals.set("debug", Value::Nil);
+
+            // `os` keeps only the clock: time, date, clock, difftime. Everything that runs, deletes, renames, reads the
+            // environment or changes the process is gone, for SECURITY REASONS
             if matches!(sandbox, SandboxLevel::Full) {
                 if let Ok(os) = globals.get::<mlua::Table>("os") {
-                    let _ = os.set("execute", Value::Nil);
-                    let _ = os.set("exit", Value::Nil);
-                    let _ = os.set("remove", Value::Nil);
-                    let _ = os.set("rename", Value::Nil);
-                    let _ = os.set("setlocale", Value::Nil);
+                    for name in ["execute", "exit", "remove", "rename", "setlocale", "getenv", "tmpname"] {
+                        let _ = os.set(name, Value::Nil);
+                    }
                 }
             }
         }

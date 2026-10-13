@@ -342,6 +342,7 @@ fn input_result(o: crate::input::Outcome) -> Result<(), String> {
         crate::input::Outcome::Done => Ok(()),
         crate::input::Outcome::NoTarget => Err("нет окна, в котором можно выполнить действие".into()),
         crate::input::Outcome::Unknown(k) => Err(format!("неизвестное действие: {}", k)),
+        crate::input::Outcome::Forbidden(why) => Err(format!("запрещено: {}", why)),
     }
 }
 

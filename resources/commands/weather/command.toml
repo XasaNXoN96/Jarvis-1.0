@@ -1,5 +1,6 @@
 [[commands]]
 id = "weather"
+risk = "low"
 type = "lua"
 triggers.ru = ["погод"]
 triggers.en = ["weather"]
@@ -19,6 +20,7 @@ en = ["weather_en_1", "weather_en_2"]
 
 [[commands]]
 id = "set_city"
+risk = "low"
 type = "lua"
 triggers.ru = ["установ город","смен город","измен город","мой город"]
 triggers.en = ["set city","change city","my city"]

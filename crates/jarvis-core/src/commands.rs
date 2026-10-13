@@ -335,18 +335,12 @@ pub fn execute_exe(exe: &str, args: &[String]) -> std::io::Result<Child> {
     c.spawn()
 }
 
+// a program with its arguments, started directly. There is no shell here: the text of `cmd` is a program name, not a
+// command line (the caller has checked it with policy::authorize)
 pub fn execute_cli(cmd: &str, args: &[String]) -> std::io::Result<Child> {
-    debug!("Spawning: cmd /C {} {:?}", cmd, args);
-
-    let mut c = if cfg!(target_os = "windows") {
-        let mut c = Command::new("cmd");
-        c.arg("/C").arg(cmd).args(args);
-        c
-    } else {
-        let mut c = Command::new("sh");
-        c.arg("-c").arg(cmd).args(args);
-        c
-    };
+    debug!("Spawning: {} {:?}", cmd, args);
+    let mut c = Command::new(cmd);
+    c.args(args);
     crate::null_stdio(&mut c);
     c.spawn()
 }
@@ -384,14 +378,19 @@ pub fn execute_command(cmd_path: &PathBuf, cmd_config: &JCommand, phrase: Option
                 ));
             }
 
+            // a program of the command's own folder and only a command that said "high": nothing else starts from here
+            let _running = crate::policy::enter_command(&cmd_config.id, &cmd_config.risk, cmd_path);
+            crate::policy::authorize_own_program(exe_path)?;
             execute_exe(exe_path.to_str().unwrap(), &cmd_config.exe_args)
                 .map(|_| false)
                 .map_err(|e| format!("AHK process spawn error: {}", e))
         }
         
-        // CLI command type
-        // @TODO: Consider security restrictions
+        // CLI command type: a program from the short list of policy.rs with parameters of a known shape, started
+        // directly (never through `cmd /C`)
         "cli" => {
+            let _running = crate::policy::enter_command(&cmd_config.id, &cmd_config.risk, cmd_path);
+            crate::policy::authorize(&crate::policy::Op::Run { program: cmd_config.cli_cmd.clone(), args: cmd_config.cli_args.clone() })?;
             execute_cli(&cmd_config.cli_cmd, &cmd_config.cli_args)
                 .map(|_| false)
                 .map_err(|e| format!("CLI command error: {}", e))
@@ -481,6 +480,9 @@ fn execute_lua_command(
     info!("Executing Lua command: {} (sandbox: {:?}, timeout: {:?})", 
           cmd_config.id, sandbox, timeout);
     
+    // the command runs with the risk it declared: an operation riskier than that is refused (policy.rs)
+    let _running = crate::policy::enter_command(&cmd_config.id, &cmd_config.risk, cmd_path);
+
     // execute
     match lua::execute(&script_path, context, sandbox, timeout) {
         Ok(result) => {

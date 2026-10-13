@@ -1,5 +1,6 @@
 [[commands]]
 id = "windows_1"
+risk = "medium"
 type = "lua"
 script = "actions.lua"
 sandbox = "full"
@@ -13,6 +14,7 @@ phrases.ru = [
 
 [[commands]]
 id = "windows_2"
+risk = "high"
 type = "lua"
 script = "actions.lua"
 sandbox = "full"
@@ -26,6 +28,7 @@ phrases.ru = [
 
 [[commands]]
 id = "windows_3"
+risk = "medium"
 type = "lua"
 script = "actions.lua"
 sandbox = "full"
@@ -40,6 +43,7 @@ phrases.ru = [
 
 [[commands]]
 id = "windows_4"
+risk = "medium"
 type = "lua"
 script = "actions.lua"
 sandbox = "full"
@@ -53,6 +57,7 @@ phrases.ru = [
 
 [[commands]]
 id = "windows_5"
+risk = "medium"
 type = "lua"
 script = "actions.lua"
 sandbox = "full"
@@ -66,6 +71,7 @@ phrases.ru = [
 
 [[commands]]
 id = "windows_6"
+risk = "high"
 type = "lua"
 script = "actions.lua"
 sandbox = "full"
@@ -80,6 +86,7 @@ phrases.ru = [
 
 [[commands]]
 id = "windows_8"
+risk = "medium"
 type = "lua"
 script = "actions.lua"
 sandbox = "full"
@@ -105,6 +112,7 @@ phrases.ru = [
 
 [[commands]]
 id = "windows_9"
+risk = "medium"
 type = "lua"
 script = "actions.lua"
 sandbox = "full"

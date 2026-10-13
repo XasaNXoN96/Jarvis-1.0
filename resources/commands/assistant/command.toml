@@ -1,5 +1,6 @@
 [[commands]]
 id = "assistant_website"
+risk = "medium"
 type = "lua"
 script = "website.lua"
 sandbox = "full"
@@ -13,6 +14,7 @@ phrases.en = ["open website youtube", "go to example.com", "search for weather"]
 
 [[commands]]
 id = "assistant_volume_set"
+risk = "medium"
 type = "lua"
 script = "volume.lua"
 sandbox = "full"
@@ -26,6 +28,7 @@ phrases.en = ["volume 50 percent", "set volume to 30"]
 
 [[commands]]
 id = "assistant_volume_up"
+risk = "medium"
 type = "lua"
 script = "volume.lua"
 sandbox = "full"
@@ -39,6 +42,7 @@ phrases.en = ["volume up", "louder"]
 
 [[commands]]
 id = "assistant_volume_down"
+risk = "medium"
 type = "lua"
 script = "volume.lua"
 sandbox = "full"
@@ -52,6 +56,7 @@ phrases.en = ["volume down", "quieter"]
 
 [[commands]]
 id = "assistant_volume_mute"
+risk = "medium"
 type = "lua"
 script = "volume.lua"
 sandbox = "full"
@@ -65,6 +70,7 @@ phrases.en = ["mute", "sound off"]
 
 [[commands]]
 id = "assistant_volume_unmute"
+risk = "medium"
 type = "lua"
 script = "volume.lua"
 sandbox = "full"
@@ -78,6 +84,7 @@ phrases.en = ["unmute", "sound on"]
 
 [[commands]]
 id = "assistant_brightness_set"
+risk = "medium"
 type = "lua"
 script = "brightness.lua"
 sandbox = "full"
@@ -91,6 +98,7 @@ phrases.en = ["brightness 70 percent"]
 
 [[commands]]
 id = "assistant_brightness_up"
+risk = "medium"
 type = "lua"
 script = "brightness.lua"
 sandbox = "full"
@@ -104,6 +112,7 @@ phrases.en = ["brighter"]
 
 [[commands]]
 id = "assistant_brightness_down"
+risk = "medium"
 type = "lua"
 script = "brightness.lua"
 sandbox = "full"
@@ -117,6 +126,7 @@ phrases.en = ["dimmer"]
 
 [[commands]]
 id = "assistant_timer_set"
+risk = "low"
 type = "lua"
 script = "timer.lua"
 sandbox = "full"
@@ -130,6 +140,7 @@ phrases.en = ["set a timer for 5 minutes", "timer for 1 hour"]
 
 [[commands]]
 id = "assistant_timer_cancel"
+risk = "low"
 type = "lua"
 script = "timer.lua"
 sandbox = "full"
@@ -143,6 +154,7 @@ phrases.en = ["cancel the timer"]
 
 [[commands]]
 id = "assistant_timer_status"
+risk = "low"
 type = "lua"
 script = "timer.lua"
 sandbox = "full"
@@ -156,6 +168,7 @@ phrases.en = ["how much time is left"]
 
 [[commands]]
 id = "assistant_reminder"
+risk = "low"
 type = "lua"
 script = "reminder.lua"
 sandbox = "full"
@@ -169,6 +182,7 @@ phrases.en = ["remind me in 5 minutes to call mom", "set a reminder for 10 minut
 
 [[commands]]
 id = "assistant_power_off"
+risk = "high"
 type = "lua"
 script = "power.lua"
 sandbox = "full"
@@ -182,6 +196,7 @@ phrases.en = ["shut down the computer in 10 minutes"]
 
 [[commands]]
 id = "assistant_power_restart"
+risk = "high"
 type = "lua"
 script = "power.lua"
 sandbox = "full"
@@ -195,6 +210,7 @@ phrases.en = ["restart the computer in 5 minutes"]
 
 [[commands]]
 id = "assistant_power_hibernate"
+risk = "high"
 type = "lua"
 script = "power.lua"
 sandbox = "full"
@@ -208,6 +224,7 @@ phrases.en = ["hibernate the computer"]
 
 [[commands]]
 id = "assistant_power_logoff"
+risk = "high"
 type = "lua"
 script = "power.lua"
 sandbox = "full"
@@ -221,6 +238,7 @@ phrases.en = ["sign out of windows"]
 
 [[commands]]
 id = "assistant_power_cancel"
+risk = "medium"
 type = "lua"
 script = "power.lua"
 sandbox = "full"
@@ -234,6 +252,7 @@ phrases.en = ["cancel shutdown"]
 
 [[commands]]
 id = "assistant_program_open"
+risk = "medium"
 type = "lua"
 script = "program.lua"
 sandbox = "full"
@@ -247,6 +266,7 @@ phrases.en = ["open notepad", "launch discord"]
 
 [[commands]]
 id = "assistant_program_close"
+risk = "high"
 type = "lua"
 script = "program.lua"
 sandbox = "full"
@@ -260,6 +280,7 @@ phrases.en = ["close notepad", "close discord"]
 
 [[commands]]
 id = "assistant_info_time"
+risk = "low"
 type = "lua"
 script = "info.lua"
 sandbox = "full"
@@ -273,6 +294,7 @@ phrases.en = ["what time is it"]
 
 [[commands]]
 id = "assistant_info_date"
+risk = "low"
 type = "lua"
 script = "info.lua"
 sandbox = "full"
@@ -286,6 +308,7 @@ phrases.en = ["what is the date today"]
 
 [[commands]]
 id = "assistant_info_battery"
+risk = "medium"
 type = "lua"
 script = "info.lua"
 sandbox = "full"
@@ -299,6 +322,7 @@ phrases.en = ["battery level"]
 
 [[commands]]
 id = "assistant_note_add"
+risk = "medium"
 type = "lua"
 script = "notes.lua"
 sandbox = "full"
@@ -312,6 +336,7 @@ phrases.en = ["write down buy milk"]
 
 [[commands]]
 id = "assistant_note_read"
+risk = "medium"
 type = "lua"
 script = "notes.lua"
 sandbox = "full"
@@ -325,6 +350,7 @@ phrases.en = ["read my notes"]
 
 [[commands]]
 id = "assistant_note_open"
+risk = "medium"
 type = "lua"
 script = "notes.lua"
 sandbox = "full"
@@ -338,6 +364,7 @@ phrases.en = ["open notes"]
 
 [[commands]]
 id = "assistant_media_playpause"
+risk = "medium"
 type = "lua"
 script = "media.lua"
 sandbox = "full"
@@ -351,6 +378,7 @@ phrases.en = ["pause the music"]
 
 [[commands]]
 id = "assistant_media_next"
+risk = "medium"
 type = "lua"
 script = "media.lua"
 sandbox = "full"
@@ -364,6 +392,7 @@ phrases.en = ["next track"]
 
 [[commands]]
 id = "assistant_media_prev"
+risk = "medium"
 type = "lua"
 script = "media.lua"
 sandbox = "full"
@@ -377,6 +406,7 @@ phrases.en = ["previous track"]
 
 [[commands]]
 id = "assistant_game_on"
+risk = "low"
 type = "lua"
 script = "game.lua"
 sandbox = "full"
@@ -390,6 +420,7 @@ phrases.en = ["game mode for one hour"]
 
 [[commands]]
 id = "assistant_game_off"
+risk = "high"
 type = "lua"
 script = "game.lua"
 sandbox = "full"
@@ -403,6 +434,7 @@ phrases.en = ["work mode"]
 
 [[commands]]
 id = "assistant_remote_on"
+risk = "high"
 type = "lua"
 script = "remote.lua"
 sandbox = "full"
@@ -416,6 +448,7 @@ phrases.en = ["enable remote control"]
 
 [[commands]]
 id = "assistant_remote_off"
+risk = "low"
 type = "lua"
 script = "remote.lua"
 sandbox = "full"
@@ -429,6 +462,7 @@ phrases.en = ["disable remote control"]
 
 [[commands]]
 id = "assistant_apps_rescan"
+risk = "medium"
 type = "lua"
 script = "program.lua"
 sandbox = "full"
@@ -440,6 +474,7 @@ phrases.en = ["rescan programs"]
 
 [[commands]]
 id = "assistant_phone_find"
+risk = "low"
 type = "lua"
 script = "phone.lua"
 sandbox = "full"
@@ -451,6 +486,7 @@ phrases.en = ["find my phone"]
 
 [[commands]]
 id = "assistant_phone_stop"
+risk = "low"
 type = "lua"
 script = "phone.lua"
 sandbox = "full"
@@ -462,6 +498,7 @@ phrases.en = ["stop the signal"]
 
 [[commands]]
 id = "assistant_phone_link"
+risk = "low"
 type = "lua"
 script = "phone.lua"
 sandbox = "full"
@@ -473,6 +510,7 @@ phrases.en = ["send link to phone"]
 
 [[commands]]
 id = "assistant_phone_text"
+risk = "low"
 type = "lua"
 script = "phone.lua"
 sandbox = "full"
@@ -484,6 +522,7 @@ phrases.en = ["send to phone"]
 
 [[commands]]
 id = "assistant_mic_off"
+risk = "low"
 type = "lua"
 script = "mic.lua"
 sandbox = "full"
@@ -497,6 +536,7 @@ phrases.en = ["text mode"]
 
 [[commands]]
 id = "assistant_mic_on"
+risk = "medium"
 type = "lua"
 script = "mic.lua"
 sandbox = "full"
@@ -510,6 +550,7 @@ phrases.en = ["voice mode"]
 
 [[commands]]
 id = "assistant_tts_stop"
+risk = "low"
 type = "lua"
 script = "speech.lua"
 sandbox = "full"
@@ -523,6 +564,7 @@ phrases.en = ["stop reading"]
 
 [[commands]]
 id = "assistant_tts_off"
+risk = "low"
 type = "lua"
 script = "speech.lua"
 sandbox = "full"
@@ -536,6 +578,7 @@ phrases.en = ["speech off", "silent mode"]
 
 [[commands]]
 id = "assistant_tts_on"
+risk = "low"
 type = "lua"
 script = "speech.lua"
 sandbox = "full"
@@ -549,6 +592,7 @@ phrases.en = ["speech on"]
 
 [[commands]]
 id = "assistant_read_selection"
+risk = "medium"
 type = "lua"
 script = "speech.lua"
 sandbox = "full"
@@ -562,6 +606,7 @@ phrases.en = ["read this text aloud"]
 
 [[commands]]
 id = "assistant_read_clipboard"
+risk = "medium"
 type = "lua"
 script = "speech.lua"
 sandbox = "full"
@@ -575,6 +620,7 @@ phrases.en = ["read the clipboard"]
 
 [[commands]]
 id = "assistant_greet"
+risk = "low"
 type = "lua"
 script = "smalltalk.lua"
 sandbox = "full"
@@ -586,6 +632,7 @@ phrases.en = ["hello", "good morning"]
 
 [[commands]]
 id = "assistant_howareyou"
+risk = "low"
 type = "lua"
 script = "smalltalk.lua"
 sandbox = "full"
@@ -597,6 +644,7 @@ phrases.en = ["how are you"]
 
 [[commands]]
 id = "assistant_who"
+risk = "low"
 type = "lua"
 script = "smalltalk.lua"
 sandbox = "full"
@@ -608,6 +656,7 @@ phrases.en = ["who are you", "tell me about yourself"]
 
 [[commands]]
 id = "assistant_help"
+risk = "low"
 type = "lua"
 script = "smalltalk.lua"
 sandbox = "full"
@@ -619,6 +668,7 @@ phrases.en = ["what can you do", "help"]
 
 [[commands]]
 id = "assistant_file_search"
+risk = "medium"
 type = "lua"
 script = "files.lua"
 sandbox = "full"
@@ -632,6 +682,7 @@ phrases.en = ["find file report", "find the file 123 on my computer"]
 
 [[commands]]
 id = "assistant_file_open"
+risk = "medium"
 type = "lua"
 script = "files.lua"
 sandbox = "full"
@@ -645,6 +696,7 @@ phrases.en = ["open the first result"]
 
 [[commands]]
 id = "assistant_file_folder"
+risk = "medium"
 type = "lua"
 script = "files.lua"
 sandbox = "full"
@@ -658,6 +710,7 @@ phrases.en = ["show in folder"]
 
 [[commands]]
 id = "assistant_file_more"
+risk = "medium"
 type = "lua"
 script = "files.lua"
 sandbox = "full"
@@ -669,6 +722,7 @@ phrases.en = ["more results"]
 
 [[commands]]
 id = "assistant_file_next"
+risk = "medium"
 type = "lua"
 script = "files.lua"
 sandbox = "full"
@@ -680,6 +734,7 @@ phrases.en = ["next file"]
 
 [[commands]]
 id = "assistant_file_widen"
+risk = "medium"
 type = "lua"
 script = "files.lua"
 sandbox = "full"
@@ -691,6 +746,7 @@ phrases.en = ["search everywhere"]
 
 [[commands]]
 id = "assistant_file_cancel"
+risk = "medium"
 type = "lua"
 script = "files.lua"
 sandbox = "full"
@@ -702,6 +758,7 @@ phrases.en = ["stop the search"]
 
 [[commands]]
 id = "assistant_place_open"
+risk = "medium"
 type = "lua"
 script = "places.lua"
 sandbox = "full"
@@ -715,6 +772,7 @@ phrases.en = ["open downloads", "open sound settings", "open device manager"]
 
 [[commands]]
 id = "assistant_disk_open"
+risk = "medium"
 type = "lua"
 script = "places.lua"
 sandbox = "full"
@@ -728,6 +786,7 @@ phrases.en = ["open drive D"]
 
 [[commands]]
 id = "assistant_sys_ram"
+risk = "medium"
 type = "lua"
 script = "sysinfo.lua"
 sandbox = "full"
@@ -741,6 +800,7 @@ phrases.en = ["how much ram is used"]
 
 [[commands]]
 id = "assistant_sys_cpu"
+risk = "medium"
 type = "lua"
 script = "sysinfo.lua"
 sandbox = "full"
@@ -754,6 +814,7 @@ phrases.en = ["cpu usage"]
 
 [[commands]]
 id = "assistant_sys_disk"
+risk = "medium"
 type = "lua"
 script = "sysinfo.lua"
 sandbox = "full"
@@ -767,6 +828,7 @@ phrases.en = ["free disk space"]
 
 [[commands]]
 id = "assistant_sys_ip"
+risk = "medium"
 type = "lua"
 script = "sysinfo.lua"
 sandbox = "full"
@@ -780,6 +842,7 @@ phrases.en = ["what is my ip address"]
 
 [[commands]]
 id = "assistant_sys_uptime"
+risk = "medium"
 type = "lua"
 script = "sysinfo.lua"
 sandbox = "full"
@@ -793,6 +856,7 @@ phrases.en = ["uptime"]
 
 [[commands]]
 id = "assistant_translate"
+risk = "medium"
 type = "lua"
 script = "web2.lua"
 sandbox = "full"
@@ -806,6 +870,7 @@ phrases.en = ["translate to russian hello"]
 
 [[commands]]
 id = "assistant_wiki"
+risk = "medium"
 type = "lua"
 script = "web2.lua"
 sandbox = "full"
@@ -819,6 +884,7 @@ phrases.en = ["wikipedia Tashkent"]
 
 [[commands]]
 id = "assistant_maps"
+risk = "medium"
 type = "lua"
 script = "web2.lua"
 sandbox = "full"
@@ -832,6 +898,7 @@ phrases.en = ["show on the map Tashkent", "directions to the airport"]
 
 [[commands]]
 id = "assistant_music_search"
+risk = "medium"
 type = "lua"
 script = "web2.lua"
 sandbox = "full"
@@ -845,6 +912,7 @@ phrases.en = ["play the song Imagine Dragons"]
 
 [[commands]]
 id = "assistant_tts_test"
+risk = "low"
 type = "lua"
 script = "speech.lua"
 sandbox = "full"
@@ -856,6 +924,7 @@ phrases.en = ["test voice","voice test"]
 
 [[commands]]
 id = "assistant_selftest"
+risk = "medium"
 type = "lua"
 script = "selftest.lua"
 sandbox = "full"
@@ -867,6 +936,7 @@ phrases.en = ["diagnostics","self test"]
 
 [[commands]]
 id = "assistant_unlock"
+risk = "low"
 type = "lua"
 script = "unlock.lua"
 sandbox = "full"
@@ -880,6 +950,7 @@ phrases.en = ["unlock the computer"]
 
 [[commands]]
 id = "assistant_office_dictate"
+risk = "medium"
 type = "lua"
 script = "office.lua"
 sandbox = "full"
@@ -893,6 +964,7 @@ phrases.en = ["start dictation"]
 
 [[commands]]
 id = "assistant_office_cell"
+risk = "medium"
 type = "lua"
 script = "office.lua"
 sandbox = "full"
@@ -906,6 +978,7 @@ phrases.en = ["cell a1 write 5"]
 
 [[commands]]
 id = "assistant_office_new"
+risk = "medium"
 type = "lua"
 script = "office.lua"
 sandbox = "full"
@@ -919,6 +992,7 @@ phrases.en = ["new document"]
 
 [[commands]]
 id = "assistant_object_start"
+risk = "medium"
 type = "lua"
 script = "office.lua"
 sandbox = "full"
@@ -933,6 +1007,7 @@ phrases.en = ["start object mode"]
 # used internally: every phrase while a session (dictation, "what to do with the file?") is open; never matched by words
 [[commands]]
 id = "assistant_session"
+risk = "high"
 type = "lua"
 script = "office.lua"
 sandbox = "full"
@@ -940,6 +1015,7 @@ timeout = 25000
 
 [[commands]]
 id = "assistant_screen"
+risk = "medium"
 type = "lua"
 script = "screen.lua"
 sandbox = "full"
@@ -952,6 +1028,7 @@ phrases.en = ["what is on the screen", "describe the screen", "look at the scree
 
 [[commands]]
 id = "assistant_task_add"
+risk = "medium"
 type = "lua"
 script = "tasks.lua"
 sandbox = "full"
@@ -962,6 +1039,7 @@ phrases.en = ["add task buy bread"]
 
 [[commands]]
 id = "assistant_task_read"
+risk = "medium"
 type = "lua"
 script = "tasks.lua"
 sandbox = "full"
@@ -972,6 +1050,7 @@ phrases.en = ["read my tasks"]
 
 [[commands]]
 id = "assistant_task_open"
+risk = "medium"
 type = "lua"
 script = "tasks.lua"
 sandbox = "full"
@@ -982,6 +1061,7 @@ phrases.en = ["open tasks"]
 
 [[commands]]
 id = "assistant_task_done"
+risk = "medium"
 type = "lua"
 script = "tasks.lua"
 sandbox = "full"
@@ -992,6 +1072,7 @@ phrases.en = ["task 2 done"]
 
 [[commands]]
 id = "assistant_task_clear"
+risk = "high"
 type = "lua"
 script = "tasks.lua"
 sandbox = "full"
@@ -1002,6 +1083,7 @@ phrases.en = ["clear all tasks"]
 
 [[commands]]
 id = "assistant_chat_start"
+risk = "low"
 type = "lua"
 script = "chat.lua"
 sandbox = "full"
@@ -1012,6 +1094,7 @@ phrases.en = ["chat mode", "let's talk"]
 
 [[commands]]
 id = "assistant_chat_end"
+risk = "low"
 type = "lua"
 script = "chat.lua"
 sandbox = "full"
@@ -1022,6 +1105,7 @@ phrases.en = ["end chat"]
 
 [[commands]]
 id = "assistant_translate_clip"
+risk = "medium"
 type = "lua"
 script = "extra.lua"
 sandbox = "full"
@@ -1032,6 +1116,7 @@ phrases.en = ["translate the selection"]
 
 [[commands]]
 id = "assistant_speedtest"
+risk = "medium"
 type = "lua"
 script = "extra.lua"
 sandbox = "full"
@@ -1042,6 +1127,7 @@ phrases.en = ["internet speed test"]
 
 [[commands]]
 id = "assistant_browser_set"
+risk = "medium"
 type = "lua"
 script = "extra.lua"
 sandbox = "full"
