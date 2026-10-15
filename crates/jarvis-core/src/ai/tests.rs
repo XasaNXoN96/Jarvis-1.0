@@ -1215,6 +1215,22 @@ mod speed {
     }
 
     #[test]
+    fn with_the_voice_switched_off_the_answer_is_a_text_answer_without_a_cap() {
+        let _g = crate::uistate::TEST_LOCK.lock();
+        crate::tts::set_enabled(false);
+        let m = gen_mock(1, 700, 10, 0, 8);
+        let store = leaked_store();
+        let out = send_with(store, conf(&m.base), None, "что такое питон", true).unwrap();
+        let id = out.chat_id.clone();
+        let t = out.handle.join().unwrap();
+        crate::tts::set_enabled(true);
+        let body = m.bodies.lock()[0].clone();
+        assert_eq!(cap_in(&body), None, "nobody reads it aloud: no cap in {}", body);
+        assert!(!system_of(&body).contains_any(&["вслух", "aloud"]));
+        assert!(messages(store, &id).last().unwrap().content.contains("слово700") && !t.shortened);
+    }
+
+    #[test]
     fn a_cap_that_is_too_tight_is_dropped_and_the_question_is_asked_again() {
         let _g = crate::uistate::TEST_LOCK.lock();
         crate::tts::set_enabled(true);

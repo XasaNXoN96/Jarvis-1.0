@@ -1700,12 +1700,14 @@ mod warm_tests {
         d
     }
 
-    fn setup() -> parking_lot::MutexGuard<'static, ()> {
+    // the tests that change the common settings of the program take the common lock of the tests first, then their own
+    fn setup() -> (parking_lot::MutexGuard<'static, ()>, parking_lot::MutexGuard<'static, ()>) {
+        let common = crate::uistate::TEST_LOCK.lock();
         let g = LOCK.lock();
         warm_stop();
         crate::uistate::set_for_tests(crate::uistate::UiSettings::default());
         WARM_TIMEOUT_MS.store(60_000, Ordering::SeqCst);
-        g
+        (common, g)
     }
 
     fn spawned(exe: &Path) -> usize {

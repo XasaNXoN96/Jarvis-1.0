@@ -1466,7 +1466,8 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
         context_for_model(&msgs)
     };
     // a short question asked to be answered aloud: a short answer (the words and the cap); everything else as before
-    let short = short_voice_answer(text, speak);
+    // (with the voice switched off nobody reads the answer aloud: it is a text answer then)
+    let short = short_voice_answer(text, speak && crate::tts::is_enabled());
     let limit0 = if short { voice_cap(&conf) } else { None };
     let (ctx_messages, ctx_chars) = (history.len(), history.iter().map(|m| m.content.chars().count()).sum::<usize>());
     info!("AI: request to {} (model {}), {} messages / {} characters of context, short spoken answer: {}, answer cap: {:?}", conf.name, conf.model, ctx_messages, ctx_chars, short, limit0.map(|c| (c.param, c.tokens)));
