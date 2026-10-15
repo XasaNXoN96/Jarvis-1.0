@@ -597,6 +597,8 @@ local function obj_enter_typing(app, name, path)
   jarvis.state.set("obj_name", app == "notepad" and "" or (name or ""))
   jarvis.state.set("dict_last", "")
   jarvis.state.set("office_app", app)
+  jarvis.state.set("obj_stamped", "")
+  jarvis.state.set("obj_close_after", "")
   jarvis.session.start("object", 900)
   obj_step("typing")
   local what = app == "notepad" and T("Блокнот", "Notepad") or ("«" .. (name or "") .. "»")
@@ -875,6 +877,26 @@ local function looks_like_cell_command(tokens)
 end
 
 -- one dictated phrase while the work mode is on
+local obj_do_save -- (defined below with the saving code; "сохрани" can be said while dictating)
+
+-- "сохрани", "сохрани и закрой", "сохрани документ и закрой ворд": ONLY a short phrase made of these words. Any other
+-- sentence is dictated text ("нужно сохранить данные в базе" stays in the document).
+local SAVE_WORDS = set_of({ "сохрани", "сохранить", "сохраняй", "сохраняем", "и", "документ", "файл", "закрой", "закрыть", "закрывай", "закрываем",
+  "ворд", "word", "эксель", "excel", "блокнот", "программу", "приложение", "окно", "пожалуйста", "все", "всё", "это", "его", "тоже", "потом" })
+local function save_intent(tokens)
+  local n = #tokens
+  if n == 0 or n > 6 then return nil end
+  local save, close = false, false
+  for _, w in ipairs(tokens) do
+    if not SAVE_WORDS[w] then return nil end
+    -- (the letters are two bytes each: the stem length is taken in bytes)
+    if w:sub(1, #"сохран") == "сохран" then save = true end
+    if w:sub(1, #"закр") == "закр" then close = true end
+  end
+  if not save then return nil end
+  return { close = close }
+end
+
 local function obj_type(phrase)
   local tokens = tokens_of(phrase)
   local app = obj_app()
@@ -885,6 +907,11 @@ local function obj_type(phrase)
   if app == "word" then
     local kind = doc_ai_intent(tokens)
     if kind then return obj_doc_ai(kind, phrase, tokens) end
+  end
+  local want = save_intent(tokens)
+  if want then
+    jarvis.state.set("obj_close_after", want.close and "1" or "")
+    return obj_do_save()
   end
   if is_object_end(tokens) then
     obj_step("ask_end")
@@ -970,14 +997,41 @@ local function save_target(phrase, app)
   return dir .. "\\" .. name .. "." .. OBJ_EXT[app], where, name
 end
 
+-- the program is asked to close the way its own cross does (no /f): the document is saved already, so nothing is lost
+local CLOSE_EXE = { word = "WINWORD.EXE", excel = "EXCEL.EXE", notepad = "notepad.exe" }
+
 local function obj_saved_ok(app, path)
   jarvis.object.saved(path)
+  local close = jarvis.state.get("obj_close_after") == "1"
+  jarvis.state.set("obj_close_after", "")
+  if close and CLOSE_EXE[app] then
+    obj_stop(T("Документ сохранён: " .. path .. ". Закрываю " .. OBJ_NAMES[app] .. ".", "Saved: " .. path .. ". Closing."),
+             T("Документ сохранён. Закрываю программу", "The document is saved. Closing the program"))
+    run("taskkill", { "/im", CLOSE_EXE[app] })
+    return
+  end
   obj_stop(T("Документ сохранён: " .. path .. ". Режим работы с объектом завершён.", "Saved: " .. path),
            T("Документ сохранён. Работа с объектом завершена", "The document is saved. Object mode is finished"))
 end
 
-local function obj_do_save()
+-- one line is added to the document before it is saved: when and by whom it was made (once per document)
+local function obj_stamp(app)
+  if jarvis.state.get("obj_stamped") == "1" then return end
+  local okd, d = pcall(os.date, "%d.%m.%Y %H:%M")
+  if not okd or not d then return end
+  local line = T("Создано в Джарвисе: ", "Made with Jarvis: ") .. d
+  if app == "word" then
+    local ok = office("word", "text", b64("\n\n" .. line))
+    if ok then jarvis.state.set("obj_stamped", "1") end
+  elseif app == "notepad" then
+    local ok = jarvis.system.type_text("\n\n" .. line, "Notepad")
+    if ok then jarvis.state.set("obj_stamped", "1") end
+  end
+end
+
+function obj_do_save()
   local app = obj_app()
+  obj_stamp(app)
   if app == "notepad" then
     local ok, info = obj_info("notepad")
     if not ok or not info.open then
@@ -1097,6 +1151,22 @@ local function obj_handle(phrase)
     if ctl == "stop" or ctl == "pause" then jarvis.object.doc_ai_drop(); return obj_pause(ctl == "pause") end
     obj_replace_answer(a)
 
+  elseif step == "offer" then
+    -- "Word открыт. Работаем с этим объектом?": да = a new document and dictation; нет = just the program; anything else
+    -- is an ordinary command (the question is dropped)
+    if a.no or a.cancel then return obj_stop(T("Хорошо, программа открыта, больше ничего не делаю.", "Okay, nothing more."), T("Хорошо", "Okay")) end
+    -- "начинаем работу с объектом" instead of "да": the usual way (the document is used, or asked for)
+    if is_object_start(tokens) then return obj_begin(app) end
+    if a.yes then
+      local ok, info = obj_info(app)
+      if ok and info.open then return obj_enter_typing(app, info.name, info.path) end
+      return obj_new_document(app)
+    end
+    jarvis.object.finish()
+    jarvis.session.finish()
+    jarvis.state.set("obj_app", "")
+    return jarvis.app.run_text(phrase)
+
   elseif step == "app_ask" then
     if a.cancel then return obj_stop(T("Хорошо, режим работы с объектом не включён.", "Okay, cancelled.")) end
     local target = obj_app_from(phrase, tokens)
@@ -1145,6 +1215,7 @@ local function obj_handle(phrase)
       obj_step("typing")
       return obj_say(T("Продолжаем редактирование. Диктуйте.", "Go on."), T("Продолжаем. Диктуйте", "Go on"))
     elseif a.save and not a.delete then
+      jarvis.state.set("obj_close_after", stems_in(tokens, { "закр" }) and "1" or "")
       return obj_do_save()
     elseif a.delete and not a.save then
       return obj_ask_delete()

@@ -141,7 +141,15 @@ else
     local started = confirm_started(found.name, expected, key, was_running)
     -- the program that works with objects is open now: the engine knows it (objects.rs); a refusal (a task is running) is fine
     if started and (found.id == "vscode" or found.id == "word" or found.id == "excel" or found.id == "notepad" or found.id == "powerpoint") then
-      jarvis.object.open_app(found.id)
+      local opened = jarvis.object.open_app(found.id)
+      -- a document program: Jarvis asks whether to work with it ("да" = a new document, then everything said is written there)
+      if opened and (found.id == "word" or found.id == "excel" or found.id == "notepad") then
+        jarvis.state.set("obj_app", found.id)
+        jarvis.session.start("object", 120)
+        jarvis.session.set_data("offer")
+        say(T("Работа с объектом", "Object mode"), found.name .. T(" открыт. Работаем с этим объектом? Скажите «да» или «нет».", " is open. Work with it? Say yes or no."),
+            T("Работаем с этим объектом? Скажите да или нет", "Work with this object? Say yes or no"))
+      end
     end
   else
     jarvis.app.forget(key)

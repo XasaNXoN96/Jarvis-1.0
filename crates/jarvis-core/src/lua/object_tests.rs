@@ -102,6 +102,14 @@ impl World {
         // like the application: the recognized / typed phrase arrives in lower case
         let text = text.to_lowercase();
         let text = text.as_str();
+        // like the application: the question «Работаем с этим объектом?» after "открой ворд" is dropped by a phrase that is
+        // not an answer, and the phrase is handled as an ordinary command (the script does that through the queue of the application)
+        if crate::session::kind().as_deref() == Some("object") && crate::session::data() == "offer" {
+            let answers = ["да", "нет", "отмен", "объект", "ага", "конечно"];
+            if !answers.iter().any(|a| text.contains(a)) {
+                crate::session::end();
+            }
+        }
         let id = self.route(text).unwrap_or_else(|| panic!("no command for '{}'", text));
         let (path, cmd) = self
             .list
@@ -174,8 +182,10 @@ fn work_mode_word_new_document_dictation_and_save() {
     assert_eq!(w.say("открой ворт"), "assistant_program_open");
     assert_eq!(w.script_state("office_app"), "word");
 
+    // Word is open: Jarvis asks "Работаем с этим объектом?"; the usual phrase instead of "да" goes on as before.
     // Word is open without a document: the question "new or existing?"
-    assert_eq!(w.say("начинаем работу с объектом"), "assistant_object_start");
+    assert_eq!(w.step(), "object:offer");
+    assert_eq!(w.say("начинаем работу с объектом"), "assistant_session");
     assert_eq!(w.step(), "object:doc_ask");
     w.say("создать новый документ");
     assert_eq!(w.step(), "object:typing");
@@ -204,8 +214,63 @@ fn work_mode_word_new_document_dictation_and_save() {
     w.say("отчёт по информатике на рабочем столе");
     assert_eq!(crate::session::kind(), None, "the work mode is finished after saving");
     let files = w.fake()["files"].clone();
-    assert_eq!(files["/desktop/Отчёт по информатике.docx"].as_str().unwrap_or("MISSING"), text, "{}", files);
+    let saved = files["/desktop/Отчёт по информатике.docx"].as_str().unwrap_or("MISSING").to_string();
+    assert!(saved.starts_with(&text), "the dictated text is saved unchanged: {}", saved);
+    assert!(saved.contains("Создано в Джарвисе:"), "a line with the date is added before the save: {}", saved);
     assert_eq!(w.fake()["word"]["docs"].as_array().unwrap().len(), 1, "the document stays open");
+}
+
+// "открой ворд" -> «Работаем с этим объектом?» -> «да» -> a new document and dictation (no other phrase needed)
+#[test]
+fn opening_word_asks_to_work_with_it_and_yes_starts_a_new_document_and_dictation() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({}));
+    assert_eq!(w.say("открой ворд"), "assistant_program_open");
+    assert_eq!(w.step(), "object:offer");
+    assert!(w.output().contains("Работаем с этим объектом"), "{}", w.output());
+    assert_eq!(w.say("да"), "assistant_session");
+    assert_eq!(w.step(), "object:typing");
+    assert_eq!(w.fake()["word"]["docs"].as_array().unwrap().len(), 1, "a new document is created");
+    assert_eq!(crate::objects::state(), crate::objects::State::Dictation);
+    w.say("Первая строка заметки");
+    assert!(doc_text(&w, "word", 0).contains("Первая строка заметки"));
+}
+
+#[test]
+fn opening_word_and_saying_no_leaves_the_program_alone_and_another_phrase_is_a_normal_command() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({}));
+    w.say("открой ворд");
+    w.say("нет");
+    assert_eq!(crate::session::kind(), None);
+    assert_eq!(w.fake()["word"]["docs"].as_array().unwrap().len(), 0, "nothing is created");
+    crate::guard::forget_prefix("lua:"); // (a second "открой" within seconds is taken for a repeat)
+    w.say("открой ворд");
+    assert_eq!(w.step(), "object:offer");
+    // a phrase that is not an answer drops the question and is handled as an ordinary command
+    assert_eq!(w.say("сколько времени"), "assistant_info_time");
+    assert_eq!(crate::session::kind(), None);
+}
+
+// "сохрани, закрой" while dictating: the line with the date is added, the document is saved, then the program is closed
+#[test]
+fn save_and_close_while_dictating_saves_with_a_date_line_and_closes_the_program() {
+    let _g = LOCK.lock();
+    let w = World::new(json!({}));
+    w.say("открой ворд");
+    w.say("да");
+    w.say("Заметка про встречу в понедельник");
+    // a long sentence with the word "сохрани" is text, not a command
+    w.say("нужно сохранить все данные в базе перед отправкой");
+    assert!(doc_text(&w, "word", 0).contains("нужно сохранить все данные в базе"), "dictated text stays text");
+    w.say("сохрани и закрой");
+    assert_eq!(w.step(), "object:save_name", "a new document needs a name");
+    w.say("встреча на рабочем столе");
+    assert_eq!(crate::session::kind(), None);
+    let files = w.fake()["files"].clone();
+    let saved = files["/desktop/Встреча.docx"].as_str().unwrap_or("MISSING").to_string();
+    assert!(saved.contains("Заметка про встречу") && saved.contains("Создано в Джарвисе:"), "{}", saved);
+    assert!(w.output().contains("Закрываю"), "the program is closed after the save: {}", w.output());
 }
 
 #[test]
