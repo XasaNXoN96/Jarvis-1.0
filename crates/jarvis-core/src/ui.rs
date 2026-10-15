@@ -14,43 +14,11 @@ use serde_json::json;
 use crate::{i18n, COMMANDS_LIST};
 
 pub const PORT: u16 = 9714;
-const PAGE: &str = include_str!("ui_page.html");
+const PAGE: &str = include_str!(concat!(env!("OUT_DIR"), "/ui_page.html"));
 
-// the page of the window. Jarvis User gets it WITHOUT the license manager (the marked parts are cut out, not just hidden)
+// the page of the window, made by build.rs: Jarvis User gets it WITHOUT the license manager (cut out at build time)
 fn page() -> std::borrow::Cow<'static, str> {
-    #[cfg(feature = "user-edition")]
-    {
-        return std::borrow::Cow::Owned(strip_admin(PAGE));
-    }
-    #[cfg(not(feature = "user-edition"))]
     std::borrow::Cow::Borrowed(PAGE)
-}
-
-#[allow(dead_code)]
-fn strip_admin(page: &str) -> String {
-    let mut out = String::with_capacity(page.len());
-    let mut rest = page;
-    // two kinds of markers: <!--ADMIN-BEGIN--> ... <!--ADMIN-END--> in the markup, /*ADMIN-BEGIN*/ ... /*ADMIN-END*/ in the script
-    loop {
-        let a = rest.find("<!--ADMIN-BEGIN-->");
-        let b = rest.find("/*ADMIN-BEGIN*/");
-        let (start, end_marker) = match (a, b) {
-            (Some(x), Some(y)) if x < y => (x, "<!--ADMIN-END-->"),
-            (Some(x), None) => (x, "<!--ADMIN-END-->"),
-            (_, Some(y)) => (y, "/*ADMIN-END*/"),
-            (None, None) => break,
-        };
-        out.push_str(&rest[..start]);
-        match rest[start..].find(end_marker) {
-            Some(e) => rest = &rest[start + e + end_marker.len()..],
-            None => {
-                rest = "";
-                break;
-            }
-        }
-    }
-    out.push_str(rest);
-    out
 }
 const ICON: &[u8] = include_bytes!("../../../resources/icons/128x128.png");
 
@@ -1506,17 +1474,21 @@ mod tests {
     }
 
 
+    // the page is made by build.rs: in the customer's build the administrator's parts are not in it at all; in the owner's build they are
     #[test]
     fn jarvis_user_gets_a_page_without_the_license_manager() {
-        let user = strip_admin(PAGE);
-        for marker in ["ADMIN-BEGIN", "ADMIN-END", "license-admin", "page-licmgr", "lmCall", "Создать ключи", "jla_", "data-page=\"licmgr\""] {
-            assert!(!user.contains(marker), "the user page still has {}", marker);
-        }
-        // the parts every customer needs are still there
+        let source = include_str!("ui_page.html");
+        assert_eq!(source.matches("ADMIN-BEGIN").count(), source.matches("ADMIN-END").count());
+        assert!(source.contains("page-licmgr") && source.contains("license-admin"), "the source has the administrator's page");
         for needed in ["lic-dlg", "exp-dlg", "prem-dlg", "Да, продлить", "Нет, выйти", "Активировать Premium", "Позже"] {
-            assert!(user.contains(needed), "{}", needed);
+            assert!(PAGE.contains(needed), "{}", needed);
         }
-        assert!(PAGE.contains("page-licmgr") && PAGE.contains("license-admin"), "the administrator's page has it");
-        assert_eq!(PAGE.matches("ADMIN-BEGIN").count(), PAGE.matches("ADMIN-END").count());
+        if cfg!(feature = "user-edition") {
+            for marker in ["ADMIN-BEGIN", "ADMIN-END", "license-admin", "page-licmgr", "lmCall", "Создать ключи", "jla_", "Токен администратора", "data-page=\"licmgr\""] {
+                assert!(!PAGE.contains(marker), "the user page still has {}", marker);
+            }
+        } else {
+            assert!(PAGE.contains("page-licmgr") && PAGE.contains("license-admin"));
+        }
     }
 }

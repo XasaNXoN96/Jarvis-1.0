@@ -19,7 +19,36 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+// Jarvis User gets the page of the window WITHOUT the license manager: the marked parts are cut out HERE, at build time, so the
+// administrator's page and code are not in the customer's program at all (not just hidden at run time).
+fn strip_admin(page: &str) -> String {
+    let mut out = String::with_capacity(page.len());
+    let mut rest = page;
+    loop {
+        let a = rest.find("<!--ADMIN-BEGIN-->");
+        let b = rest.find("/*ADMIN-BEGIN*/");
+        let (start, end_marker) = match (a, b) {
+            (Some(x), Some(y)) if x < y => (x, "<!--ADMIN-END-->"),
+            (Some(x), None) => (x, "<!--ADMIN-END-->"),
+            (_, Some(y)) => (y, "/*ADMIN-END*/"),
+            (None, None) => break,
+        };
+        out.push_str(&rest[..start]);
+        match rest[start..].find(end_marker) {
+            Some(e) => rest = &rest[start + e + end_marker.len()..],
+            None => panic!("ui_page.html: an ADMIN-BEGIN marker has no ADMIN-END"),
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 fn main() {
+    let page_path = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("src").join("ui_page.html");
+    println!("cargo:rerun-if-changed={}", page_path.display());
+    let page = std::fs::read_to_string(&page_path).unwrap();
+    let page = if std::env::var("CARGO_FEATURE_USER_EDITION").is_ok() { strip_admin(&page) } else { page };
+    std::fs::write(PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("ui_page.html"), page).unwrap();
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let root = manifest_dir.join("..").join("..").join("resources").join("commands");
     println!("cargo:rerun-if-changed={}", root.display());
