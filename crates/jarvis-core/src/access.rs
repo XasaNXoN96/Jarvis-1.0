@@ -256,6 +256,9 @@ mod tests {
         // the window operations and the scenario runner are refused the same way
         assert!(check("ui_file_search").is_err());
         assert!(crate::scenario::run_step(&crate::scenario::Step { kind: "url".into(), param: "https://example.com".into(), window: String::new() }).unwrap_err().contains("Jarvis Premium"));
+        // the work with code files does not go through a command: its door is checked too (and a refused phrase is answered, not run)
+        let r = crate::codeobj::handle("создай питон файл", "создай питон файл", crate::origin::Source::Voice).expect("a refusal is an answer");
+        assert!(r.text.contains("Jarvis Premium"), "{}", r.text);
         // an administrator-only operation is never allowed in the customer's program
         assert!(decide(EDITION, &LicenseView::Premium, Level::Admin, true).is_err());
     }

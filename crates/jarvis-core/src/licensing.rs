@@ -162,7 +162,19 @@ fn raise_floor(st: &mut State, at: i64) {
     }
 }
 
+// Tests of other modules (commands, the code work, the window) are about THEIR function, not about the license: on a test thread
+// the view is Premium unless the test itself calls `test_reset()` (the licensing tests and the refusal tests do) and so goes
+// through the real state.
+#[cfg(test)]
+thread_local! {
+    static TEST_VIEW: std::cell::RefCell<Option<LicenseView>> = std::cell::RefCell::new(Some(LicenseView::Premium));
+}
+
 pub fn view() -> LicenseView {
+    #[cfg(test)]
+    if let Some(v) = TEST_VIEW.with(|t| t.borrow().clone()) {
+        return v;
+    }
     let t = now();
     with_state(|st| {
         let Some(c) = claims_of(st) else { return LicenseView::None };
@@ -443,6 +455,8 @@ pub fn test_lock() -> parking_lot::MutexGuard<'static, ()> {
 
 #[doc(hidden)]
 pub fn test_reset() {
+    #[cfg(test)]
+    TEST_VIEW.with(|t| *t.borrow_mut() = None);
     *STATE.lock() = Some(State::default());
     *SETUP.lock() = None;
 }
@@ -645,5 +659,25 @@ mod tests {
         let mut edited = st.clone();
         edited.floor -= 10 * 86_400; // somebody lowers the clock floor
         assert_ne!(mac_of(&seed, &body_of(&edited)), good, "an edited field changes the HMAC, the file is not believed");
+    }
+
+    #[test]
+    fn activation_without_internet_gives_nothing_and_changes_nothing() {
+        let _g = test_lock();
+        let s = fresh(&server());
+        let key = s.key("premium-monthly", "NEW");
+        // the network is down: the key is not accepted «on trust», there is no offline activation
+        test_setup(&s.pubkey, |_, _, _| Err("Нет связи с сервером лицензий. Проверьте интернет.".to_string()));
+        let e = activate(&key).unwrap_err();
+        assert!(e.contains("Нет связи"), "{}", e);
+        assert_eq!(view(), LicenseView::None);
+        assert!(with_state(|st| st.token.is_empty()));
+        // a program built without the address / the public key of a server cannot activate either
+        test_reset();
+        assert!(activate(&key).is_err());
+        assert_eq!(view(), LicenseView::None);
+        // and once the network is back, the same key works (the failed try did not burn it)
+        s.wire();
+        assert_eq!(activate(&key).unwrap()["state"], "premium");
     }
 }

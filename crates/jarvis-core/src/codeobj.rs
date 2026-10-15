@@ -632,6 +632,11 @@ pub fn handle(text: &str, original: &str, source: Source) -> Option<Reply> {
     // 3. an intent
     let file = current_file().is_some();
     let intent = parse(text, mine, file)?;
+    // the work with code files through the AI is a paid function; it does not go through a command, so it is checked here
+    // (only after the phrase was recognised as such an intent: every other phrase passes on untouched)
+    if let Err(d) = crate::access::check("code_object") {
+        return reply(d.message);
+    }
     run_intent(intent, original)
 }
 
