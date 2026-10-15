@@ -172,6 +172,17 @@ const { chromium } = require('playwright-core');
   }
   const hiddenAgain = await page.evaluate(() => document.getElementById('h-obj').hidden);
   check('object bar: hidden again after IDLE', hiddenAgain === true);
+  // the helpers of the AI card (the beginning of a key suggests a provider, quick models, the host order of OpenRouter)
+  await page.evaluate(() => show('settings'));
+  await wait(400);
+  const guesses = await page.evaluate(() => ['sk-or-v1-abc', 'sk-ant-api03-x', 'AIzaSyAbc', 'gsk_abc', 'sk-proj-abc', 'hello', ''].map(k => { const g = keyGuess(k); return g ? g.provider : null; }));
+  check('AI card: a key suggests its provider', JSON.stringify(guesses) === JSON.stringify(['openrouter', 'anthropic', 'gemini', 'custom', 'openai', null, null]), JSON.stringify(guesses));
+  const presets = await page.$$eval('#ai-presets button', b => b.length);
+  check('AI card: quick model choices are shown', presets >= 3, String(presets));
+  const route = await page.evaluate(() => { const sel = document.getElementById('ai-provider'); const before = document.getElementById('ai-route-row').style.display; sel.value = 'openrouter'; updateAiRows(); const on = document.getElementById('ai-route-row').style.display; sel.value = 'none'; updateAiRows(); return [before, on, document.getElementById('ai-route-row').style.display]; });
+  check('AI card: the host order of OpenRouter is shown for OpenRouter only', route[0] === 'none' && route[1] === '' && route[2] === 'none', JSON.stringify(route));
+  check('AI card: the screen check button exists', await page.$('#ai-screen-check') !== null);
+
   check('no JavaScript errors in the page', errors.length === 0, errors.slice(0, 3).join(' | '));
   say(`WEBVIEW2 E2E: ${failed === 0 ? 'PASS' : 'FAIL (' + failed + ')'}`);
   require('fs').writeFileSync(reportFile, lines.join('\n'));

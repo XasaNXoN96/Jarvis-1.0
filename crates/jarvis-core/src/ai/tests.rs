@@ -56,7 +56,7 @@ fn ok_body(text: &str) -> String {
 }
 
 fn conf(base: &str) -> Result<ProviderConf, AiError> {
-    Ok(ProviderConf { kind: Kind::OpenAiCompatible, name: "Test".into(), base: base.to_string(), model: "test-model".into(), key: KEY.into() })
+    Ok(ProviderConf { kind: Kind::OpenAiCompatible, name: "Test".into(), base: base.to_string(), model: "test-model".into(), key: KEY.into(), route: String::new() })
 }
 
 fn leaked_store() -> &'static Store {
@@ -335,7 +335,7 @@ fn gemini_is_configured_with_its_openai_compatible_endpoint_and_a_default_model(
 fn a_question_reaches_the_provider_with_the_key_only_in_the_header() {
     let store = leaked_store();
     let m = mock(vec![(200, ok_body("Программа — это набор инструкций."), 0)]);
-    let c = Ok(ProviderConf { kind: Kind::OpenAiCompatible, name: "Google Gemini".into(), base: m.base.clone(), model: "gemini-flash-latest".into(), key: KEY.into() });
+    let c = Ok(ProviderConf { kind: Kind::OpenAiCompatible, name: "Google Gemini".into(), base: m.base.clone(), model: "gemini-flash-latest".into(), key: KEY.into(), route: String::new() });
     let id = run(store, c, None, "Что такое программа?").unwrap();
     let msgs = messages(store, &id);
     assert_eq!(msgs.last().unwrap().content, "Программа — это набор инструкций.");
@@ -458,7 +458,7 @@ fn the_stream_body_asks_for_a_stream_and_the_normal_one_does_not() {
     let h = vec![ChatMsg { role: "user".into(), content: "вопрос".into(), ..Default::default() }];
     assert_eq!(build_body(&c, &h, "s")["stream"], json!(false));
     assert_eq!(build_body_opts(&c, &h, "s", true)["stream"], json!(true));
-    let a = ProviderConf { kind: Kind::Anthropic, name: "A".into(), base: "http://x".into(), model: "m".into(), key: "k".into() };
+    let a = ProviderConf { kind: Kind::Anthropic, name: "A".into(), base: "http://x".into(), model: "m".into(), key: "k".into(), route: String::new() };
     assert!(build_body(&a, &h, "s").get("stream").is_none());
     assert_eq!(build_body_opts(&a, &h, "s", true)["stream"], json!(true));
 }
@@ -718,7 +718,7 @@ fn a_silent_stream_is_asked_again_without_a_stream_and_remembered() {
 fn gemini_is_asked_to_think_little_and_a_provider_that_refuses_the_parameter_is_asked_again_without_it() {
     let store = leaked_store();
     let m = mock(vec![(400, "{\"error\":{\"message\":\"Unknown field reasoning_effort\"}}".to_string(), 0), (200, ok_body("Готово"), 0)]);
-    let c = Ok(ProviderConf { kind: Kind::OpenAiCompatible, name: "Google Gemini".into(), base: m.base.clone(), model: "gemini-flash-latest".into(), key: KEY.into() });
+    let c = Ok(ProviderConf { kind: Kind::OpenAiCompatible, name: "Google Gemini".into(), base: m.base.clone(), model: "gemini-flash-latest".into(), key: KEY.into(), route: String::new() });
     let id = run(store, c, None, "вопрос").unwrap();
     assert_eq!(messages(store, &id).last().unwrap().content, "Готово");
     let reqs = m.requests.lock().clone();
@@ -726,8 +726,56 @@ fn gemini_is_asked_to_think_little_and_a_provider_that_refuses_the_parameter_is_
     assert!(reqs[0].contains("reasoning_effort"), "the first request carries the parameter");
     assert!(!reqs[1].contains("reasoning_effort"), "the second one does not");
     // other providers never get it
-    let o = ProviderConf { kind: Kind::OpenAiCompatible, name: "OpenAI".into(), base: "http://x".into(), model: "m".into(), key: "k".into() };
+    let o = ProviderConf { kind: Kind::OpenAiCompatible, name: "OpenAI".into(), base: "http://x".into(), model: "m".into(), key: "k".into(), route: String::new() };
     assert!(build_body_opts(&o, &[], "s", true).get("reasoning_effort").is_none());
+}
+
+#[test]
+fn the_host_order_goes_to_openrouter_only_and_only_as_plain_names() {
+    assert_eq!(route_provider(""), None);
+    assert_eq!(route_provider("baidu"), Some(json!({ "order": ["baidu"], "allow_fallbacks": true })));
+    assert_eq!(route_provider("Baidu, DeepInfra; novita"), Some(json!({ "order": ["baidu", "deepinfra", "novita"], "allow_fallbacks": true })));
+    assert_eq!(route_provider("sort:latency"), Some(json!({ "sort": "latency" })));
+    assert_eq!(route_provider("sort:throughput"), Some(json!({ "sort": "throughput" })));
+    assert_eq!(route_provider("sort:evil"), None, "only the known ways to choose");
+    // nothing but plain host names reaches the request
+    assert_eq!(route_provider("a\"b, {x}, ok"), Some(json!({ "order": ["ok"], "allow_fallbacks": true })));
+    assert_eq!(route_provider("{\"x\":1}"), None);
+    let many = (1..=20).map(|i| format!("h{}", i)).collect::<Vec<_>>().join(",");
+    assert_eq!(route_provider(&many).unwrap()["order"].as_array().unwrap().len(), 8, "at most eight hosts");
+    let or = ProviderConf { kind: Kind::OpenAiCompatible, name: "OpenRouter".into(), base: "https://openrouter.ai/api/v1".into(), model: "m".into(), key: "k".into(), route: "baidu".into() };
+    let body = build_body_opts(&or, &[], "s", true);
+    assert_eq!(body["provider"]["order"][0], "baidu");
+    assert_eq!(body["provider"]["allow_fallbacks"], true);
+    assert!(build_body_opts(&ProviderConf { route: String::new(), ..or.clone() }, &[], "s", true).get("provider").is_none(), "no order set: nothing is added");
+    // a route that was set for another provider never goes out
+    assert!(build_body_opts(&ProviderConf { name: "OpenAI".into(), base: "https://api.openai.com/v1".into(), ..or.clone() }, &[], "s", true).get("provider").is_none());
+    assert!(build_body_opts(&ProviderConf { kind: Kind::Anthropic, name: "Anthropic".into(), ..or.clone() }, &[], "s", true).get("provider").is_none());
+    // the key is not in the body
+    assert!(!body.to_string().contains("\"k\""));
+}
+
+#[test]
+fn the_route_of_the_settings_reaches_openrouter_only() {
+    let _g = crate::uistate::TEST_LOCK.lock();
+    crate::uistate::set_for_tests(crate::uistate::UiSettings { ai_provider: "openrouter".into(), ai_key: "sk-or-v1-test".into(), ai_route: "baidu".into(), ..Default::default() });
+    assert_eq!(conf_from_settings().unwrap().route, "baidu");
+    crate::uistate::set_for_tests(crate::uistate::UiSettings { ai_provider: "openai".into(), ai_key: "sk-test".into(), ai_route: "baidu".into(), ..Default::default() });
+    assert_eq!(conf_from_settings().unwrap().route, "", "OpenAI never gets a host order");
+    crate::uistate::set_for_tests(crate::uistate::UiSettings::default());
+}
+
+#[test]
+fn a_provider_that_refuses_the_host_order_is_asked_again_without_it() {
+    let store = leaked_store();
+    let m = mock(vec![(400, "{\"error\":{\"message\":\"Unknown provider: baiduu\"}}".to_string(), 0), (200, ok_body("Готово"), 0)]);
+    let c = Ok(ProviderConf { kind: Kind::OpenAiCompatible, name: "OpenRouter".into(), base: m.base.clone(), model: "m".into(), key: KEY.into(), route: "baiduu".into() });
+    let id = run(store, c, None, "вопрос").unwrap();
+    assert_eq!(messages(store, &id).last().unwrap().content, "Готово");
+    let reqs = m.requests.lock().clone();
+    assert_eq!(reqs.len(), 2);
+    assert!(reqs[0].contains("\"provider\"") && reqs[0].contains("baiduu"), "the first request carries the order");
+    assert!(!reqs[1].contains("\"provider\""), "the second one does not");
 }
 
 #[test]

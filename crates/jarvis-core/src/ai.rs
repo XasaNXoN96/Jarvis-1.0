@@ -55,6 +55,49 @@ fn reasoning_refused(conf: &ProviderConf, status: u16, body: &str) -> bool {
     (status == 400 || status == 422) && body.to_lowercase().contains("reasoning") && NO_REASONING_PARAM.lock().insert(conf.base.clone())
 }
 
+// OpenRouter routing ("provider" of the request): which host serves the model. A provider that does not accept it is
+// asked again without it, and it is not sent to that address again in this run.
+static NO_ROUTE_PARAM: Lazy<Mutex<std::collections::HashSet<String>>> = Lazy::new(|| Mutex::new(std::collections::HashSet::new()));
+
+fn route_ok(conf: &ProviderConf) -> bool {
+    !conf.route.trim().is_empty() && conf.name == "OpenRouter" && !NO_ROUTE_PARAM.lock().contains(&conf.base)
+}
+
+// "baidu, deepinfra" -> the order of the hosts; "sort:latency" | "sort:throughput" | "sort:price" -> the way to choose.
+// Only plain host names are taken: nothing else of the text reaches the request.
+pub fn route_provider(route: &str) -> Option<Value> {
+    let r = route.trim().to_lowercase();
+    if r.is_empty() {
+        return None;
+    }
+    if let Some(how) = r.strip_prefix("sort:") {
+        return match how.trim() {
+            "latency" | "throughput" | "price" => Some(json!({ "sort": how.trim() })),
+            _ => None,
+        };
+    }
+    let hosts: Vec<String> = r
+        .split(|c: char| c == ',' || c == ';' || c.is_whitespace())
+        .filter(|h| !h.is_empty() && h.len() <= 40 && h.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '/')))
+        .take(8)
+        .map(|h| h.to_string())
+        .collect();
+    if hosts.is_empty() {
+        None
+    } else {
+        Some(json!({ "order": hosts, "allow_fallbacks": true }))
+    }
+}
+
+// the provider refused the host order: asked again without it
+fn route_refused(conf: &ProviderConf, status: u16, body: &str) -> bool {
+    let refused = route_ok(conf) && (status == 400 || status == 404 || status == 422) && body.to_lowercase().contains("provider") && NO_ROUTE_PARAM.lock().insert(conf.base.clone());
+    if refused {
+        crate::uistate::log_event("ai", "OpenRouter не принял порядок хостов: повторяю запрос без него");
+    }
+    refused
+}
+
 // ---------------------------------------------------------------------------------------------
 // provider
 // ---------------------------------------------------------------------------------------------
@@ -71,6 +114,7 @@ pub struct ProviderConf {
     pub base: String,  // without a trailing slash
     pub model: String,
     pub key: String,
+    pub route: String, // OpenRouter only: the order of the hosts that serve the model ("" = OpenRouter chooses)
 }
 
 // the key never appears in Debug output
@@ -193,7 +237,7 @@ pub fn conf_from(provider: &str, model: &str, key: &str, url: &str) -> Result<Pr
     } else {
         typed
     };
-    Ok(ProviderConf { kind, name: name.to_string(), base, model: model.to_string(), key: key.trim().to_string() })
+    Ok(ProviderConf { kind, name: name.to_string(), base, model: model.to_string(), key: key.trim().to_string(), route: String::new() })
 }
 
 pub fn conf_from_settings() -> Result<ProviderConf, AiError> {
@@ -201,7 +245,13 @@ pub fn conf_from_settings() -> Result<ProviderConf, AiError> {
     if !s.ai_enabled {
         return Err(AiError::Disabled);
     }
-    conf_from(&s.ai_provider, &s.ai_model, &s.ai_key, &s.ai_url)
+    conf_from(&s.ai_provider, &s.ai_model, &s.ai_key, &s.ai_url).map(|mut conf| {
+        // the host order concerns OpenRouter only; no other provider ever gets it
+        if s.ai_provider == "openrouter" {
+            conf.route = s.ai_route.clone();
+        }
+        conf
+    })
 }
 
 pub fn is_configured() -> bool {
@@ -636,6 +686,11 @@ pub fn build_body_opts(conf: &ProviderConf, history: &[ChatMsg], system: &str, s
             if conf.name.contains("Gemini") && reasoning_param_ok(conf) {
                 body["reasoning_effort"] = json!("low");
             }
+            if route_ok(conf) {
+                if let Some(p) = route_provider(&conf.route) {
+                    body["provider"] = p;
+                }
+            }
             body
         }
         Kind::Anthropic => {
@@ -802,7 +857,7 @@ pub fn request_answer(conf: &ProviderConf, history: &[ChatMsg], system: &str) ->
     let resp = with_key(conf, client()?.post(endpoint(conf)).json(&body)).send().map_err(|e| net_error(conf, e))?;
     let status = resp.status().as_u16();
     let text = resp.text().map_err(|e| net_error(conf, e))?;
-    if reasoning_refused(conf, status, &text) {
+    if reasoning_refused(conf, status, &text) || route_refused(conf, status, &text) {
         return request_answer(conf, history, system);
     }
     if !(200..300).contains(&status) {
@@ -853,7 +908,7 @@ pub fn request_answer_stream(
     let status = resp.status().as_u16();
     if !(200..300).contains(&status) {
         let text = resp.text().unwrap_or_default();
-        if reasoning_refused(conf, status, &text) {
+        if reasoning_refused(conf, status, &text) || route_refused(conf, status, &text) {
             return request_answer_stream(conf, history, system, cancel, t0, probe, on_delta);
         }
         // a server that does not know "stream": ask once more the usual way

@@ -77,6 +77,7 @@ pub struct UiSettings {
     pub ai_model: String,
     pub ai_key: String,
     pub ai_url: String,
+    pub ai_route: String,    // OpenRouter: the order of the hosts of the model ("" = OpenRouter chooses), see ai::route_provider
     pub ai_fallback: bool, // phrases that are not commands go to the AI (off by default: nothing leaves the PC unasked)
     // privacy: the AI may be switched off as a whole (no request leaves the computer, local commands keep working)
     pub ai_enabled: bool,
@@ -145,7 +146,7 @@ pub fn browser_exe(key: &str) -> Option<&'static str> {
 impl Default for UiSettings {
     fn default() -> Self {
         Self {
-            voice_rate: 1.0, voice_name: String::new(), city: String::new(), reaction_voice: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_key: String::new(), ai_url: String::new(), ai_fallback: false,
+            voice_rate: 1.0, voice_name: String::new(), city: String::new(), reaction_voice: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_key: String::new(), ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
             ai_enabled: true, mic_off: false,
             notify_show: true, notify_speak: true, notify_sound: true, dnd: false,
             ext_enabled: false, ext_show: true, ext_speak: false, ext_strict: true, ext_allowed: Vec::new(), ext_blocked: Vec::new(), ext_seen: Vec::new(),
@@ -350,12 +351,13 @@ pub fn update_settings(patch: &Value) {
         }
     }
     if let Some(v) = patch.get("voice_name").and_then(|v| v.as_str()) { s.voice_name = v.chars().take(120).collect(); }
-    let before = (s.ai_provider.clone(), s.ai_model.clone(), s.ai_key.clone(), s.ai_url.clone());
+    let before = (s.ai_provider.clone(), s.ai_model.clone(), s.ai_key.clone(), s.ai_url.clone(), s.ai_route.clone());
     if let Some(v) = patch.get("ai_provider").and_then(|v| v.as_str()) { s.ai_provider = v.chars().take(30).collect(); }
     if let Some(v) = patch.get("ai_model").and_then(|v| v.as_str()) { s.ai_model = v.chars().take(100).collect(); }
     if let Some(v) = patch.get("ai_key").and_then(|v| v.as_str()) { s.ai_key = v.chars().take(300).collect(); }
     if let Some(v) = patch.get("ai_url").and_then(|v| v.as_str()) { s.ai_url = v.chars().take(300).collect(); }
-    if before != (s.ai_provider.clone(), s.ai_model.clone(), s.ai_key.clone(), s.ai_url.clone()) {
+    if let Some(v) = patch.get("ai_route").and_then(|v| v.as_str()) { s.ai_route = v.chars().take(200).collect(); }
+    if before != (s.ai_provider.clone(), s.ai_model.clone(), s.ai_key.clone(), s.ai_url.clone(), s.ai_route.clone()) {
         crate::ai::status_reset();
     }
     if let Some(v) = patch.get("ai_fallback").and_then(|v| v.as_bool()) { s.ai_fallback = v; }
@@ -409,7 +411,7 @@ pub fn settings_json() -> Value {
     let s = settings();
     json!({
         "voice_rate": s.voice_rate, "voice_name": s.voice_name, "city": s.city, "reaction_voice": if s.reaction_voice.is_empty() { crate::voices::get_current_voice().map(|v| v.voice.id.clone()).unwrap_or_default() } else { s.reaction_voice.clone() },
-        "ai_provider": s.ai_provider, "ai_model": s.ai_model, "ai_url": s.ai_url,
+        "ai_provider": s.ai_provider, "ai_model": s.ai_model, "ai_url": s.ai_url, "ai_route": s.ai_route,
         "ai_key_saved": !s.ai_key.is_empty(),
         "ai_fallback": s.ai_fallback,
         "ai_enabled": s.ai_enabled,

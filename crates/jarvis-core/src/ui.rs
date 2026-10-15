@@ -331,6 +331,9 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             json!({ "ok": true })
         }
         "ai_test" => ai_test(),
+        // "Проверить экран": the same way as the voice command «что на экране»; the picture goes to the provider only
+        // because of this press, and only when the analysis of the screen is allowed in the settings
+        "screen_check" => screen_check(),
         // the phone remote card of the home page: the same server as the voice command "включи удалённое управление"
         "remote_on" => match crate::remote::start() {
             Ok(url) => json!({ "ok": true, "enabled": true, "url": url }),
@@ -460,6 +463,14 @@ fn ai_test() -> serde_json::Value {
             Ok(()) => json!({ "ok": true, "message": format!("Соединение с {} работает", conf.name) }),
             Err(e) => json!({ "ok": false, "message": e.user_text() }),
         },
+    }
+}
+
+// "check the screen": one picture of the main screen and one short question; the answer is shown, nothing is stored
+fn screen_check() -> serde_json::Value {
+    match crate::ai::ask_about_screen("Опиши одним коротким предложением, что сейчас показано на экране.") {
+        Ok(answer) => json!({ "ok": true, "message": format!("Экран прочитан. Ответ ИИ: {}", answer.trim().chars().take(160).collect::<String>()) }),
+        Err(e) => json!({ "ok": false, "message": e.user_text() }),
     }
 }
 
@@ -1221,6 +1232,24 @@ mod tests {
         // nothing to stop any more: the button does not claim success
         assert_eq!(run_action(&json!({ "name": "object_stop" }))["ok"], false);
         crate::objects::with(|e| e.reset());
+    }
+
+    #[test]
+    fn the_screen_check_takes_no_picture_without_the_consent_or_a_provider() {
+        let _g = crate::uistate::TEST_LOCK.lock();
+        // no provider: the answer says what is missing, nothing is sent
+        crate::uistate::set_for_tests(crate::uistate::UiSettings::default());
+        let r = run_action(&json!({ "name": "screen_check" }));
+        assert_eq!(r["ok"], false, "{}", r);
+        // a provider, but the analysis of the screen is not allowed: refused before any picture is taken
+        crate::uistate::set_for_tests(crate::uistate::UiSettings { ai_provider: "gemini".into(), ai_key: "key-123".into(), ai_screen: false, ..Default::default() });
+        let r = run_action(&json!({ "name": "screen_check" }));
+        assert_eq!(r["ok"], false, "{}", r);
+        assert!(r["message"].as_str().unwrap().contains("Анализ экрана не разрешён"), "{}", r);
+        // the AI switched off: the same
+        crate::uistate::set_for_tests(crate::uistate::UiSettings { ai_provider: "gemini".into(), ai_key: "key-123".into(), ai_screen: true, ai_enabled: false, ..Default::default() });
+        assert_eq!(run_action(&json!({ "name": "screen_check" }))["ok"], false);
+        crate::uistate::set_for_tests(crate::uistate::UiSettings::default());
     }
 
     #[test]

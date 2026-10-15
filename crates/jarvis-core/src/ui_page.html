@@ -918,14 +918,16 @@
             <option value="gemini">Google Gemini (через OpenAI-совместимый адрес)</option><option value="anthropic">Anthropic (Claude)</option>
             <option value="ollama">Ollama (на этом компьютере)</option><option value="custom">Другой сервер (совместимый с OpenAI)</option></select></div></div>
         <div class="setrow" id="ai-url-row"><div class="l">Адрес сервера<small id="ai-url-hint">для Ollama и других серверов</small></div><div class="r"><input type="text" id="ai-url" placeholder="http://127.0.0.1:11434"></div></div>
-        <div class="setrow"><div class="l">Модель</div><div class="r"><input type="text" id="ai-model" placeholder="например: claude-sonnet-5-5"></div></div>
-        <div class="setrow" id="ai-key-row"><div class="l">Ключ API<small id="ai-key-hint">хранится только на этом компьютере</small></div><div class="r"><input type="password" id="ai-key" placeholder="вставьте ключ" autocomplete="off"></div></div>
+        <div class="setrow"><div class="l">Модель<small>подсказки ниже только подставляют значения в поля, ничего не меняется, пока вы не нажмёте «Сохранить»; проверьте имя модели у провайдера</small></div><div class="r"><input type="text" id="ai-model" placeholder="например: claude-sonnet-5-5"></div></div>
+        <div class="setrow" id="ai-presets-row"><div class="l">Быстрые варианты<small>примеры быстрых моделей; бесплатные модели бывают с лимитами и их запросы могут записываться провайдером</small></div><div class="r"><div class="chips" id="ai-presets"></div></div></div>
+        <div class="setrow" id="ai-route-row" style="display:none"><div class="l">Хосты OpenRouter<small>какой хост запускает модель, по порядку; пусто — OpenRouter выбирает сам, при сбое берётся другой. Имена как на странице модели на openrouter.ai</small></div><div class="r"><input type="text" id="ai-route" placeholder="например: baidu, deepinfra" maxlength="200"><div class="chips" id="ai-route-chips"></div></div></div>
+        <div class="setrow" id="ai-key-row"><div class="l">Ключ API<small id="ai-key-hint">хранится только на этом компьютере</small></div><div class="r"><input type="password" id="ai-key" placeholder="вставьте ключ" autocomplete="off"><small id="ai-key-guess" style="display:none"></small></div></div>
         <div class="setrow"><div class="l"><span class="msgline" id="ai-msg"></span></div>
           <div class="r"><button class="btn" id="ai-save">Сохранить</button><button class="btn primary" id="ai-test">Проверить соединение</button></div></div>
         <div class="setrow"><div class="l">Отвечать ИИ на непонятные фразы, сказанные голосом<small>Всё, что вы напечатали и что не является командой, идёт выбранному ИИ, если он подключён. Вопросы голосом («что такое…», «объясни…») тоже. Этот переключатель добавляет к ним остальные непонятные фразы, сказанные голосом.</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="ai-fallback"><span></span></label></div></div>
         <div class="setrow"><div class="l">Анализ экрана («что на экране»)<small>по команде «Джарвис, что на экране» снимок главного экрана уйдёт выбранному провайдеру с вашим вопросом; без команды экран не снимается, снимок не сохраняется. Нужна модель, которая видит картинки (например, gemini-flash). По умолчанию выключено</small></div>
-          <div class="r"><label class="sw"><input type="checkbox" id="ai-screen"><span></span></label></div></div>
+          <div class="r"><button class="btn small" id="ai-screen-check" type="button" title="снимок экрана уйдёт выбранному провайдеру">Проверить экран</button><label class="sw"><input type="checkbox" id="ai-screen"><span></span></label></div></div>
         <small class="dim">Ответы ИИ появляются на странице «Диалог». Ключ хранится только на этом компьютере в зашифрованном виде (шифрование Windows) и не показывается в окне. Сообщения уходят провайдеру, когда вы нажимаете «Отправить» или задаёте вопрос; команды компьютера («открой ворд», «поставь таймер») в ИИ не отправляются.</small>
       </div>
 
@@ -1974,7 +1976,7 @@ async function loadSettings() {
     $('#rate').value = s.voice_rate; $('#rate-v').textContent = (+s.voice_rate).toFixed(2).replace(/0$/, '') + '×';
     $('#tts-on').checked = !!s.tts_enabled;
     if (document.activeElement !== $('#city-input')) $('#city-input').value = s.city || '';
-    $('#ai-fallback').checked = !!s.ai_fallback; $('#ai-provider').value = s.ai_provider || 'none'; $('#ai-model').value = s.ai_model || ''; $('#ai-url').value = s.ai_url || '';
+    $('#ai-fallback').checked = !!s.ai_fallback; $('#ai-provider').value = s.ai_provider || 'none'; $('#ai-model').value = s.ai_model || ''; $('#ai-url').value = s.ai_url || ''; $('#ai-route').value = s.ai_route || ''; $('#ai-route-row').style.display = s.ai_provider === 'openrouter' ? '' : 'none';
     $('#ai-key').value = ''; $('#ai-key-hint').textContent = s.ai_key_saved ? 'ключ сохранён (оставьте поле пустым, чтобы не менять)' : 'хранится только на этом компьютере';
     updateAiRows();
     arLoad(); applyPrivacy(s); applyGeneral(s); $('#ai-screen').checked = !!s.ai_screen;
@@ -2022,15 +2024,62 @@ function updateAiRows() {
   const p = $('#ai-provider').value;
   $('#ai-url-row').style.display = (p === 'ollama' || p === 'custom' || p === 'anthropic') ? '' : 'none';
   $('#ai-key-row').style.display = (p === 'none' || p === 'ollama') ? 'none' : '';
+  $('#ai-route-row').style.display = p === 'openrouter' ? '' : 'none';
   const ph = { anthropic: 'claude-sonnet-5-5', openai: 'gpt-4o-mini', openrouter: 'openai/gpt-4o-mini', gemini: 'gemini-flash-latest', ollama: 'llama3.1', custom: 'название модели' };
   $('#ai-url-hint').textContent = p === 'anthropic' ? 'необязательно (по умолчанию api.anthropic.com)' : p === 'custom' ? 'адрес API, например https://host/v1' : 'для Ollama: адрес сервера';
   $('#ai-model').placeholder = ph[p] ? 'например: ' + ph[p] : '';
   const mv = $('#ai-model').value.trim();
   if (ph[p] && p !== 'custom' && (!mv || ['gemini', 'openai', 'openrouter', 'anthropic', 'ollama'].includes(mv.toLowerCase()))) $('#ai-model').value = ph[p];
 }
-$('#ai-provider').onchange = updateAiRows;
+$('#ai-provider').onchange = () => { updateAiRows(); guessKey(); };
+
+// ---- the helpers of the AI card: what a key looks like, quick models, the host order of OpenRouter ----
+// What the key looks like (only the beginning is read, here in the page; the key is not sent anywhere for this).
+function keyGuess(key) {
+  const k = (key || '').trim();
+  if (k.startsWith('sk-or-v1-')) return { provider: 'openrouter', label: 'OpenRouter' };
+  if (k.startsWith('sk-ant-')) return { provider: 'anthropic', label: 'Anthropic (Claude)' };
+  if (k.startsWith('AIza')) return { provider: 'gemini', label: 'Google Gemini' };
+  if (k.startsWith('gsk_')) return { provider: 'custom', label: 'Groq', url: 'https://api.groq.com/openai/v1' };
+  if (k.startsWith('sk-proj-') || k.startsWith('sk-svcacct-')) return { provider: 'openai', label: 'OpenAI' };
+  if (/^sk-[0-9a-f]{32}$/.test(k)) return { provider: 'custom', label: 'DeepSeek', url: 'https://api.deepseek.com/v1', model: 'deepseek-chat' };
+  return null;
+}
+function guessKey() {
+  const box = $('#ai-key-guess'); const g = keyGuess($('#ai-key').value);
+  if (!g || $('#ai-provider').value === g.provider && (!g.url || $('#ai-url').value.trim() === g.url)) { box.style.display = 'none'; box.textContent = ''; return; }
+  box.style.display = ''; box.textContent = 'Похоже на ключ ' + g.label + '. ';
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'btn small'; b.textContent = 'Выбрать «' + g.label + '»';
+  b.onclick = () => { $('#ai-provider').value = g.provider; if (g.url) $('#ai-url').value = g.url; if (g.model) $('#ai-model').value = g.model; updateAiRows(); guessKey(); };
+  box.appendChild(b);
+}
+$('#ai-key').oninput = guessKey;
+const AI_PRESETS = [
+  { name: 'Gemini Flash Lite (быстро)', provider: 'gemini', model: 'gemini-2.5-flash-lite' },
+  { name: 'Gemini Flash', provider: 'gemini', model: 'gemini-flash-latest' },
+  { name: 'OpenRouter · Gemini Flash Lite', provider: 'openrouter', model: 'google/gemini-2.5-flash-lite' },
+  { name: 'Groq (быстрый сервер)', provider: 'custom', url: 'https://api.groq.com/openai/v1', model: '' },
+];
+(function () {
+  const box = $('#ai-presets');
+  for (const p of AI_PRESETS) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'c'; b.textContent = p.name;
+    b.onclick = () => { $('#ai-provider').value = p.provider; if (p.url) $('#ai-url').value = p.url; $('#ai-model').value = p.model; updateAiRows(); guessKey(); };
+    box.appendChild(b);
+  }
+  const rb = $('#ai-route-chips');
+  for (const [name, value] of [['Авто', ''], ['Самый быстрый ответ', 'sort:latency'], ['Самая высокая скорость', 'sort:throughput'], ['baidu', 'baidu'], ['deepinfra', 'deepinfra'], ['novita', 'novita'], ['alibaba', 'alibaba']]) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'c'; b.textContent = name; b.onclick = () => { $('#ai-route').value = value; };
+    rb.appendChild(b);
+  }
+})();
+$('#ai-screen-check').onclick = async () => {
+  const m = $('#ai-msg'); m.className = 'msgline'; m.textContent = 'Снимаю экран и спрашиваю ИИ…';
+  try { const r = await action('screen_check'); m.className = 'msgline ' + (r.ok ? 'ok' : 'bad'); m.textContent = (r.ok ? '✓ ' : '✗ ') + r.message; }
+  catch (e) { m.className = 'msgline bad'; m.textContent = '✗ Не удалось выполнить проверку'; }
+};
 async function saveAi() {
-  const patch = { ai_provider: $('#ai-provider').value, ai_model: $('#ai-model').value.trim(), ai_url: $('#ai-url').value.trim(), ai_fallback: $('#ai-fallback').checked };
+  const patch = { ai_provider: $('#ai-provider').value, ai_model: $('#ai-model').value.trim(), ai_url: $('#ai-url').value.trim(), ai_route: $('#ai-route').value.trim(), ai_fallback: $('#ai-fallback').checked };
   const key = $('#ai-key').value.trim(); if (key) patch.ai_key = key;
   await api('/settings', patch); $('#ai-key').value = ''; if (key) $('#ai-key-hint').textContent = 'ключ сохранён (оставьте поле пустым, чтобы не менять)';
 }
