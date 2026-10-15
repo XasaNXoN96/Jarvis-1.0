@@ -1010,3 +1010,124 @@ fn archive_all_keeps_the_busy_dialog() {
     assert!(store.list().is_empty());
     assert_eq!(store.archive_list("").len(), 3);
 }
+
+// ---------------------------------------------------------------------------------------------
+// speed of the answer: a generating mock server (NOT a real provider; it only shows the mechanisms: the size of the
+// request, the cap of the answer, the time to the first fragment and to the end)
+// ---------------------------------------------------------------------------------------------
+mod speed {
+    use super::*;
+
+    // One word is one "token". `full` words are generated unless the request asks for fewer (max_tokens or
+    // max_completion_tokens); a capped answer ends with finish_reason "length". Sentences have 8 words.
+    pub struct GenMock {
+        pub base: String,
+        pub bodies: Arc<Mutex<Vec<String>>>,
+    }
+
+    pub fn word(i: usize) -> String {
+        format!("слово{}{} ", i, if i % 8 == 0 { "." } else { "" })
+    }
+
+    pub fn gen_mock(connections: usize, full: usize, first_ms: u64, per_token_ms: u64) -> GenMock {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let bodies = Arc::new(Mutex::new(Vec::new()));
+        let seen = bodies.clone();
+        std::thread::spawn(move || {
+            for _ in 0..connections {
+                let Ok((mut stream, _)) = listener.accept() else { return };
+                let mut buf = Vec::new();
+                let mut chunk = [0u8; 4096];
+                let (mut header_end, mut want) = (None, 0usize);
+                loop {
+                    let n = stream.read(&mut chunk).unwrap_or(0);
+                    if n == 0 {
+                        break;
+                    }
+                    buf.extend_from_slice(&chunk[..n]);
+                    if header_end.is_none() {
+                        if let Some(p) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                            header_end = Some(p + 4);
+                            let head = String::from_utf8_lossy(&buf[..p]).to_lowercase();
+                            want = head.lines().find_map(|l| l.strip_prefix("content-length:").map(|v| v.trim().parse::<usize>().unwrap_or(0))).unwrap_or(0);
+                        }
+                    }
+                    if let Some(h) = header_end {
+                        if buf.len() >= h + want {
+                            break;
+                        }
+                    }
+                }
+                let text = String::from_utf8_lossy(&buf).to_string();
+                let body_text = text.split("\r\n\r\n").nth(1).unwrap_or("").to_string();
+                seen.lock().push(body_text.clone());
+                let v: Value = serde_json::from_str(&body_text).unwrap_or(Value::Null);
+                let cap = v.get("max_tokens").or_else(|| v.get("max_completion_tokens")).and_then(|c| c.as_u64()).map(|c| c as usize);
+                let n = cap.map(|c| c.min(full)).unwrap_or(full);
+                let capped = n < full;
+                std::thread::sleep(Duration::from_millis(first_ms));
+                if v.get("stream").and_then(|s| s.as_bool()).unwrap_or(false) {
+                    let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n");
+                    for i in 1..=n {
+                        if stream.write_all(sse_chunk(&word(i)).as_bytes()).is_err() {
+                            break;
+                        }
+                        let _ = stream.flush();
+                        std::thread::sleep(Duration::from_millis(per_token_ms));
+                    }
+                    let fin = json!({ "choices": [{ "delta": {}, "finish_reason": if capped { "length" } else { "stop" } }] });
+                    let _ = write!(stream, "data: {}\n\ndata: [DONE]\n\n", fin);
+                } else {
+                    std::thread::sleep(Duration::from_millis(per_token_ms * n as u64));
+                    let answer: String = (1..=n).map(word).collect::<String>().trim().to_string();
+                    let body = json!({ "choices": [{ "message": { "role": "assistant", "content": answer }, "finish_reason": if capped { "length" } else { "stop" } }] }).to_string();
+                    let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
+                }
+            }
+        });
+        GenMock { base: format!("http://127.0.0.1:{}", port), bodies }
+    }
+
+    // a long earlier dialog: `pairs` questions with answers of about 300 characters each
+    pub fn long_dialog(store: &'static Store, pairs: usize) -> String {
+        let chat = store.active_or_new();
+        for i in 0..pairs {
+            store.append_with(&chat.id, "user", &format!("Вопрос номер {} про разные вещи. {}", i, "подробность ".repeat(8)), &new_rid(), "ai");
+            store.append_with(&chat.id, "assistant", &format!("Ответ номер {}. {}", i, "объяснение ".repeat(26)), &new_rid(), "ai");
+        }
+        chat.id
+    }
+
+    #[test]
+    fn measure_the_speed_on_the_mock() {
+        let _g = crate::uistate::TEST_LOCK.lock();
+        crate::tts::set_enabled(true);
+        // (label, question, spoken, words the model would write, words already in the dialog as pairs)
+        let cases: [(&str, &str, bool, usize, usize); 5] = [
+            ("short voice question, short answer", "сколько будет два плюс два", true, 40, 0),
+            ("short voice question, wordy model", "что такое питон", true, 700, 0),
+            ("voice, long dialog before", "а что дальше", true, 40, 30),
+            ("asks for details by voice", "расскажи подробно про питон", true, 700, 0),
+            ("typed question, wordy model", "что такое питон", false, 700, 0),
+        ];
+        for (label, question, spoken, words, pairs) in cases {
+            let m = gen_mock(1, words, 150, 6);
+            let store = leaked_store();
+            let chat = if pairs > 0 { Some(long_dialog(store, pairs)) } else { None };
+            let out = send_with(store, conf(&m.base), chat.as_deref(), question, spoken).unwrap();
+            let id = out.chat_id.clone();
+            let t = out.handle.join().unwrap();
+            let body = m.bodies.lock()[0].clone();
+            let answer = messages(store, &id).iter().filter(|x| x.role == "assistant").last().map(|x| x.content.clone()).unwrap_or_default();
+            let sent: usize = serde_json::from_str::<Value>(&body).map(|v| v["messages"].as_array().map(|a| a.len()).unwrap_or(0)).unwrap_or(0);
+            eprintln!(
+                "MEASURE[mock] {:<38} first fragment {:>4?} ms | total {:>5} ms | answer {:>5} chars | request {:>6} bytes, {:>2} messages | cap in request: {}",
+                label, t.first_chunk_ms, t.total_ms, answer.chars().count(), body.len(), sent,
+                if body.contains("max_tokens") { "max_tokens" } else if body.contains("max_completion_tokens") { "max_completion_tokens" } else { "none" }
+            );
+        }
+    }
+}
