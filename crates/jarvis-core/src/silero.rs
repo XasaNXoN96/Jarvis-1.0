@@ -284,4 +284,19 @@ mod tests {
         assert_eq!(got.python, root.join("python311").join("python.exe"));
         let _ = std::fs::remove_dir_all(&root);
     }
+
+    #[test]
+    fn the_real_layout_tts_runtime_python_is_found() {
+        let root = std::env::temp_dir().join(format!("jarvis_silero_real_{}", std::process::id()));
+        let tts = root.join("tts");
+        std::fs::create_dir_all(tts.join("models")).unwrap();
+        std::fs::create_dir_all(tts.join("voices")).unwrap();
+        std::fs::create_dir_all(tts.join("runtime").join("python")).unwrap();
+        std::fs::write(tts.join("speak.py"), "").unwrap();
+        std::fs::write(tts.join("models").join("v5_5_ru.pt"), vec![0u8; 1_100_000]).unwrap();
+        std::fs::write(tts.join("runtime").join("python").join("python.exe"), "").unwrap();
+        let got = install_in(&tts).expect("the layout of the installed program");
+        assert_eq!(got.python, tts.join("runtime").join("python").join("python.exe"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }
