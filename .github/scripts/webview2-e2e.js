@@ -114,25 +114,38 @@ const { chromium } = require('playwright-core');
   await wait(300);
   await page.keyboard.press('Escape');
   await wait(300);
-  // the compact summary of the home page: three chips with real text, nothing overlaps the orb, the composer or the buttons,
-  // it expands and collapses, and the full «Система» page keeps its cards and controls
+  // the state signs of the home page (voice, computer, AI, phone) at the right edge: they do not cover the orb, the input or the
+  // clock; a click opens a panel at the right, the orb does not move; «all on the whole screen»; Esc closes; the full «Система» page
+  // keeps its cards and controls
   await page.evaluate(() => show('home'));
   await wait(600);
   const sum = async () => page.evaluate(() => {
     const r = sel => { const e = document.querySelector(sel); if (!e) return null; const b = e.getBoundingClientRect(); return { t: b.top, b: b.bottom, l: b.left, r: b.right, w: b.width, h: b.height }; };
     const hit = (a, c) => a && c && a.w > 0 && c.w > 0 && !(a.b <= c.t || c.b <= a.t || a.r <= c.l || c.r <= a.l);
-    const sm = r('#h-sum'), cards = r('#hs-cards'), orb = r('#orb'), form = r('#h-form');
-    return { chips: [...document.querySelectorAll('.hs-chip')].map(c => c.textContent.trim()), states: [...document.querySelectorAll('.hs-chip')].map(c => c.dataset.s),
-      overOrb: hit(sm, orb) || hit(cards, orb), overForm: hit(sm, form) || hit(cards, form), orbH: orb ? orb.h : 0, hscroll: document.documentElement.scrollWidth > innerWidth + 1,
-      mic: !!document.querySelector('#h-mic') && !!document.querySelector('#h-send') && !!document.querySelector('#h-input') };
+    const rail = r('#rail'), orb = r('#orb'), form = r('#h-form'), clock = r('.clockbox');
+    const items = [...document.querySelectorAll('#rail .rb')];
+    return { keys: items.map(b => b.dataset.k), titles: items.map(b => b.title), texts: items.map(b => b.querySelector('em').textContent.trim()),
+      overOrb: hit(rail, orb), overForm: hit(rail, form), overClock: hit(rail, clock), inside: !!rail && rail.r <= innerWidth + 1 && rail.l >= 0, orb, orbH: orb ? orb.h : 0,
+      hscroll: document.documentElement.scrollWidth > innerWidth + 1, mic: !!document.querySelector('#h-mic') && !!document.querySelector('#h-send') && !!document.querySelector('#h-input') };
   });
   const s1 = await sum();
-  check('home summary: three chips with text', s1.chips.length === 3 && s1.chips.every(t => t.length > 3), s1.chips.join(' | '));
-  check('home summary: does not cover the orb, the input or the buttons, no horizontal scroll', !s1.overOrb && !s1.overForm && s1.mic && !s1.hscroll && s1.orbH > 100, 'orb height ' + Math.round(s1.orbH));
-  await page.click('#hs-toggle'); await wait(300);
+  check('state signs: voice, computer, AI and phone, each with a text', JSON.stringify(s1.keys) === JSON.stringify(['voice', 'pc', 'ai', 'ph']) && s1.titles.every(t => t.length > 5) && s1.texts.every(t => t.length > 1 && t !== '…'), s1.titles.join(' | '));
+  check('state signs: do not cover the orb, the input or the clock, no horizontal scroll', !s1.overOrb && !s1.overForm && !s1.overClock && s1.inside && s1.mic && !s1.hscroll && s1.orbH > 100, 'orb height ' + Math.round(s1.orbH));
+  await page.click('#hs-ai'); await wait(500);
+  const p1 = await page.evaluate(() => { const d = document.getElementById('drw'), b = d.getBoundingClientRect(); const o = document.getElementById('orb').getBoundingClientRect(); return { open: !d.hidden && d.classList.contains('on'), mode: d.dataset.mode, visible: [...document.querySelectorAll('#drw-body .hs-card')].filter(c => !c.hidden).map(c => c.id), right: Math.round(b.right), w: Math.round(b.width), orb: { t: o.top, l: o.left, w: o.width } }; });
   const s2 = await sum();
-  check('home summary: expanded, still no overlap', !s2.overOrb && !s2.overForm && s2.mic && !s2.hscroll);
-  await page.click('#hs-toggle'); await wait(200);
+  check('state panel: a click on a sign opens one card at the right', p1.open && p1.mode === 'one' && p1.visible.length === 1 && p1.visible[0] === 'hsc-ai' && p1.right >= innerWidth - 1, JSON.stringify(p1));
+  check('state panel: the orb stays where it was', Math.abs(s2.orb.t - s1.orb.t) < 1 && Math.abs(s2.orb.l - s1.orb.l) < 1 && Math.abs(s2.orb.w - s1.orb.w) < 1, JSON.stringify([s1.orb, s2.orb]));
+  await page.click('#drw-full'); await wait(500);
+  const p2 = await page.evaluate(() => { const d = document.getElementById('drw'), b = d.getBoundingClientRect(); return { mode: d.dataset.mode, visible: [...document.querySelectorAll('#drw-body .hs-card')].filter(c => !c.hidden).length, w: Math.round(b.width), h: Math.round(b.height), hscroll: document.documentElement.scrollWidth > innerWidth + 1 }; });
+  check('state panel: all four cards on the whole screen', p2.mode === 'full' && p2.visible === 4 && p2.w >= innerWidth - 2 && p2.h >= innerHeight - 2 && !p2.hscroll, JSON.stringify(p2));
+  await page.keyboard.press('Escape'); await wait(500);
+  const p3 = await page.evaluate(() => { const d = document.getElementById('drw'); return { hidden: d.hidden, on: d.classList.contains('on'), moved: document.getElementById('page-home').classList.contains('drw-one') || document.getElementById('page-home').classList.contains('drw-full') }; });
+  check('state panel: Esc closes it and not the window', p3.hidden && !p3.on && !p3.moved && !closedBefore && !page.isClosed(), JSON.stringify(p3));
+  await page.click('#hs-voice'); await wait(500);
+  const p4 = await page.evaluate(() => ({ visible: [...document.querySelectorAll('#drw-body .hs-card')].filter(c => !c.hidden).map(c => c.id), detail: document.getElementById('hsc-vd').textContent.length }));
+  check('state panel: the card «Голос» says what is going on', p4.visible.length === 1 && p4.visible[0] === 'hsc-voice' && p4.detail > 5, JSON.stringify(p4));
+  await page.evaluate(() => statePanel.close()); await wait(400);
   const sysCards = await page.evaluate(() => { show('system'); return ['card-health', 'card-ai', 'card-remote', 'rm-switch', 'ai-check', 'ai-settings', 'rm-renew', 'net-switch', 'ph-ring', 'ph-form'].filter(id => !document.getElementById(id)); });
   check('«Система» keeps all its cards and controls', sysCards.length === 0, sysCards.join(','));
   await page.evaluate(() => show('home'));
@@ -162,7 +175,7 @@ const { chromium } = require('playwright-core');
       objectBar(Object.assign({ pending: '', saved: false, last_result: '', error: '', operation: '' }, o));
       const r = sel => { const e = document.querySelector(sel); if (!e) return null; const b = e.getBoundingClientRect(); return { t: b.top, b: b.bottom, l: b.left, r: b.right, w: b.width, h: b.height }; };
       const hit = (a, c) => a && c && a.w > 0 && c.w > 0 && !(a.b <= c.t || c.b <= a.t || a.r <= c.l || c.r <= a.l);
-      const bar = r('#h-obj'), orb = r('#orb'), form = r('#h-form'), top = r('.h-top'), chips = r('#hs-toggle');
+      const bar = r('#h-obj'), orb = r('#orb'), form = r('#h-form'), top = r('.h-top'), chips = r('#rail');
       const res = { shown: !document.getElementById('h-obj').hidden, label: document.getElementById('ho-st').textContent, stopOff: document.getElementById('ho-stop').disabled,
         over: hit(bar, orb) || hit(bar, form) || hit(bar, top) || hit(bar, chips), inside: bar && bar.r <= innerWidth + 1 && bar.l >= 0, hscroll: document.documentElement.scrollWidth > innerWidth + 1 };
       objectBar({ state: 'IDLE' });
