@@ -350,6 +350,11 @@ jobs:
           Write-Host "PIPER playback on this runner (it has no sound card, so a failure here is expected): [$($piper.status)] $($piper.detail)"
           Add-Content evidence.txt "PIPER synthesis in the install folder with Cyrillic: made a phrase (the diagnostics card said so before playback)"
           Add-Content evidence.txt "PIPER playback on this runner (no sound card): [$($piper.status)] $($piper.detail)"
+          # the voice stays running: the phrases of the test above went through ONE piper.exe (the real one), not one per phrase
+          $warm = $dj.warm_piper
+          Write-Host "PIPER WARM: $($warm | ConvertTo-Json -Compress)"
+          Add-Content evidence.txt "PIPER WARM (the voice stays running): mode=$($warm.mode) piper.exe started $($warm.spawns) time(s), phrases made $($warm.served), phrases made the usual way after a failure $($warm.fallbacks), first phrase $($warm.first_ms) ms, last $($warm.last_ms) ms, last error '$($warm.last_error)'"
+          if ($warm.mode -ne "persistent" -or $warm.served -lt 1 -or $warm.fallbacks -gt 0) { Write-Output "::warning title=piper warm::the voice did not stay running: $($warm | ConvertTo-Json -Compress)" }
           # the Windows voice (PowerShell + System.Speech) started by a Jarvis that was started like the autostart does
           # (--background: no console, so no valid standard handles). The error «os error 50» must not come back.
           Invoke-RestMethod http://127.0.0.1:9714/settings -Method Post -Headers $hh -ContentType "application/json" -Body '{"voice_name":"win:"}' | Out-Null

@@ -171,7 +171,7 @@ fn ensure_exe(gen: u64) -> Result<PathBuf, String> {
 
 // the child process ends with Jarvis, also when Jarvis is ended by force (TerminateProcess)
 #[cfg(target_os = "windows")]
-fn bind_to_job(child: &Child) {
+pub(crate) fn bind_to_job(child: &Child) {
     use std::os::windows::io::AsRawHandle;
     use winapi::um::jobapi2::{AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject};
     use winapi::um::winnt::{JobObjectExtendedLimitInformation, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE};
@@ -194,7 +194,7 @@ fn bind_to_job(child: &Child) {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn bind_to_job(_child: &Child) {}
+pub(crate) fn bind_to_job(_child: &Child) {}
 
 fn kill_child() {
     if let Some(mut c) = CHILD.lock().take() {

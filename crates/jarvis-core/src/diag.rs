@@ -657,6 +657,7 @@ pub fn json() -> Value {
         "running": RUNNING.load(Ordering::SeqCst),
         "at": last.as_ref().map(|r| r.at),
         "checks": last.as_ref().map(|r| r.checks.clone()).unwrap_or_default(),
+        "warm_piper": crate::tts::warm_status(),
         "events": safe_events(25),
     })
 }

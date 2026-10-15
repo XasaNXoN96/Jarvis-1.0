@@ -908,6 +908,8 @@
           <div class="r"><input type="range" id="tts-vol" min="10" max="100" step="5" value="100"><b id="tts-vol-v" style="min-width:42px;text-align:right">100%</b></div></div>
         <div class="setrow"><div class="l">Озвучка ответов</div>
           <div class="r"><label class="sw"><input type="checkbox" id="tts-on"><span></span></label><button class="btn primary" id="tts-test">Проверить звук</button></div></div>
+        <div class="setrow"><div class="l">Держать голос в памяти<small>голос Джарвиса (Piper) загружается один раз, речь начинается быстрее; занимает около 100 МБ памяти. Выключите, если памяти мало</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="tts-warm"><span></span></label></div></div>
       </div>
 
       <div class="card" data-cat="ai" id="ai-card"><h3><span class="ei">✨</span>ИИ-провайдер</h3>
@@ -1974,7 +1976,7 @@ async function loadSettings() {
     (s.mic_devices || []).forEach((n, i) => sel.add(new Option(n, i)));
     sel.value = String(s.mic_selected ?? -1);
     $('#rate').value = s.voice_rate; $('#rate-v').textContent = (+s.voice_rate).toFixed(2).replace(/0$/, '') + '×';
-    $('#tts-on').checked = !!s.tts_enabled;
+    $('#tts-on').checked = !!s.tts_enabled; $('#tts-warm').checked = s.tts_warm !== false;
     if (document.activeElement !== $('#city-input')) $('#city-input').value = s.city || '';
     $('#ai-fallback').checked = !!s.ai_fallback; $('#ai-provider').value = s.ai_provider || 'none'; $('#ai-model').value = s.ai_model || ''; $('#ai-url').value = s.ai_url || ''; $('#ai-route').value = s.ai_route || ''; $('#ai-route-row').style.display = s.ai_provider === 'openrouter' ? '' : 'none';
     $('#ai-key').value = ''; $('#ai-key-hint').textContent = s.ai_key_saved ? 'ключ сохранён (оставьте поле пустым, чтобы не менять)' : 'хранится только на этом компьютере';
@@ -2019,6 +2021,7 @@ $('#city-save').onclick = async () => {
   setTimeout(pollNow, 800); setTimeout(() => { const w = lastState && lastState.weather; if (w) { m.className = 'msgline ' + (w.status === 'OK' ? 'ok' : (w.status === 'ERROR' ? 'bad' : '')); m.textContent = w.status === 'OK' ? 'Найден: ' + w.weather.place : (w.message || ''); } }, 3500);
 };
 $('#tts-on').onchange = e => action('tts_toggle', { value: e.target.checked });
+$('#tts-warm').onchange = e => saveSettings({ tts_warm: e.target.checked });
 $('#tts-test').onclick = async () => { await new Promise(r => setTimeout(r, 350)); await action('tts_test'); };
 function updateAiRows() {
   const p = $('#ai-provider').value;

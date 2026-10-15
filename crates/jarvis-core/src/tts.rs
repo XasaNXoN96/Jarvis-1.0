@@ -127,6 +127,8 @@ pub fn set_enabled(on: bool) {
 pub fn shutdown() {
     ENABLED.store(false, Ordering::SeqCst);
     stop();
+    // the running Piper is closed here: an installer that replaces or removes piper.exe finds it free
+    warm_stop();
 }
 
 pub fn stop() {
@@ -478,6 +480,11 @@ fn json_input() -> bool {
 const JSON_INPUT_DEFAULT: bool = false;
 
 pub fn piper_json_line(text: &str) -> String {
+    piper_json_line_to(text, None)
+}
+
+// the same, and with "output_file": the file of this phrase (a Piper that stays running writes each phrase where it is told)
+pub fn piper_json_line_to(text: &str, output_file: Option<&str>) -> String {
     let mut out = String::from("{\"text\":\"");
     for ch in text.chars() {
         match ch {
@@ -494,7 +501,26 @@ pub fn piper_json_line(text: &str) -> String {
             }
         }
     }
-    out.push_str("\"}");
+    out.push('"');
+    if let Some(file) = output_file {
+        out.push_str(",\"output_file\":\"");
+        for ch in file.chars() {
+            match ch {
+                '"' => out.push_str("\\\""),
+                '\\' => out.push_str("\\\\"),
+                c if (c as u32) < 0x20 => out.push(' '),
+                c if c.is_ascii() => out.push(c),
+                c => {
+                    let mut buf = [0u16; 2];
+                    for unit in c.encode_utf16(&mut buf) {
+                        out.push_str(&format!("\\u{:04x}", unit));
+                    }
+                }
+            }
+        }
+        out.push('"');
+    }
+    out.push('}');
     out
 }
 
@@ -541,7 +567,7 @@ pub fn synth_to_wav(text: &str) -> Result<Vec<u8>, String> {
     static SEQ: AtomicU64 = AtomicU64::new(0);
     let wav = std::env::temp_dir().join(format!("jarvis_tg_{}_{}.wav", std::process::id(), SEQ.fetch_add(1, Ordering::SeqCst)));
     let generation = GENERATION.load(Ordering::SeqCst);
-    let r = match piper_synth(&exe, &model, text, &wav, generation) {
+    let r = match piper_synth_any(&exe, &model, text, &wav, generation) {
         Synth::Done => std::fs::read(&wav).map_err(|_| "звуковой файл не прочитался".to_string()),
         Synth::Cancelled => Err("озвучка была прервана".into()),
         Synth::Failed(why) => Err(if why.is_empty() { "Piper не создал звук".into() } else { why }),
@@ -625,6 +651,277 @@ fn piper_synth(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64
         note_synth(Err(why.clone()));
         Synth::Failed(why)
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Piper that stays running: the model is loaded once, not for every phrase (starting Piper costs about half a second)
+// ---------------------------------------------------------------------------------------------
+// Piper is started once with --json-input and --output_dir; every phrase is one JSON line with its own "output_file",
+// and Piper writes the sound there and prints the path. If anything is wrong (it does not start, does not answer, dies)
+// the phrase is made the usual way, with a Piper of its own: this never makes the voice worse than before.
+struct WarmSlot {
+    wav: PathBuf,
+    tx: std::sync::mpsc::Sender<Result<(), String>>,
+    abandoned: std::sync::Arc<AtomicBool>,
+}
+
+struct WarmServer {
+    key: String,
+    child: Child,
+    stdin: std::process::ChildStdin,
+    pending: std::sync::Arc<Mutex<std::collections::VecDeque<WarmSlot>>>,
+    alive: std::sync::Arc<AtomicBool>,
+}
+
+static WARM: Lazy<Mutex<Option<WarmServer>>> = Lazy::new(|| Mutex::new(None));
+static WARM_SPAWNS: AtomicU64 = AtomicU64::new(0);
+static WARM_SERVED: AtomicU64 = AtomicU64::new(0);
+static WARM_FALLBACKS: AtomicU64 = AtomicU64::new(0);
+static WARM_FIRST_MS: AtomicU64 = AtomicU64::new(0);
+static WARM_LAST_MS: AtomicU64 = AtomicU64::new(0);
+static WARM_WHY: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(String::new()));
+// how long one phrase may take before the running Piper is given up (tests make it short)
+static WARM_TIMEOUT_MS: AtomicU64 = AtomicU64::new(60_000);
+
+// only for the ordinary speech: the self-tests of the CI (debug, plain bytes, a fixed speed) use a Piper of their own
+fn warm_enabled() -> bool {
+    crate::uistate::settings().tts_warm && !PIPER_DEBUG.load(Ordering::SeqCst) && JSON_INPUT.lock().is_none() && LENGTH_SCALE_OVERRIDE.lock().is_none()
+}
+
+fn warm_key(exe: &Path, model: &Path) -> String {
+    format!("{}|{}|{:.2}", exe.display(), model.display(), length_scale())
+}
+
+fn warm_dir() -> Result<PathBuf, String> {
+    let dir = std::env::temp_dir().join(format!("jarvis_piper_warm_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).map_err(|e| format!("нет временной папки: {}", e))?;
+    Ok(dir)
+}
+
+fn warm_kill(server: &mut WarmServer) {
+    let _ = server.child.kill();
+    let _ = server.child.wait();
+    server.alive.store(false, Ordering::SeqCst);
+}
+
+// the file is complete when its size stops changing (Piper prints the path just before it closes the file)
+fn wait_stable(path: &Path) -> bool {
+    let mut last = 0u64;
+    for _ in 0..60 {
+        let len = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        if len > 44 && len == last {
+            return true;
+        }
+        last = len;
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    false
+}
+
+fn warm_reader(stdout: std::process::ChildStdout, pending: std::sync::Arc<Mutex<std::collections::VecDeque<WarmSlot>>>, alive: std::sync::Arc<AtomicBool>) {
+    use std::io::BufRead;
+    for line in std::io::BufReader::new(stdout).lines() {
+        let Ok(line) = line else { break };
+        if line.trim().is_empty() {
+            continue;
+        }
+        // Piper answers in the order of the lines
+        let Some(slot) = pending.lock().pop_front() else { continue };
+        if slot.abandoned.load(Ordering::SeqCst) {
+            // the phrase was stopped while it was made: its sound is not needed
+            wait_stable(&slot.wav);
+            let _ = std::fs::remove_file(&slot.wav);
+            continue;
+        }
+        let r = if wait_stable(&slot.wav) { Ok(()) } else { Err("Piper не создал звуковой файл".to_string()) };
+        let _ = slot.tx.send(r);
+    }
+    alive.store(false, Ordering::SeqCst);
+    for slot in pending.lock().drain(..) {
+        let _ = slot.tx.send(Err("Piper завершился".to_string()));
+    }
+}
+
+fn warm_spawn(exe: &Path, model: &Path, key: String) -> Result<WarmServer, String> {
+    let dir = warm_dir()?;
+    let mut command = Command::new(exe);
+    command
+        .arg("--model")
+        .arg(ansi_safe(model))
+        .arg("--output_dir")
+        .arg(ansi_safe(&dir))
+        .arg("--length_scale")
+        .arg(format!("{:.2}", length_scale()))
+        .arg("--json-input")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(std::fs::File::create(dir.join("piper.err")).map(Stdio::from).unwrap_or_else(|_| Stdio::null()));
+    if let Some(parent) = exe.parent() {
+        command.current_dir(parent);
+        let data = parent.join("espeak-ng-data");
+        if data.is_dir() && !is_ascii(&data) {
+            command.arg("--espeak_data").arg(ansi_safe(&data));
+        }
+    }
+    hide_window(&mut command);
+    let mut child = command.spawn().map_err(|e| format!("не запустился: {}", e))?;
+    // it ends with Jarvis however Jarvis ends (a Windows job object); without it a forced end would leave it for a moment
+    crate::tunnel::bind_to_job(&child);
+    let stdin = child.stdin.take().ok_or("нет входа Piper")?;
+    let stdout = child.stdout.take().ok_or("нет выхода Piper")?;
+    let pending = std::sync::Arc::new(Mutex::new(std::collections::VecDeque::new()));
+    let alive = std::sync::Arc::new(AtomicBool::new(true));
+    let (p2, a2) = (pending.clone(), alive.clone());
+    std::thread::spawn(move || warm_reader(stdout, p2, a2));
+    WARM_SPAWNS.fetch_add(1, Ordering::SeqCst);
+    info!("TTS: Piper stays running (model {})", model.display());
+    Ok(WarmServer { key, child, stdin, pending, alive })
+}
+
+// the phrase through the running Piper; None = not possible now, make it the usual way
+fn piper_synth_warm(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64) -> Option<Synth> {
+    if !warm_enabled() {
+        return None;
+    }
+    let out = ansi_safe_new(wav);
+    if !is_ascii(&out) {
+        return None;
+    }
+    let key = warm_key(exe, model);
+    let t0 = std::time::Instant::now();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let abandoned = std::sync::Arc::new(AtomicBool::new(false));
+    let fresh;
+    {
+        let mut guard = WARM.lock();
+        let usable = guard.as_ref().map(|s| s.key == key && s.alive.load(Ordering::SeqCst)).unwrap_or(false);
+        fresh = !usable;
+        if !usable {
+            // another voice or speed, or it is gone
+            if let Some(mut old) = guard.take() {
+                warm_kill(&mut old);
+            }
+            match warm_spawn(exe, model, key) {
+                Ok(s) => *guard = Some(s),
+                Err(why) => {
+                    WARM_FALLBACKS.fetch_add(1, Ordering::SeqCst);
+                    *WARM_WHY.lock() = why;
+                    return None;
+                }
+            }
+        }
+        let server = guard.as_mut()?;
+        let _ = std::fs::remove_file(wav);
+        server.pending.lock().push_back(WarmSlot { wav: wav.to_path_buf(), tx, abandoned: abandoned.clone() });
+        let line = piper_json_line_to(text, Some(&out.to_string_lossy()));
+        let written = server.stdin.write_all(line.as_bytes()).and_then(|_| server.stdin.write_all(b"\n")).and_then(|_| server.stdin.flush());
+        if written.is_err() {
+            if let Some(mut dead) = guard.take() {
+                warm_kill(&mut dead);
+            }
+            WARM_FALLBACKS.fetch_add(1, Ordering::SeqCst);
+            *WARM_WHY.lock() = "Piper не принимает фразы".into();
+            return None;
+        }
+    }
+    let limit = std::time::Duration::from_millis(WARM_TIMEOUT_MS.load(Ordering::SeqCst));
+    loop {
+        if GENERATION.load(Ordering::SeqCst) != generation {
+            abandoned.store(true, Ordering::SeqCst);
+            return Some(Synth::Cancelled);
+        }
+        match rx.recv_timeout(std::time::Duration::from_millis(40)) {
+            Ok(Ok(())) => {
+                let ms = t0.elapsed().as_millis() as u64;
+                WARM_LAST_MS.store(ms, Ordering::SeqCst);
+                if fresh || WARM_SERVED.load(Ordering::SeqCst) == 0 {
+                    WARM_FIRST_MS.store(ms, Ordering::SeqCst);
+                }
+                WARM_SERVED.fetch_add(1, Ordering::SeqCst);
+                note_synth(Ok(()));
+                return Some(Synth::Done);
+            }
+            Ok(Err(why)) => {
+                warm_failed(&why);
+                return None;
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                if t0.elapsed() > limit {
+                    abandoned.store(true, Ordering::SeqCst);
+                    warm_failed("Piper не ответил вовремя");
+                    return None;
+                }
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                warm_failed("Piper завершился");
+                return None;
+            }
+        }
+    }
+}
+
+// the running Piper did not work: it is closed, the phrase is made the usual way, the next phrase starts a new one
+fn warm_failed(why: &str) {
+    if let Some(mut old) = WARM.lock().take() {
+        warm_kill(&mut old);
+    }
+    WARM_FALLBACKS.fetch_add(1, Ordering::SeqCst);
+    *WARM_WHY.lock() = why.to_string();
+    warn!("TTS: the running Piper failed ({}), the phrase is made the usual way", why);
+}
+
+// Piper stays running or not (the setting "Держать голос в памяти"); closing it frees its memory
+pub fn warm_stop() {
+    if let Some(mut old) = WARM.lock().take() {
+        warm_kill(&mut old);
+    }
+}
+
+// started in the background when Jarvis starts: the first answer does not wait for the model to load
+pub fn warm_up() {
+    if !is_enabled() || !warm_enabled() {
+        return;
+    }
+    std::thread::spawn(|| {
+        let Some((exe, model)) = piper_voice(&tts_lang()) else { return };
+        let key = warm_key(&exe, &model);
+        let mut guard = WARM.lock();
+        if guard.as_ref().map(|s| s.key == key && s.alive.load(Ordering::SeqCst)).unwrap_or(false) {
+            return;
+        }
+        if let Some(mut old) = guard.take() {
+            warm_kill(&mut old);
+        }
+        match warm_spawn(&exe, &model, key) {
+            Ok(s) => *guard = Some(s),
+            Err(why) => *WARM_WHY.lock() = why,
+        }
+    });
+}
+
+// for the diagnostics and the CI: how the voice runs
+pub fn warm_status() -> serde_json::Value {
+    let running = WARM.lock().as_ref().map(|s| s.alive.load(Ordering::SeqCst)).unwrap_or(false);
+    let enabled = crate::uistate::settings().tts_warm;
+    serde_json::json!({
+        "enabled": enabled,
+        "running": running,
+        "mode": if !enabled { "one-shot" } else if running || WARM_SERVED.load(Ordering::SeqCst) > 0 { "persistent" } else { "not started" },
+        "spawns": WARM_SPAWNS.load(Ordering::SeqCst),
+        "served": WARM_SERVED.load(Ordering::SeqCst),
+        "fallbacks": WARM_FALLBACKS.load(Ordering::SeqCst),
+        "first_ms": WARM_FIRST_MS.load(Ordering::SeqCst),
+        "last_ms": WARM_LAST_MS.load(Ordering::SeqCst),
+        "last_error": WARM_WHY.lock().clone(),
+    })
+}
+
+// the running Piper if it can, else a Piper of its own for this one phrase
+fn piper_synth_any(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64) -> Synth {
+    if let Some(done) = piper_synth_warm(exe, model, text, wav, generation) {
+        return done;
+    }
+    piper_synth(exe, model, text, wav, generation)
 }
 
 fn is_ascii(p: &Path) -> bool {
@@ -740,7 +1037,7 @@ fn speak_piper(exe: &Path, model: &Path, text: &str, generation: u64) -> bool {
     let seq = WAV_SEQ.fetch_add(1, Ordering::SeqCst);
     let wav_of = |i: usize| std::env::temp_dir().join(format!("jarvis_tts_{}_{}_{}_{}.wav", std::process::id(), generation, seq, i));
 
-    match piper_synth(exe, model, &chunks[0], &wav_of(0), generation) {
+    match piper_synth_any(exe, model, &chunks[0], &wav_of(0), generation) {
         Synth::Done => {}
         Synth::Cancelled => return true,
         Synth::Failed(why) => {
@@ -753,7 +1050,7 @@ fn speak_piper(exe: &Path, model: &Path, text: &str, generation: u64) -> bool {
         // prepare the next piece while this one is played
         let next = if i + 1 < chunks.len() {
             let (exe, model, text, wav) = (exe.to_path_buf(), model.to_path_buf(), chunks[i + 1].clone(), wav_of(i + 1));
-            Some(std::thread::spawn(move || piper_synth(&exe, &model, &text, &wav, generation)))
+            Some(std::thread::spawn(move || piper_synth_any(&exe, &model, &text, &wav, generation)))
         } else {
             None
         };
@@ -1366,5 +1663,166 @@ mod engine_tests {
                 assert!(sets_all || captured, "line {}: a process of the voice is started without its standard handles: {}", i + 1, l.trim());
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// the Piper that stays running, tested with a stand-in program that speaks the same protocol (one JSON line in, a sound
+// file written, its path printed); the real Piper is checked by the CI on Windows
+// ---------------------------------------------------------------------------------------------
+#[cfg(all(test, unix))]
+mod warm_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    static LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+    // `delay`: seconds one phrase takes; `mode`: normal | die (exits at once) | silent (reads and never answers)
+    fn fake(dir: &Path, name: &str, delay: &str, mode: &str) -> PathBuf {
+        let exe = dir.join(name);
+        let body = match mode {
+            "die" => "#!/bin/sh\nexit 1\n".to_string(),
+            "silent" => "#!/bin/sh\nwhile IFS= read -r line; do :; done\n".to_string(),
+            _ => format!(
+                "#!/bin/sh\necho $$ >> \"$0.spawns\"\nwhile IFS= read -r line; do\n  f=$(printf '%s' \"$line\" | sed -n 's/.*\"output_file\":\"\\([^\"]*\\)\".*/\\1/p')\n  sleep {}\n  printf 'RIFF....WAVEfmt ' > \"$f\"; head -c 200 /dev/zero >> \"$f\"; printf '%s' \"$line\" >> \"$f\"\n  echo \"$f\"\ndone\n",
+                delay
+            ),
+        };
+        std::fs::write(&exe, body).unwrap();
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        exe
+    }
+
+    fn tmp(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("jarvis-warm-{}-{}", std::process::id(), name));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn setup() -> parking_lot::MutexGuard<'static, ()> {
+        let g = LOCK.lock();
+        warm_stop();
+        crate::uistate::set_for_tests(crate::uistate::UiSettings::default());
+        WARM_TIMEOUT_MS.store(60_000, Ordering::SeqCst);
+        g
+    }
+
+    fn spawned(exe: &Path) -> usize {
+        std::fs::read_to_string(format!("{}.spawns", exe.display())).map(|s| s.lines().count()).unwrap_or(0)
+    }
+
+    #[test]
+    fn two_phrases_use_one_running_piper_and_each_gets_its_own_file() {
+        let _g = setup();
+        let d = tmp("two");
+        let exe = fake(&d, "piper", "0", "normal");
+        let model = d.join("ru.onnx");
+        let generation = GENERATION.load(Ordering::SeqCst);
+        let (a, b) = (d.join("a.wav"), d.join("b.wav"));
+        assert!(matches!(piper_synth_warm(&exe, &model, "первая фраза", &a, generation), Some(Synth::Done)));
+        assert!(matches!(piper_synth_warm(&exe, &model, "вторая фраза", &b, generation), Some(Synth::Done)));
+        assert_eq!(spawned(&exe), 1, "one Piper made both phrases");
+        let (ta, tb) = (std::fs::read(&a).unwrap(), std::fs::read(&b).unwrap());
+        assert!(ta.len() > 44 && tb.len() > 44);
+        assert!(String::from_utf8_lossy(&ta).contains("\\u043f\\u0435\\u0440\\u0432\\u0430\\u044f"), "the first file holds the first phrase (written as \\u escapes)");
+        assert!(String::from_utf8_lossy(&tb).contains("\\u0432\\u0442\\u043e\\u0440\\u0430\\u044f"), "the second file holds the second phrase");
+        assert_eq!(warm_status()["served"].as_u64().unwrap() >= 2, true);
+        assert_eq!(warm_status()["mode"], "persistent");
+        warm_stop();
+    }
+
+    #[test]
+    fn a_stopped_phrase_does_not_give_its_sound_to_the_next_one() {
+        let _g = setup();
+        let d = tmp("cancel");
+        let exe = fake(&d, "piper", "0.4", "normal");
+        let model = d.join("ru.onnx");
+        let g1 = GENERATION.load(Ordering::SeqCst);
+        let (a, b) = (d.join("a.wav"), d.join("b.wav"));
+        let stopper = std::thread::spawn(|| {
+            std::thread::sleep(std::time::Duration::from_millis(120));
+            GENERATION.fetch_add(1, Ordering::SeqCst);
+        });
+        assert!(matches!(piper_synth_warm(&exe, &model, "прерванная", &a, g1), Some(Synth::Cancelled)));
+        stopper.join().unwrap();
+        let g2 = GENERATION.load(Ordering::SeqCst);
+        assert!(matches!(piper_synth_warm(&exe, &model, "следующая", &b, g2), Some(Synth::Done)));
+        let text = String::from_utf8_lossy(&std::fs::read(&b).unwrap()).to_string();
+        assert!(text.contains("\\u0441\\u043b\\u0435\\u0434\\u0443\\u044e\\u0449\\u0430\\u044f"), "the second file is its own phrase, not the stopped one");
+        assert!(!text.contains("\\u043f\\u0440\\u0435\\u0440\\u0432"), "{}", text);
+        assert_eq!(spawned(&exe), 1, "the same Piper went on");
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert!(!a.exists(), "the sound of the stopped phrase is removed");
+        warm_stop();
+    }
+
+    #[test]
+    fn a_changed_voice_or_a_closed_piper_starts_a_new_one() {
+        let _g = setup();
+        let d = tmp("new");
+        let exe = fake(&d, "piper", "0", "normal");
+        let generation = GENERATION.load(Ordering::SeqCst);
+        let w = d.join("w.wav");
+        assert!(matches!(piper_synth_warm(&exe, &d.join("ru.onnx"), "раз", &w, generation), Some(Synth::Done)));
+        assert!(matches!(piper_synth_warm(&exe, &d.join("en.onnx"), "two", &w, generation), Some(Synth::Done)));
+        assert_eq!(spawned(&exe), 2, "another voice, another Piper");
+        warm_stop();
+        assert_eq!(warm_status()["running"], false);
+        assert!(matches!(piper_synth_warm(&exe, &d.join("en.onnx"), "three", &w, generation), Some(Synth::Done)));
+        assert_eq!(spawned(&exe), 3, "closed: the next phrase starts a new one");
+        warm_stop();
+    }
+
+    #[test]
+    fn a_piper_that_dies_or_stays_silent_never_blocks_the_phrase() {
+        let _g = setup();
+        let d = tmp("bad");
+        let generation = GENERATION.load(Ordering::SeqCst);
+        let w = d.join("w.wav");
+        let dead = fake(&d, "dead", "0", "die");
+        let t = std::time::Instant::now();
+        assert!(piper_synth_warm(&dead, &d.join("ru.onnx"), "раз", &w, generation).is_none(), "the usual way takes over");
+        assert!(t.elapsed() < std::time::Duration::from_secs(5));
+        assert!(warm_status()["fallbacks"].as_u64().unwrap() >= 1);
+        assert!(!warm_status()["last_error"].as_str().unwrap().is_empty());
+        let silent = fake(&d, "silent", "0", "silent");
+        WARM_TIMEOUT_MS.store(400, Ordering::SeqCst);
+        assert!(piper_synth_warm(&silent, &d.join("ru.onnx"), "раз", &w, generation).is_none(), "a silent Piper is given up");
+        assert_eq!(warm_status()["running"], false, "and closed");
+        WARM_TIMEOUT_MS.store(60_000, Ordering::SeqCst);
+    }
+
+    #[test]
+    fn the_setting_and_the_self_test_modes_keep_the_usual_way() {
+        let _g = setup();
+        let d = tmp("off");
+        let exe = fake(&d, "piper", "0", "normal");
+        let model = d.join("ru.onnx");
+        let generation = GENERATION.load(Ordering::SeqCst);
+        let w = d.join("w.wav");
+        crate::uistate::set_for_tests(crate::uistate::UiSettings { tts_warm: false, ..Default::default() });
+        assert!(piper_synth_warm(&exe, &model, "раз", &w, generation).is_none(), "switched off in the settings");
+        assert_eq!(spawned(&exe), 0, "nothing was started");
+        crate::uistate::set_for_tests(crate::uistate::UiSettings::default());
+        set_piper_debug(true);
+        assert!(piper_synth_warm(&exe, &model, "раз", &w, generation).is_none(), "the debug self-test uses its own Piper");
+        set_piper_debug(false);
+        *JSON_INPUT.lock() = Some(false);
+        assert!(piper_synth_warm(&exe, &model, "раз", &w, generation).is_none(), "the plain-bytes self-test uses its own Piper");
+        *JSON_INPUT.lock() = None;
+        // a path with letters outside ASCII cannot be told to Piper safely: the usual way
+        assert!(piper_synth_warm(&exe, &model, "раз", &d.join("файл.wav"), generation).is_none());
+    }
+
+    #[test]
+    fn the_json_line_has_the_file_and_only_ascii() {
+        let line = piper_json_line_to("Привет \"мир\"", Some("C:\\Temp\\a b.wav"));
+        assert!(line.is_ascii(), "{}", line);
+        assert!(line.contains("\"output_file\":\"C:\\\\Temp\\\\a b.wav\""), "{}", line);
+        assert_eq!(piper_json_line("a"), "{\"text\":\"a\"}", "without a file the line is as it was");
+        let v: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(v["text"], "Привет \"мир\"");
+        assert_eq!(v["output_file"], "C:\\Temp\\a b.wav");
     }
 }

@@ -104,6 +104,8 @@ pub struct UiSettings {
     pub ui: std::collections::BTreeMap<String, String>,
     // loudness of Jarvis' voice, 0..100 (the Windows volume is not touched)
     pub tts_volume: u8,
+    // the voice of Jarvis (Piper) stays loaded in memory: the speech starts sooner, about 100 MB of memory
+    pub tts_warm: bool,
     // "Анализ экрана": a picture of the screen may be sent to the AI provider, only by the command «что на экране»
     pub ai_screen: bool,
     // the browser for sites opened by voice: "" = the Windows default | chrome | edge | firefox | opera | brave | yandex
@@ -152,7 +154,7 @@ impl Default for UiSettings {
             ext_enabled: false, ext_show: true, ext_speak: false, ext_strict: true, ext_allowed: Vec::new(), ext_blocked: Vec::new(), ext_seen: Vec::new(),
             ext_social: Vec::new(), ext_social_speak: Vec::new(),
             ui: Default::default(),
-            tts_volume: 100, browser: String::new(), mic_sensitivity: 50, ai_screen: false,
+            tts_volume: 100, tts_warm: true, browser: String::new(), mic_sensitivity: 50, ai_screen: false,
         }
     }
 }
@@ -387,6 +389,12 @@ pub fn update_settings(patch: &Value) {
     if let Some(v) = patch.get("ext_social_speak").and_then(str_list) { s.ext_social_speak = nets(v); }
     if let Some(v) = flag("ai_screen") { s.ai_screen = v; }
     if let Some(v) = patch.get("tts_volume").and_then(|v| v.as_u64()) { s.tts_volume = v.min(100) as u8; }
+    if let Some(v) = patch.get("tts_warm").and_then(|v| v.as_bool()) {
+        if v != s.tts_warm {
+            s.tts_warm = v;
+            if v { crate::tts::warm_up(); } else { crate::tts::warm_stop(); }
+        }
+    }
     if let Some(v) = patch.get("mic_sensitivity").and_then(|v| v.as_u64()) { s.mic_sensitivity = v.min(100) as u8; apply_mic_threshold(&s); }
     if let Some(v) = patch.get("browser").and_then(|v| v.as_str()) { s.browser = if browser_exe(v).is_some() { v.to_string() } else { String::new() }; }
     let ext_changed = match flag("ext_enabled") { Some(v) if v != s.ext_enabled => { s.ext_enabled = v; true } _ => false };
@@ -424,7 +432,7 @@ pub fn settings_json() -> Value {
         "ext_status": crate::notify::ext_status_json(),
         "ui": s.ui,
         "ai_screen": s.ai_screen,
-        "tts_volume": s.tts_volume, "browser": s.browser, "mic_sensitivity": s.mic_sensitivity,
+        "tts_volume": s.tts_volume, "tts_warm": s.tts_warm, "browser": s.browser, "mic_sensitivity": s.mic_sensitivity,
         "autostart": crate::autostart::state(),
         "engines": crate::DB.get().map(|d| { let d = d.read(); json!({ "wake": format!("{:?}", d.wake_word_engine), "stt": format!("{:?}", d.speech_to_text_engine), "intent": d.intent_backend, "slots": d.slots_backend }) }).unwrap_or(Value::Null),
         "log_dir": crate::APP_LOG_DIR.get().map(|d| d.display().to_string()).unwrap_or_default(),

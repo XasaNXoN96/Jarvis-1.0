@@ -417,6 +417,8 @@ fn main() -> Result<(), String> {
     jarvis_core::ui::start();
     // the list of installed programs ("открой Photoshop"): read from its file, rebuilt in the background when old
     jarvis_core::appindex::ensure_loaded();
+    // the voice of Jarvis (Piper) is loaded in the background, so that the first answer does not wait for it
+    jarvis_core::tts::warm_up();
     // (on Windows the own window is made by the window loop at the end of main)
     #[cfg(not(target_os = "windows"))]
     {
