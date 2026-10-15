@@ -233,8 +233,12 @@ fn api_errors_are_shown_and_the_key_is_not_stored() {
         (200, "это не json", "непонятном формате"),
     ] {
         let store = leaked_store();
-        let m = mock(vec![(status, body.to_string(), 0)]);
+        // (a 5xx answer is asked for again twice before the error is shown: the same answer three times)
+        let tries = if status == 500 { 3 } else { 1 };
+        SERVER_RETRY_PAUSE_MS.store(10, Ordering::SeqCst);
+        let m = mock((0..tries).map(|_| (status, body.to_string(), 0)).collect());
         let id = run(store, conf(&m.base), None, "вопрос").unwrap();
+        SERVER_RETRY_PAUSE_MS.store(600, Ordering::SeqCst);
         let msgs = messages(store, &id);
         assert_eq!(msgs.last().unwrap().role, "error", "{}", status);
         assert!(msgs.last().unwrap().content.contains(expect), "{}: {}", status, msgs.last().unwrap().content);
@@ -711,7 +715,7 @@ fn a_silent_stream_is_asked_again_without_a_stream_and_remembered() {
     let reqs = seen.lock().clone();
     assert_eq!(reqs.iter().filter(|r| r.contains("\"stream\":true")).count(), 1, "one failed stream attempt only");
     assert_eq!(reqs.iter().filter(|r| r.contains("\"stream\":false")).count(), 2);
-    FIRST_FRAGMENT_MS.store(15_000, Ordering::SeqCst);
+    FIRST_FRAGMENT_MS.store(10_000, Ordering::SeqCst);
 }
 
 #[test]
@@ -728,6 +732,24 @@ fn gemini_is_asked_to_think_little_and_a_provider_that_refuses_the_parameter_is_
     // other providers never get it
     let o = ProviderConf { kind: Kind::OpenAiCompatible, name: "OpenAI".into(), base: "http://x".into(), model: "m".into(), key: "k".into(), route: String::new() };
     assert!(build_body_opts(&o, &[], "s", true).get("reasoning_effort").is_none());
+}
+
+// an overloaded server (503/504) is asked again before an error is shown; a server that stays down gives the error after two more tries
+#[test]
+fn a_busy_server_is_asked_again_and_a_dead_one_gives_the_error_after_two_tries() {
+    SERVER_RETRY_PAUSE_MS.store(20, Ordering::SeqCst);
+    let store = leaked_store();
+    let m = mock(vec![(503, "{\"error\":{\"message\":\"overloaded\"}}".to_string(), 0), (504, "".to_string(), 0), (200, ok_body("Ответил со второй попытки"), 0)]);
+    let id = run(store, conf(&m.base), None, "вопрос").unwrap();
+    assert_eq!(messages(store, &id).last().unwrap().content, "Ответил со второй попытки");
+    assert_eq!(m.requests.lock().len(), 3);
+
+    let m2 = mock(vec![(503, "".to_string(), 0), (503, "".to_string(), 0), (503, "".to_string(), 0)]);
+    let id2 = run(store, conf(&m2.base), None, "ещё вопрос").unwrap();
+    let last = messages(store, &id2).last().unwrap().clone();
+    assert!(last.role == "error" && last.content.contains("503"), "after the tries the error is shown, as before: {:?}", last.content);
+    assert_eq!(m2.requests.lock().len(), 3, "the first try and two more, not endless");
+    SERVER_RETRY_PAUSE_MS.store(600, Ordering::SeqCst);
 }
 
 #[test]

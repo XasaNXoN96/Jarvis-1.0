@@ -42,7 +42,9 @@ const STREAM_RETRY_AFTER: Duration = Duration::from_secs(10 * 60);
 // a provider that does not know the parameter is asked without it from then on
 static NO_REASONING_PARAM: Lazy<Mutex<std::collections::HashSet<String>>> = Lazy::new(|| Mutex::new(std::collections::HashSet::new()));
 // how long to wait for the first fragment of a stream (milliseconds; shortened in the tests)
-static FIRST_FRAGMENT_MS: AtomicU64 = AtomicU64::new(15_000);
+static FIRST_FRAGMENT_MS: AtomicU64 = AtomicU64::new(10_000);
+// the pause before asking again after a 5xx answer of the server (milliseconds, times the number of the try; short in the tests)
+static SERVER_RETRY_PAUSE_MS: AtomicU64 = AtomicU64::new(600);
 
 fn stream_allowed(conf: &ProviderConf) -> bool {
     match STREAM_BROKEN.lock().get(&conf.base) {
@@ -1514,6 +1516,7 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
         };
         let (mut generation, mut fell_back) = (1u8, false);
         let (mut limit_now, mut short_now, mut retried) = (limit0, short, false);
+        let mut server_retries = 0u32;
         start_request(generation, stream_allowed(&conf), stream_cancel.clone(), short_now, limit_now);
 
         let mut speaker = SentenceSpeaker::new();
@@ -1568,6 +1571,23 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
                     live_set(&job_id, &rid, &shown);
                     let parts = speaker.push(&d);
                     speak_now(parts, &mut first_queued);
+                }
+                // a busy or overloaded server (500/502/503/504) usually answers a moment later: the question is asked again
+                // (twice at most) before an error is shown; the time already lost is not hidden: the log says what happened
+                Ok(Msg::Done(_, Err(AiError::Server(code)), _)) if matches!(code, 500 | 502 | 503 | 504) && server_retries < 2 => {
+                    server_retries += 1;
+                    warn!("AI: server error {}, asking again ({}/2)", code, server_retries);
+                    crate::uistate::log_event("ai", &format!("Сервер ИИ вернул {}: повторяю запрос ({} из 2)", code, server_retries));
+                    std::thread::sleep(Duration::from_millis(SERVER_RETRY_PAUSE_MS.load(Ordering::SeqCst) * server_retries as u64));
+                    generation += 1;
+                    shown.clear();
+                    speaker = SentenceSpeaker::new();
+                    live_set(&job_id, &rid, "");
+                    last_activity = std::time::Instant::now();
+                    stream_cancel = Arc::new(AtomicBool::new(false));
+                    // (the second try goes without a stream: a stream of an overloaded server is the one that hangs)
+                    start_request(generation, false, stream_cancel.clone(), short_now, limit_now);
+                    continue;
                 }
                 Ok(Msg::Done(_, r, p)) => {
                     // the cap was too tight (a model that thinks used it up, or not even one sentence fits): the question is
