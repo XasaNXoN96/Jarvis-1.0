@@ -71,6 +71,8 @@ pub fn recent_actions() -> Vec<LogEntry> {
 pub struct UiSettings {
     pub voice_rate: f32,     // 0.6 .. 1.6, 1.0 = normal
     pub reaction_voice: String, // recorded reaction pack (jarvis-og / jarvis-remaster / jarvis-howdy), "" = app default
+    pub assistant_name: String, // the name the assistant answers to ("" = «Джарвис»), lower case, one word
+    pub assistant_named: bool,  // the first-start question about the name was answered (or skipped)
     pub city: String,        // the city of the weather block ("" = not chosen: nothing is guessed)
     pub voice_name: String,  // "" = automatic (Piper, else a female Windows voice)
     pub ai_provider: String, // none | openai | openrouter | gemini | anthropic | ollama | custom
@@ -148,7 +150,7 @@ pub fn browser_exe(key: &str) -> Option<&'static str> {
 impl Default for UiSettings {
     fn default() -> Self {
         Self {
-            voice_rate: 1.0, voice_name: String::new(), city: String::new(), reaction_voice: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_key: String::new(), ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
+            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: false, city: String::new(), reaction_voice: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_key: String::new(), ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
             ai_enabled: true, mic_off: false,
             notify_show: true, notify_speak: true, notify_sound: true, dnd: false,
             ext_enabled: false, ext_show: true, ext_speak: false, ext_strict: true, ext_allowed: Vec::new(), ext_blocked: Vec::new(), ext_seen: Vec::new(),
@@ -337,9 +339,31 @@ fn str_list(v: &Value) -> Option<Vec<String>> {
     })
 }
 
+// a name for the assistant from what the user typed: one word of letters/digits, lower case, 2..20 characters
+// ("" when nothing usable is left: the assistant stays «Джарвис»)
+pub fn clean_assistant_name(raw: &str) -> String {
+    let word: String = raw.split_whitespace().next().unwrap_or("").chars().filter(|c| c.is_alphanumeric() || *c == '-').take(20).collect();
+    let word = word.trim_matches('-').to_lowercase();
+    if word.chars().count() >= 2 { word } else { String::new() }
+}
+
+// the chosen name ("" = «Джарвис»)
+pub fn assistant_name() -> String {
+    SETTINGS.lock().assistant_name.clone()
+}
+
 // merge the fields present in `patch` into the settings and save
 pub fn update_settings(patch: &Value) {
     let mut s = SETTINGS.lock();
+    if let Some(v) = patch.get("assistant_name").and_then(|v| v.as_str()) {
+        let name = clean_assistant_name(v);
+        if name != s.assistant_name {
+            s.assistant_name = name;
+            // the wake-word recognizer learns the new name (in the background: it needs the settings, which are locked here)
+            std::thread::spawn(crate::stt::rebuild_wake_grammar);
+        }
+    }
+    if let Some(v) = patch.get("assistant_named").and_then(|v| v.as_bool()) { s.assistant_named = v; }
     if let Some(v) = patch.get("voice_rate").and_then(|v| v.as_f64()) { s.voice_rate = (v as f32).clamp(0.5, 2.0); }
     if let Some(v) = patch.get("reaction_voice").and_then(|v| v.as_str()) {
         s.reaction_voice = v.chars().take(60).collect();
@@ -422,7 +446,7 @@ pub fn update_settings(patch: &Value) {
 // the settings page never gets the key back, only whether one is saved
 pub fn settings_json() -> Value {
     let s = settings();
-    json!({
+    let mut out = json!({
         "voice_rate": s.voice_rate, "voice_name": s.voice_name, "city": s.city, "reaction_voice": if s.reaction_voice.is_empty() { crate::voices::get_current_voice().map(|v| v.voice.id.clone()).unwrap_or_default() } else { s.reaction_voice.clone() },
         "ai_provider": s.ai_provider, "ai_model": s.ai_model, "ai_url": s.ai_url, "ai_route": s.ai_route,
         "ai_key_saved": !s.ai_key.is_empty(),
@@ -445,7 +469,13 @@ pub fn settings_json() -> Value {
         "history": crate::ai::store().stats(),
         "tts_enabled": crate::tts::is_enabled(),
         "piper": crate::tts::piper_available(),
-    })
+    });
+    // (apart from the macro above: it is too big for one more key)
+    let shown = if s.assistant_name.is_empty() { "джарвис".to_string() } else { s.assistant_name.clone() };
+    out["assistant_name"] = json!(s.assistant_name);
+    out["assistant_named"] = json!(s.assistant_named);
+    out["assistant_voice_known"] = json!(crate::stt::wake_word_known(&shown));
+    out
 }
 
 // ---------------------------------------------------------------------------------------------

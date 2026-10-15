@@ -17,7 +17,7 @@ pub fn data_callback(frame_buffer: &[i16]) -> Option<i32> {
         
         // language-specific wake phrase
         let lang = i18n::get_language();
-        let wake_phrases = config::get_wake_phrases(&lang);
+        let wake_phrases = config::wake_phrases_now(&lang);
 
         // verify with seqdiff ratio
         for word in recognized.split_whitespace() {
@@ -27,7 +27,7 @@ pub fn data_callback(frame_buffer: &[i16]) -> Option<i32> {
             
             let word_chars: Vec<char> = word.chars().collect();
             
-            for wake_phrase in wake_phrases {
+            for wake_phrase in &wake_phrases {
                 let wake_chars: Vec<char> = wake_phrase.chars().collect();
                 let similarity = seqdiff::ratio(&wake_chars, &word_chars);
                 

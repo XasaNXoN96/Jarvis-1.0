@@ -386,14 +386,14 @@ fn recognize_command(
                     recognized_voice = recognized_voice.to_lowercase();
                     
                     // check if wake word repeated (reactivate)
-                    let wake_phrases = config::get_wake_phrases(&i18n::get_language());
-                    let contains_wake = wake_phrases.iter().any(|wp| recognized_voice.contains(wp));
+                    let wake_phrases = config::wake_phrases_now(&i18n::get_language());
+                    let contains_wake = wake_phrases.iter().any(|wp| recognized_voice.contains(wp.as_str()));
 
                     if contains_wake {
                         // strip the wake word
                         let mut remaining = recognized_voice.clone();
-                        for wp in wake_phrases {
-                            remaining = remaining.replace(wp, "");
+                        for wp in &wake_phrases {
+                            remaining = remaining.replace(wp.as_str(), "");
                         }
                         let remaining = remaining.trim();
 
@@ -438,7 +438,9 @@ fn recognize_command(
                     // }
                     let in_session = jarvis_core::session::kind().is_some();
                     if !in_session {
-                        recognized_voice = remove_phrases(&recognized_voice, config::get_phrases_to_remove(&i18n::get_language()));
+                        let to_remove = config::phrases_to_remove_now(&i18n::get_language());
+                        let to_remove: Vec<&str> = to_remove.iter().map(|s| s.as_str()).collect();
+                        recognized_voice = remove_phrases(&recognized_voice, &to_remove);
                     }
 
                     recognized_voice = recognized_voice.trim().to_string();
@@ -544,12 +546,19 @@ fn process_text_command(incoming: Incoming, rt: &tokio::runtime::Runtime) {
     //     filtered = filtered.replace(tbr, "");
     // }
     if jarvis_core::session::kind().is_none() {
-        filtered = remove_phrases(&filtered, config::get_phrases_to_remove(&i18n::get_language()));
+        let to_remove = config::phrases_to_remove_now(&i18n::get_language());
+        let to_remove: Vec<&str> = to_remove.iter().map(|s| s.as_str()).collect();
+        filtered = remove_phrases(&filtered, &to_remove);
     }
 
     let filtered = filtered.trim();
     
     if filtered.is_empty() {
+        // only the name was typed ("Карен"): the assistant answers like it does to the spoken name
+        let typed = text.to_lowercase();
+        if !text.trim().is_empty() && config::wake_phrases_now(&i18n::get_language()).iter().any(|wp| typed.contains(wp.as_str())) {
+            voices::play_reply();
+        }
         ipc::send(IpcEvent::Idle);
         return;
     }

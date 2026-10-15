@@ -271,3 +271,63 @@ pub fn get_wake_grammar(lang: &str) -> &'static [&'static str] {
         _ => &["jarvis", "[unk]"],
     }
 }
+
+// ---- the name the assistant answers to (set by the user; «Джарвис» when nothing is chosen) ----
+
+// the words that wake the assistant: the chosen name, or the default ones of the language
+pub fn wake_phrases_now(lang: &str) -> Vec<String> {
+    let name = crate::uistate::assistant_name();
+    if name.is_empty() { get_wake_phrases(lang).iter().map(|s| s.to_string()).collect() } else { vec![name] }
+}
+
+// what is cut out of a command before it is run: the default list and the chosen name
+pub fn phrases_to_remove_now(lang: &str) -> Vec<String> {
+    let mut v: Vec<String> = get_phrases_to_remove(lang).iter().map(|s| s.to_string()).collect();
+    let name = crate::uistate::assistant_name();
+    if !name.is_empty() && !v.contains(&name) {
+        v.push(name);
+    }
+    v
+}
+
+// the grammar of the wake-word recognizer: the first word of the default grammar is the name itself
+pub fn wake_grammar_now(lang: &str) -> Vec<String> {
+    let name = crate::uistate::assistant_name();
+    let mut g: Vec<String> = get_wake_grammar(lang).iter().map(|s| s.to_string()).collect();
+    if !name.is_empty() && !g.is_empty() {
+        g[0] = name;
+    }
+    g
+}
+
+#[cfg(test)]
+mod name_tests {
+    use super::*;
+    use crate::uistate::TEST_LOCK;
+
+    #[test]
+    fn a_chosen_name_replaces_the_default_wake_word_and_is_cut_from_commands() {
+        let _g = TEST_LOCK.lock();
+        let old = crate::uistate::settings().assistant_name;
+        crate::uistate::update_settings(&serde_json::json!({ "assistant_name": "  Карен, привет " }));
+        assert_eq!(crate::uistate::assistant_name(), "карен", "one word, lower case, no punctuation");
+        assert_eq!(wake_phrases_now("ru"), vec!["карен".to_string()]);
+        assert_eq!(wake_grammar_now("ru")[0], "карен");
+        assert!(wake_grammar_now("ru").contains(&"[unk]".to_string()), "the rest of the grammar stays");
+        assert!(phrases_to_remove_now("ru").contains(&"карен".to_string()));
+        crate::uistate::update_settings(&serde_json::json!({ "assistant_name": "" }));
+        assert!(wake_phrases_now("ru").contains(&"джарвис".to_string()), "empty name = Джарвис");
+        assert_eq!(wake_grammar_now("ru")[0], "джарвис");
+        crate::uistate::update_settings(&serde_json::json!({ "assistant_name": old }));
+    }
+
+    #[test]
+    fn unusable_names_are_not_taken() {
+        assert_eq!(crate::uistate::clean_assistant_name("а"), "");
+        assert_eq!(crate::uistate::clean_assistant_name("   "), "");
+        assert_eq!(crate::uistate::clean_assistant_name("!!!"), "");
+        assert_eq!(crate::uistate::clean_assistant_name("Ка Рен"), "ка", "only the first word");
+        assert_eq!(crate::uistate::clean_assistant_name("Friday"), "friday");
+        assert!(crate::uistate::clean_assistant_name(&"я".repeat(50)).chars().count() <= 20);
+    }
+}

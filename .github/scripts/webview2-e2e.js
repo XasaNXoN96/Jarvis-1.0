@@ -20,6 +20,20 @@ const { chromium } = require('playwright-core');
   const vp = await page.evaluate(() => [innerWidth, innerHeight]);
   say('window: ' + vp.join('x'));
 
+  // the first start: the question about the name of the assistant is shown, a name is saved, then the card is closed
+  await wait(800);
+  check('name: the first-start question is shown', await page.evaluate(() => { const c = document.getElementById('name-ask'); return !!c && !c.hidden && c.offsetParent !== null; }));
+  await page.fill('#name-ask-input', 'Карен');
+  await page.click('#name-ask-save');
+  await wait(900);
+  const nameMsg = await page.textContent('#name-ask-msg');
+  check('name: the answer says the name is saved', /сохранено/.test(nameMsg), nameMsg);
+  const saved = await page.evaluate(async () => (await (await fetch('/settings')).json()));
+  check('name: «карен» is in the settings and the question is marked as answered', saved.assistant_name === 'карен' && saved.assistant_named === true, JSON.stringify([saved.assistant_name, saved.assistant_named]));
+  await page.evaluate(async () => { await api('/settings', { assistant_name: '' }); document.getElementById('name-ask').hidden = true; });
+  const back = await page.evaluate(async () => (await (await fetch('/settings')).json()).assistant_name);
+  check('name: an empty name returns «Джарвис»', back === '', JSON.stringify(back));
+
   // every page opens and is shown
   for (const name of ['home', 'system', 'devices', 'chat', 'tasks', 'messages', 'commands', 'builder', 'apps', 'files', 'diag', 'settings']) {
     await page.evaluate(n => show(n), name);

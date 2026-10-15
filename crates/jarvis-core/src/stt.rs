@@ -11,6 +11,8 @@ pub use self::vosk::recognize_speech;
 pub use self::vosk::reset_speech_recognizer;
 pub use self::vosk::transcribe;
 pub use self::vosk::reset_wake_recognizer;
+pub use self::vosk::rebuild_wake_grammar;
+pub use self::vosk::wake_word_known;
 
 static STT_TYPE: OnceCell<SpeechToTextEngine> = OnceCell::new();
 

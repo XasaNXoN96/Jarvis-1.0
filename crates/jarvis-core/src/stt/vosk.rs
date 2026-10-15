@@ -30,10 +30,10 @@ pub fn init_vosk() -> Result<(), String> {
 
     // language-specific wake grammar
     let lang = i18n::get_language();
-    let wake_grammar = config::get_wake_grammar(&lang);
+    let wake_grammar = config::wake_grammar_now(&lang);
     info!("Wake grammar for '{}': {:?}", lang, wake_grammar);
 
-    let mut wake_recognizer = Recognizer::new_with_grammar(&vosk.model, 16000.0, wake_grammar)
+    let mut wake_recognizer = Recognizer::new_with_grammar(&vosk.model, 16000.0, &wake_grammar)
         .ok_or("Failed to create wake word recognizer")?;
 
     wake_recognizer.set_max_alternatives(1);
@@ -112,6 +112,33 @@ pub fn reset_speech_recognizer() {
     if let Some(recognizer) = SPEECH_RECOGNIZER.get() {
         recognizer.lock().reset();
     }
+}
+
+// the user chose another name for the assistant: the wake-word recognizer is built again with it
+pub fn rebuild_wake_grammar() {
+    let (Some(model), Some(slot)) = (VOSK_MODEL.get(), WAKE_RECOGNIZER.get()) else { return };
+    let grammar = config::wake_grammar_now(&i18n::get_language());
+    match Recognizer::new_with_grammar(&model.model, 16000.0, &grammar) {
+        Some(mut r) => {
+            r.set_max_alternatives(1);
+            *slot.lock() = r;
+            info!("Wake grammar changed: {:?}", grammar);
+        }
+        None => warn!("Wake grammar {:?} was not accepted: the old one stays", grammar),
+    }
+}
+
+// does the speech model know this word? Some(false): by voice the name is not heard (by text it still works);
+// None: it could not be checked (no model list)
+pub fn wake_word_known(word: &str) -> Option<bool> {
+    let dir = get_configured_model_path().ok()?;
+    let word = word.to_lowercase();
+    for rel in ["graph/words.txt", "words.txt"] {
+        if let Ok(text) = std::fs::read_to_string(dir.join(rel)) {
+            return Some(text.lines().any(|l| l.split_whitespace().next() == Some(word.as_str())));
+        }
+    }
+    None
 }
 
 pub fn reset_wake_recognizer() {

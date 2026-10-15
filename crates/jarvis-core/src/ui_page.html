@@ -136,7 +136,7 @@
   /* compact summary of the computer, the AI and the phone remote on the home page: the same data as «Система», collapsed by default */
   .h-sum { flex-shrink: 0; position: relative; z-index: 3; margin: 4px 0 2px; }
   .h-obj { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12px; min-width: 0; }
-  .h-obj[hidden] { display: none; }
+  .h-obj[hidden] { display: none; } #name-ask[hidden] { display: none; }
   .h-obj .ho-st { padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line, rgba(255,255,255,.12)); white-space: nowrap; flex-shrink: 0; }
   .h-obj[data-s="ok"] .ho-st { border-color: #34d399; } .h-obj[data-s="warn"] .ho-st { border-color: #fbbf24; } .h-obj[data-s="bad"] .ho-st { border-color: #f87171; } .h-obj[data-s="info"] .ho-st { border-color: #60a5fa; }
   .h-obj .ho-t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .85; }
@@ -554,6 +554,11 @@
         <button type="button" class="wbox" id="wbox" title="Погода: выберите город в настройках"><span class="w-main" id="w-main">Погода…</span><small id="w-city"></small></button>
         <div class="clockbox" title="Время и дата берутся с этого компьютера"><div class="clk" id="clk-time">--:--</div><div class="clk-date" id="clk-date"></div></div>
       </div>
+      <div class="card" id="name-ask" hidden style="margin: 8px 16px; position: relative; z-index: 3;">
+        <div class="setrow"><div class="l">Как назвать помощника?<small>Он будет откликаться на это имя и голосом, и в тексте (например: «Карен, таймер на 5 минут»). По умолчанию — «Джарвис». Имя можно сменить в Настройках.</small></div>
+          <div class="r"><input type="text" id="name-ask-input" placeholder="например: Карен" maxlength="20"><button class="btn primary" id="name-ask-save" type="button">Сохранить</button><button class="btn" id="name-ask-skip" type="button">Оставить «Джарвис»</button></div></div>
+        <div class="msgline" id="name-ask-msg"></div>
+      </div>
       <!-- the state of the voice, the computer, the AI and the phone: small signs at the right edge; a click opens the panel, the sphere never moves -->
       <div class="rail" id="rail" role="group" aria-label="Состояние Джарвиса">
         <button type="button" class="rb" id="hs-voice" data-k="voice" data-s="" aria-expanded="false" title="Голос"><i></i><b>Голос</b><em>…</em></button>
@@ -942,6 +947,11 @@
         <small class="dim">Ответы ИИ появляются на странице «Диалог». Ключ хранится только на этом компьютере в зашифрованном виде (шифрование Windows) и не показывается в окне. Сообщения уходят провайдеру, когда вы нажимаете «Отправить» или задаёте вопрос; команды компьютера («открой ворд», «поставь таймер») в ИИ не отправляются.</small>
       </div>
 
+      <div class="card" data-cat="general" id="name-card"><h3><span class="ei">🏷</span>Имя помощника</h3>
+        <div class="setrow"><div class="l">Как его зовут<small>на это имя он откликается голосом и в тексте. Одно слово, например «Карен». Пусто = «Джарвис». Интерфейс остаётся «Джарвис».</small></div>
+          <div class="r"><input type="text" id="name-input" placeholder="Джарвис" maxlength="20"><button class="btn primary" id="name-save" type="button">Сохранить</button></div></div>
+        <div class="msgline" id="name-msg"></div>
+      </div>
       <div class="card" data-cat="general" id="city-card"><h3><span class="ei">🌤</span>Погода и город</h3>
         <div class="setrow"><div class="l">Город<small>нужен только для блока погоды на главной. Местоположение компьютера не определяется. В интернет уходит только название города (open-meteo.com), и только для погоды.</small></div>
           <div class="r"><input type="text" id="city-input" placeholder="например: Ташкент" maxlength="80"><button class="btn primary" id="city-save" type="button">Сохранить</button></div></div>
@@ -2055,6 +2065,7 @@ async function loadSettings() {
     $('#rate').value = s.voice_rate; $('#rate-v').textContent = (+s.voice_rate).toFixed(2).replace(/0$/, '') + '×';
     $('#tts-on').checked = !!s.tts_enabled; $('#tts-warm').checked = s.tts_warm !== false;
     if (document.activeElement !== $('#city-input')) $('#city-input').value = s.city || '';
+    if (document.activeElement !== $('#name-input')) $('#name-input').value = s.assistant_name || '';
     $('#ai-fallback').checked = !!s.ai_fallback; $('#ai-provider').value = s.ai_provider || 'none'; $('#ai-model').value = s.ai_model || ''; $('#ai-url').value = s.ai_url || ''; $('#ai-route').value = s.ai_route || ''; $('#ai-route-row').style.display = s.ai_provider === 'openrouter' ? '' : 'none';
     $('#ai-key').value = ''; $('#ai-key-hint').textContent = s.ai_key_saved ? 'ключ сохранён (оставьте поле пустым, чтобы не менять)' : 'хранится только на этом компьютере';
     updateAiRows();
@@ -2091,6 +2102,22 @@ $('#rv-select').onchange = e => saveSettings({ reaction_voice: e.target.value })
 $('#rv-test').onclick = async () => { await new Promise(r => setTimeout(r, 350)); await action('reaction_preview'); };
 $('#voice-select').onchange = e => saveSettings({ voice_name: e.target.value });
 $('#rate').oninput = e => { $('#rate-v').textContent = (+e.target.value).toFixed(2).replace(/0$/, '') + '×'; saveSettings({ voice_rate: +e.target.value }); };
+// the name of the assistant: saved, then the speech model is asked whether the word can be heard
+async function saveAssistantName(name, msg) {
+  msg.className = 'msgline'; msg.textContent = 'Сохраняю…';
+  let s;
+  try { await api('/settings', { assistant_name: name, assistant_named: true }); s = await (await fetch('/settings')).json(); lastSettings = s; }
+  catch (e) { msg.className = 'msgline bad'; msg.textContent = 'Не удалось сохранить'; return false; }
+  const shown = s.assistant_name || 'Джарвис';
+  if (s.assistant_voice_known === false) { msg.className = 'msgline bad'; msg.textContent = 'Имя «' + shown + '» сохранено. В тексте оно работает, но модель распознавания речи не знает такого слова, и голосом помощник может не откликаться. Попробуйте другое имя.'; }
+  else if (s.assistant_voice_known === null) { msg.className = 'msgline ok'; msg.textContent = 'Имя «' + shown + '» сохранено. Проверить, услышит ли его микрофон, не удалось.'; }
+  else { msg.className = 'msgline ok'; msg.textContent = 'Имя «' + shown + '» сохранено: скажите «' + shown + ', …» или напишите так в строке ввода.'; }
+  return true;
+}
+$('#name-save').onclick = () => saveAssistantName($('#name-input').value.trim(), $('#name-msg'));
+$('#name-ask-save').onclick = async () => { const n = $('#name-ask-input').value.trim(); if (!n) { $('#name-ask-msg').className = 'msgline bad'; $('#name-ask-msg').textContent = 'Введите имя или нажмите «Оставить Джарвис»'; return; } if (await saveAssistantName(n, $('#name-ask-msg'))) setTimeout(() => { $('#name-ask').hidden = true; }, 4500); };
+$('#name-ask-skip').onclick = async () => { try { await api('/settings', { assistant_named: true }); } catch (e) {} $('#name-ask').hidden = true; };
+(async () => { try { const s = await (await fetch('/settings')).json(); if (s.assistant_named === false) $('#name-ask').hidden = false; } catch (e) {} })();
 $('#city-save').onclick = async () => {
   const city = $('#city-input').value.trim(), m = $('#city-msg'); m.className = 'msgline'; m.textContent = 'Сохраняю…';
   try { await api('/settings', { city }); } catch (e) { m.className = 'msgline bad'; m.textContent = 'Не удалось сохранить'; return; }
