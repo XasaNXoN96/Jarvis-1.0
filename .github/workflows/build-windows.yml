@@ -464,6 +464,33 @@ jobs:
             for ($i = 0; $i -lt 30 -and @(Get-Process jarvis-app -ErrorAction SilentlyContinue).Count -gt 0; $i++) { Start-Sleep 1 }
             if ($pm -like "*os error 50*" -or $pm -like "*Не удалось запустить озвучку*") { throw "the Windows voice could not start PowerShell when Jarvis was started by '$mode': $pm" }
           }
+          # The own window with multithreaded COM on the main thread. On a computer with a microphone the microphone library
+          # leaves the main thread multithreaded COM, and Tao (OleInitialize) used to panic: RPC_E_CHANGED_MODE, exit code 101.
+          # This runner has no microphone, so the same state is made on purpose (a test seam of the program, off by default).
+          $env:JARVIS_TEST_MTA_MAIN = "1"
+          $env:JARVIS_WEBVIEW_DEBUG_PORT = "9334"
+          $mta = Start-Process "$dir\jarvis-app.exe" -WorkingDirectory $dir -PassThru
+          Remove-Item Env:JARVIS_TEST_MTA_MAIN
+          Remove-Item Env:JARVIS_WEBVIEW_DEBUG_PORT
+          $mtaOpen = $false
+          for ($i = 0; $i -lt 90 -and -not $mtaOpen; $i++) {
+            Start-Sleep 1
+            if ($mta.HasExited) { break }
+            try { Invoke-RestMethod http://127.0.0.1:9334/json/version -TimeoutSec 2 | Out-Null; $mtaOpen = $true } catch {}
+          }
+          if ($mtaOpen) { Start-Sleep 5 }
+          $mtaAlive = -not $mta.HasExited
+          $mtaRes = if ($mtaOpen -and $mtaAlive) { "PASS" } elseif ($mta.HasExited) { "FAIL (jarvis-app ended, exit code $($mta.ExitCode))" } else { "FAIL (the window did not open)" }
+          Write-Host "WINDOW WITH MULTITHREADED COM ON THE MAIN THREAD: $mtaRes"
+          Add-Content evidence.txt "WINDOW WITH MULTITHREADED COM ON THE MAIN THREAD: $mtaRes"
+          $mtaLog = Get-ChildItem -Path "$env:APPDATA\com.priler.jarvis", "$env:LOCALAPPDATA\com.priler.jarvis" -Recurse -Filter "log.txt" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if ($mtaLog) { Get-Content -LiteralPath $mtaLog.FullName -Tail 400 | Select-String "COM of the main thread|COM of the window|OleInitialize|panicked" | ForEach-Object { Write-Host "   $($_.Line)"; Add-Content evidence.txt "   $($_.Line)" } }
+          if ($mtaAlive) {
+            try { Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers @{ "X-Jarvis" = "1" } -Body '{"name":"app_exit"}' | Out-Null } catch {}
+            for ($i = 0; $i -lt 30 -and @(Get-Process jarvis-app -ErrorAction SilentlyContinue).Count -gt 0; $i++) { Start-Sleep 1 }
+            Get-Process jarvis-app -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          }
+          if ($mtaRes -ne "PASS") { throw "the window did not open when the main thread is multithreaded COM: $mtaRes" }
           # the debugging port of the WebView2 window for this one run (the interface is checked in the real window below)
           $env:JARVIS_WEBVIEW_DEBUG_PORT = "9333"
           $app = Start-Process "$dir\jarvis-app.exe" -WorkingDirectory $dir -PassThru

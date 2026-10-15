@@ -140,6 +140,46 @@ fn selftest_speech(control: Option<String>) -> String {
     }
 }
 
+// ---- COM of the main thread (Windows) --------------------------------------------------------------------------
+// The own window (Tao) needs the thread that makes it to be a single-threaded COM apartment (it calls OleInitialize).
+// A library that sets the thread up as multithreaded COM first (the microphone library does, on a computer that has a
+// microphone) makes Tao panic with RPC_E_CHANGED_MODE. The mode is written to the log at the stages below.
+#[cfg(target_os = "windows")]
+#[link(name = "ole32")]
+extern "system" {
+    fn CoInitializeEx(reserved: *mut std::ffi::c_void, co_init: u32) -> i32;
+    fn CoGetApartmentType(apt_type: *mut i32, qualifier: *mut i32) -> i32;
+}
+
+// the COM apartment of the calling thread, for the log
+#[cfg(target_os = "windows")]
+fn com_mode() -> String {
+    let (mut kind, mut qualifier) = (0i32, 0i32);
+    let hr = unsafe { CoGetApartmentType(&mut kind, &mut qualifier) };
+    if hr < 0 {
+        return format!("COM not initialized (0x{:08X})", hr as u32);
+    }
+    let name = match kind {
+        0 => "STA",
+        1 => "MTA",
+        2 => "neutral",
+        3 => "main STA",
+        _ => "unknown",
+    };
+    format!("{} (qualifier {})", name, qualifier)
+}
+
+// Test seam of the CI, inert in production: with JARVIS_TEST_MTA_MAIN in the environment the main thread is made a
+// multithreaded COM thread at once, as the microphone library does, so that the CI checks that the window still opens.
+#[cfg(target_os = "windows")]
+fn test_com_mta_main() {
+    if std::env::var_os("JARVIS_TEST_MTA_MAIN").is_some() {
+        unsafe {
+            CoInitializeEx(std::ptr::null_mut(), 0x0); // COINIT_MULTITHREADED
+        }
+    }
+}
+
 fn main() -> Result<(), String> {
     // `--background`: no console window (used by autostart); the tray icon stays
     #[cfg(target_os = "windows")]
@@ -148,6 +188,9 @@ fn main() -> Result<(), String> {
             winapi::um::wincon::FreeConsole();
         }
     }
+
+    #[cfg(target_os = "windows")]
+    test_com_mta_main();
 
     // initialize directories
     config::init_dirs()?;
@@ -193,6 +236,8 @@ fn main() -> Result<(), String> {
     info!("Starting Jarvis v{} ...", config::APP_VERSION.unwrap());
     info!("Config directory is: {}", APP_CONFIG_DIR.get().unwrap().display());
     info!("Log directory is: {}", APP_LOG_DIR.get().unwrap().display());
+    #[cfg(target_os = "windows")]
+    info!("COM of the main thread at start: {}", com_mode());
 
     // initialize settings
     let settings = db::init();
@@ -238,6 +283,9 @@ fn main() -> Result<(), String> {
         *jarvis_core::VOICE_ERROR.lock() = if summary.is_empty() { "микрофон не запустился (подробности в журнале)".to_string() } else { summary };
         voice_mode = false;
     }
+
+    #[cfg(target_os = "windows")]
+    info!("COM of the main thread after the microphone: {}", com_mode());
 
     // init models registry (scans available AI models)
     if let Err(e) = models::init() {
