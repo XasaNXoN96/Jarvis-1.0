@@ -2,7 +2,7 @@
 -- The names (and how they sound when heard: "ворт", "эксел", "тотал командер") live in crates/jarvis-core/src/apps.rs;
 -- jarvis.apps.resolve() finds the program and the place where it is installed.
 
-local closing = jarvis.context.command_id == "assistant_program_close"
+local closing = jarvis.context.command_id == "assistant_program_close" or jarvis.context.command_id == "assistant_program_force_close"
 
 if jarvis.context.command_id == "assistant_apps_rescan" then
   say(T("Программы", "Programs"), T("Обновляю список установленных программ…", "Updating the list of installed programs…"), false)
@@ -61,8 +61,9 @@ if closing then
     return
   end
   -- the program is asked to close, like its own cross: Word, Notepad and the others ask about unsaved work.
-  -- Killing it (/f) loses that work, so only "закрой … принудительно" does it.
-  local force = has_stem("принудит") or has_stem("force")
+  -- Killing it (/f) loses that work, so only "закрой … принудительно" does it, and that one asks "да / нет" first.
+  -- (the words "принудительно" / "force" make the phrase belong to the other command, assistant_program_force_close, which asks first)
+  local force = jarvis.context.command_id == "assistant_program_force_close"
   -- the names the program may run as: the known one, the file of its installed copy, and the 32/64-bit twin of each
   -- (Total Commander is TOTALCMD64.EXE or TOTALCMD.EXE depending on the installed copy); the ones that really run
   local names, seen = {}, {}

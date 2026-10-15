@@ -145,6 +145,15 @@ fn triggers_separate_program_names_questions_and_the_work_mode() {
     assert_eq!(w.route("открой эксел").as_deref(), Some("assistant_program_open"));
     assert_eq!(w.route("открой тотал командер").as_deref(), Some("assistant_program_open"));
     assert_eq!(w.route("закрой word").as_deref(), Some("assistant_program_close"));
+    // closing a program is carried out at once (the program asks about unsaved work itself); only the forced one asks first
+    assert_eq!(w.route("закрой Total Commander").as_deref(), Some("assistant_program_close"));
+    assert_eq!(w.route("закрой ворд").as_deref(), Some("assistant_program_close"));
+    assert_eq!(w.route("закрой ворд принудительно").as_deref(), Some("assistant_program_force_close"));
+    for (id, asks) in [("assistant_program_close", false), ("assistant_program_force_close", true), ("browser_close", false), ("assistant_power_off", true)] {
+        let risk = w.list.iter().flat_map(|l| l.commands.iter()).find(|c| c.id == id).map(|c| crate::policy::Risk::parse(&c.risk).unwrap()).unwrap();
+        let g = crate::confirm::gate(id, risk, "закрой ворд", crate::origin::Source::Voice);
+        assert_eq!(matches!(g, crate::confirm::Gate::Ask { .. }), asks, "{}", id);
+    }
     assert_eq!(w.route("начинаем работу с объектом").as_deref(), Some("assistant_object_start"));
     assert_eq!(w.route("начни работу с объектом").as_deref(), Some("assistant_object_start"));
     // an explicit search in Wikipedia still works, but a plain question is no longer a Wikipedia command

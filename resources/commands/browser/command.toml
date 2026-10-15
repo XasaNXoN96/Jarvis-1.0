@@ -39,7 +39,7 @@ phrases.ua = [
 
 [[commands]]
 id = "browser_close"
-risk = "high"
+risk = "medium"
 type = "lua"
 script = "actions.lua"
 sandbox = "full"

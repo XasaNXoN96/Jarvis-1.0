@@ -797,7 +797,7 @@ mod tests {
         let script = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../resources/commands/assistant/program.lua")).unwrap();
         assert!(script.contains(r#"force and { "/f", "/im", n } or { "/im", n }"#));
         if !cfg!(target_os = "windows") {
-            let (shown, _) = answer("assistant_program_close", "program.lua", "закрой ворд принудительно");
+            let (shown, _) = answer("assistant_program_force_close", "program.lua", "закрой ворд принудительно");
             assert!(shown.contains("принудительно"), "{}", shown);
         }
     }

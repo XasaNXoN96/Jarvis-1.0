@@ -11,16 +11,17 @@
 | high | assistant | `assistant_power_logoff` | lua | power.lua | запуск программы |
 | high | assistant | `assistant_power_off` | lua | power.lua | запуск программы |
 | high | assistant | `assistant_power_restart` | lua | power.lua | запуск программы |
-| high | assistant | `assistant_program_close` | lua | program.lua | запуск программы |
+| high | assistant | `assistant_program_force_close` | lua | program.lua | запуск программы |
 | high | assistant | `assistant_remote_on` | lua | remote.lua | — |
 | high | assistant | `assistant_session` | lua | office.lua | PowerShell (известные скрипты), PowerShell -File (свой .ps1), ввод текста, запись файла, запуск программы, окна |
 | high | assistant | `assistant_task_clear` | lua | tasks.lua | запись файла, открытие |
-| high | browser | `browser_close` | lua | actions.lua | запуск программы, открытие |
+| medium | browser | `browser_close` | lua | actions.lua | запуск программы, открытие |
 | high | calculator | `calculator_2` | cli |  | запуск программы: taskkill /f /im CalculatorApp.exe |
 | high | steam | `steam_2` | lua | actions.lua | запуск программы, открытие |
 | high | windows | `windows_2` | lua | actions.lua | PowerShell (известные скрипты), запуск программы, нажатие клавиш, открытие |
 | high | windows | `windows_6` | lua | actions.lua | PowerShell (известные скрипты), запуск программы, нажатие клавиш, открытие |
 | medium | assistant | `assistant_apps_rescan` | lua | program.lua | запуск программы |
+| medium | assistant | `assistant_program_close` | lua | program.lua | запуск программы |
 | medium | assistant | `assistant_brightness_down` | lua | brightness.lua | PowerShell -File (свой .ps1) |
 | medium | assistant | `assistant_brightness_set` | lua | brightness.lua | PowerShell -File (свой .ps1) |
 | medium | assistant | `assistant_brightness_up` | lua | brightness.lua | PowerShell -File (свой .ps1) |

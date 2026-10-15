@@ -266,7 +266,7 @@ phrases.en = ["open notepad", "launch discord"]
 
 [[commands]]
 id = "assistant_program_close"
-risk = "high"
+risk = "medium"
 type = "lua"
 script = "program.lua"
 sandbox = "full"
@@ -277,6 +277,20 @@ triggers.ru = ["закр блокнот", "закр notepad", "закр каль
 triggers.en = ["close блокнот", "close notepad", "close калькулятор", "close calculator", "close пейнт", "close paint", "close проводник", "close explorer", "close диспетчер", "close taskmgr", "close task manager", "close командную", "close командная", "close cmd", "close терминал", "close terminal", "close powershell", "close паувершелл", "close пауэршелл", "close настройки", "close параметры", "close settings", "close панель управления", "close панель", "close control panel", "close ворд", "close word", "close эксель", "close excel", "close пауэрпоинт", "close powerpoint", "close хром", "close chrome", "close эдж", "close edge", "close фаерфокс", "close firefox", "close дискорд", "close discord", "close телеграм", "close telegram", "close спотифай", "close spotify", "close стим", "close steam", "close обс", "close obs", "close влс", "close vlc"]
 phrases.ru = ["закрой блокнот", "закрой дискорд"]
 phrases.en = ["close notepad", "close discord"]
+
+[[commands]]
+id = "assistant_program_force_close"
+risk = "high"
+type = "lua"
+script = "program.lua"
+sandbox = "full"
+timeout = 15000
+sounds.ru = ["ok1", "ok2", "ok3"]
+sounds.en = ["ok1", "ok2", "ok3"]
+triggers.ru = ["закр принудит", "принудит закр", "убей процесс", "заверш принудит"]
+triggers.en = ["close force", "force close", "kill process"]
+phrases.ru = ["закрой ворд принудительно", "закрой зависшую программу принудительно"]
+phrases.en = ["force close word"]
 
 [[commands]]
 id = "assistant_info_time"

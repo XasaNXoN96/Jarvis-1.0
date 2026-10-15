@@ -102,7 +102,12 @@ pub fn fetch_program<'a>(phrase: &str, commands: &'a [JCommandsList]) -> Option<
     }
     let id = match req.action {
         crate::apps::Action::Open => "assistant_program_open",
-        crate::apps::Action::Close => "assistant_program_close",
+        // "закрой ворд" closes at once (the program may ask about unsaved work itself); only "принудительно" is the
+        // dangerous one and asks "да / нет" first
+        crate::apps::Action::Close => {
+            let low = phrase.to_lowercase();
+            if low.contains("принудит") || low.contains("force") { "assistant_program_force_close" } else { "assistant_program_close" }
+        }
     };
     commands.iter().flat_map(|l| l.commands.iter().map(move |c| (&l.path, c))).find(|(_, c)| c.id == id)
 }
@@ -161,7 +166,7 @@ fn not_about_a_program(words: &[&str]) -> bool {
 }
 
 fn is_program_command(id: &str) -> bool {
-    matches!(id, "assistant_program_open" | "assistant_program_close")
+    matches!(id, "assistant_program_open" | "assistant_program_close" | "assistant_program_force_close")
 }
 
 fn is_power_command(id: &str) -> bool {

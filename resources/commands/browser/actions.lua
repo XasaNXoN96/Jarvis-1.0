@@ -8,7 +8,8 @@ if id == "browser_open" then
 elseif id == "browser_close" then
   local closed = 0
   for _, exe in ipairs({ "chrome.exe", "msedge.exe", "firefox.exe", "browser.exe", "opera.exe", "brave.exe" }) do
-    local r = run("taskkill", { "/f", "/im", exe })
+    -- (asked to close like its own cross: no /f, so nothing is lost; the browser may restore its tabs)
+    local r = run("taskkill", { "/im", exe })
     if r.success then closed = closed + 1 end
   end
   say(T("Браузер", "Browser"), closed > 0 and T("Закрыт", "Closed") or T("Браузер не запущен", "No browser is running"))

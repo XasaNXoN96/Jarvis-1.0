@@ -1359,7 +1359,7 @@ pub(crate) mod tests {
         for (_, _, list) in packs() {
             for c in &list.commands {
                 let must_be_high = c.id.starts_with("assistant_power_") && c.id != "assistant_power_cancel"
-                    || matches!(c.id.as_str(), "assistant_program_close" | "browser_close" | "steam_2" | "assistant_game_off" | "calculator_2" | "windows_2" | "windows_6" | "assistant_session" | "assistant_task_clear" | "assistant_remote_on");
+                    || matches!(c.id.as_str(), "assistant_program_force_close" | "steam_2" | "assistant_game_off" | "calculator_2" | "windows_2" | "windows_6" | "assistant_session" | "assistant_task_clear" | "assistant_remote_on");
                 if must_be_high {
                     assert_eq!(Risk::parse(&c.risk), Some(Risk::High), "{}", c.id);
                 }
