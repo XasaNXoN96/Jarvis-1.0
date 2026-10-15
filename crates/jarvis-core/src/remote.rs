@@ -1059,6 +1059,21 @@ fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
                 respond(stream, "503 Service Unavailable", "text/plain", "not ready");
             }
         }
+        // the voice of the answers (the same choice as in the settings of the computer): the list and the change
+        ("GET", "/voices") => {
+            let list: Vec<serde_json::Value> = crate::tts::list_voices().into_iter().map(|(id, label)| serde_json::json!({ "id": id, "label": label })).collect();
+            respond(stream, "200 OK", "application/json", &serde_json::json!({ "current": crate::uistate::voice_name(), "voices": list }).to_string());
+        }
+        ("POST", "/voice") => {
+            // only a voice of the list (never a free text); the answer is the same for a wrong name and a name of another PC
+            let id = req.body.trim().to_string();
+            if crate::tts::list_voices().iter().any(|(v, _)| *v == id) {
+                crate::uistate::update_settings(&serde_json::json!({ "voice_name": id }));
+                respond(stream, "200 OK", "text/plain", "ok");
+            } else {
+                respond(stream, "400 Bad Request", "text/plain", "unknown voice");
+            }
+        }
         _ => respond(stream, "404 Not Found", "text/plain", "not found"),
     }
     Ok(())
@@ -1069,87 +1084,157 @@ const PAGE: &str = r#"<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Jarvis</title>
 <style>
-  :root { color-scheme: dark; }
-  body { margin: 0; padding: 12px 14px 24px; background: #0f1419; color: #e6edf3; font: 16px system-ui, sans-serif; }
-  h1 { font-size: 20px; margin: 0 0 10px; }
-  section { background: #161b22; border: 1px solid #30363d; border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; }
-  section h2 { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: #8b949e; margin: 0 0 8px; }
-  .row { display: flex; justify-content: space-between; gap: 10px; font-size: 15px; padding: 3px 0; }
+  :root { color-scheme: dark; --bg: #0b0c0e; --bg2: #131418; --card: #17181d; --line: #2b2d35; --text: #ececf0; --dim: #8e909a; --a: #6aa8ff; --a2: #8cc0ff; --ok: #5bd98a; --bad: #ff6b5e; --warn: #fbbf24;
+    --tile: linear-gradient(160deg, #1d1f26, #17181d); --btn: linear-gradient(135deg, #4c8dff, #2f66d0); --glow: 0 0 20px #6aa8ff33; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px system-ui, sans-serif; display: flex; flex-direction: column; overflow: hidden; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); } .dim { color: var(--dim); font-size: 12.5px; line-height: 1.45; }
+
+  .top { padding: 14px 16px 10px; background: radial-gradient(120% 90% at 50% 0%, #1b2536 0%, var(--bg2) 62%); border-bottom: 1px solid var(--line); flex: none; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .reactor { width: 32px; height: 32px; border-radius: 50%; flex: none; box-shadow: var(--glow); position: relative;
+    background: radial-gradient(circle, #fff 0 12%, #cfe3ff 14% 28%, transparent 30%), conic-gradient(from 0deg, #4c8dff, #9fc8ff, #4c8dff, #9fc8ff, #4c8dff); }
+  .reactor::after { content: ""; position: absolute; inset: 5px; border-radius: 50%; border: 2px solid #0008; }
+  .brand b { font-size: 17px; letter-spacing: .14em; font-weight: 700; background: linear-gradient(90deg, #cfe3ff, #6aa8ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .brand small { display: block; color: var(--dim); font-size: 11.5px; letter-spacing: .03em; margin-top: 1px; }
+  .chips { display: flex; gap: 7px; margin-top: 10px; flex-wrap: wrap; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: #ffffff0d; border: 1px solid var(--line); font-size: 12px; }
+  .chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+  .chip.ok i { background: var(--ok); box-shadow: 0 0 8px var(--ok); } .chip.bad i { background: var(--bad); box-shadow: 0 0 8px var(--bad); } .chip.warn i { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+
+  .body { flex: 1; overflow-y: auto; padding: 14px 14px 10px; -webkit-overflow-scrolling: touch; }
+  .tab { display: none; } .tab.on { display: block; }
+  section { margin-bottom: 16px; }
+  section h2 { margin: 0 2px 8px; font-size: 11.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--a); font-weight: 600; }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--tile); margin-bottom: 8px; font-size: 14px; }
+  .row small { color: var(--dim); display: block; font-size: 11.5px; margin-top: 2px; line-height: 1.35; }
   .row b { font-weight: 600; text-align: right; }
-  .ok { color: #3fb950; } .bad { color: #ff7b72; } .dim { color: #8b949e; font-size: 13px; line-height: 1.45; }
-  form { display: flex; gap: 8px; margin: 10px 0 4px; }
-  input { flex: 1; min-width: 0; padding: 12px; border-radius: 10px; border: 1px solid #30363d; background: #0d1117; color: inherit; font-size: 16px; }
-  button { padding: 12px 14px; border-radius: 10px; border: 0; background: #238636; color: #fff; font-size: 16px; }
-  button.sec { background: #21262d; border: 1px solid #30363d; }
-  button.wide { width: 100%; margin-top: 8px; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .grid button { background: #21262d; border: 1px solid #30363d; font-size: 15px; }
-  #mic { width: 100%; padding: 18px; font-size: 18px; background: #1f6feb; }
-  #mic.on { background: #da3633; }
-  #heard { min-height: 22px; color: #58a6ff; margin: 8px 0 4px; }
-  #status { min-height: 22px; color: #8b949e; margin-top: 8px; }
-  .msg { border: 1px solid #1f6feb; background: #0d2142; border-radius: 12px; padding: 10px 12px; margin-top: 8px; }
-  .msg .body { word-break: break-all; user-select: all; margin: 6px 0 8px; }
-  .msg .acts { display: flex; gap: 8px; }
+  label.row input[type=checkbox] { width: 42px; height: 24px; flex: none; appearance: none; -webkit-appearance: none; border-radius: 999px; background: #ffffff22; position: relative; margin: 0; cursor: pointer; transition: .15s; }
+  label.row input[type=checkbox]::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: .15s; }
+  label.row input[type=checkbox]:checked { background: #4c8dff; } label.row input[type=checkbox]:checked::after { left: 21px; }
+  .btn { border: 1px solid var(--line); background: #ffffff0a; border-radius: 12px; padding: 11px 14px; }
+  .btn.wide { width: 100%; margin-bottom: 8px; } .btn.dash { border-style: dashed; color: var(--dim); background: transparent; }
+  select { width: 100%; padding: 11px 12px; border-radius: 12px; border: 1px solid var(--line); background: #0d0e11; color: var(--text); font: inherit; margin-top: 8px; }
+
+  .grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .tile { aspect-ratio: 1 / 1; border-radius: 16px; border: 1px solid var(--line); background: var(--tile); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 4px; transition: .15s; }
+  .tile span { font-size: 21px; line-height: 1; } .tile em { font-style: normal; font-size: 10px; color: var(--dim); text-align: center; line-height: 1.15; max-width: 100%; overflow-wrap: anywhere; }
+  .tile:active { border-color: var(--a); box-shadow: 0 0 14px #6aa8ff33 inset; transform: translateY(1px); }
+  .tile.hot span { color: var(--a2); }
+  .tile.yes { border-color: #2f7a4a; background: linear-gradient(160deg, #15291d, #101b14); } .tile.yes span { color: var(--ok); } .tile.yes em { color: #9be0b4; }
+  .tile.no { border-color: #8a3a34; background: linear-gradient(160deg, #2c1614, #1b0f0e); } .tile.no span { color: var(--bad); } .tile.no em { color: #f0a49c; }
+
+  .player { border: 1px solid var(--line); background: var(--tile); border-radius: 18px; padding: 12px 10px; display: grid; gap: 10px; }
+  .ctrl { display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .ctrl button { width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--line); background: #ffffff0a; font-size: 18px; }
+  .ctrl button.main { width: 62px; height: 62px; background: var(--btn); border: 0; font-size: 24px; box-shadow: var(--glow); color: #fff; }
+  .vol { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .vol button { height: 40px; border-radius: 12px; border: 1px solid var(--line); background: #ffffff0a; font-size: 16px; }
+
+  #status { min-height: 20px; color: var(--a2); font-size: 13px; margin: 0 2px 8px; word-break: break-word; }
+  .msg { border: 1px solid #2f66d0; background: #0d1a33; border-radius: 14px; padding: 10px 12px; margin-bottom: 10px; }
+  .msg .body { word-break: break-all; user-select: all; margin: 6px 0 8px; padding: 0; overflow: visible; }
+  .msg .acts { display: flex; gap: 8px; } .msg .acts button { padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: #ffffff0f; }
+  .msg .acts button:not(.sec) { background: var(--btn); border: 0; color: #fff; }
+
+  .micwrap { display: grid; place-items: center; padding: 14px 0 8px; gap: 12px; }
+  #mic { width: 128px; height: 128px; border-radius: 50%; border: 0; font-size: 36px; color: #fff; background: radial-gradient(circle at 50% 40%, #8cc0ff, #4c8dff 55%, #1d3f80 100%); box-shadow: 0 0 0 8px #ffffff08, 0 0 0 16px #ffffff05, var(--glow); }
+  #mic.on { background: radial-gradient(circle at 50% 40%, #ff9a8f, #e0463a 55%, #6e1710 100%); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 12px #ff6b5e22, 0 0 0 24px #ff6b5e11; } }
+  #heard { min-height: 20px; color: var(--a2); font-size: 14px; text-align: center; padding: 0 8px; word-break: break-word; }
+  #help { display: none; border: 1px solid var(--line); border-radius: 14px; background: var(--tile); padding: 12px; margin-bottom: 8px; font-size: 13.5px; line-height: 1.5; }
+  #help .btn { margin-top: 6px; }
+
+  #confirm { display: none; flex: none; padding: 10px 12px; border-top: 1px solid var(--line); background: #101319; align-items: center; gap: 10px; }
+  #confirm.on { display: flex; } #confirm .q { flex: 1; min-width: 0; font-size: 13px; line-height: 1.35; }
+  #confirm button { flex: none; min-width: 74px; padding: 12px 14px; border-radius: 14px; border: 1px solid; font-weight: 600; font-size: 15px; }
+  #confirm .yes { background: linear-gradient(160deg, #1d4a2e, #143321); border-color: #2f7a4a; color: #b6f0c9; }
+  #confirm .no { background: linear-gradient(160deg, #4a1f1b, #331411); border-color: #8a3a34; color: #ffc1b9; }
+
+  form#f { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); background: var(--bg2); flex: none; margin: 0; }
+  form#f input { flex: 1; min-width: 0; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: #00000055; color: var(--text); font: 16px system-ui, sans-serif; }
+  form#f button { width: 50px; border: 0; border-radius: 14px; background: var(--btn); color: #fff; font-size: 18px; box-shadow: var(--glow); }
+  .tabs { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--bg2); border-top: 1px solid var(--line); padding: 6px 6px calc(10px + env(safe-area-inset-bottom)); flex: none; }
+  .tabs button { border: 0; background: transparent; color: var(--dim); display: grid; gap: 2px; justify-items: center; padding: 6px 0; font-size: 11px; border-radius: 12px; }
+  .tabs button span { font-size: 19px; } .tabs button.on { color: var(--a2); } .tabs button.on span { filter: drop-shadow(0 0 6px #6aa8ff); }
   #ringbox { display: none; position: fixed; inset: 0; background: rgba(218,54,51,.94); z-index: 9; text-align: center; padding-top: 30vh; font-size: 22px; }
-  #ringbox button { font-size: 22px; padding: 18px 30px; background: #fff; color: #da3633; margin-top: 20px; }
-  label.sw { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 15px; }
-  label.sw input { flex: none; width: 22px; height: 22px; }
+  #ringbox button { font-size: 22px; padding: 18px 30px; background: #fff; color: #da3633; margin-top: 20px; border: 0; border-radius: 14px; }
 </style></head><body>
-<h1>Jarvis — пульт</h1>
 <div id="ringbox">📢 Компьютер ищет этот телефон<br><button id="ringstop" type="button">Я нашёл телефон</button></div>
 
-<section id="g-conn"><h2>Подключение</h2>
-  <div class="row"><span>Связь с компьютером</span><b id="c-state">проверяю…</b></div>
-  <div class="row"><span>Последнее соединение</span><b id="c-last">—</b></div>
-  <div class="dim" id="c-err"></div>
-  <button class="sec wide" id="c-retry" type="button">Переподключиться</button>
-  <label class="sw" id="wl-row" style="display:none"><input type="checkbox" id="wl"> Не гасить экран, пока открыт пульт</label>
-  <div class="dim">Пульт работает, пока эта страница открыта на экране: свёрнутый браузер телефон усыпляет.</div>
-</section>
+<div class="top">
+  <div class="brand"><div class="reactor"></div><div><b>JARVIS</b><small>пульт · ваш компьютер</small></div></div>
+  <div class="chips"><span class="chip" id="chip-conn"><i></i><span>Связь…</span></span><span class="chip" id="chip-bat"><i></i><span>Заряд —</span></span><span class="chip" id="chip-voice"><i></i><span>Голос: выкл</span></span></div>
+</div>
 
-<section id="g-phone"><h2>Состояние телефона</h2>
-  <div class="row"><span>Заряд</span><b id="p-bat">—</b></div>
-  <div class="dim" id="p-note"></div>
-</section>
-
-<section id="g-quick"><h2>Быстрые действия</h2>
-  <button class="sec wide" id="snd" type="button" style="margin-top:0">🔔 Разрешить сигнал «Найти телефон»</button>
-  <div class="dim" id="snd-note">Браузер играет звук только после одного нажатия на странице. Нажмите один раз — потом компьютер сможет позвать телефон командой «Найди телефон».</div>
-  <div id="inbox"></div>
-  <form id="f"><input id="t" placeholder="Команда для компьютера: таймер на 5 минут" autocomplete="off"><button>Отправить</button></form>
-  <div class="grid" id="quick"></div>
-  <div id="status"></div>
-</section>
-
-<section id="g-media"><h2>Мультимедиа</h2>
-  <div class="dim">Эти кнопки управляют звуком и музыкой <b>компьютера</b>. Музыку и громкость других приложений самого телефона веб-страница переключать не может: Android разрешает это только установленному приложению. Для телефона пользуйтесь кнопками громкости и шторкой уведомлений.</div>
-  <div class="grid" id="media" style="margin-top:8px"></div>
-</section>
-
-<section id="g-voice"><h2>Голос</h2>
-  <button id="mic" type="button">🎤 Сказать команду</button>
-  <label class="sw"><input type="checkbox" id="cont"> Непрерывный режим (слушать команду за командой)</label>
-  <label class="sw"><input type="checkbox" id="spk" checked> Озвучивать ответы Jarvis на этом телефоне</label>
-  <div class="row"><span>Микрофон</span><b id="v-state">выключен</b></div>
-  <div id="heard"></div>
-  <div class="dim">Речь распознаёт сам браузер телефона (в Chrome — сервис Google через интернет). Компьютер получает только готовый текст команды.</div>
-  <div id="help" style="display:none;border-top:1px solid #30363d;margin-top:10px;padding-top:10px;font-size:14px;line-height:1.5">
-    <b>Как включить голос на этом телефоне (один раз)</b><br>
-    <span id="yandex" style="display:none;color:#ffb347">Яндекс.Браузер для этого не подходит. Откройте эту ссылку в <b>Chrome</b>.<br></span>
-    Браузер даёт микрофон только защищённой странице (https). У пульта она есть на том же компьютере:<br>
-    1. Нажмите <b>«Открыть защищённую страницу»</b> ниже.<br>
-    2. Браузер один раз предупредит о сертификате (он сделан самим компьютером, а не центром сертификации): нажмите «Дополнительно» → «Перейти на сайт».<br>
-    3. Нажмите 🎤 и разрешите микрофон.<br>
-    <button id="to-https" class="wide" type="button">Открыть защищённую страницу</button><br>
-    <span class="dim">Не хотите настраивать? Нажмите на значок микрофона на клавиатуре телефона в поле команды: он диктует голосом и работает без настроек.</span>
+<div class="body">
+  <div class="tab on" id="t-home">
+    <div id="status"></div>
+    <div id="inbox"></div>
+    <section id="g-quick"><h2>Быстрые действия</h2>
+      <div class="grid4" id="quick"></div>
+    </section>
+    <section id="g-media"><h2>Звук и музыка</h2>
+      <div class="player" id="media"></div>
+      <div class="dim" style="margin-top:6px">Кнопки управляют звуком и музыкой <b>компьютера</b>. Приложения самого телефона веб-страница переключать не может.</div>
+    </section>
   </div>
-  <button id="howto" class="sec wide" type="button">Не работает голос? Как включить</button>
-</section>
 
-<section id="g-limits"><h2>Чего пульт не делает</h2>
-  <div class="dim">Пульт — это страница в браузере, а не приложение. Поэтому он не блокирует и не усыпляет телефон, не читает уведомления телефона и не управляет его другими приложениями. Обойти экран блокировки, PIN-код или разрешения Android он не пытается.</div>
-</section>
+  <div class="tab" id="t-voice">
+    <section id="g-voice"><h2>Голос</h2>
+      <div class="micwrap"><button id="mic" type="button" aria-label="Сказать команду" title="Сказать команду">🎤</button><div id="heard">Нажмите и скажите команду</div></div>
+      <label class="row"><div>Непрерывный режим<small>слушать команду за командой</small></div><input type="checkbox" id="cont"></label>
+      <label class="row"><div>Озвучивать ответы<small>на этом телефоне</small></div><input type="checkbox" id="spk" checked></label>
+      <div class="row"><div>Микрофон</div><b id="v-state">выключен</b></div>
+      <div id="help">
+        <b>Как включить голос на этом телефоне (один раз)</b><br>
+        <span id="yandex" style="display:none;color:#ffb347">Яндекс.Браузер для этого не подходит. Откройте эту ссылку в <b>Chrome</b>.<br></span>
+        Браузер даёт микрофон только защищённой странице (https). У пульта она есть на том же компьютере:<br>
+        1. Нажмите <b>«Открыть защищённую страницу»</b> ниже.<br>
+        2. Браузер один раз предупредит о сертификате (он сделан самим компьютером, а не центром сертификации): нажмите «Дополнительно» → «Перейти на сайт».<br>
+        3. Нажмите 🎤 и разрешите микрофон.<br>
+        <button id="to-https" class="btn wide" type="button">Открыть защищённую страницу</button>
+        <span class="dim">Не хотите настраивать? Нажмите на значок микрофона на клавиатуре телефона в поле команды: он диктует голосом и работает без настроек.</span>
+      </div>
+      <button id="howto" class="btn dash wide" type="button">Не работает голос? Как включить</button>
+      <div class="dim">Речь распознаёт сам браузер телефона (в Chrome — сервис Google через интернет). Компьютер получает только готовый текст команды.</div>
+    </section>
+  </div>
+
+  <div class="tab" id="t-phone">
+    <section id="g-phone"><h2>Телефон</h2>
+      <div class="row"><div>Заряд<small id="p-note">обновляется при подключении</small></div><b id="p-bat">—</b></div>
+      <section id="g-find" style="margin:0"><div class="row"><div>Сигнал «Найти телефон»<small id="snd-note">Браузер играет звук только после одного нажатия на странице. Нажмите один раз — потом компьютер сможет позвать телефон командой «Найди телефон».</small></div><button class="btn" id="snd" type="button">🔔 Разрешить</button></div></section>
+      <label class="row" id="wl-row" style="display:none"><div>Не гасить экран<small>пока открыт пульт</small></div><input type="checkbox" id="wl"></label>
+    </section>
+  </div>
+
+  <div class="tab" id="t-more">
+    <section id="g-conn"><h2>Подключение</h2>
+      <div class="row"><div>Связь с компьютером<small>последнее соединение: <span id="c-last">—</span></small></div><b id="c-state">проверяю…</b></div>
+      <div class="dim" id="c-err"></div>
+      <button class="btn wide" id="c-retry" type="button">Переподключиться</button>
+      <div class="dim">Пульт работает, пока эта страница открыта на экране: свёрнутый браузер телефон усыпляет.</div>
+    </section>
+    <section id="g-voicepick"><h2>Голос Джарвиса</h2>
+      <div class="row" style="display:block"><div>Кто отвечает<small>тот же выбор, что в Настройках → Голос на компьютере</small></div><select id="vsel" aria-label="Голос Джарвиса"><option value="">Загружаю список…</option></select><div class="dim" id="vmsg"></div></div>
+    </section>
+    <section id="g-limits"><h2>Чего пульт не делает</h2>
+      <div class="dim">Пульт — это страница в браузере, а не приложение. Поэтому он не блокирует и не усыпляет телефон, не читает уведомления телефона и не управляет его другими приложениями. Обойти экран блокировки, PIN-код или разрешения Android он не пытается.</div>
+    </section>
+  </div>
+</div>
+
+<div id="confirm"><div class="q" id="confirm-q"></div><button class="yes" id="cy" type="button">Да</button><button class="no" id="cn" type="button">Нет</button></div>
+<form id="f"><input id="t" placeholder="Команда: таймер на 5 минут" autocomplete="off"><button aria-label="Отправить">➤</button></form>
+<div class="tabs" id="tabs">
+  <button class="on" data-tab="home" type="button"><span>⚡</span>Главная</button>
+  <button data-tab="voice" type="button"><span>🎤</span>Голос</button>
+  <button data-tab="phone" type="button"><span>📱</span>Телефон</button>
+  <button data-tab="more" type="button"><span>⚙</span>Ещё</button>
+</div>
 <script>
 // the secret of the link is taken from the address once and kept on this phone: it does not stay in the address
 // bar, the browser history or a shared screenshot ("Новая ссылка" on the computer revokes it)
@@ -1168,9 +1253,9 @@ function fetchT(url, opts) {
 }
 const $ = id => document.getElementById(id);
 const rid = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-const quick = ['поставь таймер на 5 минут','отмени таймер','сколько времени','отмени выключение',
-  'выключи компьютер через 10 минут','заблокируй компьютер','да','нет'];
-const media = ['пауза','продолжи','следующий трек','предыдущий трек','громче','тише','выключи звук','включи звук'];
+const quick = [
+  ['поставь таймер на 5 минут', '⏱', 'Таймер 5 мин', 'hot'], ['отмени таймер', '⏹', 'Отмена таймера', ''], ['сколько времени', '🕐', 'Сколько времени', ''], ['отмени выключение', '⛔', 'Отмена выкл.', ''],
+  ['выключи компьютер через 10 минут', '⏻', 'Выкл. через 10 мин', ''], ['заблокируй компьютер', '🔒', 'Блокировка', ''], ['да', '✔', 'Да', 'yes'], ['нет', '✖', 'Нет', 'no']];
 const status = $('status');
 async function send(text) {
   status.textContent = '…';
@@ -1181,8 +1266,21 @@ async function send(text) {
     if (r.ok) connected();
   } catch (e) { status.textContent = 'Нет связи с компьютером'; }
 }
-for (const [list, box] of [[quick, 'quick'], [media, 'media']])
-  for (const q of list) { const b = document.createElement('button'); b.type = 'button'; b.textContent = q; b.onclick = () => send(q); $(box).appendChild(b); }
+for (const [cmd, icon, label, cls] of quick) {
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'tile ' + cls; b.title = cmd;
+  const i = document.createElement('span'); i.textContent = icon; const e = document.createElement('em'); e.textContent = label;
+  b.append(i, e); b.onclick = () => send(cmd); $('quick').appendChild(b);
+}
+// the music and the sound of the computer: one player, the same eight commands as before
+const player = [['ctrl', [['предыдущий трек', '⏮', 'Предыдущий трек', ''], ['пауза', '⏸', 'Пауза', ''], ['продолжи', '⏯', 'Продолжить', 'main'], ['следующий трек', '⏭', 'Следующий трек', '']]],
+  ['vol', [['тише', '🔉', 'Тише', ''], ['громче', '🔊', 'Громче', ''], ['выключи звук', '🔇', 'Выключить звук', ''], ['включи звук', '🔈', 'Включить звук', '']]]];
+for (const [kind, items] of player) {
+  const row = document.createElement('div'); row.className = kind;
+  for (const [cmd, icon, label, cls] of items) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = icon; b.title = label; b.setAttribute('aria-label', label); if (cls) b.className = cls; b.onclick = () => send(cmd); row.appendChild(b);
+  }
+  $('media').appendChild(row);
+}
 $('f').onsubmit = e => { e.preventDefault(); const i = $('t'); if (i.value.trim()) send(i.value.trim()); i.value=''; };
 
 // ---------- connection: the page asks the computer for news every 2 seconds ----------
@@ -1285,10 +1383,11 @@ function flash(text) {
   clearTimeout(flashTimer); flashTimer = setTimeout(() => { st.textContent = ''; }, 8000);
 }
 function handle(m) {
-  if (m.kind === 'say') { flash('Jarvis: ' + m.data); speakHere(m.data); }
+  if (m.kind === 'say') { flash('Jarvis: ' + m.data); speakHere(m.data); askIfQuestion(m.data); }
   else if (m.kind === 'note') {
     let n = {}; try { n = JSON.parse(m.data); } catch (e) { n = { title: 'Jarvis', text: m.data }; }
     flash((n.title ? n.title + ': ' : '') + (n.text || ''));
+    askIfQuestion((n.title ? n.title + '. ' : '') + (n.text || ''));
     if (['timer', 'alarm', 'reminder'].includes(n.kind)) { unlockSound(); beep(0); setTimeout(() => beep(1), 450); if (navigator.vibrate) navigator.vibrate([300, 150, 300]); }
     speakHere((n.title ? n.title + '. ' : '') + (n.text || ''));
   }
@@ -1321,7 +1420,7 @@ function listen() {
   if (!window.isSecureContext) { $('help').style.display = 'block'; voice('unavailable', 'Браузер не разрешает микрофон на этой странице. Откройте защищённую страницу (ниже).'); wantVoice = false; return; }
   if (!SR) { voice('unavailable', 'Браузер не умеет слушать. Нажмите значок микрофона на клавиатуре в поле команды.'); wantVoice = false; return; }
   rec = new SR(); rec.lang = navigator.language && !/^ru/i.test(navigator.language) && /^(en|uk)/i.test(navigator.language) ? navigator.language : 'ru-RU'; rec.interimResults = true; rec.continuous = false;
-  micBtn.classList.add('on'); micBtn.textContent = '🔴 Слушаю… (нажмите, чтобы остановить)'; voice('listening');
+  micBtn.classList.add('on'); micBtn.textContent = '🔴'; heard.textContent = 'Слушаю… (нажмите, чтобы остановить)'; voice('listening');
   let final = '', fatal = false;
   rec.onresult = e => { let t = ''; for (const r of e.results) { t += r[0].transcript; if (r.isFinal) final = t; } heard.textContent = '«' + t + '»'; };
   rec.onerror = e => {
@@ -1332,7 +1431,7 @@ function listen() {
       : e.error === 'network' ? 'Распознавание речи недоступно: у телефона нет интернета.' : 'Ошибка микрофона: ' + e.error);
   };
   rec.onend = () => {
-    rec = null; micBtn.classList.remove('on'); micBtn.textContent = '🎤 Сказать команду';
+    rec = null; micBtn.classList.remove('on'); micBtn.textContent = '🎤';
     if (final.trim()) send(final.trim());
     if (wantVoice && !fatal) setTimeout(() => { if (wantVoice && !rec) listen(); }, 300);
     else if (!fatal) voice('off');
@@ -1341,6 +1440,53 @@ function listen() {
 }
 micBtn.onclick = () => { if (rec) { wantVoice = false; $('cont').checked = false; rec.stop(); return; } wantVoice = $('cont').checked; listen(); };
 $('cont').onchange = () => { wantVoice = $('cont').checked; if (wantVoice && !rec) listen(); if (!wantVoice && rec) rec.stop(); };
+
+// ---------- tabs ----------
+document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 't-' + b.dataset.tab));
+  if (b.dataset.tab === 'more') loadVoices();
+});
+
+// ---------- the signs at the top mirror the lines below ----------
+function chip(id, cls, text) { const c = $(id); c.className = 'chip ' + cls; c.lastChild.textContent = text; }
+function syncChips() {
+  const st = $('c-state').textContent;
+  chip('chip-conn', $('c-state').className === 'ok' ? 'ok' : $('c-state').className === 'bad' ? 'bad' : '', st === 'есть' ? 'Связь есть' : st === 'нет связи' ? 'Нет связи' : 'Связь…');
+  const bat = $('p-bat').textContent; chip('chip-bat', bat === '—' ? '' : 'ok', bat === '—' ? 'Заряд —' : '🔋 ' + bat.replace(' ⚡ заряжается', ' ⚡'));
+  const v = state.voice; chip('chip-voice', v === 'listening' ? 'ok' : (v === 'error' || v === 'unavailable') ? 'bad' : 'warn', 'Голос: ' + ({ off: 'выкл', listening: 'слушаю', error: 'ошибка', unavailable: 'нет' }[v] || v));
+}
+setInterval(syncChips, 700); syncChips();
+
+// ---------- the voice of Jarvis (the list and the choice of the computer) ----------
+let voicesLoaded = 0;
+async function loadVoices() {
+  if (Date.now() - voicesLoaded < 30000) return;
+  try {
+    const r = await fetchT('/voices', {headers:{'X-Token':token}});
+    if (!r.ok) throw new Error(r.status);
+    const j = await r.json(); const sel = $('vsel'); sel.textContent = '';
+    for (const v of j.voices) sel.add(new Option(v.label, v.id));
+    sel.value = j.current; if (sel.value !== j.current) sel.value = '';
+    voicesLoaded = Date.now(); $('vmsg').textContent = '';
+  } catch (e) { $('vmsg').textContent = 'Не удалось получить список голосов с компьютера.'; }
+}
+$('vsel').onchange = async () => {
+  $('vmsg').textContent = 'Сохраняю…';
+  try {
+    const r = await fetchT('/voice', {method:'POST', headers:{'X-Token':token}, body:$('vsel').value});
+    $('vmsg').textContent = r.ok ? 'Готово: компьютер отвечает этим голосом.' : 'Компьютер не принял этот голос.';
+  } catch (e) { $('vmsg').textContent = 'Нет связи с компьютером.'; }
+};
+
+// ---------- a question "Подтвердить? да / нет": the answer is two big buttons ----------
+let confirmTimer = 0;
+function askIfQuestion(text) {
+  if (!/подтверд|скажите «?да»? или «?нет|да или нет|да\/нет/i.test(String(text || ''))) return;
+  $('confirm-q').textContent = String(text).slice(0, 140); $('confirm').classList.add('on');
+  clearTimeout(confirmTimer); confirmTimer = setTimeout(() => $('confirm').classList.remove('on'), 30000);
+}
+for (const [id, word] of [['cy', 'да'], ['cn', 'нет']]) $(id).onclick = () => { $('confirm').classList.remove('on'); clearTimeout(confirmTimer); send(word); };
 
 poll(); report();
 </script></body></html>
@@ -1750,6 +1896,34 @@ mod tests {
         let mut p = Pipe { input: std::io::Cursor::new(format!("POST {} HTTP/1.1\r\nHost: x\r\nX-Token: {}\r\nContent-Length: {}\r\n\r\n{}", path, token, body.len(), body).into_bytes()), output: Vec::new() };
         handle(&mut p).unwrap();
         String::from_utf8_lossy(&p.output).to_string()
+    }
+
+    fn phone_get(path: &str, token: &str) -> String {
+        let mut p = Pipe { input: std::io::Cursor::new(format!("GET {} HTTP/1.1\r\nHost: x\r\nX-Token: {}\r\n\r\n", path, token).into_bytes()), output: Vec::new() };
+        handle(&mut p).unwrap();
+        String::from_utf8_lossy(&p.output).to_string()
+    }
+
+    // the phone chooses the voice of the answers from the list of the computer; nothing else can be set, and a wrong secret sets nothing
+    #[test]
+    fn the_phone_chooses_a_voice_from_the_list_only_and_only_with_the_secret() {
+        let _g = PHONE_TEST_LOCK.lock();
+        let _s = crate::uistate::TEST_LOCK.lock();
+        phone_for_tests(true, true);
+        let t = token();
+        let before = crate::uistate::voice_name();
+        assert!(phone_get("/voices", "wrong-token").starts_with("HTTP/1.1 403"));
+        let list = phone_get("/voices", &t);
+        assert!(list.starts_with("HTTP/1.1 200") && list.contains("\"voices\"") && list.contains("\"current\""), "{}", list);
+        assert!(phone_request("/voice", "wrong-token", "piper").starts_with("HTTP/1.1 403"));
+        assert_eq!(crate::uistate::voice_name(), before, "a wrong secret changes nothing");
+        assert!(phone_request("/voice", &t, "win:../../evil").starts_with("HTTP/1.1 400"));
+        assert!(phone_request("/voice", &t, "silero:aidar; calc").starts_with("HTTP/1.1 400"), "only the names of the list");
+        assert_eq!(crate::uistate::voice_name(), before);
+        assert!(phone_request("/voice", &t, "piper").starts_with("HTTP/1.1 200"));
+        assert_eq!(crate::uistate::voice_name(), "piper");
+        crate::uistate::update_settings(&serde_json::json!({ "voice_name": before }));
+        phone_for_tests(false, false);
     }
 
     // the door of a phone phrase is set by the phone server; the text cannot name another one
