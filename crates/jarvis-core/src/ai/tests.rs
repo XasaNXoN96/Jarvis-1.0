@@ -139,7 +139,7 @@ fn context_is_limited_and_clean() {
     ];
     let ctx = context_for_model(&big);
     assert_eq!(ctx.last().unwrap().content, "вопрос");
-    assert!(ctx.iter().map(|m| m.content.chars().count()).sum::<usize>() <= MAX_CONTEXT_CHARS + 8000);
+    assert!(ctx.iter().map(|m| m.content.chars().count()).sum::<usize>() <= MAX_CONTEXT_CHARS + 2 * MAX_MESSAGE_CHARS, "the question and the exchange before it are always kept");
 }
 
 #[test]
@@ -1066,6 +1066,16 @@ fn archive_all_keeps_the_busy_dialog() {
 mod speed {
     use super::*;
 
+    // the language of the messages depends on the settings of the machine that runs the test
+    trait ContainsAny {
+        fn contains_any(&self, words: &[&str]) -> bool;
+    }
+    impl ContainsAny for str {
+        fn contains_any(&self, words: &[&str]) -> bool {
+            words.iter().any(|w| self.contains(w))
+        }
+    }
+
     // One word is one "token". `full` words are generated unless the request asks for fewer (max_tokens or
     // max_completion_tokens); a capped answer ends with finish_reason "length". Sentences have 8 words.
     pub struct GenMock {
@@ -1073,11 +1083,11 @@ mod speed {
         pub bodies: Arc<Mutex<Vec<String>>>,
     }
 
-    pub fn word(i: usize) -> String {
-        format!("слово{}{} ", i, if i % 8 == 0 { "." } else { "" })
+    pub fn word(i: usize, sentence: usize) -> String {
+        format!("слово{}{} ", i, if i % sentence == 0 { "." } else { "" })
     }
 
-    pub fn gen_mock(connections: usize, full: usize, first_ms: u64, per_token_ms: u64) -> GenMock {
+    pub fn gen_mock(connections: usize, full: usize, first_ms: u64, per_token_ms: u64, sentence: usize) -> GenMock {
         std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
         std::env::set_var("no_proxy", "127.0.0.1,localhost");
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -1120,7 +1130,7 @@ mod speed {
                 if v.get("stream").and_then(|s| s.as_bool()).unwrap_or(false) {
                     let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n");
                     for i in 1..=n {
-                        if stream.write_all(sse_chunk(&word(i)).as_bytes()).is_err() {
+                        if stream.write_all(sse_chunk(&word(i, sentence)).as_bytes()).is_err() {
                             break;
                         }
                         let _ = stream.flush();
@@ -1130,7 +1140,7 @@ mod speed {
                     let _ = write!(stream, "data: {}\n\ndata: [DONE]\n\n", fin);
                 } else {
                     std::thread::sleep(Duration::from_millis(per_token_ms * n as u64));
-                    let answer: String = (1..=n).map(word).collect::<String>().trim().to_string();
+                    let answer: String = (1..=n).map(|i| word(i, sentence)).collect::<String>().trim().to_string();
                     let body = json!({ "choices": [{ "message": { "role": "assistant", "content": answer }, "finish_reason": if capped { "length" } else { "stop" } }] }).to_string();
                     let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
                 }
@@ -1149,6 +1159,172 @@ mod speed {
         chat.id
     }
 
+    fn cap_in(body: &str) -> Option<(String, u64)> {
+        let v: Value = serde_json::from_str(body).ok()?;
+        for k in ["max_tokens", "max_completion_tokens"] {
+            if let Some(n) = v.get(k).and_then(|n| n.as_u64()) {
+                return Some((k.to_string(), n));
+            }
+        }
+        None
+    }
+
+    fn system_of(body: &str) -> String {
+        let v: Value = serde_json::from_str(body).unwrap();
+        v["messages"][0]["content"].as_str().unwrap_or("").to_string()
+    }
+
+    #[test]
+    fn a_short_spoken_question_gets_a_brief_answer_and_a_wordy_model_is_stopped_at_a_whole_sentence() {
+        let _g = crate::uistate::TEST_LOCK.lock();
+        crate::tts::set_enabled(true);
+        let m = gen_mock(1, 700, 20, 1, 8);
+        let store = leaked_store();
+        let before = crate::tts::TEST_SPOKEN.lock().len();
+        let out = send_with(store, conf(&m.base), None, "что такое питон", true).unwrap();
+        let id = out.chat_id.clone();
+        let t = out.handle.join().unwrap();
+        let body = m.bodies.lock()[0].clone();
+        assert_eq!(cap_in(&body), Some(("max_tokens".to_string(), 500)), "{}", body);
+        assert!(system_of(&body).contains_any(&["вслух", "aloud"]), "the model is asked to be brief: {}", system_of(&body));
+        let answer = messages(store, &id).last().unwrap().content.clone();
+        assert!(answer.contains("слово496.") && !answer.contains("слово497"), "cut at the last whole sentence: {}", &answer[answer.len().saturating_sub(160)..]);
+        assert!(answer.contains_any(&["сокращён", "Shortened"]) && answer.contains_any(&["подробнее", "more details"]), "and it says so: {}", answer);
+        assert!(t.shortened && t.limit_tokens == Some(500) && !t.retried_without_limit, "{:?}", t);
+        let spoken = crate::tts::TEST_SPOKEN.lock()[before..].join(" ");
+        assert!(!spoken.contains("слово497") && !spoken.contains("слово500"), "the cut-off end is not read aloud");
+    }
+
+    #[test]
+    fn typed_and_detailed_questions_are_never_capped() {
+        let _g = crate::uistate::TEST_LOCK.lock();
+        crate::tts::set_enabled(true);
+        for (label, question, spoken) in [("typed", "что такое питон", false), ("asks for details", "расскажи подробно про питон", true), ("asks for code", "напиши функцию сортировки", true), ("long question", "а вот скажи мне пожалуйста вот такую вещь которая долго объясняется как мне быть если у меня есть много разных дел на этой неделе и я не успеваю ничего сделать совсем", true)] {
+            let m = gen_mock(1, 700, 10, 0, 8);
+            let store = leaked_store();
+            let out = send_with(store, conf(&m.base), None, question, spoken).unwrap();
+            let id = out.chat_id.clone();
+            let t = out.handle.join().unwrap();
+            let body = m.bodies.lock()[0].clone();
+            assert_eq!(cap_in(&body), None, "{}: no cap in {}", label, body);
+            assert!(!system_of(&body).contains_any(&["вслух", "aloud"]), "{}: no request for brevity", label);
+            let answer = messages(store, &id).last().unwrap().content.clone();
+            assert!(answer.contains("слово700") && !answer.contains_any(&["сокращён", "Shortened"]), "{}: the whole answer, nothing cut", label);
+            assert!(!t.shortened && t.limit_tokens.is_none(), "{}: {:?}", label, t);
+        }
+    }
+
+    #[test]
+    fn a_cap_that_is_too_tight_is_dropped_and_the_question_is_asked_again() {
+        let _g = crate::uistate::TEST_LOCK.lock();
+        crate::tts::set_enabled(true);
+        // a model whose answer has no whole sentence in the first 500 tokens (it thinks aloud, one long run)
+        let m = gen_mock(2, 700, 10, 0, 100_000);
+        let store = leaked_store();
+        let out = send_with(store, conf(&m.base), None, "что такое питон", true).unwrap();
+        let id = out.chat_id.clone();
+        let t = out.handle.join().unwrap();
+        let bodies = m.bodies.lock().clone();
+        assert_eq!(bodies.len(), 2, "asked twice");
+        assert!(cap_in(&bodies[0]).is_some() && cap_in(&bodies[1]).is_none(), "the second time without the cap");
+        assert!(system_of(&bodies[0]).contains_any(&["вслух", "aloud"]) && !system_of(&bodies[1]).contains_any(&["вслух", "aloud"]));
+        let msgs = messages(store, &id);
+        let answers: Vec<&ChatMsg> = msgs.iter().filter(|x| x.role == "assistant").collect();
+        assert_eq!(answers.len(), 1, "one answer, not two");
+        assert!(answers[0].content.contains("слово700") && !answers[0].content.contains_any(&["сокращён", "Shortened"]), "the whole answer");
+        assert!(t.retried_without_limit && !t.shortened, "{:?}", t);
+    }
+
+    #[test]
+    fn a_capped_answer_that_comes_in_one_piece_is_cut_the_same_way() {
+        let _g = crate::uistate::TEST_LOCK.lock();
+        crate::tts::set_enabled(true);
+        let m = gen_mock(1, 700, 10, 0, 8);
+        STREAM_BROKEN.lock().insert(m.base.clone(), std::time::Instant::now());
+        let store = leaked_store();
+        let out = send_with(store, conf(&m.base), None, "что такое питон", true).unwrap();
+        let id = out.chat_id.clone();
+        let t = out.handle.join().unwrap();
+        let body = m.bodies.lock()[0].clone();
+        assert!(body.contains("\"stream\":false") && cap_in(&body).is_some(), "{}", body);
+        let answer = messages(store, &id).last().unwrap().content.clone();
+        assert!(answer.contains("слово496.") && !answer.contains("слово497") && answer.contains_any(&["сокращён", "Shortened"]), "{}", &answer[answer.len().saturating_sub(120)..]);
+        assert!(t.shortened && !t.streamed, "{:?}", t);
+    }
+
+    #[test]
+    fn the_cap_uses_the_parameter_of_each_api_and_none_where_it_is_not_known_to_be_safe() {
+        let c = |kind: Kind, name: &str, base: &str, model: &str| ProviderConf { kind, name: name.into(), base: base.into(), model: model.into(), key: "k".into(), route: String::new() };
+        assert_eq!(voice_cap(&c(Kind::Anthropic, "Anthropic", "https://api.anthropic.com", "claude-sonnet-5-5")), Some(Cap { tokens: 500, param: "max_tokens" }));
+        assert_eq!(voice_cap(&c(Kind::OpenAiCompatible, "OpenAI", "https://api.openai.com/v1", "gpt-4o-mini")), Some(Cap { tokens: 500, param: "max_completion_tokens" }));
+        assert_eq!(voice_cap(&c(Kind::OpenAiCompatible, "OpenRouter", "https://openrouter.ai/api/v1", "google/gemini-2.5-flash-lite")), Some(Cap { tokens: 500, param: "max_tokens" }));
+        assert_eq!(voice_cap(&c(Kind::OpenAiCompatible, "Ollama", "http://127.0.0.1:11434/v1", "llama3.1")), Some(Cap { tokens: 500, param: "max_tokens" }));
+        // Gemini counts its thinking in the same limit: room for it
+        assert_eq!(voice_cap(&c(Kind::OpenAiCompatible, "Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-flash-latest")), Some(Cap { tokens: 1524, param: "max_tokens" }));
+        // models that think: their thinking is in the limit and its size is not known - no cap
+        for model in ["gpt-5", "o3-mini", "openai/o4-mini", "deepseek/deepseek-r1", "qwen3:8b", "some-thinking-model"] {
+            assert_eq!(voice_cap(&c(Kind::OpenAiCompatible, "OpenRouter", "https://openrouter.ai/api/v1", model)), None, "{}", model);
+        }
+        // the body
+        let o = c(Kind::OpenAiCompatible, "OpenAI", "https://api.openai.com/v1", "gpt-4o-mini");
+        let b = build_body_limit(&o, &[], "s", true, voice_cap(&o));
+        assert_eq!(b["max_completion_tokens"], 500);
+        assert!(b.get("max_tokens").is_none(), "only the parameter this API knows");
+        assert!(build_body_opts(&o, &[], "s", true).get("max_completion_tokens").is_none(), "the usual body has no cap");
+        let a = c(Kind::Anthropic, "Anthropic", "https://api.anthropic.com", "m");
+        assert_eq!(build_body_limit(&a, &[], "s", false, voice_cap(&a))["max_tokens"], 500);
+        assert_eq!(build_body_opts(&a, &[], "s", false)["max_tokens"], 2048, "Anthropic needs a number: the old one when nothing is capped");
+    }
+
+    #[test]
+    fn what_asks_for_a_long_answer_and_where_a_sentence_ends() {
+        assert!(short_voice_answer("что такое питон", true));
+        assert!(!short_voice_answer("что такое питон", false), "a typed question is not capped");
+        for q in ["расскажи подробно про питон", "подробнее", "дай пошаговую инструкцию", "напиши скрипт", "переведи текст", "составь список дел", "explain in detail", "step by step please", "write a script"] {
+            assert!(wants_detail(q), "{}", q);
+            assert!(!short_voice_answer(q, true), "{}", q);
+        }
+        assert!(!short_voice_answer(&"слово ".repeat(31), true), "a long question is not capped");
+        assert_eq!(cut_to_sentence("Первое предложение достаточно длинное для проверки. Второе предложение тоже длинное и полное. Третье обор"), Some("Первое предложение достаточно длинное для проверки. Второе предложение тоже длинное и полное.".to_string()));
+        assert_eq!(cut_to_sentence("Совсем без конца предложения и без точки внутри текста вообще никакой"), None);
+        assert_eq!(cut_to_sentence("Коротко. Мало."), None, "less than 60 characters: not an answer");
+        assert_eq!(cut_to_sentence(""), None);
+        let mut sp = SentenceSpeaker::new();
+        let mut said: Vec<String> = sp.push("Это первое законченное предложение для озвучки здесь. Это второе, тоже законченное, предложение. Это начало третьего и оно об");
+        said.extend(sp.finish_complete());
+        let said = said.join(" ");
+        assert!(said.contains("второе") && !said.contains("третьего"), "{}", said);
+    }
+
+    #[test]
+    fn the_context_is_short_but_keeps_the_question_and_the_exchange_before_it() {
+        let mut msgs = Vec::new();
+        for i in 0..60 {
+            msgs.push(ChatMsg { role: if i % 2 == 0 { "user" } else { "assistant" }.into(), content: format!("сообщение номер {} {}", i, "текст ".repeat(40)), ts: 0, ..Default::default() });
+        }
+        msgs.push(ChatMsg { role: "user".into(), content: "а что дальше".into(), ts: 0, ..Default::default() });
+        let ctx = context_for_model(&msgs);
+        assert!(ctx.len() <= MAX_CONTEXT_MESSAGES, "{}", ctx.len());
+        assert!(ctx.iter().map(|m| m.content.chars().count()).sum::<usize>() <= MAX_CONTEXT_CHARS + 300);
+        assert_eq!(ctx.first().unwrap().role, "user");
+        assert_eq!(ctx.last().unwrap().content, "а что дальше");
+        // the step before: a pasted text and its answer are still there, whatever their size
+        let big = vec![
+            ChatMsg { role: "user".into(), content: "x".repeat(7000), ts: 0, ..Default::default() },
+            ChatMsg { role: "assistant".into(), content: "y".repeat(7000), ts: 0, ..Default::default() },
+            ChatMsg { role: "user".into(), content: "сократи это".into(), ts: 0, ..Default::default() },
+        ];
+        let ctx = context_for_model(&big);
+        assert_eq!(ctx.len(), 3, "the pasted text, its answer and the question: the question about it keeps its meaning");
+        // older messages of a long talk are dropped when the budget is over
+        let mut older = vec![ChatMsg { role: "user".into(), content: "z".repeat(5000), ts: 0, ..Default::default() }, ChatMsg { role: "assistant".into(), content: "w".repeat(5000), ts: 0, ..Default::default() }];
+        older.extend(big.clone());
+        let ctx = context_for_model(&older);
+        assert_eq!(ctx.len(), 3, "the exchange before the last one is dropped, it does not fit");
+        // nothing but the dialog: commands and errors never go to the model
+        assert!(context_for_model(&[ChatMsg { role: "user".into(), content: "открой ворд".into(), src: "cmd".into(), ts: 0, ..Default::default() }]).is_empty());
+    }
+
     #[test]
     fn measure_the_speed_on_the_mock() {
         let _g = crate::uistate::TEST_LOCK.lock();
@@ -1162,7 +1338,7 @@ mod speed {
             ("typed question, wordy model", "что такое питон", false, 700, 0),
         ];
         for (label, question, spoken, words, pairs) in cases {
-            let m = gen_mock(1, words, 150, 6);
+            let m = gen_mock(1, words, 150, 6, 8);
             let store = leaked_store();
             let chat = if pairs > 0 { Some(long_dialog(store, pairs)) } else { None };
             let out = send_with(store, conf(&m.base), chat.as_deref(), question, spoken).unwrap();

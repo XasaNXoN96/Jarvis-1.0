@@ -22,8 +22,13 @@ use crate::APP_CONFIG_DIR;
 
 // how much history goes to the model: the last messages, within a size budget
 // (short on purpose: every extra message is paid for in time to the first word of the answer)
-pub const MAX_CONTEXT_MESSAGES: usize = 16;
-pub const MAX_CONTEXT_CHARS: usize = 8_000;
+// What goes to the model with a question: the last messages that fit. Fewer and shorter than before (16 messages / 8000
+// characters): a long context makes the first word of the answer come later and the request heavier, and the old messages
+// of a long talk rarely matter to the next question. The question itself and the exchange right before it (the answer
+// it refers to, "shorten this") are always kept, whatever their size.
+pub const MAX_CONTEXT_MESSAGES: usize = 10;
+pub const MAX_CONTEXT_CHARS: usize = 6_000;
+const ALWAYS_KEPT: usize = 3;
 pub const MAX_MESSAGE_CHARS: usize = 8_000;
 const MAX_STORED_MESSAGES: usize = 500;
 // how long the provider may stay silent (no answer started, or a stream that stopped) before the error is shown
@@ -631,6 +636,102 @@ pub fn system_prompt() -> String {
     }
 }
 
+// the same, for an answer that will be read aloud and is short
+pub fn system_prompt_for(short: bool) -> String {
+    let base = system_prompt();
+    if !short {
+        return base;
+    }
+    if crate::i18n::get_language() == "en" {
+        format!("{} The answer will be read aloud: at most 4-5 short sentences, no lists, tables or markup, unless the user asks for details.", base)
+    } else {
+        format!("{} Ответ будет прочитан вслух: не больше 4–5 коротких предложений, без списков, таблиц и разметки, если пользователь сам не просит подробностей.", base)
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// the length of a spoken answer
+// ---------------------------------------------------------------------------------------------
+// A short question asked to be answered aloud gets a short answer: the model is told to be brief and its answer is capped
+// (about 500 tokens). The cap is never the only means: it only keeps a wordy model from running on. An answer that hits it is
+// cut at its last whole sentence and says so; if not even one sentence fits (a model that thinks at length spends the cap
+// on thinking), the question is asked again without the cap. Text answers, long questions and requests for details are
+// never capped.
+const VOICE_ANSWER_TOKENS: u32 = 500;
+// Gemini counts its short thinking against the same limit
+const THINKING_ALLOWANCE: u32 = 1024;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Cap {
+    pub tokens: u32,
+    pub param: &'static str, // the name of the parameter of this API
+}
+
+// a model that thinks before it answers: its thinking is counted in the limit and its size is not known
+fn reasoning_model(model: &str) -> bool {
+    let m = model.to_lowercase();
+    let name = m.rsplit('/').next().unwrap_or(&m);
+    name.starts_with("gpt-5") || name.starts_with("o1") || name.starts_with("o3") || name.starts_with("o4") || m.contains("r1") || m.contains("reason") || m.contains("think") || m.contains("qwq") || m.contains("qwen3")
+}
+
+// the cap for this provider and model, in the parameter this API knows; None = no cap (not known to be safe)
+pub fn voice_cap(conf: &ProviderConf) -> Option<Cap> {
+    match conf.kind {
+        Kind::Anthropic => Some(Cap { tokens: VOICE_ANSWER_TOKENS, param: "max_tokens" }),
+        Kind::OpenAiCompatible => {
+            if reasoning_model(&conf.model) {
+                return None;
+            }
+            if conf.name.contains("Gemini") {
+                return Some(Cap { tokens: VOICE_ANSWER_TOKENS + THINKING_ALLOWANCE, param: "max_tokens" });
+            }
+            // OpenAI's own API names it max_completion_tokens; the others (OpenRouter, Ollama, other servers) know max_tokens
+            let openai = conf.name == "OpenAI" || conf.base.contains("api.openai.com");
+            Some(Cap { tokens: VOICE_ANSWER_TOKENS, param: if openai { "max_completion_tokens" } else { "max_tokens" } })
+        }
+    }
+}
+
+// the words that ask for a long answer: details, steps, instructions, code, a text to write, a list
+pub fn wants_detail(text: &str) -> bool {
+    let t = text.to_lowercase();
+    const WORDS: &[&str] = &[
+        "подробн", "развёрнут", "развернут", "детальн", "пошагов", "по шагам", "инструкц", "руководств", "код", "скрипт", "программ",
+        "напиши", "написать", "составь", "сочини", "статью", "эссе", "реферат", "перевед", "перевод", "список", "перечисл", "сравни",
+        "таблиц", "как сделать", "как настроить", "как установить", "как создать", "как написать", "план ",
+        "detail", "step by step", "step-by-step", "instruction", "tutorial", "how to", "code", "script", "program", "write", "essay",
+        "translate", "list", "compare", "table", "guide",
+    ];
+    WORDS.iter().any(|w| t.contains(w))
+}
+
+// a short spoken question: it will be read aloud, it is short, nothing in it asks for a long answer
+pub fn short_voice_answer(text: &str, speak: bool) -> bool {
+    speak && !wants_detail(text) && text.split_whitespace().count() <= 30
+}
+
+// the end of an answer that ran into the cap: its whole sentences, or None when not even one sentence (at least 60
+// characters) is whole
+pub fn cut_to_sentence(text: &str) -> Option<String> {
+    let t = text.trim_end();
+    let mut cut = 0usize;
+    let chars: Vec<(usize, char)> = t.char_indices().collect();
+    for (k, (i, c)) in chars.iter().enumerate() {
+        if matches!(c, '.' | '!' | '?' | '…') && chars.get(k + 1).map(|(_, n)| n.is_whitespace()).unwrap_or(true) {
+            cut = i + c.len_utf8();
+        }
+    }
+    if t[..cut].chars().count() >= 60 { Some(t[..cut].to_string()) } else { None }
+}
+
+fn shortened_note() -> &'static str {
+    if crate::i18n::get_language() == "en" {
+        "\n\n(Shortened. Say “more details” for the full answer.)"
+    } else {
+        "\n\n(Ответ сокращён. Скажите «подробнее», чтобы получить его полностью.)"
+    }
+}
+
 // the last messages that fit the budget, starting with a user message, only user / assistant roles
 pub fn context_for_model(messages: &[ChatMsg]) -> Vec<ChatMsg> {
     // computer commands and their replies ("открой ворд" - "Открываю Word") are not a talk with the model
@@ -642,7 +743,8 @@ pub fn context_for_model(messages: &[ChatMsg]) -> Vec<ChatMsg> {
     let mut total = 0usize;
     for m in usable.iter().rev() {
         let len = m.content.chars().count();
-        if picked.len() >= MAX_CONTEXT_MESSAGES || (total + len > MAX_CONTEXT_CHARS && !picked.is_empty()) {
+        let must = picked.len() < ALWAYS_KEPT;
+        if picked.len() >= MAX_CONTEXT_MESSAGES || (total + len > MAX_CONTEXT_CHARS && !must) {
             break;
         }
         total += len;
@@ -676,6 +778,11 @@ pub fn build_body(conf: &ProviderConf, history: &[ChatMsg], system: &str) -> Val
 
 // `stream`: the answer arrives in fragments (server-sent events) instead of one piece at the end
 pub fn build_body_opts(conf: &ProviderConf, history: &[ChatMsg], system: &str, stream: bool) -> Value {
+    build_body_limit(conf, history, system, stream, None)
+}
+
+// `limit`: the cap of the answer, in the parameter of this API (see voice_cap); None = the usual body
+pub fn build_body_limit(conf: &ProviderConf, history: &[ChatMsg], system: &str, stream: bool, limit: Option<Cap>) -> Value {
     match conf.kind {
         Kind::OpenAiCompatible => {
             let mut msgs = vec![json!({ "role": "system", "content": system })];
@@ -691,11 +798,14 @@ pub fn build_body_opts(conf: &ProviderConf, history: &[ChatMsg], system: &str, s
                     body["provider"] = p;
                 }
             }
+            if let Some(cap) = limit {
+                body[cap.param] = json!(cap.tokens);
+            }
             body
         }
         Kind::Anthropic => {
             let msgs: Vec<Value> = alternate(history).iter().map(|m| json!({ "role": m.role, "content": m.content })).collect();
-            let mut body = json!({ "model": conf.model, "max_tokens": 2048, "system": system, "messages": msgs });
+            let mut body = json!({ "model": conf.model, "max_tokens": limit.map(|c| c.tokens).unwrap_or(2048), "system": system, "messages": msgs });
             if stream {
                 body["stream"] = json!(true);
             }
@@ -743,6 +853,24 @@ pub fn parse_sse_line(kind: &Kind, line: &str) -> Sse {
             Some("error") => Sse::Error(v.pointer("/error/message").and_then(|m| m.as_str()).unwrap_or("ошибка в потоке ответа").chars().take(160).collect()),
             _ => Sse::Skip,
         },
+    }
+}
+
+// did this line of a stream say that the answer ran into the limit ("length" / "max_tokens")?
+pub fn sse_truncated(kind: &Kind, line: &str) -> bool {
+    let Some(data) = line.strip_prefix("data:") else { return false };
+    let Ok(v) = serde_json::from_str::<Value>(data.trim()) else { return false };
+    match kind {
+        Kind::OpenAiCompatible => matches!(v.pointer("/choices/0/finish_reason").and_then(|f| f.as_str()), Some("length") | Some("max_tokens")),
+        Kind::Anthropic => v.pointer("/delta/stop_reason").and_then(|f| f.as_str()) == Some("max_tokens"),
+    }
+}
+
+// the same for an answer that came as one piece
+pub fn answer_truncated(conf: &ProviderConf, body: &Value) -> bool {
+    match conf.kind {
+        Kind::OpenAiCompatible => matches!(body.pointer("/choices/0/finish_reason").and_then(|f| f.as_str()), Some("length") | Some("max_tokens")),
+        Kind::Anthropic => body.get("stop_reason").and_then(|f| f.as_str()) == Some("max_tokens"),
     }
 }
 
@@ -853,22 +981,34 @@ fn net_error(conf: &ProviderConf, e: reqwest::Error) -> AiError {
 // one blocking request; the caller handles cancellation
 #[cfg(feature = "lua")]
 pub fn request_answer(conf: &ProviderConf, history: &[ChatMsg], system: &str) -> Result<String, AiError> {
-    let body = build_body(conf, history, system);
+    request_answer_limited(conf, history, system, None).map(|(answer, _)| answer)
+}
+
+// the same with a cap of the answer; the second value says whether the answer ran into it
+#[cfg(feature = "lua")]
+pub fn request_answer_limited(conf: &ProviderConf, history: &[ChatMsg], system: &str, limit: Option<Cap>) -> Result<(String, bool), AiError> {
+    let body = build_body_limit(conf, history, system, false, limit);
     let resp = with_key(conf, client()?.post(endpoint(conf)).json(&body)).send().map_err(|e| net_error(conf, e))?;
     let status = resp.status().as_u16();
     let text = resp.text().map_err(|e| net_error(conf, e))?;
     if reasoning_refused(conf, status, &text) || route_refused(conf, status, &text) {
-        return request_answer(conf, history, system);
+        return request_answer_limited(conf, history, system, limit);
     }
     if !(200..300).contains(&status) {
         return Err(map_status(conf, status, &text));
     }
     let v: Value = serde_json::from_str(&text).map_err(|_| AiError::BadResponse)?;
-    parse_answer(conf, &v)
+    let truncated = answer_truncated(conf, &v);
+    match parse_answer(conf, &v) {
+        Ok(a) => Ok((a, truncated)),
+        // nothing but the limit was reached (a model that thinks used it all): the caller asks again without it
+        Err(AiError::BadResponse) if truncated && limit.is_some() => Ok((String::new(), true)),
+        Err(e) => Err(e),
+    }
 }
 
 #[cfg(not(feature = "lua"))]
-pub fn request_answer(_conf: &ProviderConf, _history: &[ChatMsg], _system: &str) -> Result<String, AiError> {
+pub fn request_answer_limited(_conf: &ProviderConf, _history: &[ChatMsg], _system: &str, _limit: Option<Cap>) -> Result<(String, bool), AiError> {
     Err(AiError::Other("в этой сборке нет сетевого модуля".into()))
 }
 
@@ -886,6 +1026,8 @@ pub fn complete(system: &str, user: &str, cancel: &AtomicBool) -> Result<String,
 pub struct Probe {
     pub request_ms: Option<u64>, // submit -> the request goes out
     pub streamed: bool,
+    pub limit: Option<Cap>,      // in: the cap of the answer asked for
+    pub truncated: bool,         // out: the answer ran into the cap
 }
 
 // The answer as a stream: `on_delta` gets every fragment as soon as it arrives. A server that answers with a plain JSON
@@ -901,7 +1043,7 @@ pub fn request_answer_stream(
     on_delta: &mut dyn FnMut(&str),
 ) -> Result<String, AiError> {
     use std::io::BufRead;
-    let body = build_body_opts(conf, history, system, true);
+    let body = build_body_limit(conf, history, system, true, probe.limit);
     probe.request_ms = Some(t0.elapsed().as_millis() as u64);
     // "identity": a compressed stream may be held back by the server or the client until a buffer is full
     let resp = with_key(conf, client()?.post(endpoint(conf)).header("Accept", "text/event-stream").header("Accept-Encoding", "identity").json(&body)).send().map_err(|e| net_error(conf, e))?;
@@ -913,7 +1055,8 @@ pub fn request_answer_stream(
         }
         // a server that does not know "stream": ask once more the usual way
         if (status == 400 || status == 422) && text.to_lowercase().contains("stream") {
-            let answer = request_answer(conf, history, system)?;
+            let (answer, truncated) = request_answer_limited(conf, history, system, probe.limit)?;
+            probe.truncated = truncated;
             on_delta(&answer);
             return Ok(answer);
         }
@@ -923,7 +1066,11 @@ pub fn request_answer_stream(
     if !is_sse {
         let text = resp.text().map_err(|e| net_error(conf, e))?;
         let v: Value = serde_json::from_str(&text).map_err(|_| AiError::BadResponse)?;
-        let answer = parse_answer(conf, &v)?;
+        probe.truncated = answer_truncated(conf, &v);
+        let answer = match parse_answer(conf, &v) {
+            Ok(a) => a,
+            Err(e) => return Err(e),
+        };
         on_delta(&answer);
         return Ok(answer);
     }
@@ -937,7 +1084,12 @@ pub fn request_answer_stream(
         line.clear();
         match reader.read_line(&mut line) {
             Ok(0) => break,
-            Ok(_) => match parse_sse_line(&conf.kind, line.trim_end()) {
+            Ok(_) => match {
+                if sse_truncated(&conf.kind, line.trim_end()) {
+                    probe.truncated = true;
+                }
+                parse_sse_line(&conf.kind, line.trim_end())
+            } {
                 Sse::Delta(d) => {
                     full.push_str(&d);
                     on_delta(&d);
@@ -1062,6 +1214,11 @@ pub struct Timing {
     pub first_speech_queued_ms: Option<u64>, // submit -> the first phrase is handed to the voice
     pub first_speech_started_ms: Option<u64>, // submit -> the voice starts working on it
     pub fallback: bool,                     // the stream gave nothing and the answer was asked once more without it
+    pub limit_tokens: Option<u32>,          // the cap of a short spoken answer that was asked for (None: no cap)
+    pub shortened: bool,                    // the answer ran into the cap and was cut at its last whole sentence
+    pub retried_without_limit: bool,        // the cap was too tight: the question was asked again without it
+    pub context_messages: usize,            // what went to the model with the question
+    pub context_chars: usize,
 }
 
 static LAST_TIMING: Lazy<Mutex<Option<Timing>>> = Lazy::new(|| Mutex::new(None));
@@ -1156,6 +1313,14 @@ impl SentenceSpeaker {
                 out.push(text);
             }
         }
+    }
+
+    // the rest of an answer that was cut at a whole sentence: what is waiting is said, the unfinished end is not
+    pub fn finish_complete(&mut self) -> Vec<String> {
+        let mut out = Vec::new();
+        self.buf.clear();
+        self.flush_pending(&mut out, true);
+        out
     }
 
     // the rest when the answer is complete
@@ -1300,7 +1465,11 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
         msgs.push(ChatMsg { role: "user".into(), content: rid_text, src: "ai".into(), ..Default::default() });
         context_for_model(&msgs)
     };
-    info!("AI: request to {} (model {}), {} messages of context", conf.name, conf.model, history.len());
+    // a short question asked to be answered aloud: a short answer (the words and the cap); everything else as before
+    let short = short_voice_answer(text, speak);
+    let limit0 = if short { voice_cap(&conf) } else { None };
+    let (ctx_messages, ctx_chars) = (history.len(), history.iter().map(|m| m.content.chars().count()).sum::<usize>());
+    info!("AI: request to {} (model {}), {} messages / {} characters of context, short spoken answer: {}, answer cap: {:?}", conf.name, conf.model, ctx_messages, ctx_chars, short, limit0.map(|c| (c.param, c.tokens)));
 
     let job_id = id.clone();
     let rid = new_rid();
@@ -1316,20 +1485,24 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
         }
         let (tx, rx) = mpsc::channel::<Msg>();
         let history = Arc::new(history);
-        let stream_cancel = Arc::new(AtomicBool::new(false));
-        let start_request = |generation: u8, streaming: bool, stream_cancel: Arc<AtomicBool>| {
+        let mut stream_cancel = Arc::new(AtomicBool::new(false));
+        let start_request = |generation: u8, streaming: bool, stream_cancel: Arc<AtomicBool>, short: bool, limit: Option<Cap>| {
             let (tx, conf2, history2) = (tx.clone(), conf.clone(), history.clone());
             std::thread::spawn(move || {
-                let mut probe = Probe::default();
+                let mut probe = Probe { limit, ..Default::default() };
                 let tx2 = tx.clone();
+                let system = system_prompt_for(short);
                 let r = if streaming {
-                    request_answer_stream(&conf2, &history2, &system_prompt(), &stream_cancel, t0, &mut probe, &mut |d| {
+                    request_answer_stream(&conf2, &history2, &system, &stream_cancel, t0, &mut probe, &mut |d| {
                         let _ = tx2.send(Msg::Delta(generation, d.to_string()));
                     })
                 } else {
                     // without a stream the whole answer comes as one fragment
                     probe.request_ms = Some(t0.elapsed().as_millis() as u64);
-                    let r = request_answer(&conf2, &history2, &system_prompt());
+                    let r = request_answer_limited(&conf2, &history2, &system, limit).map(|(a, truncated)| {
+                        probe.truncated = truncated;
+                        a
+                    });
                     if let Ok(a) = &r {
                         let _ = tx2.send(Msg::Delta(generation, a.clone()));
                     }
@@ -1339,7 +1512,8 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
             });
         };
         let (mut generation, mut fell_back) = (1u8, false);
-        start_request(generation, stream_allowed(&conf), stream_cancel.clone());
+        let (mut limit_now, mut short_now, mut retried) = (limit0, short, false);
+        start_request(generation, stream_allowed(&conf), stream_cancel.clone(), short_now, limit_now);
 
         let mut speaker = SentenceSpeaker::new();
         let say_aloud = speak;
@@ -1357,6 +1531,7 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
         };
         // wait for the answer; show every fragment at once, react to "Stop" within a fraction of a second
         let mut probe_out = Probe::default();
+        let mut truncated = false;
         let mut last_activity = std::time::Instant::now();
         let result = loop {
             if cancel.load(Ordering::SeqCst) {
@@ -1372,7 +1547,7 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
                 fell_back = true;
                 generation += 1;
                 last_activity = std::time::Instant::now();
-                start_request(generation, false, Arc::new(AtomicBool::new(false)));
+                start_request(generation, false, Arc::new(AtomicBool::new(false)), short_now, limit_now);
                 continue;
             }
             if last_activity.elapsed() > STALL_LIMIT {
@@ -1394,6 +1569,29 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
                     speak_now(parts, &mut first_queued);
                 }
                 Ok(Msg::Done(_, r, p)) => {
+                    // the cap was too tight (a model that thinks used it up, or not even one sentence fits): the question is
+                    // asked once more without the cap and without the request for brevity
+                    let too_tight = limit_now.is_some() && p.truncated && !retried && match &r {
+                        Ok(a) => cut_to_sentence(a).is_none(),
+                        Err(AiError::BadResponse) => true,
+                        _ => false,
+                    };
+                    if too_tight {
+                        warn!("AI: the answer cap was too tight, asking again without it");
+                        crate::uistate::log_event("ai", "Ответ упёрся в предел длины: повторяю запрос без предела");
+                        retried = true;
+                        limit_now = None;
+                        short_now = false;
+                        generation += 1;
+                        shown.clear();
+                        speaker = SentenceSpeaker::new();
+                        live_set(&job_id, &rid, "");
+                        last_activity = std::time::Instant::now();
+                        stream_cancel = Arc::new(AtomicBool::new(false));
+                        start_request(generation, stream_allowed(&conf) && !fell_back, stream_cancel.clone(), short_now, limit_now);
+                        continue;
+                    }
+                    truncated = p.truncated && limit_now.is_some();
                     probe_out = p;
                     break r;
                 }
@@ -1402,12 +1600,20 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
             }
         };
         let total_ms = t0.elapsed().as_millis() as u64;
+        let mut was_cut = false;
         live_clear(&job_id);
         match &result {
             Ok(answer) => {
-                store.append_with(&job_id, "assistant", answer, &rid, "ai");
-                // the part that was not complete as a sentence
-                let parts = speaker.finish();
+                // an answer that ran into the cap ends at its last whole sentence and says that it was shortened
+                let cut = if truncated { cut_to_sentence(answer) } else { None };
+                was_cut = cut.is_some();
+                let stored = match &cut {
+                    Some(c) => format!("{}{}", c, shortened_note()),
+                    None => answer.clone(),
+                };
+                store.append_with(&job_id, "assistant", &stored, &rid, "ai");
+                // the part that was not complete as a sentence (of a shortened answer: not said, its end was cut off)
+                let parts = if was_cut { speaker.finish_complete() } else { speaker.finish() };
                 speak_now(parts, &mut first_queued);
                 status_set(Conn::Connected, "");
             }
@@ -1444,6 +1650,11 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
             first_speech_queued_ms: first_queued,
             first_speech_started_ms: first_started,
             fallback: fell_back,
+            limit_tokens: limit0.map(|c| c.tokens),
+            shortened: was_cut,
+            retried_without_limit: retried,
+            context_messages: ctx_messages,
+            context_chars: ctx_chars,
         };
         info!("AI timing: request out {} ms, first fragment {:?} ms, total {} ms, streamed={}, fragments={}, voice queued {:?} ms", timing.to_request_ms, timing.first_chunk_ms, timing.total_ms, timing.streamed, timing.chunks, timing.first_speech_queued_ms);
         *LAST_TIMING.lock() = Some(timing.clone());
