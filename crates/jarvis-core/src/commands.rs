@@ -361,6 +361,8 @@ pub fn effective_risk(cmd_path: &Path, cmd_config: &JCommand) -> crate::policy::
 }
 
 pub fn execute_command(cmd_path: &PathBuf, cmd_config: &JCommand, phrase: Option<&str>, slots: Option<&HashMap<String, SlotValue>>) -> Result<bool, String> {
+    // the last door: whoever calls (voice, window, phone, Telegram, a scenario, a dialog), a paid command does not start without a license
+    crate::access::check(&cmd_config.id).map_err(|d| d.message)?;
     // execute command by the type
     match cmd_config.cmd_type.as_str() {
 

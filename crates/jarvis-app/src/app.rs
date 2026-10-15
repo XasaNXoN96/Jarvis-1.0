@@ -786,6 +786,24 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
             return false;
         }
         
+        // a paid command without a license: told at once (BEFORE any «опасно, подтвердить?» question), never queued, never run later
+        // (access.rs; commands::execute_command checks again, so no other way in skips it)
+        if let Err(denied) = jarvis_core::access::check(&cmd_config.id) {
+            let msg = denied.message.clone();
+            info!("Command {} refused: {:?}", cmd_config.id, denied.why);
+            say(&msg);
+            ipc::send(IpcEvent::Output { text: msg.clone() });
+            open_request(text, "command");
+            jarvis_core::dialog::reply(&msg, "local");
+            jarvis_core::dialog::end(false);
+            jarvis_core::uistate::log_action(text, &format!("{}: нужна лицензия", cmd_config.id), false);
+            if jarvis_core::tts::can_speak().is_ok() {
+                jarvis_core::tts::speak(&msg);
+            }
+            ipc::send(IpcEvent::Idle);
+            return false;
+        }
+
         // a dangerous (high-risk) command is asked about first; only «да» from the same door runs this very command
         // (confirm.rs). What counts is the risk of a command whose files are the ones of this build.
         let risk = commands::effective_risk(&cmd_path, &cmd_config);

@@ -411,6 +411,8 @@ pub fn run_step(s: &Step) -> Result<(), String> {
 }
 
 fn run_step_in(s: &Step, grid: &mut Vec<isize>) -> Result<(), String> {
+    // scenarios (and their steps) are a paid function: every way to run one comes through here
+    crate::access::check("scenario_run").map_err(|d| d.message)?;
     check_step(s)?;
     // a scenario can do what a medium command does and no more: it cannot ask the user «да / нет» in the middle, so no
     // dangerous operation (a program from an unknown place, a forced kill) runs in it

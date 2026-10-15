@@ -3415,7 +3415,9 @@ dependencies = [
 name = "jarvis-core"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
+ "ed25519-dalek",
  "fastembed",
  "flate2",
  "fluent",
@@ -3423,6 +3425,8 @@ dependencies = [
  "futures-util",
  "hound",
  "intent-classifier",
+ "jarvis-license",
+ "jarvis-license-server",
  "kira",
  "libc",
  "log",

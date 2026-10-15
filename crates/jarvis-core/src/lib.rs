@@ -74,6 +74,8 @@ pub mod objects;
 pub mod codeobj;
 pub mod docai;
 pub mod secret;
+pub mod access;
+pub mod licensing;
 pub mod voice_install;
 pub mod ai;
 pub mod filesearch;

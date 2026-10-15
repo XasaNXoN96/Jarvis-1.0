@@ -35,6 +35,8 @@ unic-langid.workspace = true
 chrono.workspace = true
 flate2 = "1.1"
 sys-locale.workspace = true
+jarvis-license = { path = "../jarvis-license" }
+ed25519-dalek = { version = "2" }
 
 # pv_recorder = { workspace = true, optional = true }
 vosk = { version = "0.3.1", optional = true }
@@ -67,6 +69,8 @@ winrt-notification = { workspace = true, optional = true }
 sha2.workspace = true
 
 [features]
+# Jarvis User (the customer's program): the levels of resources/access.toml are enforced. Without it: Jarvis Admin.
+user-edition = []
 default = ["jarvis_app"]
 jarvis_app = [
     "vosk", "intent-classifier", "fastembed", "tokio", "nnnoiseless", "tokio-tungstenite", "futures-util",
@@ -76,3 +80,7 @@ jarvis_app = [
 intent = ["intent-classifier", "tokio"]
 lua = ["mlua", "reqwest", "winrt-notification"]
 lua_only = ["lua", "tokio"]
+
+[dev-dependencies]
+jarvis-license-server = { path = "../jarvis-license-server" }
+base64 = "0.22"

@@ -36,3 +36,7 @@ glib = "0.21.5"
 
 [build-dependencies]
 winresource = "0.1"
+
+[features]
+# Jarvis User: the customer's edition (paid commands need a license, no administrator functions)
+user-edition = ["jarvis-core/user-edition"]

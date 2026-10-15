@@ -250,6 +250,7 @@ fn main() -> Result<(), String> {
     jarvis_core::tts::init();
     // saved privacy choices (microphone off), a message about an unreadable settings file, the notification watcher
     jarvis_core::uistate::init();
+    jarvis_core::licensing::start_background();
     jarvis_core::notify::ext_apply();
     jarvis_core::lua::init_timers();
 

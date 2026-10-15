@@ -1,0 +1,43 @@
+# Who may run which command in Jarvis User (the program of the customer).
+#
+# FREE    - works in the Demo, without a license: simple harmless commands that show what Jarvis is.
+# SYSTEM  - what the program needs to run and be stopped (stop, exit, the switches of the voice and the microphone): never locked.
+# ADMIN   - only in Jarvis Admin (the owner's program); none of the customer's commands is ADMIN today.
+# PREMIUM - EVERYTHING ELSE. A command that is not on this list is Premium: a new command is paid until the owner puts it here.
+#
+# This file is built into the program (it is not read from the disk at run time): a customer cannot edit it. The owner
+# changes the list here and publishes a new build. A broken file locks every Premium operation (and says so).
+# Jarvis Admin ignores the levels: the owner has all his commands.
+
+[free]
+ids = [
+    # time, weather, timers, reminders
+    "assistant_info_time", "assistant_info_date", "weather", "set_city",
+    "assistant_timer_set", "assistant_timer_cancel", "assistant_timer_status", "assistant_reminder",
+    # the sound and the music of the computer (the base of the phone remote)
+    "assistant_volume_up", "assistant_volume_down", "assistant_volume_mute", "assistant_volume_unmute", "assistant_volume_set",
+    "assistant_media_playpause", "assistant_media_next", "assistant_media_prev",
+    # talk
+    "assistant_greet", "assistant_howareyou", "assistant_who", "assistant_help",
+    "assistant_chat_start", "assistant_chat_end",
+    # the voice
+    "assistant_tts_on", "assistant_tts_test",
+    # what the computer is doing (read only)
+    "assistant_info_battery", "assistant_sys_cpu", "assistant_sys_ram",
+    # the base of the phone remote
+    "assistant_phone_find", "assistant_phone_stop",
+    "counter",
+    # a reply sound only (type voice): harmless
+    "jarvis_2", "jarvis_3", "jarvis_4", "jarvis_5",
+]
+
+[system]
+ids = [
+    "stop_1", "terminate_1",
+    "assistant_tts_stop", "assistant_tts_off",
+    "assistant_mic_on", "assistant_mic_off",
+    "assistant_remote_off", "assistant_power_cancel",
+]
+
+[admin]
+ids = []

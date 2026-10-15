@@ -203,8 +203,55 @@ fn apply_settings(patch: &serde_json::Value) -> serde_json::Value {
     json!({ "ok": true })
 }
 
+// the license window: activation, renewal, the tariffs of the renewal window. Everything is decided by the server; the program only
+// shows its answer. (The administrator's license manager is a separate set of operations of the Admin edition.)
+fn license_action(body: &serde_json::Value) -> serde_json::Value {
+    let op = body.get("op").and_then(|v| v.as_str()).unwrap_or("");
+    let key = body.get("key").and_then(|v| v.as_str()).unwrap_or("");
+    let done = |r: Result<serde_json::Value, String>| match r {
+        Ok(status) => json!({ "ok": true, "status": status }),
+        Err(message) => json!({ "ok": false, "message": message }),
+    };
+    match op {
+        "status" => json!({ "ok": true, "status": crate::licensing::status() }),
+        "activate" => done(crate::licensing::activate(key)),
+        "renew" => done(crate::licensing::renew(key)),
+        "refresh" => done(crate::licensing::refresh().map(|_| crate::licensing::status())),
+        "tariffs" => done(crate::licensing::tariffs()),
+        _ => json!({ "ok": false, "message": "неизвестная операция" }),
+    }
+}
+
+// the buttons of the window that do what a paid command does
+fn paid_op_id(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "app_launch" => "ui_app_launch",
+        "file_search" => "ui_file_search",
+        "file_open" | "file_reveal" => "ui_file_open",
+        "remote_tunnel" => "ui_remote_tunnel",
+        "screen_check" => "ui_screen_check",
+        _ => return None,
+    })
+}
+
+fn premium_reason(d: &crate::access::Denied) -> &'static str {
+    match d.why {
+        crate::access::Why::NeedsPremium => "premium",
+        crate::access::Why::Expired => "expired",
+        crate::access::Why::NeedsRefresh => "refresh",
+        crate::access::Why::AdminOnly => "admin",
+        crate::access::Why::PolicyBroken => "policy",
+    }
+}
+
 fn run_action(body: &serde_json::Value) -> serde_json::Value {
     let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("");
+    // the paid operations of the window (not commands, so they have their own ids in the access list): checked here, before anything runs
+    if let Some(id) = paid_op_id(name) {
+        if let Err(d) = crate::access::check(id) {
+            return json!({ "ok": false, "message": d.message, "premium": premium_reason(&d) });
+        }
+    }
     match name {
         // the «Стоп» button of the work with an object: ends the dictation, cancels a running generation (its late result
         // is dropped), keeps the object. The answer says what really happened.
@@ -634,6 +681,9 @@ fn chat_action(body: &serde_json::Value) -> serde_json::Value {
         }
         // a picture attached to a question: sent to the provider only because the user attached it
         "image" => {
+            if let Err(d) = crate::access::check("ui_chat_image") {
+                return json!({ "ok": false, "message": d.message, "premium": premium_reason(&d) });
+            }
             let f = |k: &str| body.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
             let chat = if id.is_empty() { None } else { Some(id) };
             match crate::ai::ask_about_image(chat, &f("text"), &f("name"), &f("mime"), f("data")) {
@@ -913,6 +963,19 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
         ("GET", "/reaction-voices") => {
             let list: Vec<_> = crate::voices::list_voices().iter().map(|v| json!({ "id": v.voice.id, "name": v.voice.name })).collect();
             respond(&mut stream, "200 OK", "application/json", &json!(list).to_string());
+        }
+        ("GET", "/license") => {
+            let mut v = crate::licensing::status();
+            v["prompt"] = crate::licensing::prompt_json();
+            respond(&mut stream, "200 OK", "application/json", &v.to_string());
+        }
+        ("POST", "/license") => {
+            if !req.custom_header {
+                respond(&mut stream, "403 Forbidden", "text/plain", "forbidden");
+                return Ok(());
+            }
+            let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap_or(json!({}));
+            respond(&mut stream, "200 OK", "application/json", &license_action(&body).to_string());
         }
         ("GET", "/modules") => respond(&mut stream, "200 OK", "application/json", &modules_json().to_string()),
         ("POST", "/settings") | ("POST", "/action") => {
