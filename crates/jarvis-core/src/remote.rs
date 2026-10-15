@@ -1139,11 +1139,13 @@ const PAGE: &str = r#"<!doctype html>
   .msg .acts { display: flex; gap: 8px; } .msg .acts button { padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: #ffffff0f; }
   .msg .acts button:not(.sec) { background: var(--btn); border: 0; color: #fff; }
 
-  .micwrap { display: grid; place-items: center; padding: 14px 0 8px; gap: 12px; }
-  #mic { width: 128px; height: 128px; border-radius: 50%; border: 0; font-size: 36px; color: #fff; background: radial-gradient(circle at 50% 40%, #8cc0ff, #4c8dff 55%, #1d3f80 100%); box-shadow: 0 0 0 8px #ffffff08, 0 0 0 16px #ffffff05, var(--glow); }
-  #mic.on { background: radial-gradient(circle at 50% 40%, #ff9a8f, #e0463a 55%, #6e1710 100%); animation: pulse 1.2s infinite; }
-  @keyframes pulse { 50% { box-shadow: 0 0 0 12px #ff6b5e22, 0 0 0 24px #ff6b5e11; } }
-  #heard { min-height: 20px; color: var(--a2); font-size: 14px; text-align: center; padding: 0 8px; word-break: break-word; }
+  .orbwrap { display: grid; place-items: center; padding: 4px 0 6px; gap: 6px; }
+  #mic { width: min(58vw, 210px); aspect-ratio: 1; border: 0; padding: 0; border-radius: 50%; background: transparent; position: relative; }
+  #mic canvas { width: 100%; height: 100%; display: block; }
+  #mic.on::after { content: ""; position: absolute; inset: 4%; border-radius: 50%; border: 2px solid #5bd1c8aa; animation: ring 1.3s infinite; }
+  @keyframes ring { from { transform: scale(.92); opacity: .9; } to { transform: scale(1.12); opacity: 0; } }
+  #orb-cap { font-size: 12.5px; color: var(--dim); text-align: center; letter-spacing: .02em; }
+  #heard { min-height: 18px; color: var(--a2); font-size: 14px; text-align: center; padding: 0 8px; word-break: break-word; }
   #help { display: none; border: 1px solid var(--line); border-radius: 14px; background: var(--tile); padding: 12px; margin-bottom: 8px; font-size: 13.5px; line-height: 1.5; }
   #help .btn { margin-top: 6px; }
 
@@ -1171,20 +1173,24 @@ const PAGE: &str = r#"<!doctype html>
 
 <div class="body">
   <div class="tab on" id="t-home">
+    <div class="orbwrap"><button id="mic" type="button" aria-label="Сказать команду" title="Сказать команду"><canvas id="orb" width="360" height="360"></canvas></button>
+      <div id="orb-cap">Нажмите на сферу и скажите команду</div><div id="heard"></div></div>
     <div id="status"></div>
     <div id="inbox"></div>
     <section id="g-quick"><h2>Быстрые действия</h2>
       <div class="grid4" id="quick"></div>
     </section>
+  </div>
+
+  <div class="tab" id="t-media">
     <section id="g-media"><h2>Звук и музыка</h2>
       <div class="player" id="media"></div>
       <div class="dim" style="margin-top:6px">Кнопки управляют звуком и музыкой <b>компьютера</b>. Приложения самого телефона веб-страница переключать не может.</div>
     </section>
   </div>
 
-  <div class="tab" id="t-voice">
-    <section id="g-voice"><h2>Голос</h2>
-      <div class="micwrap"><button id="mic" type="button" aria-label="Сказать команду" title="Сказать команду">🎤</button><div id="heard">Нажмите и скажите команду</div></div>
+  <div class="tab" id="t-phone">
+    <section id="g-voice"><h2>Голос на телефоне</h2>
       <label class="row"><div>Непрерывный режим<small>слушать команду за командой</small></div><input type="checkbox" id="cont"></label>
       <label class="row"><div>Озвучивать ответы<small>на этом телефоне</small></div><input type="checkbox" id="spk" checked></label>
       <div class="row"><div>Микрофон</div><b id="v-state">выключен</b></div>
@@ -1194,19 +1200,16 @@ const PAGE: &str = r#"<!doctype html>
         Браузер даёт микрофон только защищённой странице (https). У пульта она есть на том же компьютере:<br>
         1. Нажмите <b>«Открыть защищённую страницу»</b> ниже.<br>
         2. Браузер один раз предупредит о сертификате (он сделан самим компьютером, а не центром сертификации): нажмите «Дополнительно» → «Перейти на сайт».<br>
-        3. Нажмите 🎤 и разрешите микрофон.<br>
+        3. Нажмите на сферу и разрешите микрофон.<br>
         <button id="to-https" class="btn wide" type="button">Открыть защищённую страницу</button>
         <span class="dim">Не хотите настраивать? Нажмите на значок микрофона на клавиатуре телефона в поле команды: он диктует голосом и работает без настроек.</span>
       </div>
       <button id="howto" class="btn dash wide" type="button">Не работает голос? Как включить</button>
       <div class="dim">Речь распознаёт сам браузер телефона (в Chrome — сервис Google через интернет). Компьютер получает только готовый текст команды.</div>
     </section>
-  </div>
-
-  <div class="tab" id="t-phone">
     <section id="g-phone"><h2>Телефон</h2>
       <div class="row"><div>Заряд<small id="p-note">обновляется при подключении</small></div><b id="p-bat">—</b></div>
-      <section id="g-find" style="margin:0"><div class="row"><div>Сигнал «Найти телефон»<small id="snd-note">Браузер играет звук только после одного нажатия на странице. Нажмите один раз — потом компьютер сможет позвать телефон командой «Найди телефон».</small></div><button class="btn" id="snd" type="button">🔔 Разрешить</button></div></section>
+      <section id="g-find" style="margin:0"><div class="row"><div>Сигнал «Найти телефон»<small id="snd-note">Нажмите один раз: потом компьютер сможет позвать телефон командой «Найди телефон».</small></div><button class="btn" id="snd" type="button">🔔 Разрешить</button></div></section>
       <label class="row" id="wl-row" style="display:none"><div>Не гасить экран<small>пока открыт пульт</small></div><input type="checkbox" id="wl"></label>
     </section>
   </div>
@@ -1231,7 +1234,7 @@ const PAGE: &str = r#"<!doctype html>
 <form id="f"><input id="t" placeholder="Команда: таймер на 5 минут" autocomplete="off"><button aria-label="Отправить">➤</button></form>
 <div class="tabs" id="tabs">
   <button class="on" data-tab="home" type="button"><span>⚡</span>Главная</button>
-  <button data-tab="voice" type="button"><span>🎤</span>Голос</button>
+  <button data-tab="media" type="button"><span>🎵</span>Звук</button>
   <button data-tab="phone" type="button"><span>📱</span>Телефон</button>
   <button data-tab="more" type="button"><span>⚙</span>Ещё</button>
 </div>
@@ -1372,7 +1375,7 @@ function card(title, body, buttons) {
 // the answers and events of the computer are said by the phone itself (its own voice), and always shown as a card
 function speakHere(text) {
   if (!$('spk').checked || !('speechSynthesis' in window)) return;
-  try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang = /^(en|uk)/i.test(navigator.language || '') ? navigator.language : 'ru-RU'; speechSynthesis.speak(u); } catch (e) {}
+  try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang = /^(en|uk)/i.test(navigator.language || '') ? navigator.language : 'ru-RU'; u.onstart = () => setOrb('speaking'); u.onend = u.onerror = () => setOrb(state.voice === 'listening' ? 'listening' : 'idle'); speechSynthesis.speak(u); } catch (e) {}
 }
 try { $('spk').checked = localStorage.getItem('jarvis_spk') !== '0'; } catch (e) {}
 $('spk').onchange = () => { try { localStorage.setItem('jarvis_spk', $('spk').checked ? '1' : '0'); } catch (e) {} if ($('spk').checked) speakHere('Озвучка на телефоне включена'); else if ('speechSynthesis' in window) speechSynthesis.cancel(); };
@@ -1397,6 +1400,38 @@ function handle(m) {
   else if (m.kind === 'text') card('Текст с компьютера', m.data, [['Копировать', x => copy(m.data, x)]]);
 }
 
+// ---------- the sphere (as on the computer): dots on a sphere; it breathes while listening and ripples while speaking ----------
+let oState = 'idle', oLevel = 0, oYaw = 0;
+const orbCanvas = $('orb'), octx = orbCanvas.getContext('2d');
+const orbPts = [];
+for (let i = 0, N = 520; i < N; i++) {
+  const y = 1 - (i / (N - 1)) * 2, r = Math.sqrt(1 - y * y), th = Math.PI * (3 - Math.sqrt(5)) * i;
+  orbPts.push([Math.cos(th) * r, y, Math.sin(th) * r, Math.random() * Math.PI * 2, Math.atan2(Math.sin(th) * r, Math.cos(th) * r), Math.asin(y)]);
+}
+function setOrb(st) { oState = st; }
+function orbPalette() { return oState === 'error' ? [352, 75] : oState === 'off' ? [220, 6] : oState === 'listening' ? [172, 70] : oState === 'speaking' ? [186, 55] : [176, 45]; }
+function drawOrb(t) {
+  const W = orbCanvas.width, H = orbCanvas.height, [hue, sat] = orbPalette();
+  octx.clearRect(0, 0, W, H);
+  const cx = W / 2, cy = H / 2, R = W * 0.33, tilt = 0.38, ct = Math.cos(tilt), st = Math.sin(tilt), cyaw = Math.cos(oYaw), syaw = Math.sin(oYaw);
+  const active = oState === 'listening' || oState === 'speaking';
+  oLevel += ((active ? 0.55 + 0.45 * Math.sin(t / 190) : 0) - oLevel) * 0.12;
+  const glow = octx.createRadialGradient(cx, cy, R * 0.05, cx, cy, R * 1.25);
+  glow.addColorStop(0, `hsla(${hue},${sat}%,55%,${0.16 + oLevel * 0.22})`); glow.addColorStop(0.55, `hsla(${hue},${sat}%,40%,${0.05 + oLevel * 0.06})`); glow.addColorStop(1, `hsla(${hue},${sat}%,30%,0)`);
+  octx.fillStyle = glow; octx.fillRect(0, 0, W, H);
+  const breath = 1 + Math.sin(t / 900) * 0.012 + (oState === 'listening' ? Math.sin(t / 160) * 0.025 * oLevel : 0);
+  for (const [x0, y0, z0, ph, lon, lat] of orbPts) {
+    let k = breath; if (oState === 'speaking') k += 0.075 * oLevel * Math.sin(3 * lon + t / 170) * Math.sin(2 * lat + t / 230); k += 0.012 * Math.sin(ph + t / 700);
+    const x = (x0 * cyaw + z0 * syaw) * k, z1 = (-x0 * syaw + z0 * cyaw) * k, y1 = y0 * k;
+    const y = y1 * ct - z1 * st, z = y1 * st + z1 * ct, persp = 3.2 / (3.2 - z), depth = (z + 1) / 2;
+    octx.fillStyle = `hsla(${hue},${sat * (1 - depth * 0.8)}%,${62 + depth * 36}%,${(0.10 + depth * 0.9) * (oState === 'off' ? 0.45 : 1)})`;
+    const r = 2.6 + depth * 3.2; octx.fillRect(cx + x * R * persp - r / 2, cy + y * R * persp - r / 2, r, r);
+  }
+}
+let orbLast = 0;
+function orbLoop(t) { if (document.visibilityState === 'visible' && t - orbLast > 33) { orbLast = t; oYaw += 0.006 * (oState === 'listening' ? 2 : 1); drawOrb(t); } requestAnimationFrame(orbLoop); }
+requestAnimationFrame(orbLoop);
+
 // ---------- voice: the browser listens through the phone microphone and sends the recognized text ----------
 // Browsers allow the microphone only on secure pages (https); on plain http over Wi-Fi it may be refused.
 const micBtn = $('mic'), heard = $('heard');
@@ -1410,6 +1445,7 @@ $('howto').onclick = () => { $('help').style.display = $('help').style.display =
 function voice(st, err) {
   state.voice = st; state.voice_error = err || '';
   const names = { off: 'выключен', listening: 'слушаю', error: 'ошибка', unavailable: 'недоступен' };
+  setOrb(st === 'listening' ? 'listening' : st === 'error' ? 'error' : st === 'unavailable' ? 'off' : 'idle');
   $('v-state').textContent = names[st] || st; $('v-state').className = st === 'listening' ? 'ok' : (st === 'error' || st === 'unavailable') ? 'bad' : '';
   if (err) heard.textContent = err;
   reportSoon();
@@ -1420,7 +1456,7 @@ function listen() {
   if (!window.isSecureContext) { $('help').style.display = 'block'; voice('unavailable', 'Браузер не разрешает микрофон на этой странице. Откройте защищённую страницу (ниже).'); wantVoice = false; return; }
   if (!SR) { voice('unavailable', 'Браузер не умеет слушать. Нажмите значок микрофона на клавиатуре в поле команды.'); wantVoice = false; return; }
   rec = new SR(); rec.lang = navigator.language && !/^ru/i.test(navigator.language) && /^(en|uk)/i.test(navigator.language) ? navigator.language : 'ru-RU'; rec.interimResults = true; rec.continuous = false;
-  micBtn.classList.add('on'); micBtn.textContent = '🔴'; heard.textContent = 'Слушаю… (нажмите, чтобы остановить)'; voice('listening');
+  micBtn.classList.add('on'); heard.textContent = 'Слушаю… (нажмите на сферу, чтобы остановить)'; voice('listening');
   let final = '', fatal = false;
   rec.onresult = e => { let t = ''; for (const r of e.results) { t += r[0].transcript; if (r.isFinal) final = t; } heard.textContent = '«' + t + '»'; };
   rec.onerror = e => {
@@ -1431,7 +1467,7 @@ function listen() {
       : e.error === 'network' ? 'Распознавание речи недоступно: у телефона нет интернета.' : 'Ошибка микрофона: ' + e.error);
   };
   rec.onend = () => {
-    rec = null; micBtn.classList.remove('on'); micBtn.textContent = '🎤';
+    rec = null; micBtn.classList.remove('on');
     if (final.trim()) send(final.trim());
     if (wantVoice && !fatal) setTimeout(() => { if (wantVoice && !rec) listen(); }, 300);
     else if (!fatal) voice('off');
