@@ -128,7 +128,7 @@ static SERVER: Lazy<Mutex<Option<Server>>> = Lazy::new(|| Mutex::new(None));
 static JOB: AtomicU64 = AtomicU64::new(1);
 
 pub fn job_line(id: u64, text: &str, speaker: &str, speed: f32, out: &Path) -> String {
-    json!({ "id": id.to_string(), "text": text, "voice": speaker, "speed": speed, "sample_rate": 24000, "out": out.to_string_lossy() }).to_string()
+    json!({ "id": id.to_string(), "text": text, "voice": speaker, "speed": speed, "sample_rate": 48000, "out": out.to_string_lossy() }).to_string()
 }
 
 // "@@jarvis OK 12" -> Some(("OK", "12")); "@@jarvis ERR 12 ValueError: x" -> ("ERR", "12 ValueError: x")

@@ -1089,7 +1089,8 @@ fn speak_silero(speaker: &str, text: &str, generation: u64) -> bool {
     }
     let seq = WAV_SEQ.fetch_add(1, Ordering::SeqCst);
     let wav_of = |i: usize| std::env::temp_dir().join(format!("jarvis_silero_{}_{}_{}_{}.wav", std::process::id(), generation, seq, i));
-    let speed = crate::uistate::voice_rate().clamp(0.6, 1.6);
+    // speak.py speeds up by resampling, which raises the pitch (a thin voice): the natural speed is kept
+    let speed = 1.0_f32;
     let cancelled = move || GENERATION.load(Ordering::SeqCst) != generation;
     let speaker = speaker.to_string();
 
