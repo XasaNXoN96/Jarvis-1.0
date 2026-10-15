@@ -315,9 +315,14 @@ mod name_tests {
         assert_eq!(wake_grammar_now("ru")[0], "карен");
         assert!(wake_grammar_now("ru").contains(&"[unk]".to_string()), "the rest of the grammar stays");
         assert!(phrases_to_remove_now("ru").contains(&"карен".to_string()));
+        // the name is said by the assistant itself: «меня зовут Карен», and the AI is told it
+        assert_eq!(crate::uistate::assistant_display_name(), "Карен");
+        assert!(crate::ai::system_prompt().contains("Карен") && !crate::ai::system_prompt().contains("Jarvis"), "{}", crate::ai::system_prompt());
         crate::uistate::update_settings(&serde_json::json!({ "assistant_name": "" }));
         assert!(wake_phrases_now("ru").contains(&"джарвис".to_string()), "empty name = Джарвис");
         assert_eq!(wake_grammar_now("ru")[0], "джарвис");
+        assert_eq!(crate::uistate::assistant_display_name(), "Джарвис");
+        assert!(crate::ai::system_prompt().contains("Jarvis"));
         crate::uistate::update_settings(&serde_json::json!({ "assistant_name": old }));
     }
 

@@ -1,6 +1,8 @@
 -- small talk: "привет", "как дела", "кто ты", "что ты умеешь"
 
 local id = jarvis.context.command_id
+-- the name the user gave to the assistant ("Джарвис" when none was chosen)
+local NAME = jarvis.context.assistant_name or T("Джарвис", "Jarvis")
 math.randomseed(tonumber(jarvis.context.time.timestamp) or 0)
 math.random(); math.random()
 local function pick(list) return list[math.random(#list)] end
@@ -12,10 +14,10 @@ if id == "assistant_greet" then
   local tail = pick(RU and { "Чем могу помочь?", "К вашим услугам.", "Рад вас слышать." }
                        or { "How can I help?", "At your service.", "Good to hear you." })
   local text = T(part_ru, part_en) .. ", " .. T("сэр", "sir") .. ". " .. tail
-  say(T("Джарвис", "Jarvis"), text)
+  say(NAME, text)
 
 elseif id == "assistant_howareyou" then
-  say(T("Джарвис", "Jarvis"), pick(RU and {
+  say(NAME, pick(RU and {
     "Все системы в норме, сэр. А как вы?",
     "Лучше, чем вчера. Спасибо обновлениям.",
     "Отлично, сэр. Готов к работе.",
@@ -26,9 +28,9 @@ elseif id == "assistant_howareyou" then
   }))
 
 elseif id == "assistant_who" then
-  say(T("Джарвис", "Jarvis"), T(
-    "Я Джарвис, ваш голосовой помощник. Работаю без интернета и стараюсь не обижаться.",
-    "I am Jarvis, your voice assistant. I work offline and try not to take offence."))
+  say(NAME, T(
+    "Меня зовут " .. NAME .. ", я ваш голосовой помощник. Работаю без интернета и стараюсь не обижаться.",
+    "My name is " .. NAME .. ", I am your voice assistant. I work offline and try not to take offence."))
 
 else -- help: every command with example phrases
   jarvis.app.show_page("commands")           -- the window shows the full list with clickable phrases

@@ -36,9 +36,11 @@ pub enum Script {
     InstallPiper,
     // the watcher of the notification center (reads only the count and the texts Windows gives it)
     NotifyWatcher,
+    // the titles of the windows of the players and browsers (read only): what is playing now
+    MediaNow,
 }
 
-pub const ALL: [Script; 10] = [
+pub const ALL: [Script; 11] = [
     Script::Probe,
     Script::ThermalZones,
     Script::ThermalAcpi,
@@ -49,6 +51,7 @@ pub const ALL: [Script; 10] = [
     Script::VoicesPicker,
     Script::InstallPiper,
     Script::NotifyWatcher,
+    Script::MediaNow,
 ];
 
 const THERMAL_ZONES: &str = "(Get-CimInstance Win32_PerfFormattedData_Counters_ThermalZoneInformation -ErrorAction Stop | Select-Object -First 1).Temperature";
@@ -82,6 +85,9 @@ $small.Save($env:JARVIS_SCREEN_OUT, $enc, $p)"#;
 const VOICES_REPORT: &str = "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).GetInstalledVoices() | Where-Object { $_.Enabled } | ForEach-Object { $_.VoiceInfo.Name + ' | ' + $_.VoiceInfo.Culture.Name + ' | ' + $_.VoiceInfo.Gender }";
 const VOICES_PICKER: &str = "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).GetInstalledVoices() | Where-Object { $_.Enabled } | ForEach-Object { $_.VoiceInfo.Name + '|' + $_.VoiceInfo.Culture.Name + '|' + $_.VoiceInfo.Gender }";
 
+// only the process name and the title of the window of the known players and browsers: nothing is changed, nothing is sent
+const MEDIA_NOW: &str = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -and $_.ProcessName -match '^(AIMP|chrome|msedge|firefox|browser|opera|brave|vlc|spotify|wmplayer|foobar2000|Music.UI|mpc-hc|PotPlayer)' } | ForEach-Object { $_.ProcessName + '|' + $_.MainWindowTitle }";
+
 const INSTALL_PIPER: &str = "Expand-Archive -LiteralPath $env:JARVIS_ZIP -DestinationPath $env:JARVIS_DEST -Force";
 
 // the text of the watcher takes the pid of Jarvis from the environment (it was a -File with a -ParentPid argument)
@@ -100,6 +106,7 @@ impl Script {
             Script::VoicesPicker => VOICES_PICKER.to_string(),
             Script::InstallPiper => INSTALL_PIPER.to_string(),
             Script::NotifyWatcher => format!("{}{}", NOTIFY_HEAD, crate::notify::EXT_BODY),
+            Script::MediaNow => MEDIA_NOW.to_string(),
         }
     }
 
@@ -126,6 +133,7 @@ impl Script {
             Script::VoicesPicker => "voices_picker",
             Script::InstallPiper => "install_piper",
             Script::NotifyWatcher => "notify_watcher",
+            Script::MediaNow => "media_now",
         }
     }
 }

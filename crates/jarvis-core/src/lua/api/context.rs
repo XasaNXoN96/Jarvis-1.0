@@ -13,6 +13,8 @@ pub fn register(lua: &Lua, jarvis: &Table, ctx: &CommandContext) -> mlua::Result
     context.set("command_id", ctx.command_id.clone())?;
     context.set("command_path", ctx.command_path.to_string_lossy().to_string())?;
     context.set("language", ctx.language.clone())?;
+    // the name the user gave to the assistant («Джарвис» when none): "я …", "меня зовут …"
+    context.set("assistant_name", crate::uistate::assistant_display_name())?;
     
     // time info
     let time = lua.create_table()?;

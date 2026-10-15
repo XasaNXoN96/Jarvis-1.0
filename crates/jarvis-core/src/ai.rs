@@ -630,11 +630,17 @@ pub fn store() -> &'static Store {
 // ---------------------------------------------------------------------------------------------
 // request / response
 // ---------------------------------------------------------------------------------------------
+// the name the assistant is called by: «Jarvis» by default, the one the user chose otherwise (the AI answers "меня зовут …" with it)
+fn ai_name() -> String {
+    let n = crate::uistate::assistant_name();
+    if n.is_empty() { "Jarvis".to_string() } else { crate::uistate::assistant_display_name() }
+}
+
 pub fn system_prompt() -> String {
     if crate::i18n::get_language() == "en" {
-        "You are Jarvis, a voice assistant on the user's computer. Answer in the user's language, briefly and to the point. Put code in Markdown code blocks.".to_string()
+        format!("You are {}, a voice assistant on the user's computer. Answer in the user's language, briefly and to the point. Put code in Markdown code blocks.", ai_name())
     } else {
-        "Ты — Jarvis, голосовой ассистент на компьютере пользователя. Отвечай на языке пользователя, кратко и по делу. Код оформляй в блоках Markdown.".to_string()
+        format!("Ты — {}, голосовой ассистент на компьютере пользователя. Отвечай на языке пользователя, кратко и по делу. Код оформляй в блоках Markdown.", ai_name())
     }
 }
 
@@ -1716,7 +1722,7 @@ pub fn base64(data: &[u8]) -> String {
 }
 
 pub fn vision_body(conf: &ProviderConf, question: &str, mime: &str, b64: &str) -> Value {
-    vision_body_with(conf, "Ты — голосовой помощник Джарвис. Тебе прислали снимок экрана пользователя. Ответь коротко и по делу, на языке вопроса.", question, mime, b64)
+    vision_body_with(conf, &format!("Ты — голосовой помощник {}. Тебе прислали снимок экрана пользователя. Ответь коротко и по делу, на языке вопроса.", crate::uistate::assistant_display_name()), question, mime, b64)
 }
 
 pub fn vision_body_with(conf: &ProviderConf, system: &str, question: &str, mime: &str, b64: &str) -> Value {
@@ -1824,8 +1830,8 @@ pub fn ask_about_image_with(store: &'static Store, conf: Result<ProviderConf, Ai
     let id = chat.id.clone();
     let mime = mime.to_string();
     let handle = std::thread::spawn(move || {
-        let system = "Ты — голосовой помощник Джарвис. Пользователь прислал картинку и вопрос о ней. Ответь коротко и по делу, на языке вопроса.";
-        let result = request_image(&conf, system, &question, &mime, &b64);
+        let system = format!("Ты — голосовой помощник {}. Пользователь прислал картинку и вопрос о ней. Ответь коротко и по делу, на языке вопроса.", crate::uistate::assistant_display_name());
+        let result = request_image(&conf, &system, &question, &mime, &b64);
         drop(b64);
         let stopped = flag.load(Ordering::SeqCst);
         match result {

@@ -1059,6 +1059,11 @@ fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
                 respond(stream, "503 Service Unavailable", "text/plain", "not ready");
             }
         }
+        // what plays on the computer now (the window titles of the players and of YouTube in a browser)
+        ("GET", "/media") => {
+            let items: Vec<serde_json::Value> = crate::media::now().into_iter().map(|n| serde_json::json!({ "app": n.app, "title": n.title })).collect();
+            respond(stream, "200 OK", "application/json", &serde_json::json!({ "items": items }).to_string());
+        }
         // the voice of the answers (the same choice as in the settings of the computer): the list and the change
         ("GET", "/voices") => {
             let list: Vec<serde_json::Value> = crate::tts::list_voices().into_iter().map(|(id, label)| serde_json::json!({ "id": id, "label": label })).collect();
@@ -1161,6 +1166,30 @@ const PAGE: &str = r#"<!doctype html>
   .tabs { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--bg2); border-top: 1px solid var(--line); padding: 6px 6px calc(10px + env(safe-area-inset-bottom)); flex: none; }
   .tabs button { border: 0; background: transparent; color: var(--dim); display: grid; gap: 2px; justify-items: center; padding: 6px 0; font-size: 11px; border-radius: 12px; }
   .tabs button span { font-size: 19px; } .tabs button.on { color: var(--a2); } .tabs button.on span { filter: drop-shadow(0 0 6px #6aa8ff); }
+  /* every screen: a phone, a tablet (upright and sideways) and a computer's browser. The content is a column of at most 760px
+     in the middle (the bars at the top and bottom keep the same edges); the sphere, the icons and the texts grow with the width */
+  :root { --pad: max(14px, calc((100vw - 760px) / 2)); }
+  body { font-size: clamp(15px, 1.9vw, 18px); }
+  .top { padding-inline: var(--pad); } .body { padding-inline: var(--pad); } #confirm { padding-inline: var(--pad); } form#f { padding-inline: var(--pad); } .tabs { padding-inline: var(--pad); }
+  .brand b { font-size: clamp(17px, 3vw, 24px); } .brand small { font-size: clamp(11.5px, 1.8vw, 14px); } .reactor { width: clamp(32px, 6vw, 46px); height: clamp(32px, 6vw, 46px); }
+  .chip { font-size: clamp(12px, 1.9vw, 15px); padding: 4px clamp(10px, 1.8vw, 14px); }
+  section h2 { font-size: clamp(11.5px, 1.8vw, 14px); }
+  #mic { width: min(66vw, 40vh, 420px); min-width: 170px; }
+  #orb-cap { font-size: clamp(12.5px, 2vw, 16px); } #heard { font-size: clamp(14px, 2.2vw, 18px); }
+  .tile span { font-size: clamp(22px, 6vw, 42px); } .tile em { font-size: clamp(10px, 2.2vw, 14px); }
+  .tile { border-radius: clamp(16px, 2.6vw, 22px); } .grid4 { gap: clamp(8px, 1.6vw, 14px); }
+  .player { padding: clamp(12px, 2.4vw, 20px) clamp(10px, 2vw, 18px); gap: clamp(10px, 2vw, 16px); }
+  .ctrl { gap: clamp(10px, 2.4vw, 20px); }
+  .ctrl button { width: clamp(48px, 12vw, 76px); height: clamp(48px, 12vw, 76px); font-size: clamp(18px, 4.6vw, 30px); }
+  .ctrl button.main { width: clamp(62px, 16vw, 100px); height: clamp(62px, 16vw, 100px); font-size: clamp(24px, 6vw, 38px); }
+  .vol button { height: clamp(40px, 8vw, 62px); font-size: clamp(16px, 4vw, 28px); }
+  .row { font-size: clamp(14px, 2.1vw, 17px); padding: clamp(11px, 1.8vw, 16px) clamp(12px, 2vw, 18px); } .row small { font-size: clamp(11.5px, 1.7vw, 14px); }
+  form#f input { font-size: clamp(16px, 2.2vw, 19px); padding-block: clamp(12px, 1.8vw, 16px); } form#f button { width: clamp(50px, 8vw, 66px); }
+  .tabs button { font-size: clamp(11px, 1.8vw, 14px); } .tabs button span { font-size: clamp(19px, 3.6vw, 28px); }
+  #status { font-size: clamp(13px, 2vw, 16px); }
+  /* a low window (a phone sideways): the sphere is smaller so that the buttons stay in sight */
+  @media (max-height: 520px) { #mic { width: min(40vh, 220px); min-width: 120px; } }
+  .np-item { margin-top: 6px; font-size: clamp(15px, 2.4vw, 19px); line-height: 1.35; word-break: break-word; } .np-item b { color: var(--a2); }
   #ringbox { display: none; position: fixed; inset: 0; background: rgba(218,54,51,.94); z-index: 9; text-align: center; padding-top: 30vh; font-size: 22px; }
   #ringbox button { font-size: 22px; padding: 18px 30px; background: #fff; color: #da3633; margin-top: 20px; border: 0; border-radius: 14px; }
 </style></head><body>
@@ -1184,6 +1213,7 @@ const PAGE: &str = r#"<!doctype html>
 
   <div class="tab" id="t-media">
     <section id="g-media"><h2>Звук и музыка</h2>
+      <div class="row" id="nowplaying" style="display:block"><div>Сейчас играет<small id="np-note">смотрю, что запущено на компьютере…</small></div><div id="np-list"></div></div>
       <div class="player" id="media"></div>
       <div class="dim" style="margin-top:6px">Кнопки управляют звуком и музыкой <b>компьютера</b>. Приложения самого телефона веб-страница переключать не может.</div>
     </section>
@@ -1477,11 +1507,31 @@ function listen() {
 micBtn.onclick = () => { if (rec) { wantVoice = false; $('cont').checked = false; rec.stop(); return; } wantVoice = $('cont').checked; listen(); };
 $('cont').onchange = () => { wantVoice = $('cont').checked; if (wantVoice && !rec) listen(); if (!wantVoice && rec) rec.stop(); };
 
+// ---------- what plays on the computer now (AIMP, YouTube in a browser ...), asked while the sound tab is open ----------
+let npTimer = 0;
+async function loadNow() {
+  clearTimeout(npTimer);
+  if (!$('t-media').classList.contains('on')) return;
+  try {
+    const r = await fetchT('/media', {headers:{'X-Token':token}});
+    if (!r.ok) throw new Error(r.status);
+    const j = await r.json(); const box = $('np-list'); box.textContent = '';
+    for (const it of j.items) {
+      const d = document.createElement('div'); d.className = 'np-item';
+      const a = document.createElement('b'); a.textContent = it.app; const t = document.createElement('span'); t.textContent = it.title ? ' — ' + it.title : ' запущен';
+      d.append(a, t); box.appendChild(d);
+    }
+    $('np-note').textContent = j.items.length ? 'по заголовкам окон плееров и браузера' : 'AIMP, VLC, Spotify и YouTube в браузере не найдены. Ролик в фоновой вкладке браузера не виден.';
+  } catch (e) { $('np-note').textContent = 'Нет связи с компьютером.'; }
+  npTimer = setTimeout(loadNow, 4000);
+}
+
 // ---------- tabs ----------
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
   document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 't-' + b.dataset.tab));
   if (b.dataset.tab === 'more') loadVoices();
+  if (b.dataset.tab === 'media') loadNow();
 });
 
 // ---------- the signs at the top mirror the lines below ----------
@@ -1951,6 +2001,10 @@ mod tests {
         assert!(phone_get("/voices", "wrong-token").starts_with("HTTP/1.1 403"));
         let list = phone_get("/voices", &t);
         assert!(list.starts_with("HTTP/1.1 200") && list.contains("\"voices\"") && list.contains("\"current\""), "{}", list);
+        // what plays now: the secret is needed as for everything else
+        assert!(phone_get("/media", "wrong-token").starts_with("HTTP/1.1 403"));
+        let media = phone_get("/media", &t);
+        assert!(media.starts_with("HTTP/1.1 200") && media.contains("\"items\""), "{}", media);
         assert!(phone_request("/voice", "wrong-token", "piper").starts_with("HTTP/1.1 403"));
         assert_eq!(crate::uistate::voice_name(), before, "a wrong secret changes nothing");
         assert!(phone_request("/voice", &t, "win:../../evil").starts_with("HTTP/1.1 400"));

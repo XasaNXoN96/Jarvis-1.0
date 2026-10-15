@@ -347,6 +347,19 @@ pub fn clean_assistant_name(raw: &str) -> String {
     if word.chars().count() >= 2 { word } else { String::new() }
 }
 
+// the name as it is said and written: the chosen one with a capital letter, «Джарвис» by default
+pub fn assistant_display_name() -> String {
+    let n = assistant_name();
+    if n.is_empty() {
+        return "Джарвис".to_string();
+    }
+    let mut c = n.chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+        None => "Джарвис".to_string(),
+    }
+}
+
 // the chosen name ("" = «Джарвис»)
 pub fn assistant_name() -> String {
     SETTINGS.lock().assistant_name.clone()

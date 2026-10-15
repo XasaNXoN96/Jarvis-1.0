@@ -54,6 +54,8 @@ pub mod confirm;
 pub mod integrity;
 pub mod policy;
 pub mod remote;
+
+pub mod media;
 pub mod ui;
 pub mod ui_auth;
 pub mod psrun;

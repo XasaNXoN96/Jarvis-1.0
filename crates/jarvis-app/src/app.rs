@@ -963,13 +963,8 @@ fn ask_ai(text: &str) {
         if jarvis_core::tts::is_enabled() {
             jarvis_core::tts::speak(msg.split(". ").next().unwrap_or(&msg));
         }
-        if e.allows_web_search() {
-            // plan B, clearly named as a search; the next question goes to the provider again
-            jarvis_core::dialog::adopt_ai_request();
-            jarvis_core::dialog::reply("ИИ сейчас недоступен, поэтому ищу в интернете. Это результат поиска, а не ответ нейросети.", "search");
-            jarvis_core::uistate::log_event("info", "ИИ недоступен: поиск в интернете");
-            jarvis_core::remote::push_internal(&format!("найди в интернете {}", jarvis_core::route::search_query(&query)));
-        }
+        // (no automatic web search here: the user asked for the answer of the AI. The error says why it did not come;
+        // a search is made only on purpose: «найди в интернете …»)
     });
     if INTERNAL.load(std::sync::atomic::Ordering::SeqCst) {
         // the follow-up of a request is never asked again
