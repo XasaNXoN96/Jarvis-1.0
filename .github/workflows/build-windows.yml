@@ -355,6 +355,13 @@ jobs:
           Write-Host "PIPER WARM: $($warm | ConvertTo-Json -Compress)"
           Add-Content evidence.txt "PIPER WARM (the voice stays running): mode=$($warm.mode) piper.exe started $($warm.spawns) time(s), phrases made $($warm.served), phrases made the usual way after a failure $($warm.fallbacks), first phrase $($warm.first_ms) ms, last $($warm.last_ms) ms, last error '$($warm.last_error)'"
           if ($warm.mode -ne "persistent" -or $warm.served -lt 1 -or $warm.fallbacks -gt 0) { Write-Output "::warning title=piper warm::the voice did not stay running: $($warm | ConvertTo-Json -Compress)" }
+          # a second phrase through the same piper.exe: it must not load the model again (the first phrase includes the loading)
+          Invoke-RestMethod http://127.0.0.1:9714/action -Method Post -Headers $hh -Body '{"name":"tts_test"}' | Out-Null
+          Start-Sleep 8
+          $warm2 = (Invoke-RestMethod http://127.0.0.1:9714/diag -TimeoutSec 5).warm_piper
+          Write-Host "PIPER WARM after the second phrase: $($warm2 | ConvertTo-Json -Compress)"
+          Add-Content evidence.txt "PIPER WARM, second phrase through the same piper.exe: phrases made $($warm2.served), piper.exe started $($warm2.spawns) time(s), usual way after a failure $($warm2.fallbacks), first phrase $($warm2.first_ms) ms (with loading the model), last phrase $($warm2.last_ms) ms"
+          if ($warm2.spawns -ne 1 -or $warm2.served -lt 2 -or $warm2.fallbacks -gt 0) { Write-Output "::warning title=piper warm second phrase::$($warm2 | ConvertTo-Json -Compress)" }
           # the Windows voice (PowerShell + System.Speech) started by a Jarvis that was started like the autostart does
           # (--background: no console, so no valid standard handles). The error «os error 50» must not come back.
           Invoke-RestMethod http://127.0.0.1:9714/settings -Method Post -Headers $hh -ContentType "application/json" -Body '{"voice_name":"win:"}' | Out-Null
