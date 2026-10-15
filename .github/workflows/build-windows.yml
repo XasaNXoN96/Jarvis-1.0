@@ -826,6 +826,103 @@ jobs:
             if ($gate.Count -gt 0) { $gate | ForEach-Object { Write-Output "::error title=security check failed::$_" }; throw "SECURITY CHECKS FAILED: $($gate.Count)" }
           }
 
+  # The license server and the shared licensing library: their tests are the checklist of the licensing (online-only activation,
+  # one key = one installation, signed tokens, calendar subscriptions, renewal, revocation, audit). Nothing here needs Windows.
+  license-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: license
+      - name: Tests of the licensing library and the license server
+        run: |
+          cargo test -p jarvis-license --features server
+          cargo test -p jarvis-license-server
+      - name: The customer's program must not contain the signing code or the server
+        run: |
+          # cargo tree shows what jarvis-app (Jarvis User) is built from: no `server` feature of jarvis-license, no server crates
+          cargo tree -p jarvis-app --features user-edition -e features -i jarvis-license > tree-features.txt
+          cat tree-features.txt
+          if grep -q 'feature "server"' tree-features.txt; then echo "::error title=user build::the signing code (feature server) is in the customer's program"; exit 1; fi
+          cargo tree -p jarvis-app --features user-edition -e normal > tree-normal.txt
+          if grep -Eq 'jarvis-license-server|rusqlite|tiny_http' tree-normal.txt; then echo "::error title=user build::the license server is in the customer's program"; exit 1; fi
+
+  # Jarvis User: the customer's program (levels enforced, no license manager) and its installer. The program is built with the PUBLIC key
+  # and the address of the license server (repository variables JARVIS_LICENSE_PUBKEY and JARVIS_LICENSE_URL); no secret is needed
+  # or used here. The installer is a separate artifact: it is NOT put on the release of the owner's build.
+  build-user:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: user
+      - name: Tests with the user edition (levels are enforced)
+        shell: pwsh
+        run: |
+          $env:LIB = "$PWD\lib\windows\amd64;$env:LIB"
+          $env:PATH = "$PWD\lib\windows\amd64;$env:PATH"
+          cargo test -p jarvis-core --features user-edition --no-fail-fast 2>&1 | Tee-Object -FilePath test-user.log
+          if ($LASTEXITCODE -ne 0) {
+            $found = Select-String -Path test-user.log -Pattern 'error(\[E\d+\])?:|panicked|FAILED|failures:|test result' -Context 0,4 | Select-Object -First 40
+            $text = (($found | ForEach-Object { $_.Line; $_.Context.PostContext }) -join "`n")
+            if ($text.Length -gt 30000) { $text = $text.Substring(0, 30000) }
+            $text = $text.Replace('%', '%25').Replace("`r", '').Replace("`n", '%0A')
+            Write-Output "::error title=cargo test (user edition)::$text"
+            exit 1
+          }
+      - name: Build jarvis-app (release, user edition)
+        shell: pwsh
+        env:
+          JARVIS_LICENSE_PUBKEY: ${{ vars.JARVIS_LICENSE_PUBKEY }}
+          JARVIS_LICENSE_URL: ${{ vars.JARVIS_LICENSE_URL }}
+        run: |
+          $env:LIB = "$PWD\lib\windows\amd64;$env:LIB"
+          $env:JARVIS_BUILD_SHA = "${{ github.sha }}"
+          if (-not $env:JARVIS_LICENSE_PUBKEY -or -not $env:JARVIS_LICENSE_URL) { Write-Output "::warning title=license::JARVIS_LICENSE_PUBKEY / JARVIS_LICENSE_URL are not set: this Jarvis User cannot activate Premium (a build for tests only)" }
+          cargo build --release -p jarvis-app --features user-edition
+      - name: The customer's program carries no secret and no administrator code
+        shell: pwsh
+        run: |
+          $exe = "target\release\jarvis-app.exe"
+          $text = [System.Text.Encoding]::GetEncoding(28591).GetString([System.IO.File]::ReadAllBytes($exe))
+          $utf = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($exe))
+          $bad = @()
+          # markers of the administrator's code, of the server and of private keys; none may be in the customer's program
+          foreach ($m in @("jla_", "license-admin", "page-licmgr", "JARVIS_LS_SIGNING_KEY", "JARVIS_LS_PEPPER", "BEGIN PRIVATE KEY", "BEGIN OPENSSH PRIVATE KEY", "BEGIN EC PRIVATE KEY")) {
+            if ($text.Contains($m)) { $bad += $m }
+          }
+          foreach ($m in @("Создать ключи (Keygen)", "Токен администратора")) { if ($utf.Contains($m)) { $bad += $m } }
+          if ($bad.Count -gt 0) { Write-Output "::error title=secret scan::found in the customer's program: $($bad -join ', ')"; exit 1 }
+          Write-Output "secret scan: clean ($((Get-Item $exe).Length) bytes)"
+      - name: Assemble program folder
+        shell: pwsh
+        run: |
+          $out = "build\JarvisUser"
+          New-Item -ItemType Directory -Force $out | Out-Null
+          Copy-Item target\release\jarvis-app.exe $out
+          Copy-Item lib\windows\amd64\*.dll $out
+          foreach ($d in "commands", "sound", "keywords", "rustpotter") { Copy-Item "resources\$d" "$out\resources\$d" -Recurse }
+          New-Item -ItemType Directory -Force "$out\resources\vosk" | Out-Null
+          Copy-Item resources\vosk\README.md "$out\resources\vosk"
+      - name: Build the installer (Jarvis-User-Setup.exe)
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          New-Item -ItemType Directory -Force dist | Out-Null
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DUserEdition=1 /DSrcDir=build\JarvisUser /DOutName=Jarvis-User-Setup /DBuildSha=$($env:GITHUB_SHA.Substring(0,7)) /DBuildDate=$(Get-Date -Format 'yyyy-MM-dd') installer\jarvis.iss 2>&1 | Tee-Object -FilePath iscc-user.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem dist | Format-Table Name, Length
+      - name: Upload Jarvis User installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-user-installer
+          path: dist/Jarvis-User-Setup.exe
+          if-no-files-found: error
+
   # The old Tauri window (crates/jarvis-gui) is NOT part of the shipped program: the installer carries jarvis-app.exe only, and the
   # tray of jarvis-app can start a jarvis-gui.exe that stands next to it, if one is there. This job only tells whether the crate
   # still builds (it needs the Tauri libraries, which the Linux development environment lacks). It does not block anything.

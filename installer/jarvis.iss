@@ -13,17 +13,28 @@
 #ifndef BuildDate
 #define BuildDate "-"
 #endif
+; /DUserEdition=1 : Jarvis User, the customer's installer (own AppId and folder: it never replaces or mixes with Jarvis Admin)
+#ifdef UserEdition
+#define EditionName "Jarvis User"
+#define EditionDir "Jarvis User"
+#else
+#define EditionName "Jarvis"
+#define EditionDir "Jarvis"
+#endif
 
 [Setup]
-AppName=Jarvis
+#ifdef UserEdition
+AppId=JarvisUserEdition
+#endif
+AppName={#EditionName}
 AppVersion=0.1.0
 ; the commit and the date are shown in the title of the installer and in "Apps" of Windows: an old build is easy to tell
-AppVerName=Jarvis 0.1.0 (build {#BuildSha}, {#BuildDate})
+AppVerName={#EditionName} 0.1.0 (build {#BuildSha}, {#BuildDate})
 VersionInfoVersion=0.1.0.0
 VersionInfoDescription=Jarvis installer, build {#BuildSha}
 AppPublisher=Jarvis
-DefaultDirName={localappdata}\Programs\Jarvis
-DefaultGroupName=Jarvis
+DefaultDirName={localappdata}\Programs\{#EditionDir}
+DefaultGroupName={#EditionDir}
 PrivilegesRequired=lowest
 OutputDir=..\dist
 OutputBaseFilename={#OutName}
@@ -95,9 +106,9 @@ Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM jarvis-app.exe"; Flags: runh
 Source: "..\{#SrcDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
-Name: "{group}\Jarvis"; Filename: "{app}\jarvis-app.exe"; WorkingDir: "{app}"
+Name: "{group}\{#EditionName}"; Filename: "{app}\jarvis-app.exe"; WorkingDir: "{app}"
 Name: "{group}\{cm:ShortcutText}"; Filename: "{app}\jarvis-app.exe"; Parameters: "--text"; WorkingDir: "{app}"
-Name: "{autodesktop}\Jarvis"; Filename: "{app}\jarvis-app.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autodesktop}\{#EditionName}"; Filename: "{app}\jarvis-app.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
 ; the last page: the normal Jarvis (window, voice) is the main choice and is checked; the text mode is a second,
