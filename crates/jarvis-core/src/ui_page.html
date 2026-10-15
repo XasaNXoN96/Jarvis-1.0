@@ -193,6 +193,25 @@
   #full-exit:hover { color: var(--text); border-color: var(--line2); }
   body.full nav, body.full .topbar { display: none !important; } body.full #full-exit { display: block; }
   body.full #page-home .h-top { padding-right: 48px; }
+  /* license: the status chip, the activation / renewal window, the Premium offer, the expired-subscription window */
+  .lchip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line); background: #ffffff05; font-size: 12.5px; color: var(--text); cursor: pointer; font-family: inherit; white-space: nowrap; }
+  .lchip:hover { border-color: var(--line2); } .lchip i { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+  .lchip[data-s=premium] { border-color: #5be3a166; } .lchip[data-s=premium] i { background: var(--ok); }
+  .lchip[data-s=expired], .lchip[data-s=needs_refresh] { border-color: #ff6b7a77; } .lchip[data-s=expired] i, .lchip[data-s=needs_refresh] i { background: var(--err); }
+  .lchip[data-s=admin] { cursor: default; } .lchip[data-s=admin] i { background: var(--accent); }
+  .mdl { position: fixed; inset: 0; background: #060609cc; display: none; align-items: center; justify-content: center; z-index: 110; padding: 16px; }
+  .mdl.on { display: flex; }
+  .mdl .box { position: relative; background: var(--panel, #151518); border: 1px solid rgba(255,255,255,0.233); border-radius: 16px; padding: 22px 22px 18px; width: min(520px, 100%); max-height: 92vh; overflow: auto; box-shadow: 0 20px 60px #0008; }
+  .mdl h3 { margin: 0 0 8px; font-size: 18px; padding-right: 30px; } .mdl p { margin: 0 0 14px; color: var(--dim); font-size: 13.5px; line-height: 1.5; }
+  .mdl .acts { display: flex; flex-direction: column; gap: 8px; } .mdl .acts .btn { width: 100%; justify-content: center; padding: 11px; }
+  .mdl .x { position: absolute; top: 10px; right: 12px; border: 0; background: transparent; color: var(--dim); font-size: 20px; cursor: pointer; padding: 4px 8px; } .mdl .x:hover { color: var(--text); }
+  .mdl input[type=text] { width: 100%; box-sizing: border-box; padding: 10px 12px; margin-bottom: 10px; font-size: 15px; letter-spacing: .06em; }
+  .tar { display: grid; gap: 6px; margin: 8px 0 12px; } .tar .t { display: flex; justify-content: space-between; gap: 10px; padding: 8px 12px; border-radius: 10px; background: #ffffff08; font-size: 14px; } .tar .t b { color: var(--accent); }
+  .lic-msg { min-height: 18px; margin: 4px 0 10px; font-size: 13px; color: var(--dim); } .lic-msg.bad { color: var(--err); } .lic-msg.ok { color: var(--ok); }
+  .lm-table { width: 100%; border-collapse: collapse; font-size: 13px; } .lm-table th, .lm-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #ffffff10; vertical-align: top; } .lm-table th { color: var(--dim); font-weight: 500; }
+  .lm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; align-items: end; } .lm-grid label { display: grid; gap: 4px; font-size: 12.5px; color: var(--dim); } .lm-grid input, .lm-grid select { padding: 8px 10px; }
+  .lm-grid input, .lm-grid select, .mdl input[type=text], .lm-table input { background: #ffffff08; color: var(--text); border: 1px solid var(--line); border-radius: 9px; font: inherit; box-sizing: border-box; max-width: 100%; }
+  .lm-keys { white-space: pre; font-family: ui-monospace, Consolas, monospace; background: #00000040; border-radius: 10px; padding: 10px 12px; margin: 8px 0; user-select: all; max-height: 220px; overflow: auto; }
   #close-dlg { position: fixed; inset: 0; background: #060609cc; display: none; align-items: center; justify-content: center; z-index: 100; padding: 16px; }
   #close-dlg.on { display: flex; }
   #close-dlg .box { background: var(--panel, #151518); border: 1px solid rgba(255,255,255,0.233); border-radius: 16px; padding: 22px 22px 18px; width: min(420px, 100%); box-shadow: 0 20px 60px #0008; }
@@ -535,7 +554,8 @@
     <button data-page="devices" title="Мои устройства"><span class="ei" data-ico="phone"></span><span>Устройства</span></button>
     <button data-page="system" title="Система"><span class="ei" data-ico="cpu"></span><span>Система</span></button>
     <button data-page="diag" title="Диагностика"><span class="ei" data-ico="pulse"></span><span>Диагностика</span></button>
-    <button data-page="settings" title="Настройки"><span class="ei" data-ico="gear"></span><span>Настройки</span></button>
+<!--ADMIN-BEGIN-->    <button data-page="licmgr" title="Лицензии (администратор)"><span class="ei" data-ico="shield"></span><span>Лицензии</span></button>
+<!--ADMIN-END-->    <button data-page="settings" title="Настройки"><span class="ei" data-ico="gear"></span><span>Настройки</span></button>
     <div class="grow"></div>
     <button type="button" id="full-btn" title="Полноэкранный режим (F11)"><span class="ei" data-ico="full"></span><span>Во весь экран</span></button>
     <button type="button" id="close-open" style="display:none" title="Свернуть в трей или полностью закрыть JARVIS"><span class="ei" data-ico="power"></span><span id="close-open-t">Закрыть JARVIS…</span></button>
@@ -545,6 +565,7 @@
   <div class="content">
   <header class="topbar">
     <div class="tb-title"><b id="page-title">Главная</b><span id="page-sub">Neural Interface</span></div>
+    <button type="button" class="lchip" id="lic-chip" data-s="demo" title="Лицензия"><i></i><b>Demo</b></button>
     <span class="vchip" id="voice-chip" data-state="ERROR" title="Состояние голоса"><i></i><b id="voice-chip-t">…</b></span>
   </header>
   <div class="main">
@@ -804,6 +825,50 @@
         <small class="dim">Без личных данных: фразы, диалоги и тексты уведомлений сюда не попадают. Отчёт не содержит ключей, токенов и паролей.</small></div>
     </section>
 
+<!--ADMIN-BEGIN-->
+    <section class="page ds" id="page-licmgr">
+      <div class="card"><h3>Сервер лицензий</h3>
+        <div class="lm-grid">
+          <label>Адрес сервера (https://…)<input type="text" id="lm-url" placeholder="https://license.example.com" autocomplete="off"></label>
+          <label>Токен администратора<input type="password" id="lm-token" placeholder="jla_… (сохранится под защитой Windows)" autocomplete="off"></label>
+          <div><button class="btn primary" id="lm-save" type="button">Сохранить</button> <button class="btn" id="lm-forget" type="button">Забыть токен</button></div>
+        </div>
+        <div class="lic-msg" id="lm-msg"></div>
+      </div>
+      <div class="card" style="margin-top:12px"><h3>Создать ключи (Keygen)</h3>
+        <div class="lm-grid">
+          <label>Тип<select id="kg-purpose"><option value="NEW">Новая подписка</option><option value="RENEWAL">Ключ продления</option></select></label>
+          <label>Тариф<select id="kg-tariff"></select></label>
+          <label>Свой срок (вместо тарифа)<select id="kg-custom-kind"><option value="">— нет —</option><option value="DAYS">Дни (не меньше 7)</option><option value="MONTHS">Календарные месяцы</option></select></label>
+          <label>Сколько дней / месяцев<input type="number" id="kg-custom-amount" min="1" value="30"></label>
+          <label>Цена (центы)<input type="number" id="kg-price" min="0" placeholder="из тарифа"></label>
+          <label>Валюта<input type="text" id="kg-currency" value="USD" maxlength="5"></label>
+          <label>Активировать до (дней с сегодня)<input type="number" id="kg-activate-days" min="1" placeholder="по умолчанию 365"></label>
+          <label>Подписка не раньше (дата)<input type="date" id="kg-start"></label>
+          <label>Сколько ключей<input type="number" id="kg-count" min="1" max="500" value="1"></label>
+          <label>Заметка / покупатель<input type="text" id="kg-note" maxlength="200"></label>
+          <div><button class="btn primary" id="kg-go" type="button">Создать</button></div>
+        </div>
+        <div class="lic-msg" id="kg-msg"></div>
+        <div id="kg-out" hidden><div class="lm-keys" id="kg-keys"></div><button class="btn small" id="kg-copy" type="button">Скопировать ключи</button> <button class="btn small" id="kg-csv" type="button">Скачать CSV</button> <small class="dim">Полные ключи показаны один раз: сервер хранит только их отпечатки.</small></div>
+      </div>
+      <div class="card" style="margin-top:12px"><h3>Лицензии</h3>
+        <div class="lm-grid"><label>Поиск (заметка, номер, начало ключа)<input type="text" id="ll-q"></label>
+          <label>Статус<select id="ll-status"><option value="">все</option><option>UNUSED</option><option>ACTIVE</option><option>EXPIRED</option><option>SUSPENDED</option><option>REVOKED</option></select></label>
+          <div><button class="btn" id="ll-go" type="button">Обновить</button></div></div>
+        <div class="lic-msg" id="ll-msg"></div>
+        <div style="overflow:auto"><table class="lm-table"><thead><tr><th>Ключ</th><th>Тариф</th><th>Статус</th><th>Начало</th><th>Конец / осталось</th><th>Оплата</th><th>Привязка</th><th>Заметка</th><th></th></tr></thead><tbody id="ll-body"></tbody></table></div>
+      </div>
+      <div class="card" style="margin-top:12px"><h3>Тарифы и цены</h3>
+        <div style="overflow:auto"><table class="lm-table"><thead><tr><th>Код</th><th>Название</th><th>Срок</th><th>Цена (центы)</th><th>Валюта</th><th>Включён</th><th></th></tr></thead><tbody id="tt-body"></tbody></table></div>
+        <div class="lic-msg" id="tt-msg"></div>
+      </div>
+      <div class="card" style="margin-top:12px"><h3>Журнал изменений</h3>
+        <div class="lm-grid"><label>Номер лицензии (необязательно)<input type="text" id="au-lid"></label><div><button class="btn" id="au-go" type="button">Показать</button></div></div>
+        <div style="overflow:auto"><table class="lm-table"><thead><tr><th>Когда</th><th>Кто</th><th>Что</th><th>Лицензия</th><th>Было → стало</th></tr></thead><tbody id="au-body"></tbody></table></div>
+      </div>
+    </section>
+<!--ADMIN-END-->
     <section class="page ds" id="page-settings">
       <div class="set-layout">
         <aside class="set-side">
@@ -1035,6 +1100,37 @@
   <div class="acts"><button class="btn primary" id="close-dlg-tray" type="button">Свернуть в трей</button><button class="btn" id="close-dlg-exit" type="button">Полностью закрыть JARVIS</button><button class="btn" id="close-dlg-cancel" type="button">Отмена</button></div>
 </div></div>
 
+<div id="lic-dlg" class="mdl" role="dialog" aria-modal="true" aria-labelledby="lic-dlg-title"><div class="box">
+  <button type="button" class="x" id="lic-dlg-x" aria-label="Закрыть">✕</button>
+  <h3 id="lic-dlg-title">Jarvis Premium</h3>
+  <p id="lic-dlg-state"></p>
+  <div id="lic-act">
+    <p>Введите ключ активации. Активация работает только с интернетом: ключ проверяет сервер и привязывает его к этой установке.</p>
+    <input type="text" id="lic-key" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false" maxlength="60">
+    <div class="lic-msg" id="lic-msg"></div>
+    <div class="acts"><button class="btn primary" id="lic-do" type="button">Активировать</button></div>
+  </div>
+  <div id="lic-renew" hidden>
+    <p id="lic-renew-info"></p>
+    <div class="tar" id="lic-tariffs"></div>
+    <p>Оплата в самой программе пока не подключена: оплатите по инструкции выше и введите полученный ключ продления. Время подписки добавится к текущему сроку.</p>
+    <input type="text" id="lic-rkey" placeholder="Ключ продления" autocomplete="off" spellcheck="false" maxlength="60">
+    <div class="lic-msg" id="lic-rmsg"></div>
+    <div class="acts"><button class="btn primary" id="lic-rdo" type="button">Продлить подписку</button></div>
+  </div>
+</div></div>
+<div id="prem-dlg" class="mdl" role="dialog" aria-modal="true" aria-labelledby="prem-dlg-title"><div class="box">
+  <h3 id="prem-dlg-title">Jarvis Premium</h3>
+  <p id="prem-dlg-text">Эта функция доступна в Jarvis Premium. Активируйте Premium, чтобы использовать её.</p>
+  <div class="acts"><button class="btn primary" id="prem-go" type="button">Активировать Premium</button><button class="btn" id="prem-later" type="button">Позже</button></div>
+</div></div>
+<div id="exp-dlg" class="mdl" role="alertdialog" aria-modal="true" aria-labelledby="exp-dlg-title"><div class="box">
+  <button type="button" class="x" id="exp-x" aria-label="Выйти">✕</button>
+  <h3 id="exp-dlg-title">Подписка закончилась</h3>
+  <p>Ваша подписка Jarvis Premium закончилась. Хотите продлить подписку и продолжить пользоваться Premium?</p>
+  <div class="acts"><button class="btn primary" id="exp-yes" type="button">Да, продлить</button><button class="btn" id="exp-no" type="button">Нет, выйти</button></div>
+</div></div>
+
 <aside class="drw" id="drw" data-mode="one" hidden role="dialog" aria-labelledby="drw-title">
   <div class="drw-head"><b id="drw-title">Состояние</b><span class="grow"></span>
     <button type="button" class="btn small" id="drw-full" title="Показать всё на весь экран">На весь экран</button>
@@ -1117,8 +1213,8 @@ function ico(name) { return '<svg viewBox="0 0 24 24" fill="none" stroke="curren
 document.querySelectorAll('[data-ico]').forEach(el => { el.innerHTML = ico(el.dataset.ico); });
 
 // ---------- navigation ----------
-const PAGES = ['home', 'chat', 'tasks', 'messages', 'commands', 'builder', 'apps', 'files', 'devices', 'system', 'diag', 'settings'];
-const TITLES = { home: ['Главная', 'Neural Interface'], chat: ['Диалоги', 'Conversations'], tasks: ['Задачи', 'Tasks'], messages: ['Сообщения', 'Messages'], devices: ['Мои устройства', 'My Devices'], system: ['Система', 'System'], commands: ['Команды', 'Command Library'], diag: ['Диагностика', 'Diagnostics'], builder: ['Конструктор', 'Scenario Builder'], apps: ['Программы', 'Applications'], files: ['Файлы', 'File Search'], settings: ['Настройки', 'Settings'] };
+const PAGES = ['home', 'chat', 'tasks', 'messages', 'commands', 'builder', 'apps', 'files', 'devices', 'system', 'diag', 'settings', 'licmgr'];
+const TITLES = { home: ['Главная', 'Neural Interface'], chat: ['Диалоги', 'Conversations'], tasks: ['Задачи', 'Tasks'], messages: ['Сообщения', 'Messages'], devices: ['Мои устройства', 'My Devices'], system: ['Система', 'System'], commands: ['Команды', 'Command Library'], diag: ['Диагностика', 'Diagnostics'], builder: ['Конструктор', 'Scenario Builder'], apps: ['Программы', 'Applications'], files: ['Файлы', 'File Search'], settings: ['Настройки', 'Settings'], licmgr: ['Лицензии', 'License Manager'] };
 let currentPage = 'home';
 const curInput = () => currentPage === 'home' ? $('#h-input') : $('#input');
 function show(name) {
@@ -1130,6 +1226,7 @@ function show(name) {
   document.querySelectorAll('nav button[data-page]').forEach(b => b.classList.toggle('active', b.dataset.page === name));
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + name));
   if (name === 'commands') { loadCommands(); renderTimers(); if (lastState) commandActions(lastState.actions); }
+  /*ADMIN-BEGIN*/ if (name === 'licmgr') { lmLoad(); lmAudit(); } /*ADMIN-END*/
   if (name === 'diag') diagLoad();
   if (name === 'builder') builderLoad();
   if (name === 'apps') appsLoad();
@@ -1980,6 +2077,8 @@ async function closeAnswer(answer) {
   }
 }
 window.jarvisCloseRequest = function () {
+  // the subscription is over and its window is on the screen: the cross of the window means «выйти»
+  if ($('#exp-dlg').classList.contains('on')) { licExit(); return; }
   const t = closeTexts();
   $('#close-dlg-title').textContent = t.title || 'Что вы хотите сделать?';
   $('#close-dlg-tray').textContent = t.tray || 'Свернуть в трей';
@@ -2012,6 +2111,162 @@ function applyCloseRequest(s) {
   if (closeReqSeen === null || s.close_req < closeReqSeen) { closeReqSeen = s.close_req; return; }
   if (s.close_req > closeReqSeen) { closeReqSeen = s.close_req; closeBrowserWindow(); }
 }
+
+// ---------- license: the chip, activation, renewal, the Premium offer, the expired subscription ----------
+let licState = null, licSeen = null, licRenewMode = false;
+const licMoney = t => (t.price_cents / 100).toFixed(2).replace(/\.00$/, '') + ' ' + (t.currency === 'USD' ? '$' : t.currency);
+const licTerm = t => t.kind === 'LIFETIME' ? 'бессрочно' : t.kind === 'MONTHS' ? t.amount + ' мес.' : t.amount + ' дн.';
+const licDate = ts => new Date(ts * 1000).toLocaleDateString('ru-RU');
+function licText(s) {
+  if (s.edition === 'admin') return 'Версия администратора: все функции доступны, лицензия не нужна.';
+  if (s.state === 'premium') return 'Jarvis Premium активен' + (s.lifetime ? ' (бессрочно).' : ' до ' + licDate(s.sub_end) + ' (осталось дней: ' + s.days_left + ').') + ' Тариф: ' + (s.plan || '—') + '.';
+  if (s.state === 'expired') return 'Подписка закончилась' + (s.sub_end ? ' ' + licDate(s.sub_end) : '') + '. Продлите её, чтобы пользоваться Premium.';
+  if (s.state === 'needs_refresh') return 'Нужно подключиться к интернету, чтобы подтвердить лицензию.';
+  return 'Демо-версия: бесплатные команды работают, Premium выключен.';
+}
+function licRender(s) {
+  licState = s;
+  const chip = $('#lic-chip'); if (!chip) return;
+  const admin = s.edition === 'admin';
+  chip.dataset.s = admin ? 'admin' : s.state;
+  chip.querySelector('b').textContent = admin ? 'Admin' : s.state === 'premium' ? (s.lifetime ? 'Premium' : 'Premium · ' + s.days_left + ' дн.') : s.state === 'expired' ? 'Подписка закончилась' : s.state === 'needs_refresh' ? 'Нужен интернет' : 'Demo';
+  chip.title = licText(s);
+  $('#lic-dlg-state').textContent = licText(s);
+  const act = $('#lic-act'); act.hidden = licRenewMode;
+  $('#lic-renew').hidden = !licRenewMode;
+  $('#lic-dlg-title').textContent = licRenewMode ? 'Продлить подписку' : s.state === 'premium' ? 'Jarvis Premium' : 'Активировать Premium';
+  if (!s.configured && !admin) setLicMsg('#lic-msg', 'В этой сборке не задан сервер лицензий — активация невозможна.', 'bad');
+}
+function setLicMsg(sel, text, cls) { const el = $(sel); el.textContent = text || ''; el.className = 'lic-msg' + (cls ? ' ' + cls : ''); }
+async function licLoad() {
+  let s; try { s = await (await fetch('/license')).json(); } catch (e) { return; }
+  licRender(s);
+  const seq = (s.prompt && s.prompt.seq) || 0;
+  if (licSeen === null) { licSeen = seq; if (s.state === 'expired' && s.edition !== 'admin') showExpired(); return; }
+  if (seq > licSeen) {
+    licSeen = seq;
+    const why = s.prompt.why;
+    if (why === 'expired') showExpired();
+    else if (why === 'premium' || why === 'refresh') showPremium(why);
+  }
+}
+function showPremium(why) {
+  $('#prem-dlg-text').textContent = why === 'refresh' ? 'Нужно подключиться к интернету, чтобы подтвердить лицензию Jarvis Premium.' : 'Эта функция доступна в Jarvis Premium. Активируйте Premium, чтобы использовать её.';
+  $('#prem-go').textContent = why === 'refresh' ? 'Проверить сейчас' : 'Активировать Premium';
+  $('#prem-dlg').dataset.why = why; $('#prem-dlg').classList.add('on');
+}
+function showExpired() { $('#exp-dlg').classList.add('on'); $('#exp-yes').focus(); }
+function openLicense(renew) {
+  licRenewMode = !!renew; setLicMsg('#lic-msg'); setLicMsg('#lic-rmsg');
+  if (licState) licRender(licState);
+  $('#lic-dlg').classList.add('on');
+  if (renew) licTariffs(); else $('#lic-key').focus();
+}
+async function licTariffs() {
+  $('#lic-tariffs').textContent = 'Загружаю тарифы…';
+  const r = await api('/license', { op: 'tariffs' });
+  if (!r.ok) { $('#lic-tariffs').textContent = ''; $('#lic-renew-info').textContent = 'Тарифы не загрузились: ' + (r.message || 'нет связи с сервером') + ' Если у вас уже есть ключ продления, введите его ниже.'; return; }
+  const d = r.status || {};
+  $('#lic-renew-info').textContent = d.info || 'Чтобы продлить Jarvis Premium, получите ключ продления у владельца продукта.';
+  $('#lic-tariffs').innerHTML = (d.tariffs || []).filter(t => t.enabled !== false && t.price_cents > 0 || t.kind === 'LIFETIME').map(t => '<div class="t"><span>' + esc(t.name) + ' · ' + licTerm(t) + '</span><b>' + (t.price_cents > 0 ? licMoney(t) : 'по запросу') + '</b></div>').join('');
+}
+$('#lic-chip').onclick = () => { if (licState && licState.edition === 'admin') return; openLicense(licState && licState.state === 'expired'); };
+$('#lic-dlg-x').onclick = () => $('#lic-dlg').classList.remove('on');
+$('#prem-later').onclick = () => $('#prem-dlg').classList.remove('on');
+$('#prem-go').onclick = async () => {
+  const dlg = $('#prem-dlg'); dlg.classList.remove('on');
+  if (dlg.dataset.why === 'refresh') { const r = await api('/license', { op: 'refresh' }); showToast(r.ok ? 'Лицензия подтверждена' : (r.message || 'Нет связи с сервером')); licLoad(); return; }
+  openLicense(false);
+};
+// the expired subscription: «Да, продлить» opens the renewal window; «Нет, выйти» and the cross close Jarvis (the data is saved by the usual exit)
+async function licExit() { $('#exp-dlg').classList.remove('on'); try { await action('app_exit'); } catch (e) {} if (ownWindow) window.ipc.postMessage('close:exit'); }
+$('#exp-yes').onclick = () => { $('#exp-dlg').classList.remove('on'); openLicense(true); };
+$('#exp-no').onclick = licExit;
+$('#exp-x').onclick = licExit;
+$('#lic-do').onclick = async () => {
+  const key = $('#lic-key').value.trim(); if (!key) { setLicMsg('#lic-msg', 'Введите ключ.', 'bad'); return; }
+  $('#lic-do').disabled = true; setLicMsg('#lic-msg', 'Проверяю ключ на сервере…');
+  try { const r = await api('/license', { op: 'activate', key }); if (r.ok) { setLicMsg('#lic-msg', 'Готово: Jarvis Premium активирован.', 'ok'); $('#lic-key').value = ''; licRender(r.status); setTimeout(() => $('#lic-dlg').classList.remove('on'), 1200); } else setLicMsg('#lic-msg', r.message || 'Не получилось.', 'bad'); }
+  catch (e) { setLicMsg('#lic-msg', 'Нет связи с Джарвисом.', 'bad'); }
+  $('#lic-do').disabled = false;
+};
+$('#lic-rdo').onclick = async () => {
+  const key = $('#lic-rkey').value.trim(); if (!key) { setLicMsg('#lic-rmsg', 'Введите ключ продления.', 'bad'); return; }
+  $('#lic-rdo').disabled = true; setLicMsg('#lic-rmsg', 'Проверяю ключ на сервере…');
+  try { const r = await api('/license', { op: 'renew', key }); if (r.ok) { setLicMsg('#lic-rmsg', 'Подписка продлена.', 'ok'); $('#lic-rkey').value = ''; licRender(r.status); setTimeout(() => $('#lic-dlg').classList.remove('on'), 1400); } else setLicMsg('#lic-rmsg', r.message || 'Не получилось.', 'bad'); }
+  catch (e) { setLicMsg('#lic-rmsg', 'Нет связи с Джарвисом.', 'bad'); }
+  $('#lic-rdo').disabled = false;
+};
+$('#lic-key').addEventListener('keydown', e => { if (e.key === 'Enter') $('#lic-do').click(); });
+$('#lic-rkey').addEventListener('keydown', e => { if (e.key === 'Enter') $('#lic-rdo').click(); });
+licLoad(); setInterval(licLoad, 4000);
+/*ADMIN-BEGIN*/
+// ---------- Jarvis Admin: the license manager (only in the administrator's edition; cut out of Jarvis User) ----------
+const lmApi = (op, extra) => api('/license-admin', Object.assign({ op }, extra || {}));
+const lmCall = (method, path, body) => lmApi('call', { method, path, body });
+let lmTariffs = [];
+const lmDate = ts => ts ? new Date(ts * 1000).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+const lmMsg = (sel, t, c) => setLicMsg(sel, t, c);
+async function lmLoad() {
+  const s = await lmApi('settings_get');
+  if (s.ok) { $('#lm-url').value = s.settings.url || ''; $('#lm-token').placeholder = s.settings.has_token ? '•••• сохранён (введите новый, чтобы заменить)' : 'jla_… (сохранится под защитой Windows)'; }
+  if (s.ok && s.settings.url && s.settings.has_token) { await lmLoadTariffs(); lmList(); }
+}
+async function lmLoadTariffs() {
+  const r = await lmCall('GET', '/admin/tariffs');
+  if (!r.ok) { lmMsg('#tt-msg', r.message || 'Нет связи с сервером', 'bad'); return; }
+  lmTariffs = r.data.tariffs || [];
+  $('#kg-tariff').innerHTML = lmTariffs.filter(t => t.enabled).map(t => '<option value="' + esc(t.id) + '">' + esc(t.name) + ' — ' + licTerm(t) + ', ' + (t.price_cents ? licMoney(t) : 'цена вручную') + '</option>').join('');
+  $('#tt-body').innerHTML = lmTariffs.map((t, i) => '<tr data-i="' + i + '"><td>' + esc(t.id) + '</td><td><input type="text" class="tt-name" value="' + esc(t.name) + '"></td><td>' + licTerm(t) + '</td><td><input type="number" class="tt-price" min="0" value="' + t.price_cents + '" style="width:110px"></td><td><input type="text" class="tt-cur" value="' + esc(t.currency) + '" style="width:60px"></td><td><input type="checkbox" class="tt-on"' + (t.enabled ? ' checked' : '') + '></td><td><button class="btn small tt-save" type="button">Сохранить</button></td></tr>').join('');
+  document.querySelectorAll('.tt-save').forEach(b => b.onclick = async () => {
+    const tr = b.closest('tr'), t = Object.assign({}, lmTariffs[+tr.dataset.i]);
+    t.name = tr.querySelector('.tt-name').value; t.price_cents = +tr.querySelector('.tt-price').value; t.currency = tr.querySelector('.tt-cur').value; t.enabled = tr.querySelector('.tt-on').checked;
+    const r = await lmCall('PUT', '/admin/tariffs', t); lmMsg('#tt-msg', r.ok ? 'Тариф сохранён (запись в журнале есть).' : r.message, r.ok ? 'ok' : 'bad'); if (r.ok) lmLoadTariffs();
+  });
+}
+const lmStatusRu = { UNUSED: 'не активирован', ACTIVE: 'активен', EXPIRED: 'закончился', SUSPENDED: 'заблокирован', REVOKED: 'отозван' };
+async function lmList() {
+  const q = encodeURIComponent($('#ll-q').value.trim()), st = encodeURIComponent($('#ll-status').value);
+  const r = await lmCall('GET', '/admin/licenses?limit=300&q=' + q + '&status=' + st);
+  if (!r.ok) { lmMsg('#ll-msg', r.message || 'Нет связи с сервером', 'bad'); return; }
+  lmMsg('#ll-msg', 'Найдено: ' + r.data.licenses.length);
+  $('#ll-body').innerHTML = r.data.licenses.map(l => '<tr><td><code>' + esc(l.key_hint) + '</code><br><small class="dim">' + esc(l.id.slice(0, 8)) + (l.purpose === 'RENEWAL' ? ' · продление' : '') + '</small></td><td>' + esc(l.plan) + '</td><td>' + (lmStatusRu[l.effective_status] || esc(l.effective_status)) + '</td><td>' + lmDate(l.sub_start) + '</td><td>' + (l.lifetime ? 'бессрочно' : l.sub_end ? lmDate(l.sub_end) + '<br><small class="dim">осталось дней: ' + l.days_left + '</small>' : '—') + '</td><td>' + (l.price_cents ? (l.price_cents / 100) + ' ' + esc(l.currency) : '—') + '</td><td>' + (l.bound ? 'привязан ' + esc(l.installation || '') : '—') + '</td><td>' + esc(l.note || '') + '</td><td><select class="ll-act" data-id="' + esc(l.id) + '"><option value="">Действие…</option><option value="revoke">Отозвать</option><option value="suspend">Заблокировать</option><option value="resume">Разблокировать</option><option value="reset-device">Сбросить привязку</option><option value="extend">Продлить вручную…</option><option value="change-tariff">Сменить тариф…</option><option value="deadline">Срок активации…</option></select></td></tr>').join('');
+  document.querySelectorAll('.ll-act').forEach(s => s.onchange = async () => {
+    const op = s.value, id = s.dataset.id; s.value = ''; if (!op) return;
+    let body = {};
+    if (['revoke', 'suspend', 'reset-device'].includes(op)) { const reason = prompt('Причина (попадёт в журнал):', ''); if (reason === null) return; body.reason = reason; }
+    if (op === 'extend') { const kind = prompt('Чем продлить: DAYS (дни, не меньше 7) или MONTHS (месяцы)', 'MONTHS'); if (!kind) return; const amount = +prompt('Сколько?', '1'); if (!amount) return; body = { kind: kind.toUpperCase(), amount, reason: prompt('Причина:', '') || '' }; }
+    if (op === 'change-tariff') { const tid = prompt('Код тарифа: ' + lmTariffs.map(t => t.id).join(', '), 'premium-yearly'); if (!tid) return; body = { tariff_id: tid, recompute: confirm('Пересчитать конец подписки по новому тарифу от начала?') }; }
+    if (op === 'deadline') { const d = prompt('Активировать до (ГГГГ-ММ-ДД):', ''); if (!d) return; const ts = Math.floor(new Date(d + 'T23:59:59').getTime() / 1000); if (!ts) return; body = { activate_by: ts }; }
+    if (['revoke', 'reset-device'].includes(op) && !confirm('Точно? Действие попадёт в журнал.')) return;
+    const r = await lmCall('POST', '/admin/licenses/' + encodeURIComponent(id) + '/' + op, body); lmMsg('#ll-msg', r.ok ? 'Готово.' : r.message, r.ok ? 'ok' : 'bad'); lmList();
+  });
+}
+async function lmAudit() {
+  const lid = $('#au-lid').value.trim();
+  const r = await lmCall('GET', '/admin/audit?limit=200' + (lid ? '&license=' + encodeURIComponent(lid) : ''));
+  if (!r.ok) { $('#au-body').innerHTML = '<tr><td colspan="5">' + esc(r.message || 'ошибка') + '</td></tr>'; return; }
+  const short = o => o ? esc(JSON.stringify({ статус: o.status, конец: o.sub_end ? lmDate(o.sub_end) : undefined, тариф: o.tariff_id, привязка: o.bound })).slice(0, 160) : '—';
+  $('#au-body').innerHTML = r.data.audit.map(a => '<tr><td>' + lmDate(a.ts) + '</td><td>' + esc(a.actor) + '</td><td>' + esc(a.action) + '</td><td>' + esc((a.license_id || '').slice(0, 8)) + '</td><td><small>' + short(a.before) + ' → ' + short(a.after) + '</small></td></tr>').join('');
+}
+$('#lm-save').onclick = async () => { const r = await lmApi('settings_set', { url: $('#lm-url').value, token: $('#lm-token').value }); $('#lm-token').value = ''; lmMsg('#lm-msg', r.ok ? 'Сохранено.' : r.message, r.ok ? 'ok' : 'bad'); if (r.ok) lmLoad(); };
+$('#lm-forget').onclick = async () => { await lmApi('forget_token'); lmMsg('#lm-msg', 'Токен забыт.', 'ok'); lmLoad(); };
+$('#ll-go').onclick = lmList; $('#au-go').onclick = lmAudit;
+$('#kg-go').onclick = async () => {
+  const body = { purpose: $('#kg-purpose').value, count: +$('#kg-count').value || 1, note: $('#kg-note').value, currency: $('#kg-currency').value || 'USD' };
+  const ck = $('#kg-custom-kind').value;
+  if (ck) body.custom = { kind: ck, amount: +$('#kg-custom-amount').value }; else body.tariff_id = $('#kg-tariff').value;
+  if ($('#kg-price').value !== '') body.price_cents = +$('#kg-price').value;
+  if ($('#kg-activate-days').value) body.activate_days = +$('#kg-activate-days').value;
+  if ($('#kg-start').value) body.start_not_before = Math.floor(new Date($('#kg-start').value + 'T00:00:00').getTime() / 1000);
+  const r = await lmCall('POST', '/admin/licenses', body);
+  if (!r.ok) { lmMsg('#kg-msg', r.message, 'bad'); return; }
+  lmMsg('#kg-msg', 'Создано ключей: ' + r.data.licenses.length, 'ok');
+  $('#kg-out').hidden = false; $('#kg-keys').textContent = r.data.licenses.map(l => l.key).join('\n'); lmList();
+};
+$('#kg-copy').onclick = () => copyText($('#kg-keys').textContent, $('#kg-copy'));
+$('#kg-csv').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['key\n' + $('#kg-keys').textContent + '\n'], { type: 'text/csv' })); a.download = 'jarvis-keys.csv'; a.click(); };
+/*ADMIN-END*/
 
 // ---------- the menu folds to icons; full screen: only the page, without the menu and the frame of the window ----------
 try { if (localStorage.getItem('jarvis-nav') === 'folded') document.body.classList.add('nav-folded'); } catch (e) {}

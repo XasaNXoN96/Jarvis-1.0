@@ -15,6 +15,43 @@ use crate::{i18n, COMMANDS_LIST};
 
 pub const PORT: u16 = 9714;
 const PAGE: &str = include_str!("ui_page.html");
+
+// the page of the window. Jarvis User gets it WITHOUT the license manager (the marked parts are cut out, not just hidden)
+fn page() -> std::borrow::Cow<'static, str> {
+    #[cfg(feature = "user-edition")]
+    {
+        return std::borrow::Cow::Owned(strip_admin(PAGE));
+    }
+    #[cfg(not(feature = "user-edition"))]
+    std::borrow::Cow::Borrowed(PAGE)
+}
+
+#[allow(dead_code)]
+fn strip_admin(page: &str) -> String {
+    let mut out = String::with_capacity(page.len());
+    let mut rest = page;
+    // two kinds of markers: <!--ADMIN-BEGIN--> ... <!--ADMIN-END--> in the markup, /*ADMIN-BEGIN*/ ... /*ADMIN-END*/ in the script
+    loop {
+        let a = rest.find("<!--ADMIN-BEGIN-->");
+        let b = rest.find("/*ADMIN-BEGIN*/");
+        let (start, end_marker) = match (a, b) {
+            (Some(x), Some(y)) if x < y => (x, "<!--ADMIN-END-->"),
+            (Some(x), None) => (x, "<!--ADMIN-END-->"),
+            (_, Some(y)) => (y, "/*ADMIN-END*/"),
+            (None, None) => break,
+        };
+        out.push_str(&rest[..start]);
+        match rest[start..].find(end_marker) {
+            Some(e) => rest = &rest[start + e + end_marker.len()..],
+            None => {
+                rest = "";
+                break;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
 const ICON: &[u8] = include_bytes!("../../../resources/icons/128x128.png");
 
 // the address of the page (no secret: for the log and for people)
@@ -877,7 +914,7 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
     let _door = crate::origin::enter(crate::origin::Source::Window);
 
     match (req.method.as_str(), req.path.as_str()) {
-        ("GET", "/") => respond(&mut stream, "200 OK", "text/html", PAGE),
+        ("GET", "/") => respond(&mut stream, "200 OK", "text/html", &page()),
         ("GET", "/icon.png") | ("GET", "/favicon.ico") => respond_bytes(&mut stream, "200 OK", "image/png", ICON),
         ("GET", "/apps") => {
             let list: Vec<serde_json::Value> = crate::appindex::apps()
@@ -976,6 +1013,15 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
             }
             let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap_or(json!({}));
             respond(&mut stream, "200 OK", "application/json", &license_action(&body).to_string());
+        }
+        #[cfg(not(feature = "user-edition"))]
+        ("POST", "/license-admin") => {
+            if !req.custom_header {
+                respond(&mut stream, "403 Forbidden", "text/plain", "forbidden");
+                return Ok(());
+            }
+            let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap_or(json!({}));
+            respond(&mut stream, "200 OK", "application/json", &crate::licmgr::action(&body).to_string());
         }
         ("GET", "/modules") => respond(&mut stream, "200 OK", "application/json", &modules_json().to_string()),
         ("POST", "/settings") | ("POST", "/action") => {
@@ -1459,4 +1505,18 @@ mod tests {
         crate::ui_auth::reset_for_tests(None, false);
     }
 
+
+    #[test]
+    fn jarvis_user_gets_a_page_without_the_license_manager() {
+        let user = strip_admin(PAGE);
+        for marker in ["ADMIN-BEGIN", "ADMIN-END", "license-admin", "page-licmgr", "lmCall", "Создать ключи", "jla_", "data-page=\"licmgr\""] {
+            assert!(!user.contains(marker), "the user page still has {}", marker);
+        }
+        // the parts every customer needs are still there
+        for needed in ["lic-dlg", "exp-dlg", "prem-dlg", "Да, продлить", "Нет, выйти", "Активировать Premium", "Позже"] {
+            assert!(user.contains(needed), "{}", needed);
+        }
+        assert!(PAGE.contains("page-licmgr") && PAGE.contains("license-admin"), "the administrator's page has it");
+        assert_eq!(PAGE.matches("ADMIN-BEGIN").count(), PAGE.matches("ADMIN-END").count());
+    }
 }

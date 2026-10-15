@@ -76,6 +76,9 @@ pub mod docai;
 pub mod secret;
 pub mod access;
 pub mod licensing;
+// the owner's license manager exists only in Jarvis Admin: the customer's program does not contain it
+#[cfg(not(feature = "user-edition"))]
+pub mod licmgr;
 pub mod voice_install;
 pub mod ai;
 pub mod filesearch;
