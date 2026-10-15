@@ -86,7 +86,7 @@ fn the_last_page_starts_the_normal_jarvis_first_and_the_text_mode_only_on_reques
     assert!(t.contains("AdjustLabelHeight(WizardForm.FinishedLabel)"));
     // the normal shortcut starts the window, not the text mode
     let icons = section(&t, "Icons");
-    assert!(icons.iter().any(|l| l.starts_with("Name: \"{group}\\Jarvis\"") && !l.contains("--text")));
+    assert!(icons.iter().any(|l| (l.starts_with("Name: \"{group}\\Jarvis\"") || l.starts_with("Name: \"{group}\\{#EditionName}\"")) && !l.contains("--text")));
 }
 
 // Every file with a secret that the program writes into its data folder is removed by the uninstaller whatever the user
