@@ -103,6 +103,9 @@ pub fn init() {
             info!("TTS: speech is switched off (saved setting).");
         }
     }
+    if ENABLED.load(Ordering::SeqCst) && crate::silero::speaker_of(&crate::uistate::voice_name()).is_some() {
+        crate::silero::prewarm();
+    }
 }
 
 pub fn is_enabled() -> bool {

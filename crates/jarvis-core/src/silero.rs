@@ -164,6 +164,31 @@ fn spawn(inst: &Install) -> Result<Server, String> {
     Ok(Server { key: format!("{}|{}", inst.python.display(), inst.script.display()), child, stdin, rx })
 }
 
+// the worker is started when it is not running (or is another install); the model loads in the background
+fn ensure_running(guard: &mut Option<Server>, inst: &Install) -> Result<(), String> {
+    let key = format!("{}|{}", inst.python.display(), inst.script.display());
+    let alive = match guard.as_mut() {
+        Some(s) if s.key == key => s.child.try_wait().map(|r| r.is_none()).unwrap_or(false),
+        _ => false,
+    };
+    if !alive {
+        if let Some(mut old) = guard.take() {
+            let _ = old.child.kill();
+        }
+        *guard = Some(spawn(inst)?);
+    }
+    Ok(())
+}
+
+// loads the model before the first answer (a Silero voice is chosen): the first phrase does not wait for it
+pub fn prewarm() {
+    std::thread::spawn(|| {
+        let Some(inst) = find_install() else { return };
+        let mut guard = SERVER.lock();
+        let _ = ensure_running(&mut guard, &inst);
+    });
+}
+
 pub fn stop_server() {
     if let Some(mut s) = SERVER.lock().take() {
         let _ = s.child.kill();
@@ -183,19 +208,8 @@ pub fn synth(text: &str, speaker: &str, speed: f32, out: &Path, cancelled: &dyn 
         return Outcome::Failed(format!("озвучка Silero не найдена (искал: {})", searched_places()));
     };
     let mut guard = SERVER.lock();
-    let key = format!("{}|{}", inst.python.display(), inst.script.display());
-    let alive = match guard.as_mut() {
-        Some(s) if s.key == key => s.child.try_wait().map(|r| r.is_none()).unwrap_or(false),
-        _ => false,
-    };
-    if !alive {
-        if let Some(mut old) = guard.take() {
-            let _ = old.child.kill();
-        }
-        match spawn(&inst) {
-            Ok(s) => *guard = Some(s),
-            Err(e) => return Outcome::Failed(e),
-        }
+    if let Err(e) = ensure_running(&mut guard, &inst) {
+        return Outcome::Failed(e);
     }
     let Some(srv) = guard.as_mut() else { return Outcome::Failed("Silero не запущен".into()) };
     let id = JOB.fetch_add(1, Ordering::SeqCst);

@@ -352,7 +352,12 @@ pub fn update_settings(patch: &Value) {
             crate::weather::city_changed();
         }
     }
-    if let Some(v) = patch.get("voice_name").and_then(|v| v.as_str()) { s.voice_name = v.chars().take(120).collect(); }
+    if let Some(v) = patch.get("voice_name").and_then(|v| v.as_str()) {
+        s.voice_name = v.chars().take(120).collect();
+        if crate::silero::speaker_of(&s.voice_name).is_some() {
+            crate::silero::prewarm();
+        }
+    }
     let before = (s.ai_provider.clone(), s.ai_model.clone(), s.ai_key.clone(), s.ai_url.clone(), s.ai_route.clone());
     if let Some(v) = patch.get("ai_provider").and_then(|v| v.as_str()) { s.ai_provider = v.chars().take(30).collect(); }
     if let Some(v) = patch.get("ai_model").and_then(|v| v.as_str()) { s.ai_model = v.chars().take(100).collect(); }
