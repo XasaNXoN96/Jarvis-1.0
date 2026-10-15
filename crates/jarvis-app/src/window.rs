@@ -12,6 +12,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use tao::event::{Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
+use tao::platform::windows::EventLoopBuilderExtWindows;
 use tao::window::{Icon, Window, WindowBuilder};
 use tray_icon::menu::MenuEvent;
 use tray_icon::{MouseButton, MouseButtonState, TrayIconEvent};
@@ -184,9 +185,15 @@ fn hide_any(win: &Option<Win>) {
     }
 }
 
-// Runs the window and the tray messages on the main thread until Jarvis exits.
+// Runs the window and the tray messages until Jarvis exits. It is called on a thread of its own (main.rs), not on the
+// main thread, whose COM mode other libraries have set already (Tao would panic with RPC_E_CHANGED_MODE), so Tao is
+// told that this is not the main thread.
 pub fn run(h: Hooks) -> ! {
-    let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
+    let event_loop = {
+        let mut builder = EventLoopBuilder::<UserEvent>::with_user_event();
+        builder.with_any_thread(true);
+        builder.build()
+    };
     let proxy = event_loop.create_proxy();
     let early = {
         // (under the lock: a request is either remembered before this point or sent to the loop after it)

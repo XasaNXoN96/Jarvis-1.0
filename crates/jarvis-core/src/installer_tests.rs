@@ -140,3 +140,52 @@ fn every_inno_constant_in_the_script_is_a_known_one() {
     }
 }
 
+
+// The window of Jarvis (Tao: OleInitialize, WebView2) needs a single-threaded COM thread of its own. The main thread is
+// multithreaded COM after the microphone library, and Tao panicked there with RPC_E_CHANGED_MODE (exit code 101, on a
+// computer with a microphone). The program is built only on Windows, so what is checked here is the source: the
+// window loop must not return to the main thread, and Tao must be told it is not the main thread. (The behaviour itself
+// is checked by the CI on Windows: "WINDOW WITH MULTITHREADED COM ON THE MAIN THREAD".)
+#[cfg(test)]
+mod window_thread {
+    fn app_source(file: &str) -> String {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../jarvis-app/src").join(file);
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {}", path.display(), e))
+    }
+
+    #[test]
+    fn the_window_loop_runs_on_its_own_thread_and_a_panic_is_not_hidden() {
+        let main = app_source("main.rs");
+        let call = main.find("tray::init_blocking(settings)").expect("the window loop is started in main.rs");
+        let before = &main[..call];
+        let block_start = before.rfind("#[cfg(target_os = \"windows\")]").expect("a Windows block");
+        let block = &main[block_start..];
+        assert!(block.contains("std::thread::Builder::new()") && block.contains(".spawn("), "the window loop must run on a thread of its own");
+        assert!(block.contains("resume_unwind"), "a panic of the window thread must reach the process, not be swallowed");
+        // exactly one call for Windows (inside the thread) and one for the other systems
+        assert_eq!(main.matches("tray::init_blocking(settings)").count(), 2);
+    }
+
+    #[test]
+    fn tao_is_told_the_event_loop_is_not_on_the_main_thread() {
+        let window = app_source("window.rs");
+        assert!(window.contains("with_any_thread(true)"), "without it Tao refuses an event loop outside the main thread");
+        assert!(window.contains("EventLoopBuilderExtWindows"));
+    }
+
+    #[test]
+    fn the_com_mode_of_the_threads_is_written_to_the_log() {
+        let main = app_source("main.rs");
+        for stage in ["COM of the main thread at start", "COM of the main thread after the microphone", "COM of the window thread"] {
+            assert!(main.contains(stage), "{} is missing from the log lines", stage);
+        }
+    }
+
+    // the test seam of the CI must stay off unless asked for
+    #[test]
+    fn the_com_test_seam_needs_its_variable() {
+        let main = app_source("main.rs");
+        let seam = main.find("fn test_com_mta_main()").expect("the seam");
+        assert!(main[seam..seam + 400].contains("JARVIS_TEST_MTA_MAIN"));
+    }
+}

@@ -443,6 +443,25 @@ fn main() -> Result<(), String> {
         let _ = app::start(voice_mode, text_cmd_rx, &app_rt);
     });
 
+    // Windows: the window and the tray run on a thread of their own, never on the main thread. The main thread has
+    // been made multithreaded COM by the microphone library already, and the window (Tao: OleInitialize, WebView2)
+    // needs a single-threaded COM apartment; a new thread has none yet and gets it from the window. The thread
+    // never returns (the window loop ends the process); a panic in it is passed on as it was, not hidden.
+    #[cfg(target_os = "windows")]
+    {
+        info!("COM of the main thread before the window: {}", com_mode());
+        let ui = std::thread::Builder::new()
+            .name("window".into())
+            .spawn(move || {
+                info!("COM of the window thread: {}", com_mode());
+                tray::init_blocking(settings);
+            })
+            .map_err(|e| format!("could not start the window thread: {}", e))?;
+        if let Err(panic) = ui.join() {
+            std::panic::resume_unwind(panic);
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
     tray::init_blocking(settings);
 
     Ok(())
