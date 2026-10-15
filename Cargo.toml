@@ -3,7 +3,9 @@ members = [
     "crates/jarvis-core",
     "crates/jarvis-app", 
     "crates/jarvis-gui",
-    "crates/jarvis-cli"
+    "crates/jarvis-cli",
+    "crates/jarvis-license",
+    "crates/jarvis-license-server"
 ]
 resolver = "2"
 

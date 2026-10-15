@@ -1,0 +1,30 @@
+[package]
+name = "jarvis-license-server"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+description = "Jarvis License Server: keys, activation bound to one installation, signed tokens, subscriptions, audit"
+
+[lib]
+name = "jarvis_license_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "jarvis-license-server"
+path = "src/main.rs"
+
+[dependencies]
+jarvis-license = { path = "../jarvis-license", features = ["server"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+tiny_http = "0.12"
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+rand.workspace = true
+base64 = "0.22"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+parking_lot.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

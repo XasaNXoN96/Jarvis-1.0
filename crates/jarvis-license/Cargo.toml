@@ -1,0 +1,21 @@
+[package]
+name = "jarvis-license"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+description = "Shared licensing code of Jarvis: signed tokens, the key format, the proof of an installation, the calendar rules of a subscription"
+
+[features]
+# only the license SERVER turns this on: the code that SIGNS tokens. The program of the customer never has it.
+server = []
+
+[dependencies]
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+base64 = "0.22"
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hmac = "0.12"
+chrono.workspace = true
+rand.workspace = true
