@@ -129,6 +129,7 @@ pub fn shutdown() {
     stop();
     // the running Piper is closed here: an installer that replaces or removes piper.exe finds it free
     warm_stop();
+    crate::silero::stop_server();
 }
 
 pub fn stop() {
@@ -438,7 +439,7 @@ pub fn can_speak() -> Result<(), String> {
     if !is_enabled() {
         return Err("озвучка выключена".into());
     }
-    if crate::uistate::voice_name().starts_with("win:") || piper_voice(&tts_lang()).is_some() {
+    if crate::uistate::voice_name().starts_with("win:") || crate::silero::speaker_of(&crate::uistate::voice_name()).is_some() || piper_voice(&tts_lang()).is_some() {
         Ok(())
     } else {
         Err("голос Джарвиса (Piper) не установлен".into())
@@ -1077,6 +1078,58 @@ fn speak_piper(exe: &Path, model: &Path, text: &str, generation: u64) -> bool {
     true
 }
 
+// false only when no sound came at all (then Piper takes over)
+fn speak_silero(speaker: &str, text: &str, generation: u64) -> bool {
+    let chunks = split_chunks(text);
+    if chunks.is_empty() {
+        return true;
+    }
+    let seq = WAV_SEQ.fetch_add(1, Ordering::SeqCst);
+    let wav_of = |i: usize| std::env::temp_dir().join(format!("jarvis_silero_{}_{}_{}_{}.wav", std::process::id(), generation, seq, i));
+    let speed = crate::uistate::voice_rate().clamp(0.6, 1.6);
+    let cancelled = move || GENERATION.load(Ordering::SeqCst) != generation;
+    let speaker = speaker.to_string();
+
+    match crate::silero::synth(&chunks[0], &speaker, speed, &wav_of(0), &cancelled) {
+        crate::silero::Outcome::Done => {}
+        crate::silero::Outcome::Cancelled => return true,
+        crate::silero::Outcome::Failed(why) => {
+            note_play(Err(format!("голос Silero не создал звук: {}", why)));
+            tell_once(&format!("Голос Silero не сработал ({}), отвечает Jarvis (Piper). Проверьте Настройки → Голос.", why));
+            return false;
+        }
+    }
+    for i in 0..chunks.len() {
+        // the next piece is made while this one is played
+        let next = if i + 1 < chunks.len() {
+            let (text, wav, speaker) = (chunks[i + 1].clone(), wav_of(i + 1), speaker.clone());
+            Some(std::thread::spawn(move || crate::silero::synth(&text, &speaker, speed, &wav, &move || GENERATION.load(Ordering::SeqCst) != generation)))
+        } else {
+            None
+        };
+        play_wav(&wav_of(i), generation);
+        let _ = std::fs::remove_file(wav_of(i));
+        if cancelled() {
+            if let Some(h) = next {
+                let _ = h.join();
+                let _ = std::fs::remove_file(wav_of(i + 1));
+            }
+            return true;
+        }
+        if let Some(h) = next {
+            match h.join() {
+                Ok(crate::silero::Outcome::Done) => {}
+                Ok(crate::silero::Outcome::Cancelled) | Err(_) => return true,
+                Ok(crate::silero::Outcome::Failed(why)) => {
+                    tell_once(&format!("Голос Silero остановился посреди ответа: {}", why));
+                    return true;
+                }
+            }
+        }
+    }
+    true
+}
+
 pub(crate) const SAPI_SCRIPT: &str = r#"
 Add-Type -AssemblyName System.Speech
 $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
@@ -1403,6 +1456,12 @@ fn speak_blocking(text: &str, lang: &str, generation: u64) {
         speak_sapi(&text, &lang, generation);
         return;
     }
+    if let Some(speaker) = crate::silero::speaker_of(&choice) {
+        // the voice of the other program; when it cannot speak, Jarvis's own Piper takes over (never the Windows voice)
+        if speak_silero(speaker, &text, generation) {
+            return;
+        }
+    }
     match piper_voice(&lang) {
         Some((exe, model)) => {
             // (speak_piper reports the reason of a failure itself)
@@ -1423,6 +1482,12 @@ pub fn piper_available() -> bool {
 pub fn list_voices() -> Vec<(String, String)> {
     let mut list = vec![(String::new(), "Автоматически: голос Jarvis (Piper)".to_string())];
     list.push(("piper".to_string(), if piper_available() { "Jarvis (Piper, нейросеть)".to_string() } else { "Jarvis (Piper) — не установлен, нажмите «Установить голос»".to_string() }));
+    // the Silero voices of the other program, only when it is installed here
+    if crate::silero::available() {
+        for (id, label) in crate::silero::SPEAKERS {
+            list.push((format!("{}{}", crate::silero::PREFIX, id), label.to_string()));
+        }
+    }
     #[cfg(target_os = "windows")]
     {
         let command = crate::psrun::command(crate::psrun::Script::VoicesPicker, &[], crate::psrun::Way::default());
