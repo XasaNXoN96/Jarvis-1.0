@@ -770,6 +770,8 @@ pub fn system_prompt_for(short: bool) -> String {
 const VOICE_ANSWER_TOKENS: u32 = 500;
 // Gemini counts its short thinking against the same limit
 const THINKING_ALLOWANCE: u32 = 1024;
+// how long the answer may take to start before a short recorded phrase («Слушаю…») is played
+const THINKING_CUE_MS: u64 = 1200;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Cap {
@@ -1702,10 +1704,17 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
         let mut probe_out = Probe::default();
         let mut truncated = false;
         let mut last_activity = std::time::Instant::now();
+        // a model that is slow to start: after a short wait a recorded phrase of the voice is played (once), so that the answer
+        // is not met with silence; the answer itself is not delayed by it
+        let mut cue_played = false;
         let result = loop {
             if cancel.load(Ordering::SeqCst) {
                 stream_cancel.store(true, Ordering::SeqCst);
                 break Err(AiError::Cancelled);
+            }
+            if !cue_played && first_chunk.is_none() && say_aloud && t0.elapsed() > Duration::from_millis(THINKING_CUE_MS) && crate::tts::is_enabled() && !crate::tts::is_playing() {
+                cue_played = true;
+                std::thread::spawn(crate::voices::play_reply);
             }
             if first_chunk.is_none() && !fell_back && last_activity.elapsed() > Duration::from_millis(FIRST_FRAGMENT_MS.load(Ordering::SeqCst)) && stream_allowed(&conf) {
                 // a stream that says nothing: ask once more the usual way and remember it for a while

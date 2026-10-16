@@ -1412,7 +1412,7 @@ function card(title, body, buttons) {
 // the answers and events of the computer are said by the phone itself (its own voice), and always shown as a card
 function speakHere(text) {
   if (!$('spk').checked || !('speechSynthesis' in window)) return;
-  try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang = /^(en|uk)/i.test(navigator.language || '') ? navigator.language : 'ru-RU'; u.onstart = () => setOrb('speaking'); u.onend = u.onerror = () => setOrb(state.voice === 'listening' ? 'listening' : 'idle'); speechSynthesis.speak(u); } catch (e) {}
+  try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang = /^(en|uk)/i.test(navigator.language || '') ? navigator.language : 'ru-RU'; u.onstart = () => { speakingHere = true; setOrb('speaking'); if (rec) { try { rec.abort(); } catch (e) {} } }; u.onend = u.onerror = () => { speakingHere = false; setOrb(state.voice === 'listening' ? 'listening' : 'idle'); if (wantVoice && !rec) setTimeout(() => { if (wantVoice && !rec && !speakingHere) listen(); }, 400); }; speechSynthesis.speak(u); } catch (e) {}
 }
 try { $('spk').checked = localStorage.getItem('jarvis_spk') !== '0'; } catch (e) {}
 $('spk').onchange = () => { try { localStorage.setItem('jarvis_spk', $('spk').checked ? '1' : '0'); } catch (e) {} if ($('spk').checked) speakHere('Озвучка на телефоне включена'); else if ('speechSynthesis' in window) speechSynthesis.cancel(); };
@@ -1473,7 +1473,7 @@ requestAnimationFrame(orbLoop);
 // Browsers allow the microphone only on secure pages (https); on plain http over Wi-Fi it may be refused.
 const micBtn = $('mic'), heard = $('heard');
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let rec = null, wantVoice = false;
+let rec = null, wantVoice = false, speakingHere = false;
 // the https address of the same computer and port; the secret goes after # (never sent to a server, removed at once)
 $('to-https').onclick = () => { location.href = 'https://' + location.host + '/#t=' + encodeURIComponent(token); };
 if (location.protocol === 'https:') $('to-https').style.display = 'none';
@@ -1506,7 +1506,7 @@ function listen() {
   rec.onend = () => {
     rec = null; micBtn.classList.remove('on');
     if (final.trim()) send(final.trim());
-    if (wantVoice && !fatal) setTimeout(() => { if (wantVoice && !rec) listen(); }, 300);
+    if (wantVoice && !fatal) setTimeout(() => { if (wantVoice && !rec && !speakingHere) listen(); }, 300);
     else if (!fatal) voice('off');
   };
   try { rec.start(); } catch (e) { rec = null; micBtn.classList.remove('on'); voice('error', 'Не удалось включить микрофон: ' + e.message); wantVoice = false; }
