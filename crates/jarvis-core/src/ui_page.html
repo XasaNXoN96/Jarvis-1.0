@@ -25,6 +25,11 @@
     display: flex; flex-direction: column; overflow: hidden;
   }
   .shell { flex: 1; display: flex; min-height: 0; }
+  /* the buttons of the window inside the program, in its colors: shown when the window covers the whole screen (no title bar of Windows) */
+  #wincap { display: none; flex: none; height: 30px; align-items: center; gap: 2px; padding: 0 6px 0 14px; background: #0a0a0c; border-bottom: 1px solid var(--line); color: var(--dim); font-size: 12px; letter-spacing: .12em; user-select: none; }
+  body.nfull #wincap { display: flex; } #wincap .grow { flex: 1; }
+  #wincap button { width: 46px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: #c9c9d0; font: inherit; font-size: 14px; cursor: pointer; display: grid; place-items: center; }
+  #wincap button:hover { background: #ffffff14; color: #fff; } #wincap #wc-close:hover { background: #d13a4a; color: #fff; }
   .content { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
   .main { flex: 1; display: flex; min-height: 0; }
 
@@ -563,6 +568,7 @@
 </style>
 </head>
 <body>
+<div id="wincap" role="toolbar" aria-label="Окно"><span>ДЖАРВИС</span><span class="grow"></span><button type="button" id="wc-min" title="Свернуть">&#8212;</button><button type="button" id="wc-full" title="Окно / весь экран (Alt+Enter)">&#10064;</button><button type="button" id="wc-close" title="Закрыть">&#10005;</button></div>
 <div class="shell">
   <nav>
     <div class="brand"><span class="dot" id="dot"></span><b>JARVIS</b><button type="button" class="nav-fold" id="nav-fold" title="Свернуть меню" data-ico="fold"></button></div>
@@ -2357,6 +2363,12 @@ function setFull(on) {
   }
 }
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && isFull && !ownWindow) setFull(false); });
+// the window covers the whole screen without a title bar: the buttons of the window are drawn by the program itself
+function syncNativeFull() { document.body.classList.toggle('nfull', ownWindow && window.outerHeight >= screen.height - 1 && window.outerWidth >= screen.width - 1); }
+window.addEventListener('resize', syncNativeFull); syncNativeFull(); setTimeout(syncNativeFull, 600);
+$('#wc-min').onclick = () => { if (ownWindow) window.ipc.postMessage('win:min'); };
+$('#wc-full').onclick = () => winFullToggle();
+$('#wc-close').onclick = () => window.jarvisCloseRequest();
 function winFullToggle() {
   if (ownWindow) { window.ipc.postMessage('winfull:toggle'); return; }
   try { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {}); else document.exitFullscreen().catch(() => {}); } catch (e) {}

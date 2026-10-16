@@ -29,6 +29,8 @@ pub enum UserEvent {
     Fullscreen(bool),
     // Alt+Enter: the window covers the whole screen without its frame <-> the window with its title bar
     ToggleWindowFullscreen,
+    // the button of the page: minimise the window
+    Minimize,
     Menu(MenuEvent),
 }
 
@@ -109,6 +111,8 @@ fn make_window(target: &tao::event_loop::EventLoopWindowTarget<UserEvent>, h: &H
         .with_inner_size(tao::dpi::LogicalSize::new(1040.0, 740.0))
         .with_min_inner_size(tao::dpi::LogicalSize::new(380.0, 480.0))
         .with_window_icon(load_icon(h.icon_png))
+        // the title bar of the usual window is dark too (the program is dark)
+        .with_theme(Some(tao::window::Theme::Dark))
         // the window starts over the whole screen without the title bar (Alt+Enter brings the frame back; the choice is kept)
         .with_fullscreen(if jarvis_core::uistate::window_fullscreen() { Some(tao::window::Fullscreen::Borderless(None)) } else { None })
         .with_visible(false)
@@ -127,6 +131,8 @@ fn make_window(target: &tao::event_loop::EventLoopWindowTarget<UserEvent>, h: &H
                 let _ = ipc_proxy.send_event(UserEvent::Fullscreen(on));
             } else if is_window_toggle(body) {
                 let _ = ipc_proxy.send_event(UserEvent::ToggleWindowFullscreen);
+            } else if body == "win:min" {
+                let _ = ipc_proxy.send_event(UserEvent::Minimize);
             }
         })
         // the page of Jarvis stays in the window; any other address opens in the browser
@@ -302,6 +308,11 @@ pub fn run(h: Hooks) -> ! {
                     // leaving the full screen mode of the page returns to the choice of the user (the whole screen or the frame)
                     let keep = on || jarvis_core::uistate::window_fullscreen();
                     w.window.set_fullscreen(if keep { Some(tao::window::Fullscreen::Borderless(None)) } else { None });
+                }
+            }
+            Event::UserEvent(UserEvent::Minimize) => {
+                if let Some(w) = &win {
+                    w.window.set_minimized(true);
                 }
             }
             Event::UserEvent(UserEvent::ToggleWindowFullscreen) => {
