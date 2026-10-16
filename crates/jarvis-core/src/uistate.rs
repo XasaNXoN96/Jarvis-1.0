@@ -718,12 +718,6 @@ pub fn stats() -> Stats {
 }
 
 pub fn state_json() -> Value {
-    let mut out = state_json_main();
-    out["subtitle"] = crate::tts::subtitle_json();
-    out
-}
-
-fn state_json_main() -> Value {
     let st = stats();
     #[cfg(feature = "lua")]
     let timers: Vec<Value> = crate::lua::timers_json();
