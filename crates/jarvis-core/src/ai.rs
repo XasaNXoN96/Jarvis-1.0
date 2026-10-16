@@ -637,11 +637,55 @@ fn ai_name() -> String {
 }
 
 pub fn system_prompt() -> String {
-    if crate::i18n::get_language() == "en" {
+    let base = if crate::i18n::get_language() == "en" {
         format!("You are {}, a voice assistant on the user's computer. Answer in the user's language, briefly and to the point. Put code in Markdown code blocks.", ai_name())
     } else {
         format!("Ты — {}, голосовой ассистент на компьютере пользователя. Отвечай на языке пользователя, кратко и по делу. Код оформляй в блоках Markdown.", ai_name())
+    };
+    match mode_prompt(&crate::uistate::settings().ai_mode) {
+        Some(extra) => format!("{} {}", base, extra),
+        None => base,
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// the manner of the answers («режим психолога», «режим учителя» …): only the style of the answer changes, never what the
+// program may do. The mode is a setting (Settings → ИИ) and a spoken phrase.
+// ---------------------------------------------------------------------------------------------
+// (id, the name in the answer «Режим … включён», the phrase stems after «режим», the instruction added to the system prompt)
+const MODES: [(&str, &str, &[&str], &str); 4] = [
+    ("psychologist", "психолога", &["психолог"], "Сейчас включён режим психолога: говори тепло, спокойно и по-человечески. Сначала отрази чувства человека своими словами, потом помоги разобраться: задай один уточняющий вопрос или предложи один-два небольших шага. Не ставь диагнозов, не осуждай, не навязывай решение, не читай нотаций; решение остаётся за человеком. Если в словах есть угроза жизни или здоровью (человека или другого), мягко посоветуй обратиться к близким и к специалисту или в экстренную службу. Отвечай связной речью, без списков."),
+    ("teacher", "учителя", &["учител", "препод"], "Сейчас включён режим учителя: объясняй простыми словами, по шагам и с коротким примером; в конце проверь понимание одним вопросом."),
+    ("coder", "программиста", &["программист", "разработчик"], "Сейчас включён режим программиста: отвечай точно и технически, показывай рабочий код в блоках Markdown и коротко объясняй, почему он такой."),
+    ("friend", "друга", &["друг", "собеседник"], "Сейчас включён режим друга: общайся непринуждённо, живо и дружелюбно, можно с лёгким юмором, но по существу."),
+];
+
+// a mode id that is known, else "" (the usual manner)
+pub fn mode_id(raw: &str) -> &'static str {
+    MODES.iter().find(|m| m.0 == raw.trim()).map(|m| m.0).unwrap_or("")
+}
+
+fn mode_prompt(id: &str) -> Option<&'static str> {
+    MODES.iter().find(|m| m.0 == id).map(|m| m.3)
+}
+
+// «режим психолога», «включи режим учителя», «обычный режим», «выключи режим психолога»:
+// Some((new mode id, the name for the answer)); "" = the usual manner. Any other phrase is not a mode phrase.
+pub fn mode_phrase(text: &str) -> Option<(&'static str, String)> {
+    let words = crate::apps::tokens(text);
+    if words.len() > 5 || !words.iter().any(|w| w.starts_with("режим")) {
+        return None;
+    }
+    let off = words.iter().any(|w| w.starts_with("обычн") || w.starts_with("стандартн") || w.starts_with("нормальн") || w.starts_with("выключ") || w.starts_with("отключ") || w.starts_with("закончи"));
+    for (id, name, stems, _) in MODES.iter() {
+        if words.iter().any(|w| stems.iter().any(|st| w.starts_with(st))) {
+            return if off { Some(("", "обычный".to_string())) } else { Some((id, name.to_string())) };
+        }
+    }
+    if words.iter().any(|w| w.starts_with("обычн") || w.starts_with("стандартн") || w.starts_with("нормальн")) {
+        return Some(("", "обычный".to_string()));
+    }
+    None
 }
 
 // the same, for an answer that will be read aloud and is short

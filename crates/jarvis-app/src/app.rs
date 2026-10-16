@@ -617,6 +617,22 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
         jarvis_core::confirm::Reply::OtherDoor => info!("A phrase from the {} door does not answer the open question", source.as_str()),
         jarvis_core::confirm::Reply::NotAnAnswer => {}
     }
+    // «режим психолога», «обычный режим»: the manner of the AI answers (ai.rs: modes). Free for everybody, changes only the style.
+    if let Some((id, name)) = jarvis_core::ai::mode_phrase(text) {
+        jarvis_core::uistate::update_settings(&serde_json::json!({ "ai_mode": id }));
+        open_request(text, "command");
+        let msg = if id.is_empty() { "Обычный режим ответов включён.".to_string() } else { format!("Режим {} включён.", name) };
+        say(&msg);
+        ipc::send(IpcEvent::Output { text: msg.clone() });
+        jarvis_core::dialog::reply(&msg, "local");
+        jarvis_core::dialog::end(true);
+        jarvis_core::uistate::log_action(text, "режим ответов", true);
+        if jarvis_core::tts::is_enabled() {
+            jarvis_core::tts::speak(&msg);
+        }
+        ipc::send(IpcEvent::Idle);
+        return false;
+    }
     let commands_list = match COMMANDS_LIST.get() {
         Some(c) => c,
         None => {

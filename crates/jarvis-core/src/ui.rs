@@ -969,6 +969,8 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
             let list: Vec<_> = crate::voices::list_voices().iter().map(|v| json!({ "id": v.voice.id, "name": v.voice.name })).collect();
             respond(&mut stream, "200 OK", "application/json", &json!(list).to_string());
         }
+        // the words that are being said right now (the subtitles of the window, word by word); cheap, polled several times a second
+        ("GET", "/subtitle") => respond(&mut stream, "200 OK", "application/json", &crate::tts::subtitle_json().to_string()),
         ("GET", "/license") => {
             let mut v = crate::licensing::status();
             v["prompt"] = crate::licensing::prompt_json();

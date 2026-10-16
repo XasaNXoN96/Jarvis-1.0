@@ -1393,3 +1393,32 @@ mod speed {
         }
     }
 }
+
+// ---- the manner of the answers ----
+#[test]
+fn mode_phrases_switch_the_manner_and_other_phrases_do_not() {
+    assert_eq!(super::mode_phrase("режим психолога").map(|m| m.0), Some("psychologist"));
+    assert_eq!(super::mode_phrase("включи режим психолога").map(|m| m.0), Some("psychologist"));
+    assert_eq!(super::mode_phrase("включи режим учителя").map(|m| m.0), Some("teacher"));
+    assert_eq!(super::mode_phrase("режим программиста").map(|m| m.0), Some("coder"));
+    assert_eq!(super::mode_phrase("обычный режим").map(|m| m.0), Some(""));
+    assert_eq!(super::mode_phrase("выключи режим психолога").map(|m| m.0), Some(""));
+    // not a mode phrase: a command about the game mode, a long sentence, a question
+    assert_eq!(super::mode_phrase("включи игровой режим"), None);
+    assert_eq!(super::mode_phrase("расскажи мне про психолога и про режим дня на работе"), None);
+    assert_eq!(super::mode_phrase("что такое режим сна"), None);
+}
+
+#[test]
+fn a_mode_changes_only_the_prompt_and_an_unknown_mode_is_the_usual_manner() {
+    assert_eq!(super::mode_id("psychologist"), "psychologist");
+    assert_eq!(super::mode_id("hacker"), "");
+    assert_eq!(super::mode_id(""), "");
+    let usual = super::system_prompt();
+    crate::uistate::update_settings(&serde_json::json!({ "ai_mode": "psychologist" }));
+    let psych = super::system_prompt();
+    crate::uistate::update_settings(&serde_json::json!({ "ai_mode": "" }));
+    assert!(psych.starts_with(&usual) && psych.len() > usual.len() && psych.contains("психолога"));
+    assert!(psych.contains("не ставь диагнозов") || psych.contains("Не ставь диагнозов"), "the mode keeps the safe limits");
+    assert_eq!(super::system_prompt(), usual);
+}

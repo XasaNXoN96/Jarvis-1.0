@@ -193,6 +193,11 @@
   #full-exit:hover { color: var(--text); border-color: var(--line2); }
   body.full nav, body.full .topbar { display: none !important; } body.full #full-exit { display: block; }
   body.full #page-home .h-top { padding-right: 48px; }
+  /* subtitles of the spoken answer: one big word at a time, like a video caption */
+  #subs { position: fixed; left: 0; right: 0; top: 34%; z-index: 90; display: none; justify-content: center; pointer-events: none; padding: 0 16px; }
+  #subs.on { display: flex; }
+  #subs span { font-family: 'Arial Black', 'Segoe UI Black', 'Montserrat', Impact, sans-serif; font-weight: 900; font-size: clamp(34px, 6.2vw, 74px); line-height: 1.1; color: #fff; text-align: center; letter-spacing: .01em; paint-order: stroke fill; -webkit-text-stroke: 7px #000c; text-shadow: 0 3px 14px #000a; animation: subpop .12s ease-out; }
+  @keyframes subpop { from { transform: scale(.88); opacity: .4; } to { transform: scale(1); opacity: 1; } }
   /* license: the status chip, the activation / renewal window, the Premium offer, the expired-subscription window */
   .lchip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line); background: #ffffff05; font-size: 12.5px; color: var(--text); cursor: pointer; font-family: inherit; white-space: nowrap; }
   .lchip:hover { border-color: var(--line2); } .lchip i { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
@@ -1025,6 +1030,8 @@
           <div class="r"><button class="btn" id="ai-save">Сохранить</button><button class="btn primary" id="ai-test">Проверить соединение</button></div></div>
         <div class="setrow"><div class="l">Отвечать ИИ на непонятные фразы, сказанные голосом<small>Всё, что вы напечатали и что не является командой, идёт выбранному ИИ, если он подключён. Вопросы голосом («что такое…», «объясни…») тоже. Этот переключатель добавляет к ним остальные непонятные фразы, сказанные голосом.</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="ai-fallback"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Режим ответов<small>меняется только манера ответа ИИ. Голосом: «режим психолога», «режим учителя», «режим программиста», «режим друга», «обычный режим»</small></div>
+          <div class="r"><select id="ai-mode"><option value="">Обычный</option><option value="psychologist">Психолог</option><option value="teacher">Учитель</option><option value="coder">Программист</option><option value="friend">Друг</option></select></div></div>
         <div class="setrow"><div class="l">Анализ экрана («что на экране»)<small>по команде «Джарвис, что на экране» снимок главного экрана уйдёт выбранному провайдеру с вашим вопросом; без команды экран не снимается, снимок не сохраняется. Нужна модель, которая видит картинки (например, gemini-flash). По умолчанию выключено</small></div>
           <div class="r"><button class="btn small" id="ai-screen-check" type="button" title="снимок экрана уйдёт выбранному провайдеру">Проверить экран</button><label class="sw"><input type="checkbox" id="ai-screen"><span></span></label></div></div>
         <small class="dim">Ответы ИИ появляются на странице «Диалог». Ключ хранится только на этом компьютере в зашифрованном виде (шифрование Windows) и не показывается в окне. Сообщения уходят провайдеру, когда вы нажимаете «Отправить» или задаёте вопрос; команды компьютера («открой ворд», «поставь таймер») в ИИ не отправляются.</small>
@@ -1084,6 +1091,8 @@
       </div>
 
       <div class="card" data-cat="look" id="look-card"><h3><span class="ei">🧩</span>Внешний вид</h3>
+        <div class="setrow"><div class="l">Субтитры ответа<small>слова, которые Джарвис говорит вслух, появляются по одному крупным текстом, как в видео; идут вместе с голосом</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="subs-on"><span></span></label></div></div>
         <div class="setrow"><div class="l">Сфера<small>что показывать на главном экране</small></div>
           <div class="r"><div class="seg"><button data-mode="wire">Сфера из частиц</button><button data-mode="avatar">Моё фото</button></div></div></div>
         <div class="setrow"><div class="l">Фото-голограмма<small>фото остаётся на этом компьютере</small></div>
@@ -1110,6 +1119,7 @@
   </div>
 </div>
 
+<div id="subs" aria-live="off"><span id="subs-w"></span></div>
 <div id="toast" role="status"></div>
 <button type="button" id="full-exit" title="Выйти из полноэкранного режима (Esc)">✕</button>
 <div id="close-dlg" role="dialog" aria-modal="true" aria-labelledby="close-dlg-title"><div class="box">
@@ -2129,6 +2139,44 @@ function applyCloseRequest(s) {
   if (s.close_req > closeReqSeen) { closeReqSeen = s.close_req; closeBrowserWindow(); }
 }
 
+// ---------- subtitles: the words that are said aloud, one at a time (the setting is kept in this browser / window) ----------
+let subsOn = true;
+try { subsOn = localStorage.getItem('jarvis-subs') !== 'off'; } catch (e) {}
+const subsBox = $('#subs'), subsWord = $('#subs-w');
+let subsSeq = -1, subsWords = [], subsStart = 0, subsTimes = [], subsEnd = 0, subsRaf = 0, subsHide = 0;
+// the length of a word on the screen follows its length in speech (about 14 letters a second, a little pause between words)
+function subsPlan(text) {
+  const words = text.split(/\s+/).filter(Boolean), at = [];
+  let t = 0;
+  for (const w of words) { at.push(t); t += (w.replace(/[^\p{L}\p{N}]/gu, '').length + 1.6) * 0.068; }
+  return { words, at, total: t };
+}
+function subsTick() {
+  const now = performance.now() - subsStart;
+  let i = -1;
+  for (let k = 0; k < subsTimes.length; k++) if (subsTimes[k] * 1000 <= now) i = k; else break;
+  if (i >= 0 && subsWord.textContent !== subsWords[i]) { subsWord.textContent = subsWords[i]; subsWord.style.animation = 'none'; void subsWord.offsetWidth; subsWord.style.animation = ''; }
+  if (now < subsEnd * 1000 + 700) subsRaf = requestAnimationFrame(subsTick);
+  else { subsBox.classList.remove('on'); subsWord.textContent = ''; }
+}
+function subsApply(d) {
+  if (!subsOn || !d || !d.text) { if (!subsOn) subsBox.classList.remove('on'); return; }
+  if (d.seq !== subsSeq) {
+    subsSeq = d.seq;
+    // a phrase that is not being said any more (the window was opened later) is not shown
+    if (!d.speaking && d.elapsed_ms > 1500) return;
+    const p = subsPlan(d.text); subsWords = p.words; subsTimes = p.at; subsEnd = p.total;
+    subsStart = performance.now() - d.elapsed_ms;
+    cancelAnimationFrame(subsRaf); subsBox.classList.add('on'); subsRaf = requestAnimationFrame(subsTick);
+  }
+}
+$('#subs-on').checked = subsOn;
+$('#subs-on').onchange = e => { subsOn = e.target.checked; try { localStorage.setItem('jarvis-subs', subsOn ? 'on' : 'off'); } catch (er) {} if (!subsOn) { cancelAnimationFrame(subsRaf); subsBox.classList.remove('on'); } };
+(function subsLoop() {
+  if (subsOn && !document.hidden) fetch('/subtitle').then(r => r.json()).then(subsApply).catch(() => {}).finally(() => setTimeout(subsLoop, 350));
+  else setTimeout(subsLoop, 1500);
+})();
+
 // ---------- license: the chip, activation, renewal, the Premium offer, the expired subscription ----------
 let licState = null, licSeen = null, licRenewMode = false;
 const licMoney = t => (t.price_cents / 100).toFixed(2).replace(/\.00$/, '') + ' ' + (t.currency === 'USD' ? '$' : t.currency);
@@ -2370,7 +2418,7 @@ async function loadSettings() {
     $('#tts-on').checked = !!s.tts_enabled; $('#tts-warm').checked = s.tts_warm !== false;
     if (document.activeElement !== $('#city-input')) $('#city-input').value = s.city || '';
     if (document.activeElement !== $('#name-input')) $('#name-input').value = s.assistant_name || '';
-    $('#ai-fallback').checked = !!s.ai_fallback; $('#ai-provider').value = s.ai_provider || 'none'; $('#ai-model').value = s.ai_model || ''; $('#ai-url').value = s.ai_url || ''; $('#ai-route').value = s.ai_route || ''; $('#ai-route-row').style.display = s.ai_provider === 'openrouter' ? '' : 'none';
+    $('#ai-fallback').checked = !!s.ai_fallback; $('#ai-mode').value = s.ai_mode || ''; $('#ai-provider').value = s.ai_provider || 'none'; $('#ai-model').value = s.ai_model || ''; $('#ai-url').value = s.ai_url || ''; $('#ai-route').value = s.ai_route || ''; $('#ai-route-row').style.display = s.ai_provider === 'openrouter' ? '' : 'none';
     $('#ai-key').value = ''; $('#ai-key-hint').textContent = s.ai_key_saved ? 'ключ сохранён (оставьте поле пустым, чтобы не менять)' : 'хранится только на этом компьютере';
     updateAiRows();
     arLoad(); applyPrivacy(s); applyGeneral(s); $('#ai-screen').checked = !!s.ai_screen;
@@ -2489,6 +2537,7 @@ $('#ai-screen-check').onclick = async () => {
   try { const r = await action('screen_check'); m.className = 'msgline ' + (r.ok ? 'ok' : 'bad'); m.textContent = (r.ok ? '✓ ' : '✗ ') + r.message; }
   catch (e) { m.className = 'msgline bad'; m.textContent = '✗ Не удалось выполнить проверку'; }
 };
+$('#ai-mode').onchange = () => api('/settings', { ai_mode: $('#ai-mode').value });
 async function saveAi() {
   const patch = { ai_provider: $('#ai-provider').value, ai_model: $('#ai-model').value.trim(), ai_url: $('#ai-url').value.trim(), ai_route: $('#ai-route').value.trim(), ai_fallback: $('#ai-fallback').checked };
   const key = $('#ai-key').value.trim(); if (key) patch.ai_key = key;

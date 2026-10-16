@@ -1448,9 +1448,28 @@ fn speak_inner(text: &str, dedupe: bool) {
     });
 }
 
+// The words that are being said right now, for the subtitles of the window (word by word, as in a video). `seq` grows with every
+// new phrase; the window counts the time itself from `elapsed_ms`.
+static SUBTITLE: Lazy<Mutex<(u64, String, Option<std::time::Instant>)>> = Lazy::new(|| Mutex::new((0, String::new(), None)));
+
+fn set_subtitle(text: &str) {
+    // marks of the markup and code blocks are not words to read
+    let clean: String = text.lines().filter(|l| !l.trim_start().starts_with("```")).collect::<Vec<_>>().join(" ").chars().filter(|c| !matches!(c, '*' | '#' | '`' | '_' | '>')).collect();
+    let mut g = SUBTITLE.lock();
+    g.0 += 1;
+    g.1 = clean.split_whitespace().collect::<Vec<_>>().join(" ");
+    g.2 = Some(std::time::Instant::now());
+}
+
+pub fn subtitle_json() -> serde_json::Value {
+    let g = SUBTITLE.lock();
+    serde_json::json!({ "seq": g.0, "text": g.1, "speaking": is_speaking(), "elapsed_ms": g.2.map(|t| t.elapsed().as_millis() as u64).unwrap_or(0) })
+}
+
 // says the phrase and returns when it is finished (or interrupted)
 fn speak_blocking(text: &str, lang: &str, generation: u64) {
     *SPEECH_STARTED.lock() = Some(std::time::Instant::now());
+    set_subtitle(text);
     let text = text.to_string();
     let lang = lang.to_string();
     // voice choice from the settings: "" = automatic, "piper", "win:<name>".

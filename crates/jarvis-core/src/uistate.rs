@@ -77,6 +77,8 @@ pub struct UiSettings {
     pub voice_name: String,  // "" = automatic (Piper, else a female Windows voice)
     pub ai_provider: String, // none | openai | openrouter | gemini | anthropic | ollama | custom
     pub ai_model: String,
+    // the manner of the AI answers: "" (usual), "psychologist", "teacher", "coder", "friend" (ai.rs: modes)
+    pub ai_mode: String,
     pub ai_key: String,
     pub ai_url: String,
     pub ai_route: String,    // OpenRouter: the order of the hosts of the model ("" = OpenRouter chooses), see ai::route_provider
@@ -150,7 +152,7 @@ pub fn browser_exe(key: &str) -> Option<&'static str> {
 impl Default for UiSettings {
     fn default() -> Self {
         Self {
-            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: false, city: String::new(), reaction_voice: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_key: String::new(), ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
+            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: false, city: String::new(), reaction_voice: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_mode: String::new(), ai_key: String::new(), ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
             ai_enabled: true, mic_off: false,
             notify_show: true, notify_speak: true, notify_sound: true, dnd: false,
             ext_enabled: false, ext_show: true, ext_speak: false, ext_strict: true, ext_allowed: Vec::new(), ext_blocked: Vec::new(), ext_seen: Vec::new(),
@@ -404,6 +406,10 @@ pub fn update_settings(patch: &Value) {
     if before != (s.ai_provider.clone(), s.ai_model.clone(), s.ai_key.clone(), s.ai_url.clone(), s.ai_route.clone()) {
         crate::ai::status_reset();
     }
+    if let Some(v) = patch.get("ai_mode").and_then(|v| v.as_str()) {
+        // only a known mode is kept; anything else is the usual manner
+        s.ai_mode = crate::ai::mode_id(v).to_string();
+    }
     if let Some(v) = patch.get("ai_fallback").and_then(|v| v.as_bool()) { s.ai_fallback = v; }
     if let Some(v) = patch.get("ai_enabled").and_then(|v| v.as_bool()) {
         if v != s.ai_enabled {
@@ -461,7 +467,7 @@ pub fn settings_json() -> Value {
     let s = settings();
     let mut out = json!({
         "voice_rate": s.voice_rate, "voice_name": s.voice_name, "city": s.city, "reaction_voice": if s.reaction_voice.is_empty() { crate::voices::get_current_voice().map(|v| v.voice.id.clone()).unwrap_or_default() } else { s.reaction_voice.clone() },
-        "ai_provider": s.ai_provider, "ai_model": s.ai_model, "ai_url": s.ai_url, "ai_route": s.ai_route,
+        "ai_provider": s.ai_provider, "ai_model": s.ai_model, "ai_mode": s.ai_mode, "ai_url": s.ai_url, "ai_route": s.ai_route,
         "ai_key_saved": !s.ai_key.is_empty(),
         "ai_fallback": s.ai_fallback,
         "ai_enabled": s.ai_enabled,
@@ -712,6 +718,12 @@ pub fn stats() -> Stats {
 }
 
 pub fn state_json() -> Value {
+    let mut out = state_json_main();
+    out["subtitle"] = crate::tts::subtitle_json();
+    out
+}
+
+fn state_json_main() -> Value {
     let st = stats();
     #[cfg(feature = "lua")]
     let timers: Vec<Value> = crate::lua::timers_json();
