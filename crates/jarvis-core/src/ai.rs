@@ -900,7 +900,9 @@ pub fn build_body_limit(conf: &ProviderConf, history: &[ChatMsg], system: &str, 
                 msgs.push(json!({ "role": m.role, "content": m.content }));
             }
             let mut body = json!({ "model": conf.model, "messages": msgs, "stream": stream });
-            if conf.name.contains("Gemini") && reasoning_param_ok(conf) {
+            // a model that thinks answers much sooner with a short thinking: Gemini, and the reasoning models of OpenAI itself
+            // (gpt-5, gpt-6, o…). A provider that refuses the parameter is asked again without it (reasoning_refused).
+            if (conf.name.contains("Gemini") || (conf.name == "OpenAI" && reasoning_model(&conf.model))) && reasoning_param_ok(conf) {
                 body["reasoning_effort"] = json!("low");
             }
             if route_ok(conf) {

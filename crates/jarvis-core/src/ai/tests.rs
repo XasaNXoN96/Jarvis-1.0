@@ -1508,3 +1508,17 @@ fn perplexity_is_checked_by_a_tiny_question_not_by_a_list_of_models() {
     assert!(test_connection(&conf(&m.base).unwrap()).is_ok());
     assert!(m.requests.lock()[0].starts_with("GET /models"));
 }
+
+
+#[test]
+fn openai_reasoning_models_think_briefly_and_the_others_get_no_such_parameter() {
+    let mk = |name: &str, model: &str| ProviderConf { kind: Kind::OpenAiCompatible, name: name.into(), base: format!("https://{}.example/v1", name), model: model.into(), key: KEY.into(), route: String::new() };
+    for model in ["gpt-6.1-sol", "gpt-6-luna", "gpt-5"] {
+        let b = build_body_limit(&mk("OpenAI", model), &[], "s", true, None);
+        assert_eq!(b["reasoning_effort"], "low", "{}", model);
+    }
+    // a model that does not think, another provider, a self-made server: nothing is added
+    assert!(build_body_limit(&mk("OpenAI", "gpt-4o-mini"), &[], "s", true, None).get("reasoning_effort").is_none());
+    assert!(build_body_limit(&mk("OpenRouter", "gpt-6.1-sol"), &[], "s", true, None).get("reasoning_effort").is_none());
+    assert!(build_body_limit(&mk("ИИ-сервер", "gpt-5"), &[], "s", true, None).get("reasoning_effort").is_none());
+}
