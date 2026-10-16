@@ -781,7 +781,7 @@ pub struct Cap {
 fn reasoning_model(model: &str) -> bool {
     let m = model.to_lowercase();
     let name = m.rsplit('/').next().unwrap_or(&m);
-    name.starts_with("gpt-5") || name.starts_with("o1") || name.starts_with("o3") || name.starts_with("o4") || m.contains("r1") || m.contains("reason") || m.contains("think") || m.contains("qwq") || m.contains("qwen3")
+    name.starts_with("gpt-5") || name.starts_with("gpt-6") || name.starts_with("o1") || name.starts_with("o3") || name.starts_with("o4") || m.contains("r1") || m.contains("reason") || m.contains("think") || m.contains("qwq") || m.contains("qwen3")
 }
 
 // the cap for this provider and model, in the parameter this API knows; None = no cap (not known to be safe)

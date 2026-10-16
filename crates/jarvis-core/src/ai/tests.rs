@@ -1300,7 +1300,7 @@ mod speed {
         // Gemini counts its thinking in the same limit: room for it
         assert_eq!(voice_cap(&c(Kind::OpenAiCompatible, "Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-flash-latest")), Some(Cap { tokens: 1524, param: "max_tokens" }));
         // models that think: their thinking is in the limit and its size is not known - no cap
-        for model in ["gpt-5", "o3-mini", "openai/o4-mini", "deepseek/deepseek-r1", "qwen3:8b", "some-thinking-model"] {
+        for model in ["gpt-5", "gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra", "o3-mini", "openai/o4-mini", "deepseek/deepseek-r1", "qwen3:8b", "some-thinking-model"] {
             assert_eq!(voice_cap(&c(Kind::OpenAiCompatible, "OpenRouter", "https://openrouter.ai/api/v1", model)), None, "{}", model);
         }
         // the body
