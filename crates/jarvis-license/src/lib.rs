@@ -94,6 +94,13 @@ pub fn key_hash(pepper: &[u8], canonical_key: &str) -> String {
     hex(&mac.finalize().into_bytes())
 }
 
+// HMAC-SHA256 (RFC 2104) as lower-case hex: the keyed check of the state file of the program
+pub fn hmac_sha256_hex(key: &[u8], msg: &[u8]) -> String {
+    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key).expect("hmac accepts any key length");
+    mac.update(msg);
+    hex(&mac.finalize().into_bytes())
+}
+
 pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
@@ -380,5 +387,11 @@ mod tests {
         life.plan = "LIFETIME".into();
         assert!(matches!(entitlement(&life, t0 + 100 * 86_400 - 1 - (100 * 86_400 - 70 * 3600), t0), Entitlement::Premium { sub_end: None, .. }));
         assert_eq!(entitlement(&life, life.refresh_by + 1, t0), Entitlement::NeedsRefresh);
+    }
+
+    #[test]
+    fn hmac_matches_the_rfc_4231_vector() {
+        // RFC 4231, test case 2
+        assert_eq!(hmac_sha256_hex(b"Jefe", b"what do ya want for nothing?"), "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843");
     }
 }

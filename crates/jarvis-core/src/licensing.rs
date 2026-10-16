@@ -65,13 +65,11 @@ fn path() -> Option<std::path::PathBuf> {
 }
 
 fn mac_of(seed: &[u8; 32], body: &str) -> String {
+    // the key of the check is derived from the secret of this installation; the check itself is a standard HMAC-SHA256
     let mut key = Sha256::new();
     key.update(b"jarvis-license-state-key");
     key.update(seed);
-    let mut h = Sha256::new();
-    h.update(key.finalize());
-    h.update(body.as_bytes());
-    jarvis_license::hex(&h.finalize())
+    jarvis_license::hmac_sha256_hex(&key.finalize(), body.as_bytes())
 }
 
 fn seed_of(st: &State) -> Option<[u8; 32]> {

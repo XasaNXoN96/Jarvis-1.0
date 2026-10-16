@@ -211,6 +211,9 @@
   .lm-table { width: 100%; border-collapse: collapse; font-size: 13px; } .lm-table th, .lm-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #ffffff10; vertical-align: top; } .lm-table th { color: var(--dim); font-weight: 500; }
   .lm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; align-items: end; } .lm-grid label { display: grid; gap: 4px; font-size: 12.5px; color: var(--dim); } .lm-grid input, .lm-grid select { padding: 8px 10px; }
   .lm-grid input, .lm-grid select, .mdl input[type=text], .lm-table input { background: #ffffff08; color: var(--text); border: 1px solid var(--line); border-radius: 9px; font: inherit; box-sizing: border-box; max-width: 100%; }
+  .lm-tabs { display: flex; gap: 6px; margin: 0 0 12px; } .lm-tabs button { border: 1px solid var(--line); background: #ffffff08; color: var(--dim); padding: 8px 16px; border-radius: 999px; cursor: pointer; font: inherit; } .lm-tabs button.on { color: var(--text); border-color: var(--accent); background: #ffffff14; }
+  .lm-count { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 10px; } .lm-count span { padding: 5px 12px; border-radius: 999px; background: #ffffff0a; font-size: 13px; } .lm-count b { font-weight: 600; }
+  .ak-used td { opacity: .6; } .ak-used .ak-key { text-decoration: line-through; } .ak-badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; white-space: nowrap; } .ak-badge.used { background: #ff6b7a22; color: #ff9aa6; } .ak-badge.free { background: #5be3a122; color: var(--ok); } .ak-badge.off { background: #ffffff14; color: var(--dim); } .ak-new td { animation: akflash 2.5s ease-out; } @keyframes akflash { from { background: #5be3a144; } to { background: transparent; } }
   .lm-keys { white-space: pre; font-family: ui-monospace, Consolas, monospace; background: #00000040; border-radius: 10px; padding: 10px 12px; margin: 8px 0; user-select: all; max-height: 220px; overflow: auto; }
   #close-dlg { position: fixed; inset: 0; background: #060609cc; display: none; align-items: center; justify-content: center; z-index: 100; padding: 16px; }
   #close-dlg.on { display: flex; }
@@ -827,6 +830,8 @@
 
 <!--ADMIN-BEGIN-->
     <section class="page ds" id="page-licmgr">
+      <div class="lm-tabs" role="tablist"><button type="button" class="on" id="lm-tab-b1" data-t="main" role="tab">Ключи и тарифы</button><button type="button" id="lm-tab-b2" data-t="archive" role="tab">Архив ключей</button></div>
+      <div id="lm-main">
       <div class="card"><h3>Сервер лицензий</h3>
         <div class="lm-grid">
           <label>Адрес сервера (https://…)<input type="text" id="lm-url" placeholder="https://license.example.com" autocomplete="off"></label>
@@ -854,7 +859,7 @@
       </div>
       <div class="card" style="margin-top:12px"><h3>Лицензии</h3>
         <div class="lm-grid"><label>Поиск (заметка, номер, начало ключа)<input type="text" id="ll-q"></label>
-          <label>Статус<select id="ll-status"><option value="">все</option><option>UNUSED</option><option>ACTIVE</option><option>EXPIRED</option><option>SUSPENDED</option><option>REVOKED</option></select></label>
+          <label>Статус<select id="ll-status"><option value="">все</option><option value="CREATED">не активирован</option><option>ACTIVE</option><option>EXPIRED</option><option>SUSPENDED</option><option>REVOKED</option></select></label>
           <div><button class="btn" id="ll-go" type="button">Обновить</button></div></div>
         <div class="lic-msg" id="ll-msg"></div>
         <div style="overflow:auto"><table class="lm-table"><thead><tr><th>Ключ</th><th>Тариф</th><th>Статус</th><th>Начало</th><th>Конец / осталось</th><th>Оплата</th><th>Привязка</th><th>Заметка</th><th></th></tr></thead><tbody id="ll-body"></tbody></table></div>
@@ -866,6 +871,18 @@
       <div class="card" style="margin-top:12px"><h3>Журнал изменений</h3>
         <div class="lm-grid"><label>Номер лицензии (необязательно)<input type="text" id="au-lid"></label><div><button class="btn" id="au-go" type="button">Показать</button></div></div>
         <div style="overflow:auto"><table class="lm-table"><thead><tr><th>Когда</th><th>Кто</th><th>Что</th><th>Лицензия</th><th>Было → стало</th></tr></thead><tbody id="au-body"></tbody></table></div>
+      </div>
+      </div>
+      <div id="lm-archive" hidden>
+        <div class="card"><h3>Архив ключей</h3>
+          <p class="dim" style="margin:0 0 10px">Все выданные ключи. Когда пользователь активирует ключ, он сам помечается как <b>использован</b> и зачёркивается; список обновляется каждые 10 секунд. Полный ключ сервер не хранит (только начало), поэтому ключи различайте по началу и заметке.</p>
+          <div class="lm-count" id="ak-count"></div>
+          <div class="lm-grid"><label>Показать<select id="ak-filter"><option value="">Все ключи</option><option value="used">Использованные</option><option value="free">Ещё не использованы</option></select></label>
+            <label>Поиск (начало ключа, заметка)<input type="text" id="ak-q"></label>
+            <div><button class="btn" id="ak-go" type="button">Обновить</button></div></div>
+          <div class="lic-msg" id="ak-msg"></div>
+          <div style="overflow:auto"><table class="lm-table"><thead><tr><th>Ключ</th><th>Состояние</th><th>Когда использован</th><th>Установка</th><th>Тариф</th><th>Заметка</th></tr></thead><tbody id="ak-body"></tbody></table></div>
+        </div>
       </div>
     </section>
 <!--ADMIN-END-->
@@ -1226,7 +1243,7 @@ function show(name) {
   document.querySelectorAll('nav button[data-page]').forEach(b => b.classList.toggle('active', b.dataset.page === name));
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + name));
   if (name === 'commands') { loadCommands(); renderTimers(); if (lastState) commandActions(lastState.actions); }
-  /*ADMIN-BEGIN*/ if (name === 'licmgr') { lmLoad(); lmAudit(); } /*ADMIN-END*/
+  /*ADMIN-BEGIN*/ if (name === 'licmgr') { lmLoad(); lmAudit(); } else { clearInterval(akTimer); } /*ADMIN-END*/
   if (name === 'diag') diagLoad();
   if (name === 'builder') builderLoad();
   if (name === 'apps') appsLoad();
@@ -2224,7 +2241,7 @@ async function lmLoadTariffs() {
     const r = await lmCall('PUT', '/admin/tariffs', t); lmMsg('#tt-msg', r.ok ? 'Тариф сохранён (запись в журнале есть).' : r.message, r.ok ? 'ok' : 'bad'); if (r.ok) lmLoadTariffs();
   });
 }
-const lmStatusRu = { UNUSED: 'не активирован', ACTIVE: 'активен', EXPIRED: 'закончился', SUSPENDED: 'заблокирован', REVOKED: 'отозван' };
+const lmStatusRu = { CREATED: 'не активирован', USED: 'использован', ACTIVE: 'активен', EXPIRED: 'закончился', SUSPENDED: 'заблокирован', REVOKED: 'отозван' };
 async function lmList() {
   const q = encodeURIComponent($('#ll-q').value.trim()), st = encodeURIComponent($('#ll-status').value);
   const r = await lmCall('GET', '/admin/licenses?limit=300&q=' + q + '&status=' + st);
@@ -2266,6 +2283,37 @@ $('#kg-go').onclick = async () => {
 };
 $('#kg-copy').onclick = () => copyText($('#kg-keys').textContent, $('#kg-copy'));
 $('#kg-csv').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['key\n' + $('#kg-keys').textContent + '\n'], { type: 'text/csv' })); a.download = 'jarvis-keys.csv'; a.click(); };
+// the archive of keys: a key is USED once its installation took it (any status but «created»), and it is marked by itself
+let akSeen = null, akTimer = null;
+const akUsed = l => l.status !== 'CREATED' || !!l.activated_at || !!l.bound;
+async function akLoad() {
+  if ($('#lm-archive').hidden) return;
+  const q = encodeURIComponent($('#ak-q').value.trim());
+  const r = await lmCall('GET', '/admin/licenses?limit=1000&q=' + q);
+  if (!r.ok) { lmMsg('#ak-msg', r.message || 'Нет связи с сервером', 'bad'); return; }
+  const all = r.data.licenses, f = $('#ak-filter').value;
+  const used = all.filter(akUsed), free = all.filter(l => !akUsed(l));
+  $('#ak-count').innerHTML = '<span>Всего: <b>' + all.length + '</b></span><span>Использовано: <b>' + used.length + '</b></span><span>Свободно: <b>' + free.length + '</b></span>';
+  const justNow = new Set(); const nowIds = new Set(used.map(l => l.id));
+  if (akSeen) for (const id of nowIds) if (!akSeen.has(id)) justNow.add(id);
+  akSeen = nowIds;
+  if (justNow.size) showToast('Ключ только что использован: ' + all.filter(l => justNow.has(l.id)).map(l => l.key_hint).join(', '));
+  const list = all.filter(l => f === 'used' ? akUsed(l) : f === 'free' ? !akUsed(l) : true);
+  lmMsg('#ak-msg', list.length ? '' : 'Ключей нет.');
+  $('#ak-body').innerHTML = list.map(l => {
+    const u = akUsed(l), off = l.effective_status === 'REVOKED' || l.effective_status === 'SUSPENDED';
+    const badge = off ? '<span class="ak-badge off">' + (l.effective_status === 'REVOKED' ? 'отозван' : 'заблокирован') + '</span>' : u ? '<span class="ak-badge used">✓ Ключ использован</span>' : '<span class="ak-badge free">Свободен</span>';
+    return '<tr class="' + (u ? 'ak-used ' : '') + (justNow.has(l.id) ? 'ak-new' : '') + '"><td><code class="ak-key">' + esc(l.key_hint) + '</code><br><small class="dim">' + esc(l.id.slice(0, 8)) + (l.purpose === 'RENEWAL' ? ' · продление' : '') + '</small></td><td>' + badge + '</td><td>' + (l.activated_at ? lmDate(l.activated_at) : '—') + '</td><td>' + (l.installation ? esc(l.installation) : '—') + '</td><td>' + esc(l.plan) + '</td><td>' + esc(l.note || '') + '</td></tr>';
+  }).join('');
+}
+function lmTab(t) {
+  $('#lm-main').hidden = t !== 'main'; $('#lm-archive').hidden = t !== 'archive';
+  document.querySelectorAll('.lm-tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  clearInterval(akTimer);
+  if (t === 'archive') { akSeen = null; akLoad(); akTimer = setInterval(akLoad, 10000); }
+}
+document.querySelectorAll('.lm-tabs button').forEach(b => b.onclick = () => lmTab(b.dataset.t));
+$('#ak-go').onclick = akLoad; $('#ak-filter').onchange = akLoad; $('#ak-q').addEventListener('input', () => { clearTimeout(window._arq); window._arq = setTimeout(akLoad, 300); });
 /*ADMIN-END*/
 
 // ---------- the menu folds to icons; full screen: only the page, without the menu and the frame of the window ----------
