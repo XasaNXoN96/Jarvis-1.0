@@ -923,6 +923,34 @@ jobs:
           path: dist/Jarvis-User-Setup.exe
           if-no-files-found: error
 
+  # The license server for Windows: a local test copy (127.0.0.1) to try the license manager of Jarvis Admin on the computer of the owner.
+  # Not a production server (no HTTPS): see docs/licensing/DEPLOYMENT.md.
+  license-server-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: license-server-windows
+      - name: Build jarvis-license-server (release)
+        shell: pwsh
+        run: cargo build --release -p jarvis-license-server
+      - name: Assemble the local test folder
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force license-server-local | Out-Null
+          Copy-Item target\release\jarvis-license-server.exe license-server-local
+          Copy-Item deploy\local-license-server.ps1 license-server-local
+          Copy-Item deploy\LOCAL-SERVER-README.txt license-server-local
+          Get-ChildItem license-server-local | Format-Table Name, Length
+      - name: Upload the license server (local test)
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-license-server-local
+          path: license-server-local
+          if-no-files-found: error
+
   # The old Tauri window (crates/jarvis-gui) is NOT part of the shipped program: the installer carries jarvis-app.exe only, and the
   # tray of jarvis-app can start a jarvis-gui.exe that stands next to it, if one is there. This job only tells whether the crate
   # still builds (it needs the Tauri libraries, which the Linux development environment lacks). It does not block anything.
