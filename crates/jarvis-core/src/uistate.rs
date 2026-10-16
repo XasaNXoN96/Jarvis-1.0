@@ -824,6 +824,17 @@ pub fn state_json() -> Value {
     })
 }
 
+// A computer without a microphone is a normal case: the voice comes from the remote on a phone or a tablet. True when the
+// microphone of this PC is not there (Windows lists no recording device) and a remote page was open lately.
+pub fn voice_via_remote() -> bool {
+    use std::sync::atomic::Ordering::SeqCst;
+    if crate::VOICE_ACTIVE.load(SeqCst) || !crate::VOICE_ERROR.lock().contains("устройства записи") {
+        return false;
+    }
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    crate::remote::last_client().map(|t| now.saturating_sub(t) < 15 * 60).unwrap_or(false)
+}
+
 // The state of the voice as the window shows it. READY only when the microphone really delivers audio.
 pub fn voice_state() -> Value {
     use std::sync::atomic::Ordering::SeqCst;
@@ -835,6 +846,8 @@ pub fn voice_state() -> Value {
         ("LISTENING", "слушаю команду".into())
     } else if crate::VOICE_TEXT_ONLY.load(SeqCst) {
         ("DISABLED", "включён режим «только текст»".into())
+    } else if voice_via_remote() {
+        ("REMOTE", "на компьютере нет микрофона: голос идёт через пульт на телефоне или планшете".into())
     } else if !crate::VOICE_ACTIVE.load(SeqCst) {
         ("ERROR", if err.is_empty() { "голос не запущен".to_string() } else { err })
     } else if crate::MIC_MUTED.load(SeqCst) {
@@ -867,6 +880,24 @@ mod voice_tests {
     }
     fn st() -> String {
         voice_state()["state"].as_str().unwrap().to_string()
+    }
+
+    #[test]
+    fn a_pc_without_a_microphone_that_is_used_through_the_remote_is_not_an_error() {
+        let _g = LOCK.lock();
+        reset();
+        *crate::VOICE_ERROR.lock() = "Windows не показывает ни одного устройства записи. Включите микрофон".into();
+        crate::remote::test_touch_client();
+        assert_eq!(st(), "REMOTE");
+        assert!(voice_state()["detail"].as_str().unwrap().contains("пульт"));
+        // another reason (a microphone that exists but does not work) stays an error even with the remote open
+        *crate::VOICE_ERROR.lock() = "микрофон занят другой программой".into();
+        assert_eq!(st(), "ERROR");
+        // the voice of this PC works: it is the usual READY / not REMOTE
+        *crate::VOICE_ERROR.lock() = "Windows не показывает ни одного устройства записи".into();
+        crate::VOICE_ACTIVE.store(true, SeqCst);
+        assert_ne!(st(), "REMOTE");
+        reset();
     }
 
     #[test]

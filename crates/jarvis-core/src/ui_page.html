@@ -104,6 +104,7 @@
   .vchip[data-state=LISTENING] { border-color: rgba(255,255,255,0.373); } .vchip[data-state=LISTENING] i { background: var(--accent); animation: blink 1s infinite; } .vchip[data-state=LISTENING] b { color: var(--accent); }
   .vchip[data-state=SPEAKING] { border-color: rgba(255,255,255,0.373); } .vchip[data-state=SPEAKING] i { background: #e2e2e6; animation: blink .6s infinite; } .vchip[data-state=SPEAKING] b { color: #e2e2e6; }
   .vchip[data-state=DISABLED] b { color: var(--dim); }
+  .vchip[data-state=REMOTE] { border-color: #6aa8ff66; } .vchip[data-state=REMOTE] i { background: #6aa8ff; } .vchip[data-state=REMOTE] b { color: #9fc8ff; }
   .vchip[data-state=ERROR] { border-color: #ff6b7a77; } .vchip[data-state=ERROR] i { background: var(--err); } .vchip[data-state=ERROR] b { color: var(--err); }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); transition: .3s; }
   .dot.on { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
@@ -1453,16 +1454,18 @@ function applySession(s) {
 }
 $('#session-end').onclick = () => sendCommand(sessionKind === 'confirm' ? 'нет' : sessionKind === 'file' ? 'отмена' : 'заканчивай');
 $('#session-yes').onclick = () => sendCommand('да');
-let voiceActive = false;
-function hintText() { return (micMuted ? 'Микрофон выключен — режим текста.' : (voiceActive ? 'Голос и текст работают.' : 'Голос не запущен — только текст.')) + '  Enter — отправить.'; }
+let voiceActive = false, voiceRemote = false;
+function hintText() { return (micMuted ? 'Микрофон выключен — режим текста.' : (voiceActive ? 'Голос и текст работают.' : voiceRemote ? 'Микрофона на компьютере нет: голос — через пульт, или пишите текстом.' : 'Голос не запущен — только текст.')) + '  Enter — отправить.'; }
 function applyVoice(s) {
   voiceActive = !!s.voice_active;
+  // no microphone in this PC, the voice comes from the remote: not a fault, no red banner
+  const viaRemote = !!(s.voice_state && s.voice_state.state === 'REMOTE'); voiceRemote = viaRemote;
   const textOnly = (s.voice_error || '').includes('--text');
-  const text = voiceActive ? '' : '<b>Голос не работает</b>, команды принимаются только текстом. Причина: ' + esc(s.voice_error || 'микрофон ещё запускается') + '.'
+  const text = voiceActive || viaRemote ? '' : '<b>Голос не работает</b>, команды принимаются только текстом. Причина: ' + esc(s.voice_error || 'микрофон ещё запускается') + '.'
     + (textOnly ? ' <button class="btn small" data-restart-voice type="button">Включить голос</button>' : '');
   const reason = s.voice_error || 'микрофон ещё запускается';
-  $('#hsc-vd').textContent = voiceActive ? 'Микрофон работает, голос включён.' : reason + '.';
-  const shortText = voiceActive ? '' : '<b>Голос не работает</b> — команды только текстом. <button class="btn small" data-voice-more type="button">Подробнее</button>'
+  $('#hsc-vd').textContent = voiceActive ? 'Микрофон работает, голос включён.' : viaRemote ? 'На компьютере нет микрофона: голос идёт через пульт на телефоне или планшете.' : reason + '.';
+  const shortText = voiceActive || viaRemote ? '' : '<b>Голос не работает</b> — команды только текстом. <button class="btn small" data-voice-more type="button">Подробнее</button>'
     + (textOnly ? ' <button class="btn small" data-restart-voice type="button">Включить голос</button>' : '');
   for (const id of ['#voice-banner', '#voice-banner2']) {
     const full = id === '#voice-banner2';
@@ -1835,13 +1838,13 @@ function aiCard(a) {
 }
 $('#ai-check').onclick = async () => { $('#ai-check').disabled = true; try { await action('ai_test'); } catch (e) {} pollNow(); };
 $('#ai-settings').onclick = () => { show('settings'); setTimeout(() => { const el = $('#ai-provider'); if (el) el.scrollIntoView({ block: 'center' }); }, 120); };
-const VOICE_LABEL = { READY: 'Готов', LISTENING: 'Слушаю…', SPEAKING: 'Говорю…', DISABLED: 'Микрофон выключен', ERROR: 'Голос недоступен' };
+const VOICE_LABEL = { READY: 'Готов', LISTENING: 'Слушаю…', SPEAKING: 'Говорю…', DISABLED: 'Микрофон выключен', REMOTE: 'Голос через пульт', ERROR: 'Голос недоступен' };
 function voiceChip(v) {
   if (!v) return;
   const label = VOICE_LABEL[v.state] || v.state;
   for (const c of document.querySelectorAll('.vchip')) { c.dataset.state = v.state; c.querySelector('b').textContent = label; c.title = v.detail || ''; }
   // the sign at the right edge of the home page and the card «Голос» in the panel
-  const vs = { READY: 'ok', LISTENING: 'info', SPEAKING: 'info', DISABLED: '', ERROR: 'bad' }[v.state] || '';
+  const vs = { READY: 'ok', LISTENING: 'info', SPEAKING: 'info', DISABLED: '', REMOTE: 'info', ERROR: 'bad' }[v.state] || '';
   const rbv = $('#hs-voice'); rbv.dataset.s = vs; rbv.querySelector('em').textContent = label; rbv.title = 'Голос: ' + label + (v.detail ? ' — ' + v.detail : '');
   $('#hsc-voice').dataset.s = vs; $('#hsc-vs').textContent = label; if (window.syncStateTabs) syncStateTabs();
   // the sphere follows the real state of the voice

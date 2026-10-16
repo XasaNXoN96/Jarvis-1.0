@@ -611,6 +611,12 @@ pub fn run() -> Vec<Check> {
         error: crate::VOICE_ERROR.lock().clone(),
         devices: devices.len(),
     });
+    // no microphone in this PC, but the remote on a phone or a tablet is used: that is a normal setup, not a fault
+    let mic = if mic.status == Status::Error && crate::uistate::voice_via_remote() {
+        check("mic", "Микрофон", Status::Ok, "На этом компьютере микрофона нет: голос принимается через пульт на телефоне или планшете (он подключался недавно).", "")
+    } else {
+        mic
+    };
     let audio = audio_check(devices.len(), output_device());
     let test = match crate::tts::synth_check() {
         crate::tts::SynthCheck::NotInstalled => PiperFacts::NotInstalled,
