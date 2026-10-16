@@ -105,6 +105,18 @@ fn open_in_browser(url: &str) {
     }
 }
 
+// the window over the work area of the screen (all of it but the taskbar), without a frame
+fn fit_work_area(window: &tao::window::Window) {
+    use winapi::shared::windef::RECT;
+    use winapi::um::winuser::{SystemParametersInfoW, SPI_GETWORKAREA};
+    let mut work: RECT = unsafe { std::mem::zeroed() };
+    let ok = unsafe { SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut work as *mut RECT as *mut _, 0) };
+    if ok != 0 && work.right > work.left && work.bottom > work.top {
+        window.set_outer_position(tao::dpi::PhysicalPosition::new(work.left, work.top));
+        window.set_inner_size(tao::dpi::PhysicalSize::new((work.right - work.left) as u32, (work.bottom - work.top) as u32));
+    }
+}
+
 fn make_window(target: &tao::event_loop::EventLoopWindowTarget<UserEvent>, h: &Hooks, ctx: &mut WebContext, proxy: EventLoopProxy<UserEvent>) -> Result<Win, String> {
     let window = WindowBuilder::new()
         .with_title(&h.title)
@@ -113,11 +125,15 @@ fn make_window(target: &tao::event_loop::EventLoopWindowTarget<UserEvent>, h: &H
         .with_window_icon(load_icon(h.icon_png))
         // the title bar of the usual window is dark too (the program is dark)
         .with_theme(Some(tao::window::Theme::Dark))
-        // the window starts over the whole screen without the title bar (Alt+Enter brings the frame back; the choice is kept)
-        .with_fullscreen(if jarvis_core::uistate::window_fullscreen() { Some(tao::window::Fullscreen::Borderless(None)) } else { None })
+        // the window starts without the title bar over the work area of the screen: the taskbar stays visible and nothing at
+        // the bottom is covered (Alt+Enter brings the frame back; the choice is kept)
+        .with_decorations(!jarvis_core::uistate::window_fullscreen())
         .with_visible(false)
         .build(target)
         .map_err(|e| e.to_string())?;
+    if jarvis_core::uistate::window_fullscreen() {
+        fit_work_area(&window);
+    }
     let local = h.url.clone();
     let ipc_proxy = proxy.clone();
     let builder = WebViewBuilder::new_with_web_context(ctx)
@@ -305,9 +321,11 @@ pub fn run(h: Hooks) -> ! {
             Event::UserEvent(UserEvent::Hide) => hide_any(&win),
             Event::UserEvent(UserEvent::Fullscreen(on)) => {
                 if let Some(w) = &win {
-                    // leaving the full screen mode of the page returns to the choice of the user (the whole screen or the frame)
-                    let keep = on || jarvis_core::uistate::window_fullscreen();
-                    w.window.set_fullscreen(if keep { Some(tao::window::Fullscreen::Borderless(None)) } else { None });
+                    // the full screen mode of the page; leaving it returns the window as it was (frame or work area)
+                    w.window.set_fullscreen(if on { Some(tao::window::Fullscreen::Borderless(None)) } else { None });
+                    if !on && !w.window.is_decorated() {
+                        fit_work_area(&w.window);
+                    }
                 }
             }
             Event::UserEvent(UserEvent::Minimize) => {
@@ -317,9 +335,17 @@ pub fn run(h: Hooks) -> ! {
             }
             Event::UserEvent(UserEvent::ToggleWindowFullscreen) => {
                 if let Some(w) = &win {
-                    let now_full = w.window.fullscreen().is_some();
-                    w.window.set_fullscreen(if now_full { None } else { Some(tao::window::Fullscreen::Borderless(None)) });
-                    jarvis_core::uistate::set_window_fullscreen(!now_full);
+                    // frameless over the work area <-> the usual window with its frame (maximized)
+                    let framed = w.window.is_decorated();
+                    if framed {
+                        w.window.set_maximized(false);
+                        w.window.set_decorations(false);
+                        fit_work_area(&w.window);
+                    } else {
+                        w.window.set_decorations(true);
+                        w.window.set_maximized(true);
+                    }
+                    jarvis_core::uistate::set_window_fullscreen(framed);
                 }
             }
             // the Windows session ends or the installer asks Jarvis to close (Restart Manager): a full, clean exit

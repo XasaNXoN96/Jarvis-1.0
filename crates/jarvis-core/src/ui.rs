@@ -295,6 +295,11 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             crate::tts::speak(text);
             json!({ "ok": true })
         }
+        // Esc of the window: the voice stops at once (the phrase that is read and the ones waiting in the queue)
+        "tts_stop" => {
+            crate::tts::stop();
+            json!({ "ok": true })
+        }
         "tts_toggle" => {
             let on = body.get("value").and_then(|v| v.as_bool()).unwrap_or(true);
             crate::tts::set_enabled(on);
