@@ -1168,24 +1168,26 @@ const PAGE: &str = r#"<!doctype html>
   .tabs button span { font-size: 19px; } .tabs button.on { color: var(--a2); } .tabs button.on span { filter: drop-shadow(0 0 6px #6aa8ff); }
   /* every screen: a phone, a tablet (upright and sideways) and a computer's browser. The content is a column of at most 760px
      in the middle (the bars at the top and bottom keep the same edges); the sphere, the icons and the texts grow with the width */
-  :root { --pad: max(14px, calc((100vw - 760px) / 2)); }
-  body { font-size: clamp(15px, 1.9vw, 18px); }
+  :root { --pad: max(14px, calc((100vw - 620px) / 2)); }
+  body { font-size: clamp(15px, 1.6vw, 16.5px); }
   .top { padding-inline: var(--pad); } .body { padding-inline: var(--pad); } #confirm { padding-inline: var(--pad); } form#f { padding-inline: var(--pad); } .tabs { padding-inline: var(--pad); }
-  .brand b { font-size: clamp(17px, 3vw, 24px); } .brand small { font-size: clamp(11.5px, 1.8vw, 14px); } .reactor { width: clamp(32px, 6vw, 46px); height: clamp(32px, 6vw, 46px); }
-  .chip { font-size: clamp(12px, 1.9vw, 15px); padding: 4px clamp(10px, 1.8vw, 14px); }
+  .brand b { font-size: clamp(17px, 2.6vw, 20px); } .brand small { font-size: clamp(11.5px, 1.6vw, 13px); } .reactor { width: clamp(32px, 5vw, 38px); height: clamp(32px, 5vw, 38px); }
+  .chip { font-size: clamp(12px, 1.7vw, 13.5px); padding: 4px clamp(10px, 1.6vw, 12px); }
   section h2 { font-size: clamp(11.5px, 1.8vw, 14px); }
-  #mic { width: min(66vw, 40vh, 420px); min-width: 170px; }
+  #mic { width: min(66vw, 34vh, 300px); min-width: 150px; }
   #orb-cap { font-size: clamp(12.5px, 2vw, 16px); } #heard { font-size: clamp(14px, 2.2vw, 18px); }
-  .tile span { font-size: clamp(22px, 6vw, 42px); } .tile em { font-size: clamp(10px, 2.2vw, 14px); }
+  .tile span { font-size: clamp(22px, 5vw, 30px); } .tile em { font-size: clamp(10px, 1.9vw, 12.5px); }
+  /* a wide screen (a tablet, a computer's browser): the tiles are low and wide, not squares that push the rest out of sight */
+  @media (min-width: 560px) { .tile { aspect-ratio: auto; min-height: 84px; } }
   .tile { border-radius: clamp(16px, 2.6vw, 22px); } .grid4 { gap: clamp(8px, 1.6vw, 14px); }
   .player { padding: clamp(12px, 2.4vw, 20px) clamp(10px, 2vw, 18px); gap: clamp(10px, 2vw, 16px); }
   .ctrl { gap: clamp(10px, 2.4vw, 20px); }
-  .ctrl button { width: clamp(48px, 12vw, 76px); height: clamp(48px, 12vw, 76px); font-size: clamp(18px, 4.6vw, 30px); }
-  .ctrl button.main { width: clamp(62px, 16vw, 100px); height: clamp(62px, 16vw, 100px); font-size: clamp(24px, 6vw, 38px); }
-  .vol button { height: clamp(40px, 8vw, 62px); font-size: clamp(16px, 4vw, 28px); }
+  .ctrl button { width: clamp(48px, 10vw, 62px); height: clamp(48px, 10vw, 62px); font-size: clamp(18px, 4vw, 24px); }
+  .ctrl button.main { width: clamp(62px, 13vw, 78px); height: clamp(62px, 13vw, 78px); font-size: clamp(24px, 5vw, 30px); }
+  .vol button { height: clamp(40px, 7vw, 50px); font-size: clamp(16px, 3.4vw, 22px); }
   .row { font-size: clamp(14px, 2.1vw, 17px); padding: clamp(11px, 1.8vw, 16px) clamp(12px, 2vw, 18px); } .row small { font-size: clamp(11.5px, 1.7vw, 14px); }
   form#f input { font-size: clamp(16px, 2.2vw, 19px); padding-block: clamp(12px, 1.8vw, 16px); } form#f button { width: clamp(50px, 8vw, 66px); }
-  .tabs button { font-size: clamp(11px, 1.8vw, 14px); } .tabs button span { font-size: clamp(19px, 3.6vw, 28px); }
+  .tabs button { font-size: clamp(11px, 1.6vw, 12.5px); } .tabs button span { font-size: clamp(19px, 3vw, 23px); }
   #status { font-size: clamp(13px, 2vw, 16px); }
   /* a low window (a phone sideways): the sphere is smaller so that the buttons stay in sight */
   @media (max-height: 520px) { #mic { width: min(40vh, 220px); min-width: 120px; } }
