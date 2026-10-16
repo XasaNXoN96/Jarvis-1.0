@@ -1486,3 +1486,25 @@ fn a_model_of_another_provider_is_not_sent_to_perplexity() {
     // the others keep what the user typed
     assert_eq!(conf_from("openai", "gpt-4o", "k", "").unwrap().model, "gpt-4o");
 }
+
+#[test]
+fn perplexity_is_checked_by_a_tiny_question_not_by_a_list_of_models() {
+    // the server of the test has no «/models» (like Perplexity): only a question gets 200
+    let m = mock(vec![(200, ok_body("pong"), 0)]);
+    let mut c = conf(&m.base).unwrap();
+    c.name = "Perplexity".into();
+    c.model = "sonar".into();
+    assert!(test_connection(&c).is_ok());
+    let seen = m.requests.lock().clone();
+    assert!(seen[0].starts_with("POST /chat/completions"), "{}", seen[0]);
+    assert!(seen[0].contains("\"max_tokens\":1") && seen[0].contains("\"model\":\"sonar\""));
+    // a wrong key is still reported as a wrong key (401), not as a wrong address
+    let m = mock(vec![(401, "{\"error\":\"bad key\"}".into(), 0)]);
+    let mut c = conf(&m.base).unwrap();
+    c.name = "Perplexity".into();
+    assert!(matches!(test_connection(&c), Err(AiError::Auth(_))));
+    // the others are still checked by the list of models
+    let m = mock(vec![(200, "{}".into(), 0)]);
+    assert!(test_connection(&conf(&m.base).unwrap()).is_ok());
+    assert!(m.requests.lock()[0].starts_with("GET /models"));
+}

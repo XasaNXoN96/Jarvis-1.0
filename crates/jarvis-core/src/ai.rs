@@ -1500,6 +1500,19 @@ pub fn test_connection(conf: &ProviderConf) -> Result<(), AiError> {
 
 #[cfg(feature = "lua")]
 fn test_connection_raw(conf: &ProviderConf) -> Result<(), AiError> {
+    // Perplexity has no list of models («/models» answers 404 whatever the key): it is checked by a one-word question
+    // with an answer of one token, the same request the chat makes
+    if conf.name == "Perplexity" {
+        let body = json!({ "model": conf.model, "messages": [{ "role": "user", "content": "ping" }], "max_tokens": 1 });
+        let resp = with_key(conf, client()?.post(endpoint(conf)).json(&body)).send().map_err(|e| net_error(conf, e))?;
+        let status = resp.status().as_u16();
+        return if (200..300).contains(&status) {
+            Ok(())
+        } else {
+            let text = resp.text().unwrap_or_default();
+            Err(map_status(conf, status, &text))
+        };
+    }
     let url = match conf.kind {
         Kind::OpenAiCompatible => format!("{}/models", conf.base),
         Kind::Anthropic => format!("{}/v1/models", conf.base),

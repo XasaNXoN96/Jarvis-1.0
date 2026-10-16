@@ -120,6 +120,10 @@
   .pages { flex: 1; position: relative; min-width: 0; }
   .page { position: absolute; inset: 0; display: none; padding: 18px 22px; overflow: auto; }
   .page.active { display: flex; flex-direction: column; }
+  /* long pages scroll to the very end: nothing is squeezed, and a free strip stays under the last line */
+  .page.active > * { flex-shrink: 0; }
+  .page.active::after { content: ''; flex: 0 0 28px; }
+  #page-home.active::after { display: none; }
   .page::-webkit-scrollbar, #log::-webkit-scrollbar { width: 8px; }
   .page::-webkit-scrollbar-thumb, #log::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.140); border-radius: 8px; }
   h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
