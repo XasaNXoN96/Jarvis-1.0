@@ -1014,6 +1014,7 @@
           <div class="r"><select id="ai-provider">
             <option value="none">Не использовать</option>
             <option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option>
+            <option value="perplexity">Perplexity Sonar (свежие ответы из интернета)</option>
             <option value="gemini">Google Gemini (через OpenAI-совместимый адрес)</option><option value="anthropic">Anthropic (Claude)</option>
             <option value="ollama">Ollama (на этом компьютере)</option><option value="custom">Другой сервер (совместимый с OpenAI)</option></select></div></div>
         <div class="setrow" id="ai-url-row"><div class="l">Адрес сервера<small id="ai-url-hint">для Ollama и других серверов</small></div><div class="r"><input type="text" id="ai-url" placeholder="http://127.0.0.1:11434"></div></div>
@@ -2438,11 +2439,11 @@ function updateAiRows() {
   $('#ai-url-row').style.display = (p === 'ollama' || p === 'custom' || p === 'anthropic') ? '' : 'none';
   $('#ai-key-row').style.display = (p === 'none' || p === 'ollama') ? 'none' : '';
   $('#ai-route-row').style.display = p === 'openrouter' ? '' : 'none';
-  const ph = { anthropic: 'claude-sonnet-5-5', openai: 'gpt-4o-mini', openrouter: 'openai/gpt-4o-mini', gemini: 'gemini-flash-latest', ollama: 'llama3.1', custom: 'название модели' };
+  const ph = { anthropic: 'claude-sonnet-5-5', openai: 'gpt-4o-mini', openrouter: 'openai/gpt-4o-mini', perplexity: 'sonar', gemini: 'gemini-flash-latest', ollama: 'llama3.1', custom: 'название модели' };
   $('#ai-url-hint').textContent = p === 'anthropic' ? 'необязательно (по умолчанию api.anthropic.com)' : p === 'custom' ? 'адрес API, например https://host/v1' : 'для Ollama: адрес сервера';
   $('#ai-model').placeholder = ph[p] ? 'например: ' + ph[p] : '';
   const mv = $('#ai-model').value.trim();
-  if (ph[p] && p !== 'custom' && (!mv || ['gemini', 'openai', 'openrouter', 'anthropic', 'ollama'].includes(mv.toLowerCase()))) $('#ai-model').value = ph[p];
+  if (ph[p] && p !== 'custom' && (!mv || ['gemini', 'openai', 'openrouter', 'perplexity', 'anthropic', 'ollama'].includes(mv.toLowerCase()))) $('#ai-model').value = ph[p];
 }
 $('#ai-provider').onchange = () => { updateAiRows(); guessKey(); };
 
@@ -2451,6 +2452,7 @@ $('#ai-provider').onchange = () => { updateAiRows(); guessKey(); };
 function keyGuess(key) {
   const k = (key || '').trim();
   if (k.startsWith('sk-or-v1-')) return { provider: 'openrouter', label: 'OpenRouter' };
+  if (k.startsWith('pplx-')) return { provider: 'perplexity', label: 'Perplexity', model: 'sonar' };
   if (k.startsWith('sk-ant-')) return { provider: 'anthropic', label: 'Anthropic (Claude)' };
   if (k.startsWith('AIza')) return { provider: 'gemini', label: 'Google Gemini' };
   if (k.startsWith('gsk_')) return { provider: 'custom', label: 'Groq', url: 'https://api.groq.com/openai/v1' };

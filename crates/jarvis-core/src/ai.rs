@@ -217,6 +217,8 @@ pub fn conf_from(provider: &str, model: &str, key: &str, url: &str) -> Result<Pr
     let (kind, name, base, key_needed) = match provider {
         "openai" => (Kind::OpenAiCompatible, "OpenAI", "https://api.openai.com/v1".to_string(), true),
         "openrouter" => (Kind::OpenAiCompatible, "OpenRouter", "https://openrouter.ai/api/v1".to_string(), true),
+        // an answer from the live internet (with the sources of the search): for fresh facts, news, prices, «что сейчас…»
+        "perplexity" => (Kind::OpenAiCompatible, "Perplexity", "https://api.perplexity.ai".to_string(), true),
         "gemini" => (Kind::OpenAiCompatible, "Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai".to_string(), true),
         "anthropic" => (Kind::Anthropic, "Anthropic", if url.is_empty() { "https://api.anthropic.com".to_string() } else { url.clone() }, true),
         "ollama" => (Kind::OpenAiCompatible, "Ollama", format!("{}/v1", if url.is_empty() { "http://127.0.0.1:11434".to_string() } else { url.clone() }), false),
@@ -238,6 +240,7 @@ pub fn conf_from(provider: &str, model: &str, key: &str, url: &str) -> Result<Pr
             "gemini" => "gemini-flash-latest",
             "openai" => "gpt-4o-mini",
             "openrouter" => "openai/gpt-4o-mini",
+            "perplexity" => "sonar",
             "anthropic" => "claude-sonnet-5-5",
             _ => return Err(AiError::NoModel),
         }
@@ -945,10 +948,52 @@ pub fn parse_answer(conf: &ProviderConf, body: &Value) -> Result<String, AiError
             if parts.is_empty() { None } else { Some(parts.join("")) }
         }
     };
+    // Perplexity marks the sources inside the text as [1][2]: for the user (and the voice) it is just the answer, the numbers go
+    let text = if conf.name == "Perplexity" { text.map(|t| strip_citations(&t)) } else { text };
     match text {
         Some(t) if !t.trim().is_empty() => Ok(t.trim().to_string()),
         _ => Err(AiError::BadResponse),
     }
+}
+
+// «…в 2005 году[1][3].» -> «…в 2005 году.»; a bracket with something else than a number stays, and so does everything in code
+// (`a[0]`, a block of code)
+pub fn strip_citations(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    // pieces between the marks of code: odd pieces are code
+    for (n, piece) in text.split('`').enumerate() {
+        if n > 0 {
+            out.push('`');
+        }
+        if n % 2 == 1 {
+            out.push_str(piece);
+        } else {
+            out.push_str(&strip_numbers_in_brackets(piece));
+        }
+    }
+    out
+}
+
+fn strip_numbers_in_brackets(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '[' {
+            let mut j = i + 1;
+            while j < chars.len() && chars[j].is_ascii_digit() {
+                j += 1;
+            }
+            if j > i + 1 && j < chars.len() && chars[j] == ']' && j - i <= 4 {
+                i = j + 1;
+                continue;
+            }
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    // a space left before a mark of punctuation
+    out.replace("  ", " ").replace(" .", ".").replace(" ,", ",")
 }
 
 // an error message of the provider without the key and without noise

@@ -1422,3 +1422,26 @@ fn a_mode_changes_only_the_prompt_and_an_unknown_mode_is_the_usual_manner() {
     assert!(psych.contains("не ставь диагнозов") || psych.contains("Не ставь диагнозов"), "the mode keeps the safe limits");
     assert_eq!(super::system_prompt(), usual);
 }
+
+// ---- Perplexity Sonar: fresh answers from the internet ----
+#[test]
+fn perplexity_is_a_provider_with_a_default_model_and_needs_a_key() {
+    assert_eq!(conf_from("perplexity", "", "", "").unwrap_err(), AiError::NoKey("Perplexity".into()));
+    let c = conf_from("perplexity", "", "pplx-test", "").unwrap();
+    assert_eq!(c.base, "https://api.perplexity.ai");
+    assert_eq!(c.model, "sonar");
+    assert_eq!(conf_from("perplexity", "sonar-pro", "pplx-test", "").unwrap().model, "sonar-pro");
+    // the key is sent only to its own host (a custom address in the settings does not redirect it)
+    assert_eq!(conf_from("perplexity", "", "pplx-test", "https://evil.example.com").unwrap().base, "https://api.perplexity.ai");
+}
+
+#[test]
+fn the_numbers_of_sources_are_removed_from_the_answer_only_for_perplexity() {
+    assert_eq!(strip_citations("Северный Арал частично восстановили в 2005 году[1][3]. Это помогло [2], но не всем."), "Северный Арал частично восстановили в 2005 году. Это помогло, но не всем.");
+    assert_eq!(strip_citations("список [x] и `a[0]` остаются, [12345] тоже, а [7] нет"), "список [x] и `a[0]` остаются, [12345] тоже, а нет");
+    let body = serde_json::json!({ "choices": [{ "message": { "content": "Да[1]. Нет[2]." } }] });
+    let p = conf_from("perplexity", "", "k", "").unwrap();
+    assert_eq!(parse_answer(&p, &body).unwrap(), "Да. Нет.");
+    let o = conf_from("openai", "gpt", "k", "").unwrap();
+    assert_eq!(parse_answer(&o, &body).unwrap(), "Да[1]. Нет[2].");
+}
