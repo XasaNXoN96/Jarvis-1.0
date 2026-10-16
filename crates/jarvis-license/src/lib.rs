@@ -165,6 +165,34 @@ pub fn sign_token(signing: &SigningKey, claims: &Claims) -> String {
     format!("{}.{}", payload, B64.encode(sig.to_bytes()))
 }
 
+// ---------------------------------------------------------------------------------------------
+// updates of the program: the owner signs «this version is THIS file» with a key of his own (offline, never in the build);
+// the program knows only the public key and installs nothing whose signature, size and SHA-256 do not fit
+// ---------------------------------------------------------------------------------------------
+pub fn update_message(version: &str, url: &str, sha256: &str, size: u64) -> String {
+    format!("jarvis-update-v1\n{}\n{}\n{}\n{}", version, url, sha256, size)
+}
+
+#[cfg(feature = "server")]
+pub fn sign_update(signing: &SigningKey, version: &str, url: &str, sha256: &str, size: u64) -> String {
+    B64.encode(signing.sign(update_message(version, url, sha256, size).as_bytes()).to_bytes())
+}
+
+pub fn verify_update(key: &VerifyingKey, version: &str, url: &str, sha256: &str, size: u64, sig_b64: &str) -> bool {
+    let Some(bytes) = B64.decode(sig_b64.trim()).ok().and_then(|b| <[u8; 64]>::try_from(b).ok()) else { return false };
+    key.verify(update_message(version, url, sha256, size).as_bytes(), &Signature::from_bytes(&bytes)).is_ok()
+}
+
+// is `remote` a newer dotted number than `current` («1.10.0» > «1.9.3»; a part that is not a number makes it «not newer»)
+pub fn version_newer(current: &str, remote: &str) -> bool {
+    let parse = |v: &str| -> Option<Vec<u64>> { v.trim().trim_start_matches('v').split('.').map(|p| p.parse::<u64>().ok()).collect() };
+    let (Some(mut c), Some(mut r)) = (parse(current), parse(remote)) else { return false };
+    let n = c.len().max(r.len());
+    c.resize(n, 0);
+    r.resize(n, 0);
+    r > c
+}
+
 pub fn parse_public_key(b64: &str) -> Option<VerifyingKey> {
     let bytes: [u8; 32] = B64.decode(b64.trim()).ok()?.try_into().ok()?;
     VerifyingKey::from_bytes(&bytes).ok()
@@ -257,6 +285,36 @@ pub fn entitlement(claims: &Claims, now: i64, clock_floor: i64) -> Entitlement {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "server")]
+    #[test]
+    fn an_update_is_believed_only_when_the_signature_fits_every_field() {
+        let (sk, pubkey) = server_pair();
+        let key = parse_public_key(&pubkey).unwrap();
+        let sha = sha256_hex(b"installer");
+        let sig = sign_update(&sk, "1.2.0", "https://example.com/Jarvis-Setup.exe", &sha, 9);
+        assert!(verify_update(&key, "1.2.0", "https://example.com/Jarvis-Setup.exe", &sha, 9, &sig));
+        assert!(!verify_update(&key, "1.2.1", "https://example.com/Jarvis-Setup.exe", &sha, 9, &sig), "version");
+        assert!(!verify_update(&key, "1.2.0", "https://evil.example/Jarvis-Setup.exe", &sha, 9, &sig), "address");
+        assert!(!verify_update(&key, "1.2.0", "https://example.com/Jarvis-Setup.exe", &sha256_hex(b"other"), 9, &sig), "hash");
+        assert!(!verify_update(&key, "1.2.0", "https://example.com/Jarvis-Setup.exe", &sha, 10, &sig), "size");
+        assert!(!verify_update(&key, "1.2.0", "https://example.com/Jarvis-Setup.exe", &sha, 9, "AAAA"), "garbage");
+        let (other, _) = server_pair();
+        let forged = sign_update(&other, "1.2.0", "https://example.com/Jarvis-Setup.exe", &sha, 9);
+        assert!(!verify_update(&key, "1.2.0", "https://example.com/Jarvis-Setup.exe", &sha, 9, &forged), "another key");
+    }
+
+    #[test]
+    fn versions_are_compared_as_numbers() {
+        assert!(version_newer("0.1.0", "0.1.1"));
+        assert!(version_newer("1.9.3", "1.10.0"));
+        assert!(version_newer("1.0", "1.0.1"));
+        assert!(version_newer("0.1.0", "v0.2.0"));
+        assert!(!version_newer("1.2.0", "1.2.0"));
+        assert!(!version_newer("1.2.0", "1.1.9"));
+        assert!(!version_newer("1.2.0", "1.2.0-beta"), "a part that is not a number is never an update");
+        assert!(!version_newer("1.2.0", ""));
+    }
 
     fn server_pair() -> (SigningKey, String) {
         let s = SigningKey::generate(&mut rand::rngs::OsRng);

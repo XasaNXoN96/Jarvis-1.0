@@ -485,6 +485,29 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
                 Err(e) => json!({ "ok": false, "message": e }),
             }
         }
+        // updates: check, download, install — each one on a button (see updater.rs)
+        "update_check" => match crate::updater::check() {
+            Ok(()) => json!({ "ok": true }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "update_download" => match crate::updater::download() {
+            Ok(()) => json!({ "ok": true }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "update_install" => match crate::updater::install() {
+            Ok(()) => {
+                // the installer closes the program itself; this is only the clean exit if it is still running
+                std::thread::spawn(|| {
+                    std::thread::sleep(Duration::from_secs(8));
+                    match EXIT_HOOK.get() {
+                        Some(exit) => exit(),
+                        None => std::process::exit(0),
+                    }
+                });
+                json!({ "ok": true })
+            }
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
         "voice_install" => match crate::voice_install::start(body.get("voice").and_then(|v| v.as_str())) {
             Ok(()) => json!({ "ok": true }),
             Err(e) => json!({ "ok": false, "message": e }),
@@ -1020,6 +1043,7 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
             browser_window_closed();
             respond(&mut stream, "200 OK", "application/json", "{\"ok\":true}");
         }
+        ("GET", "/update") => respond(&mut stream, "200 OK", "application/json", &crate::updater::status_json().to_string()),
         ("GET", "/voice-install") => respond(&mut stream, "200 OK", "application/json", &crate::voice_install::status_json().to_string()),
         ("GET", "/chats") => respond(&mut stream, "200 OK", "application/json", &chats_json().to_string()),
         ("GET", "/scenarios") => respond(&mut stream, "200 OK", "application/json", &scenarios_json().to_string()),

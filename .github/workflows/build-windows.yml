@@ -879,6 +879,9 @@ jobs:
         env:
           JARVIS_LICENSE_PUBKEY: ${{ vars.JARVIS_LICENSE_PUBKEY }}
           JARVIS_LICENSE_URL: ${{ vars.JARVIS_LICENSE_URL }}
+          # updates: the address of update.json and the PUBLIC key of the owner (repository variables; no secret)
+          JARVIS_UPDATE_URL: ${{ vars.JARVIS_UPDATE_URL }}
+          JARVIS_UPDATE_PUBKEY: ${{ vars.JARVIS_UPDATE_PUBKEY }}
         run: |
           $env:LIB = "$PWD\lib\windows\amd64;$env:LIB"
           $env:JARVIS_BUILD_SHA = "${{ github.sha }}"

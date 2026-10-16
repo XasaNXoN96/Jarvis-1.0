@@ -80,6 +80,7 @@ pub mod licensing;
 #[cfg(not(feature = "user-edition"))]
 pub mod licmgr;
 pub mod voice_install;
+pub mod updater;
 pub mod ai;
 pub mod filesearch;
 pub mod guard;

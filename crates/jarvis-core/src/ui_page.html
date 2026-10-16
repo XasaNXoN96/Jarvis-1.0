@@ -1075,6 +1075,11 @@
         <small class="dim">Ответы ИИ появляются на странице «Диалог». Ключ хранится только на этом компьютере в зашифрованном виде (шифрование Windows) и не показывается в окне. Сообщения уходят провайдеру, когда вы нажимаете «Отправить» или задаёте вопрос; команды компьютера («открой ворд», «поставь таймер») в ИИ не отправляются.</small>
       </div>
 
+      <div class="card" data-cat="general" id="upd-card"><h3><span class="ei">⟳</span>Обновления</h3>
+        <div class="setrow"><div class="l">Версия программы<small id="upd-hint">Проверка и установка обновлений только по вашей кнопке</small></div>
+          <div class="r"><b id="upd-cur"></b> <button class="btn" id="upd-check" type="button">Проверить обновления</button> <button class="btn primary" id="upd-go" type="button" hidden>Скачать</button></div></div>
+        <div class="msgline" id="upd-msg"></div>
+      </div>
       <div class="card" data-cat="general" id="name-card"><h3><span class="ei">🏷</span>Имя помощника</h3>
         <div class="setrow"><div class="l">Как его зовут<small>на это имя он откликается голосом и в тексте. Одно слово, например «Карен». Пусто = «Джарвис». Интерфейс остаётся «Джарвис».</small></div>
           <div class="r"><input type="text" id="name-input" placeholder="Джарвис" maxlength="20"><button class="btn primary" id="name-save" type="button">Сохранить</button></div></div>
@@ -2444,6 +2449,35 @@ const pal = (() => {
   return { open() { box().classList.add('on'); $('#pal-q').value = ''; build(''); $('#pal-q').focus(); }, isOpen: () => box().classList.contains('on') };
 })();
 document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'k' || e.key === 'K' || e.key === 'л' || e.key === 'Л')) { e.preventDefault(); pal.isOpen() ? $('#pal').classList.remove('on') : pal.open(); } });
+
+
+// updates: the buttons «Проверить» → «Скачать» → «Установить» (the program verifies the owner's signature, the size and the SHA-256 itself)
+let updStep = 'check';
+async function updRefresh() {
+  let u; try { u = await (await fetch('/update')).json(); } catch (e) { return; }
+  $('#upd-cur').textContent = 'v' + u.current;
+  const msg = $('#upd-msg'), go = $('#upd-go'), chk = $('#upd-check');
+  go.hidden = true; msg.className = 'msgline';
+  if (!u.configured) { msg.textContent = 'В этой сборке обновления не настроены (нет адреса и ключа владельца): программа обновляется только ручной установкой.'; chk.disabled = true; return; }
+  chk.disabled = u.checking || u.downloading;
+  if (u.checking) { msg.textContent = 'Проверяю…'; return; }
+  if (u.downloading) { msg.textContent = 'Загружаю обновление — ' + u.percent + '%'; return; }
+  if (u.error) { msg.className = 'msgline bad'; msg.textContent = u.error; return; }
+  if (u.available) {
+    const mb = Math.round(u.available.size / 1048576);
+    msg.className = 'msgline ok'; msg.textContent = 'Есть версия ' + u.available.version + ' (' + mb + ' МБ).' + (u.available.notes ? ' ' + u.available.notes : '');
+    go.hidden = false; updStep = u.ready ? 'install' : 'download'; go.textContent = u.ready ? 'Установить и перезапустить' : 'Скачать';
+  } else if (u.checked) { msg.textContent = 'У вас последняя версия.'; }
+}
+async function updWait() { for (let i = 0; i < 1800; i++) { await updRefresh(); const u = await (await fetch('/update')).json().catch(() => ({})); if (!u.checking && !u.downloading) return; await new Promise(r => setTimeout(r, 1000)); } }
+$('#upd-check').onclick = async () => { const r = await action('update_check').catch(() => ({})); if (r && r.ok === false) { $('#upd-msg').className = 'msgline bad'; $('#upd-msg').textContent = r.message || 'Не получилось'; return; } updWait(); };
+$('#upd-go').onclick = async () => {
+  if (updStep === 'install' && !confirm('Джарвис закроется, установится новая версия и он запустится снова. Продолжить?')) return;
+  const r = await action(updStep === 'install' ? 'update_install' : 'update_download').catch(() => ({}));
+  if (r && r.ok === false) { $('#upd-msg').className = 'msgline bad'; $('#upd-msg').textContent = r.message || 'Не получилось'; return; }
+  if (updStep === 'download') updWait(); else $('#upd-msg').textContent = 'Запускаю установщик…';
+};
+updRefresh();
 
 async function aiOpen() { await aiRefreshList(); await pollNow(true); }
 $('#chat-new').onclick = async () => { await chatApi({ op: 'new' }); await pollNow(true); aiRefreshList(); curInput().focus(); };
