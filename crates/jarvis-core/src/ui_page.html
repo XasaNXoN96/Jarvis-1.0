@@ -210,6 +210,13 @@
   .lchip[data-s=premium] { border-color: #5be3a166; } .lchip[data-s=premium] i { background: var(--ok); }
   .lchip[data-s=expired], .lchip[data-s=needs_refresh] { border-color: #ff6b7a77; } .lchip[data-s=expired] i, .lchip[data-s=needs_refresh] i { background: var(--err); }
   .lchip[data-s=admin] { cursor: default; } .lchip[data-s=admin] i { background: var(--accent); }
+  /* command palette (Ctrl+K) */
+  #pal .box { width: min(560px, 100%); padding: 14px; align-self: flex-start; margin-top: 12vh; }
+  #pal-q { width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: #ffffff08; color: var(--text); font: inherit; outline: none; }
+  #pal-list { margin: 8px 0 0; padding: 0; list-style: none; max-height: 46vh; overflow: auto; }
+  #pal-list li { padding: 10px 12px; border-radius: 10px; cursor: pointer; display: flex; justify-content: space-between; gap: 12px; }
+  #pal-list li small { color: var(--dim); } #pal-list li.sel, #pal-list li:hover { background: #ffffff12; }
+  #pal-hint { margin: 8px 2px 0; color: var(--dim); font-size: 12px; }
   .mdl { position: fixed; inset: 0; background: #060609cc; display: none; align-items: center; justify-content: center; z-index: 110; padding: 16px; }
   .mdl.on { display: flex; }
   .mdl .box { position: relative; background: var(--panel, #151518); border: 1px solid rgba(255,255,255,0.233); border-radius: 16px; padding: 22px 22px 18px; width: min(520px, 100%); max-height: 92vh; overflow: auto; box-shadow: 0 20px 60px #0008; }
@@ -1150,6 +1157,12 @@
 <div id="close-dlg" role="dialog" aria-modal="true" aria-labelledby="close-dlg-title"><div class="box">
   <h3 id="close-dlg-title">Что вы хотите сделать?</h3><p id="close-dlg-note"></p>
   <div class="acts"><button class="btn primary" id="close-dlg-tray" type="button">Свернуть в трей</button><button class="btn" id="close-dlg-exit" type="button">Полностью закрыть JARVIS</button><button class="btn" id="close-dlg-cancel" type="button">Отмена</button></div>
+</div></div>
+
+<div id="pal" class="mdl" role="dialog" aria-modal="true" aria-label="Быстрые действия"><div class="box">
+  <input type="text" id="pal-q" placeholder="Куда перейти или что спросить…" autocomplete="off" spellcheck="false">
+  <ul id="pal-list"></ul>
+  <div id="pal-hint">Стрелки — выбор, Enter — выполнить, Esc — закрыть. Если ничего не подошло, Enter отправит текст Джарвису.</div>
 </div></div>
 
 <div id="lic-dlg" class="mdl" role="dialog" aria-modal="true" aria-labelledby="lic-dlg-title"><div class="box">
@@ -2389,6 +2402,35 @@ document.addEventListener('keydown', e => {
   else if (currentPage === 'home' && home().classList.contains('big')) setBig(false);
   else if (isFull) setFull(false);
 });
+
+
+// command palette: Ctrl+K — pages of the menu by name, or the typed text goes to Jarvis as a question
+const pal = (() => {
+  let items = [], sel = 0;
+  const box = () => $('#pal');
+  const build = q => {
+    const all = [...document.querySelectorAll('nav button[data-page]')].map(b => ({ name: b.querySelector('span:last-of-type').textContent, hint: 'раздел', run: () => show(b.dataset.page) }));
+    all.push({ name: 'Во весь экран / окно', hint: 'Alt+Enter', run: () => winFullToggle() });
+    const t = q.trim().toLowerCase();
+    items = t ? all.filter(x => x.name.toLowerCase().includes(t)) : all;
+    if (t) items.push({ name: 'Спросить Джарвиса: «' + q.trim() + '»', hint: 'Enter', run: () => { show('home'); const i = $('#h-input'); i.value = q.trim(); $('#h-send').click(); } });
+    sel = 0; draw();
+  };
+  const draw = () => { $('#pal-list').innerHTML = items.map((x, i) => '<li data-i="' + i + '"' + (i === sel ? ' class="sel"' : '') + '><span>' + esc(x.name) + '</span><small>' + esc(x.hint) + '</small></li>').join(''); };
+  const close = () => box().classList.remove('on');
+  const run = i => { const x = items[i]; if (!x) return; close(); x.run(); };
+  $('#pal-q').addEventListener('input', e => build(e.target.value));
+  $('#pal-q').addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); sel = Math.min(items.length - 1, sel + 1); draw(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); sel = Math.max(0, sel - 1); draw(); }
+    else if (e.key === 'Enter') { e.preventDefault(); run(sel); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+  });
+  $('#pal-list').addEventListener('click', e => { const li = e.target.closest('li'); if (li) run(+li.dataset.i); });
+  box().addEventListener('mousedown', e => { if (e.target === box()) close(); });
+  return { open() { box().classList.add('on'); $('#pal-q').value = ''; build(''); $('#pal-q').focus(); }, isOpen: () => box().classList.contains('on') };
+})();
+document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'k' || e.key === 'K' || e.key === 'л' || e.key === 'Л')) { e.preventDefault(); pal.isOpen() ? $('#pal').classList.remove('on') : pal.open(); } });
 
 async function aiOpen() { await aiRefreshList(); await pollNow(true); }
 $('#chat-new').onclick = async () => { await chatApi({ op: 'new' }); await pollNow(true); aiRefreshList(); curInput().focus(); };
