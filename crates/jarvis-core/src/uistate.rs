@@ -384,6 +384,11 @@ pub fn assistant_name() -> String {
 }
 
 // merge the fields present in `patch` into the settings and save
+// the manner of the AI answers (ai.rs: modes) by its id; the app crate has no JSON of its own
+pub fn set_ai_mode(id: &str) {
+    update_settings(&json!({ "ai_mode": id }));
+}
+
 pub fn update_settings(patch: &Value) {
     let mut s = SETTINGS.lock();
     if let Some(v) = patch.get("assistant_name").and_then(|v| v.as_str()) {

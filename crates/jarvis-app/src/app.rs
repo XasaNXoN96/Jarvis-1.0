@@ -619,7 +619,7 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
     }
     // «режим психолога», «обычный режим»: the manner of the AI answers (ai.rs: modes). Free for everybody, changes only the style.
     if let Some((id, name)) = jarvis_core::ai::mode_phrase(text) {
-        jarvis_core::uistate::update_settings(&serde_json::json!({ "ai_mode": id }));
+        jarvis_core::uistate::set_ai_mode(id);
         open_request(text, "command");
         let msg = if id.is_empty() { "Обычный режим ответов включён.".to_string() } else { format!("Режим {} включён.", name) };
         say(&msg);
