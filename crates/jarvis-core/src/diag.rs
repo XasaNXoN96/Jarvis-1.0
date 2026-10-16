@@ -275,7 +275,8 @@ pub fn latency_check(timing: Option<&Value>) -> Check {
         Some(t) => {
             let total = t["total_ms"].as_u64().unwrap_or(0);
             let first = t["first_chunk_ms"].as_u64();
-            let detail = format!("Последний ответ: первый фрагмент {}, целиком {} мс{}.", first.map(|x| format!("{} мс", x)).unwrap_or("—".into()), total, if t["streamed"].as_bool().unwrap_or(false) { " (поток)" } else { "" });
+            let spoke = t["first_speech_started_ms"].as_u64().map(|x| format!(", голос начал говорить через {} мс", x)).unwrap_or_default();
+            let detail = format!("Последний ответ: первый фрагмент {}, целиком {} мс{}{}.", first.map(|x| format!("{} мс", x)).unwrap_or("—".into()), total, if t["streamed"].as_bool().unwrap_or(false) { " (поток)" } else { "" }, spoke);
             if total > 20_000 { check(key, name, Status::Warn, detail, "Выберите более быструю модель (например, gemini-flash) или проверьте интернет.") } else { check(key, name, Status::Ok, detail, "") }
         }
     }
@@ -726,7 +727,7 @@ pub fn report() -> String {
     r.push_str(&format!("Система: {}\n", last.as_ref().map(|l| l.os.clone()).unwrap_or_else(os_version_cached)));
     r.push_str(&format!("Язык: {}\n", crate::i18n::get_language()));
     r.push_str(&format!("ИИ: провайдер {} · модель {} · запросы {} · состояние {}\n", ai["provider"].as_str().filter(|p| !p.is_empty()).unwrap_or("не выбран"), ai["model"].as_str().filter(|p| !p.is_empty()).unwrap_or("—"), if s.ai_enabled { "включены" } else { "выключены" }, ai["state"].as_str().unwrap_or("")));
-    r.push_str(&format!("Озвучка: {} · голос: {} · микрофон: {}\n", if crate::tts::is_enabled() { "вкл" } else { "выкл" }, if s.voice_name.is_empty() { "авто" } else if s.voice_name.starts_with("win:") { "Windows" } else { "Piper" }, if crate::MIC_MUTED.load(Ordering::SeqCst) { "выключен" } else { "включён" }));
+    r.push_str(&format!("Озвучка: {} · голос: {} · микрофон: {}\n", if crate::tts::is_enabled() { "вкл" } else { "выкл" }, crate::tts::voice_label(&s.voice_name), if crate::MIC_MUTED.load(Ordering::SeqCst) { "выключен" } else { "включён" }));
     r.push_str(&format!("Уведомления: показ {} · голос {} · звук {} · не беспокоить {} · внешние {} ({})\n", onoff(s.notify_show), onoff(s.notify_speak), onoff(s.notify_sound), onoff(s.dnd), onoff(s.ext_enabled), crate::notify::ext_status_json()["state"].as_str().unwrap_or("")));
     match last {
         None => r.push_str("\nПроверка ещё не запускалась (нажмите «Проверить всё»).\n"),

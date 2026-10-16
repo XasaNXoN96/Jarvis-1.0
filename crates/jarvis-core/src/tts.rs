@@ -1542,6 +1542,25 @@ fn speak_blocking(text: &str, lang: &str, generation: u64) {
     }
 }
 
+// which voice the saved choice really is, in words (for the report of the diagnostics: «Piper» was shown for every voice that is not Windows)
+pub fn voice_label(choice: &str) -> String {
+    if choice.is_empty() {
+        "авто (голос Jarvis, Piper)".to_string()
+    } else if choice.starts_with("win:") {
+        "Windows".to_string()
+    } else if let Some(v) = crate::yandex::voice_of(choice) {
+        format!("Яндекс (облако): {}", v)
+    } else if let Some(sp) = crate::silero::speaker_of(choice) {
+        format!("Silero из другой программы: {}", sp)
+    } else if let Some(id) = crate::voice_install::extra_id(choice) {
+        format!("Piper: {}", id)
+    } else if choice == "piper" {
+        "голос Jarvis (Piper)".to_string()
+    } else {
+        format!("неизвестный выбор «{}» (говорит голос Jarvis)", choice.chars().take(40).collect::<String>())
+    }
+}
+
 pub fn piper_available() -> bool {
     piper_voice(&tts_lang()).is_some()
 }
@@ -1590,6 +1609,17 @@ pub fn list_voices() -> Vec<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_voice_choice_is_named_as_it_is() {
+        assert!(voice_label("").contains("Piper"));
+        assert!(voice_label("piper").contains("Piper"));
+        assert!(voice_label("silero:kseniya").contains("Silero") && voice_label("silero:kseniya").contains("kseniya"));
+        assert!(voice_label("yandex:alena").contains("Яндекс"));
+        assert!(voice_label("piper:denis").contains("denis"));
+        assert!(voice_label("win:Irina").starts_with("Windows"));
+        assert!(voice_label("мусор").contains("неизвестный"));
+    }
 
     // the queue, the "busy" counter and the on/off switch are global: one test at a time, with every other test
     // that switches the speech (uistate::TEST_LOCK)
