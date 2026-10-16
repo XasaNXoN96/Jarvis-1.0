@@ -80,6 +80,10 @@ pub struct UiSettings {
     // the manner of the AI answers: "" (usual), "psychologist", "teacher", "coder", "friend" (ai.rs: modes)
     pub ai_mode: String,
     pub ai_key: String,
+    // a second key, Perplexity Sonar: used by itself for questions that need fresh facts (ai.rs: conf_for)
+    pub ai_search_key: String,
+    // false = the search key is kept but not used
+    pub ai_search_auto: bool,
     pub ai_url: String,
     pub ai_route: String,    // OpenRouter: the order of the hosts of the model ("" = OpenRouter chooses), see ai::route_provider
     pub ai_fallback: bool, // phrases that are not commands go to the AI (off by default: nothing leaves the PC unasked)
@@ -152,7 +156,7 @@ pub fn browser_exe(key: &str) -> Option<&'static str> {
 impl Default for UiSettings {
     fn default() -> Self {
         Self {
-            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: false, city: String::new(), reaction_voice: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_mode: String::new(), ai_key: String::new(), ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
+            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: false, city: String::new(), reaction_voice: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_mode: String::new(), ai_key: String::new(), ai_search_key: String::new(), ai_search_auto: true, ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
             ai_enabled: true, mic_off: false,
             notify_show: true, notify_speak: true, notify_sound: true, dnd: false,
             ext_enabled: false, ext_show: true, ext_speak: false, ext_strict: true, ext_allowed: Vec::new(), ext_blocked: Vec::new(), ext_seen: Vec::new(),
@@ -208,6 +212,7 @@ pub fn load_from(path: &std::path::Path) -> UiSettings {
     // the key is stored encrypted (DPAPI); an old plain key is encrypted at the next save
     let plain_on_disk = !s.ai_key.is_empty() && !s.ai_key.starts_with("dpapi:");
     s.ai_key = crate::secret::open(&s.ai_key);
+    s.ai_search_key = crate::secret::open(&s.ai_search_key);
     if plain_on_disk && cfg!(target_os = "windows") {
         write_settings(&s);
     }
@@ -236,6 +241,7 @@ fn write_settings(s: &UiSettings) {
 pub fn write_to(p: &std::path::Path, s: &UiSettings) {
     let mut v = serde_json::to_value(s).unwrap_or(Value::Null);
     v["ai_key"] = Value::String(crate::secret::seal(&s.ai_key));
+    v["ai_search_key"] = Value::String(crate::secret::seal(&s.ai_search_key));
     if let Ok(json) = serde_json::to_string_pretty(&v) {
         // (atomic, never through a link planted under the temporary name: lib.rs write_atomic)
         let _ = crate::write_atomic(p, json);
@@ -308,7 +314,8 @@ pub fn remember_app(name: &str) {
 pub fn reset_settings() {
     let mut s = SETTINGS.lock();
     let key = std::mem::take(&mut s.ai_key);
-    *s = UiSettings { ai_key: key, ..UiSettings::default() };
+    let search_key = std::mem::take(&mut s.ai_search_key);
+    *s = UiSettings { ai_key: key, ai_search_key: search_key, ..UiSettings::default() };
     write_settings(&s);
     drop(s);
     crate::MIC_MUTED.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -316,6 +323,15 @@ pub fn reset_settings() {
     crate::ai::status_reset();
     crate::notify::ext_apply();
     log_event("info", "Настройки сброшены к значениям по умолчанию");
+}
+
+pub fn forget_ai_search_key() {
+    let mut s = SETTINGS.lock();
+    s.ai_search_key.clear();
+    write_settings(&s);
+    drop(s);
+    crate::ai::status_reset();
+    log_event("info", "Ключ поиска (Perplexity) удалён с этого компьютера");
 }
 
 pub fn forget_ai_key() {
@@ -410,6 +426,8 @@ pub fn update_settings(patch: &Value) {
         // only a known mode is kept; anything else is the usual manner
         s.ai_mode = crate::ai::mode_id(v).to_string();
     }
+    if let Some(v) = patch.get("ai_search_key").and_then(|v| v.as_str()) { s.ai_search_key = v.trim().chars().take(300).collect(); }
+    if let Some(v) = patch.get("ai_search_auto").and_then(|v| v.as_bool()) { s.ai_search_auto = v; }
     if let Some(v) = patch.get("ai_fallback").and_then(|v| v.as_bool()) { s.ai_fallback = v; }
     if let Some(v) = patch.get("ai_enabled").and_then(|v| v.as_bool()) {
         if v != s.ai_enabled {
@@ -493,6 +511,8 @@ pub fn settings_json() -> Value {
     let shown = if s.assistant_name.is_empty() { "джарвис".to_string() } else { s.assistant_name.clone() };
     out["assistant_name"] = json!(s.assistant_name);
     out["assistant_named"] = json!(s.assistant_named);
+    out["ai_search_key_saved"] = json!(!s.ai_search_key.is_empty());
+    out["ai_search_auto"] = json!(s.ai_search_auto);
     out["assistant_voice_known"] = json!(crate::stt::wake_word_known(&shown));
     out
 }

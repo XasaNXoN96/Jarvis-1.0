@@ -1445,3 +1445,33 @@ fn the_numbers_of_sources_are_removed_from_the_answer_only_for_perplexity() {
     let o = conf_from("openai", "gpt", "k", "").unwrap();
     assert_eq!(parse_answer(&o, &body).unwrap(), "Да[1]. Нет[2].");
 }
+
+// ---- the automatic choice: fresh questions to Perplexity, the rest to the usual provider ----
+#[test]
+fn which_questions_need_fresh_facts() {
+    for q in ["какие сегодня новости", "сколько сейчас стоит биткоин", "какой курс доллара", "кто победил вчера в матче", "что произошло в 2026 году", "найди в интернете расписание поездов", "когда выйдет новая версия"] {
+        assert!(needs_fresh(q), "{}", q);
+    }
+    for q in ["объясни, что такое Python", "как зовут столицу Франции", "переведи привет на английский", "перемести курсор влево", "расскажи сказку", "реши уравнение x плюс 2 равно 5"] {
+        assert!(!needs_fresh(q), "{}", q);
+    }
+}
+
+#[test]
+fn a_fresh_question_goes_to_perplexity_and_the_others_to_the_usual_provider() {
+    crate::uistate::update_settings(&serde_json::json!({ "ai_enabled": true, "ai_provider": "openai", "ai_model": "gpt-4o-mini", "ai_key": "sk-main", "ai_search_key": "pplx-test", "ai_search_auto": true }));
+    assert_eq!(conf_for("какие сегодня новости").unwrap().name, "Perplexity");
+    assert_eq!(conf_for("объясни, что такое Python").unwrap().name, "OpenAI");
+    // the automatic choice is switched off: the search key stays, everything goes to the usual provider
+    crate::uistate::update_settings(&serde_json::json!({ "ai_search_auto": false }));
+    assert_eq!(conf_for("какие сегодня новости").unwrap().name, "OpenAI");
+    // no usual provider: Perplexity answers everything
+    crate::uistate::update_settings(&serde_json::json!({ "ai_search_auto": true, "ai_provider": "none" }));
+    assert_eq!(conf_for("объясни, что такое Python").unwrap().name, "Perplexity");
+    assert!(is_configured());
+    // no search key: the usual provider (or the old error) as before
+    crate::uistate::update_settings(&serde_json::json!({ "ai_search_key": "", "ai_provider": "openai" }));
+    assert_eq!(conf_for("какие сегодня новости").unwrap().name, "OpenAI");
+    crate::uistate::update_settings(&serde_json::json!({ "ai_provider": "none", "ai_key": "", "ai_model": "" }));
+    assert!(!is_configured());
+}

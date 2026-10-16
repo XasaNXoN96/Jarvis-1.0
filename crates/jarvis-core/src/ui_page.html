@@ -1028,6 +1028,8 @@
           <div class="r"><label class="sw"><input type="checkbox" id="ai-fallback"><span></span></label></div></div>
         <div class="setrow"><div class="l">Режим ответов<small>меняется только манера ответа ИИ. Голосом: «режим психолога», «режим учителя», «режим программиста», «режим друга», «обычный режим»</small></div>
           <div class="r"><select id="ai-mode"><option value="">Обычный</option><option value="psychologist">Психолог</option><option value="teacher">Учитель</option><option value="coder">Программист</option><option value="friend">Друг</option></select></div></div>
+        <div class="setrow" id="ai-search-row"><div class="l">Свежие ответы (Perplexity)<small id="ai-search-hint">ключ Perplexity (pplx-…). Вопросы про сегодня, новости, цены, курсы, результаты, последние события идут в Perplexity Sonar, остальные в вашу основную модель. Без основной модели Perplexity отвечает на всё</small></div>
+          <div class="r"><input type="password" id="ai-search-key" placeholder="ключ pplx-…" autocomplete="off"><label class="sw" title="Выбирать Perplexity автоматически"><input type="checkbox" id="ai-search-auto"><span></span></label><button type="button" class="btn small" id="ai-search-forget">Удалить ключ</button></div></div>
         <div class="setrow"><div class="l">Анализ экрана («что на экране»)<small>по команде «Джарвис, что на экране» снимок главного экрана уйдёт выбранному провайдеру с вашим вопросом; без команды экран не снимается, снимок не сохраняется. Нужна модель, которая видит картинки (например, gemini-flash). По умолчанию выключено</small></div>
           <div class="r"><button class="btn small" id="ai-screen-check" type="button" title="снимок экрана уйдёт выбранному провайдеру">Проверить экран</button><label class="sw"><input type="checkbox" id="ai-screen"><span></span></label></div></div>
         <small class="dim">Ответы ИИ появляются на странице «Диалог». Ключ хранится только на этом компьютере в зашифрованном виде (шифрование Windows) и не показывается в окне. Сообщения уходят провайдеру, когда вы нажимаете «Отправить» или задаёте вопрос; команды компьютера («открой ворд», «поставь таймер») в ИИ не отправляются.</small>
@@ -2373,7 +2375,7 @@ async function loadSettings() {
     $('#tts-on').checked = !!s.tts_enabled; $('#tts-warm').checked = s.tts_warm !== false;
     if (document.activeElement !== $('#city-input')) $('#city-input').value = s.city || '';
     if (document.activeElement !== $('#name-input')) $('#name-input').value = s.assistant_name || '';
-    $('#ai-fallback').checked = !!s.ai_fallback; $('#ai-mode').value = s.ai_mode || ''; $('#ai-provider').value = s.ai_provider || 'none'; $('#ai-model').value = s.ai_model || ''; $('#ai-url').value = s.ai_url || ''; $('#ai-route').value = s.ai_route || ''; $('#ai-route-row').style.display = s.ai_provider === 'openrouter' ? '' : 'none';
+    $('#ai-fallback').checked = !!s.ai_fallback; $('#ai-mode').value = s.ai_mode || ''; $('#ai-search-auto').checked = s.ai_search_auto !== false; $('#ai-search-key').value = ''; $('#ai-search-hint').dataset.saved = s.ai_search_key_saved ? '1' : ''; $('#ai-search-key').placeholder = s.ai_search_key_saved ? 'ключ сохранён (оставьте пустым, чтобы не менять)' : 'ключ pplx-…'; $('#ai-provider').value = s.ai_provider || 'none'; $('#ai-model').value = s.ai_model || ''; $('#ai-url').value = s.ai_url || ''; $('#ai-route').value = s.ai_route || ''; $('#ai-route-row').style.display = s.ai_provider === 'openrouter' ? '' : 'none';
     $('#ai-key').value = ''; $('#ai-key-hint').textContent = s.ai_key_saved ? 'ключ сохранён (оставьте поле пустым, чтобы не менять)' : 'хранится только на этом компьютере';
     updateAiRows();
     arLoad(); applyPrivacy(s); applyGeneral(s); $('#ai-screen').checked = !!s.ai_screen;
@@ -2494,10 +2496,13 @@ $('#ai-screen-check').onclick = async () => {
   catch (e) { m.className = 'msgline bad'; m.textContent = '✗ Не удалось выполнить проверку'; }
 };
 $('#ai-mode').onchange = () => api('/settings', { ai_mode: $('#ai-mode').value });
+$('#ai-search-forget').onclick = async () => { await action('ai_search_key_forget'); $('#ai-search-key').placeholder = 'ключ pplx-…'; };
 async function saveAi() {
   const patch = { ai_provider: $('#ai-provider').value, ai_model: $('#ai-model').value.trim(), ai_url: $('#ai-url').value.trim(), ai_route: $('#ai-route').value.trim(), ai_fallback: $('#ai-fallback').checked };
+  patch.ai_search_auto = $('#ai-search-auto').checked;
+  const skey = $('#ai-search-key').value.trim(); if (skey) patch.ai_search_key = skey;
   const key = $('#ai-key').value.trim(); if (key) patch.ai_key = key;
-  await api('/settings', patch); $('#ai-key').value = ''; if (key) $('#ai-key-hint').textContent = 'ключ сохранён (оставьте поле пустым, чтобы не менять)';
+  await api('/settings', patch); $('#ai-search-key').value = ''; if (skey) $('#ai-search-key').placeholder = 'ключ сохранён (оставьте пустым, чтобы не менять)'; $('#ai-key').value = ''; if (key) $('#ai-key-hint').textContent = 'ключ сохранён (оставьте поле пустым, чтобы не менять)';
 }
 $('#ai-save').onclick = async () => { await saveAi(); $('#ai-msg').className = 'msgline ok'; $('#ai-msg').textContent = 'Сохранено'; };
 $('#ai-test').onclick = async () => {

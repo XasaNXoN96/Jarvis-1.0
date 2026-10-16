@@ -360,6 +360,10 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             Some(d) => json!({ "ok": false, "message": format!("Папка логов: {}", d.display()) }),
             None => json!({ "ok": false, "message": "Папка логов не определена" }),
         },
+        "ai_search_key_forget" => {
+            crate::uistate::forget_ai_search_key();
+            json!({ "ok": true })
+        }
         "ai_key_forget" => {
             crate::uistate::forget_ai_key();
             json!({ "ok": true })

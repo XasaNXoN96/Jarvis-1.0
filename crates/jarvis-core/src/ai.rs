@@ -265,7 +265,60 @@ pub fn conf_from_settings() -> Result<ProviderConf, AiError> {
 }
 
 pub fn is_configured() -> bool {
-    conf_from_settings().is_ok()
+    conf_from_settings().is_ok() || search_conf().is_some()
+}
+
+// ---------------------------------------------------------------------------------------------
+// the choice of the AI for a question: a question that needs FRESH facts goes to Perplexity Sonar (when its key is saved), every
+// other question to the usual provider. Without a usual provider Perplexity answers everything.
+// ---------------------------------------------------------------------------------------------
+fn search_conf() -> Option<ProviderConf> {
+    let s = crate::uistate::settings();
+    if !s.ai_enabled || s.ai_search_key.trim().is_empty() {
+        return None;
+    }
+    conf_from("perplexity", "sonar", &s.ai_search_key, "").ok()
+}
+
+// words that say «this changes with time or must be looked up»: news, today, now, prices, rates, results, the latest, a year
+// from now on. The words are stems, so every form is taken.
+const FRESH_STEMS: [&str; 24] = [
+    "сейчас", "сегодн", "вчера", "новост", "последн", "актуальн", "свеж", "нынешн", "текущ", "цена", "цены", "стоимост", "сколько стоит", "результат",
+    "победил", "расписани", "релиз", "выйдет", "интернет", "загугл", "погугл", "поищи", "найди информацию", "что нового",
+];
+
+pub fn needs_fresh(text: &str) -> bool {
+    let lower = text.to_lowercase().replace('ё', "е");
+    let words = crate::apps::tokens(&lower);
+    // single stems must start a word («курсор» is not a rate); phrases are looked for as they are
+    if FRESH_STEMS.iter().any(|st| if st.contains(' ') { lower.contains(st) } else { words.iter().any(|w| w.starts_with(st)) }) {
+        return true;
+    }
+    // «какой курс доллара»: the word «курс» itself (and its forms), not «курсор» or «курсовая»
+    if words.iter().any(|w| matches!(w.as_str(), "курс" | "курса" | "курсы" | "курсе" | "курсу" | "курсов")) {
+        return true;
+    }
+    // «в 2026 году», «после 2025»: a year that is not far in the past
+    words.iter().any(|w| w.len() == 4 && w.parse::<u32>().map(|y| (2024..=2040).contains(&y)).unwrap_or(false))
+        || lower.contains("в этом году") || lower.contains("в этом месяце") || lower.contains("на этой неделе") || lower.contains("только что")
+}
+
+// the provider for THIS question
+pub fn conf_for(text: &str) -> Result<ProviderConf, AiError> {
+    let main = conf_from_settings();
+    let auto = crate::uistate::settings().ai_search_auto;
+    if let Some(search) = search_conf() {
+        match &main {
+            // no usual provider: Perplexity is the only one
+            Err(AiError::NoProvider) | Err(AiError::NoKey(_)) | Err(AiError::NoUrl) | Err(AiError::NoModel) => return Ok(search),
+            _ if auto && needs_fresh(text) => {
+                info!("AI: the question needs fresh facts, it goes to Perplexity");
+                return Ok(search);
+            }
+            _ => {}
+        }
+    }
+    main
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1787,11 +1840,11 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
 
 // a question from the command line / voice: the answer is shown in the chat and read aloud; `on_error` runs on failure
 pub fn send_question(text: &str, on_error: ErrorHook) -> Result<String, AiError> {
-    send_with_hook(store(), conf_from_settings(), None, text, true, Some(on_error)).map(|o| o.chat_id)
+    send_with_hook(store(), conf_for(text), None, text, true, Some(on_error)).map(|o| o.chat_id)
 }
 
 pub fn send(chat_id: Option<&str>, text: &str, speak: bool) -> Result<String, AiError> {
-    send_with(store(), conf_from_settings(), chat_id, text, speak).map(|o| o.chat_id)
+    send_with(store(), conf_for(text), chat_id, text, speak).map(|o| o.chat_id)
 }
 
 // ---------------------------------------------------------------------------------------------
