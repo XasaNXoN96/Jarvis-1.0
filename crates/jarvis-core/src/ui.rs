@@ -480,7 +480,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
                 Err(e) => json!({ "ok": false, "message": e }),
             }
         }
-        "voice_install" => match crate::voice_install::start() {
+        "voice_install" => match crate::voice_install::start(body.get("voice").and_then(|v| v.as_str())) {
             Ok(()) => json!({ "ok": true }),
             Err(e) => json!({ "ok": false, "message": e }),
         },

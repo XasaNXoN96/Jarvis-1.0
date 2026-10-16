@@ -242,6 +242,15 @@ fn piper_voice(lang: &str) -> Option<(PathBuf, PathBuf)> {
         return None;
     }
     let voices = dir.join("voices");
+    // one of the extra Russian voices, when the user chose it and its files are here (else the main voice speaks)
+    if lang == "ru" {
+        if let Some(id) = crate::voice_install::extra_id(&crate::uistate::voice_name()) {
+            let own = voices.join(format!("ru-{}.onnx", id));
+            if own.exists() {
+                return Some((exe, own));
+            }
+        }
+    }
     let exact = voices.join(format!("{}.onnx", lang));
     if exact.exists() {
         return Some((exe, exact));
@@ -1486,6 +1495,13 @@ pub fn piper_available() -> bool {
 pub fn list_voices() -> Vec<(String, String)> {
     let mut list = vec![(String::new(), "Автоматически: голос Jarvis (Piper)".to_string())];
     list.push(("piper".to_string(), if piper_available() { "Jarvis (Piper, нейросеть)".to_string() } else { "Jarvis (Piper) — не установлен, нажмите «Установить голос»".to_string() }));
+    // more Russian voices of Piper: chosen here, loaded on the first choice (the page starts the loading)
+    if tts_lang() == "ru" {
+        for (id, _, _, label) in crate::voice_install::EXTRA_RU {
+            let text = if crate::voice_install::extra_installed(id) { label.to_string() } else { format!("{} — будет загружен при выборе", label) };
+            list.push((format!("{}{}", crate::voice_install::EXTRA_PREFIX, id), text));
+        }
+    }
     // the Silero voices of the other program, only when it is installed here
     if crate::silero::available() {
         for (id, label) in crate::silero::SPEAKERS {

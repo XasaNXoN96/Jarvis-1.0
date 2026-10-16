@@ -2493,7 +2493,22 @@ $('#vi-btn').onclick = async () => {
 };
 $('#rv-select').onchange = e => saveSettings({ reaction_voice: e.target.value });
 $('#rv-test').onclick = async () => { await new Promise(r => setTimeout(r, 350)); await action('reaction_preview'); };
-$('#voice-select').onchange = e => saveSettings({ voice_name: e.target.value });
+// a Piper voice that is not on the disk yet is loaded when it is chosen (a few dozens of MB); it speaks as soon as it is here
+$('#voice-select').onchange = async e => {
+  const v = e.target.value, opt = e.target.selectedOptions[0];
+  if (!(v.startsWith('piper:') && opt && opt.textContent.includes('будет загружен'))) { saveSettings({ voice_name: v }); return; }
+  const h = $('#vi-hint'); e.target.disabled = true; h.textContent = 'Загружаю голос…';
+  try { await action('voice_install', { voice: v.slice(6) }); } catch (er) {}
+  for (;;) {
+    await new Promise(r => setTimeout(r, 1000));
+    let st; try { st = await (await fetch('/voice-install')).json(); } catch (er) { continue; }
+    if (st.running) { h.textContent = (st.step || 'Загрузка') + ' — ' + st.percent + '%'; continue; }
+    if (st.error) { h.textContent = 'Ошибка: ' + st.error; e.target.disabled = false; e.target.value = ''; saveSettings({ voice_name: '' }); return; }
+    break;
+  }
+  h.textContent = 'Голос загружен. Нажмите «Проверить звук», чтобы послушать'; e.target.disabled = false;
+  voicesLoaded = false; await saveSettings({ voice_name: v }); setTimeout(loadSettings, 600);
+};
 $('#rate').oninput = e => { $('#rate-v').textContent = (+e.target.value).toFixed(2).replace(/0$/, '') + '×'; saveSettings({ voice_rate: +e.target.value }); };
 // the name of the assistant: saved, then the speech model is asked whether the word can be heard
 async function saveAssistantName(name, msg) {

@@ -151,6 +151,27 @@ fn set(step: &str, percent: u8) {
     s.percent = percent;
 }
 
+// More Russian voices of Piper (the same files server, chosen by the user in Settings → Voice): (id, folder, file name, label).
+// They lie next to the main voice as «ru-<id>.onnx»; only these ids are ever taken (the id becomes a part of a file name).
+pub const EXTRA_RU: [(&str, &str, &str, &str); 3] = [
+    ("denis", "ru/ru_RU/denis/medium", "ru_RU-denis-medium", "Денис (мужской, Piper)"),
+    ("dmitri", "ru/ru_RU/dmitri/medium", "ru_RU-dmitri-medium", "Дмитрий (мужской, Piper)"),
+    ("ruslan", "ru/ru_RU/ruslan/medium", "ru_RU-ruslan-medium", "Руслан (мужской, Piper)"),
+];
+pub const EXTRA_PREFIX: &str = "piper:";
+
+// "piper:denis" -> "denis" (only the known voices)
+pub fn extra_id(choice: &str) -> Option<&'static str> {
+    let name = choice.strip_prefix(EXTRA_PREFIX)?;
+    EXTRA_RU.iter().find(|(id, ..)| *id == name).map(|(id, ..)| *id)
+}
+
+// the files of an extra voice are on the disk
+pub fn extra_installed(id: &str) -> bool {
+    let v = APP_DIR.join("piper").join("voices");
+    extra_id(&format!("{}{}", EXTRA_PREFIX, id)).is_some() && v.join(format!("ru-{}.onnx", id)).exists() && v.join(format!("ru-{}.onnx.json", id)).exists()
+}
+
 // the voice of the language: (folder on the voices server, file name)
 fn voice_for(lang: &str) -> Option<(&'static str, &'static str)> {
     match lang {
@@ -212,12 +233,19 @@ fn download(_url: &str, _dest: &Path, _label: &str, _from: u8, _to: u8, _verify:
     Err("в этой сборке нет сетевого модуля".to_string())
 }
 
-fn run_install() -> Result<(), String> {
+fn run_install(extra: Option<&'static str>) -> Result<(), String> {
     let lang = match crate::i18n::get_language().as_str() {
         "ua" => "uk".to_string(),
         other => other.to_string(),
     };
-    let (folder, name) = voice_for(&lang).ok_or_else(|| "для вашего языка голоса Piper пока нет".to_string())?;
+    // an extra voice is a Russian one: its own folder, name and local file name
+    let (folder, name, local) = match extra.and_then(|id| EXTRA_RU.iter().find(|(i, ..)| *i == id)) {
+        Some((id, folder, name, _)) => (*folder, *name, format!("ru-{}", id)),
+        None => {
+            let (f, n) = voice_for(&lang).ok_or_else(|| "для вашего языка голоса Piper пока нет".to_string())?;
+            (f, n, lang.clone())
+        }
+    };
     let piper_dir: PathBuf = APP_DIR.join("piper");
     let exe = piper_dir.join(if cfg!(windows) { "piper.exe" } else { "piper" });
 
@@ -251,11 +279,11 @@ fn run_install() -> Result<(), String> {
     }
 
     let voices = piper_dir.join("voices");
-    let model = voices.join(format!("{}.onnx", lang));
+    let model = voices.join(format!("{}.onnx", local));
     if !model.exists() {
-        let file = format!("{}.onnx", lang);
+        let file = format!("{}.onnx", local);
         download(&voice_url(folder, name, ".onnx", &file), &model, "Голос", 30, 96, &|p| verify_voice_file(p, &file))?;
-        let jfile = format!("{}.onnx.json", lang);
+        let jfile = format!("{}.onnx.json", local);
         download(&voice_url(folder, name, ".onnx.json", &jfile), &voices.join(&jfile), "Настройки голоса", 96, 99, &|p| verify_voice_file(p, &jfile))?;
         if voice_pin(&file).is_none() {
             warn!("Voice {}: no pinned SHA-256 for this file yet (shape checked only)", file);
@@ -264,7 +292,11 @@ fn run_install() -> Result<(), String> {
     Ok(())
 }
 
-pub fn start() -> Result<(), String> {
+pub fn start(voice: Option<&str>) -> Result<(), String> {
+    let extra = match voice {
+        Some(v) if !v.is_empty() => Some(extra_id(&format!("{}{}", EXTRA_PREFIX, v)).ok_or_else(|| "такого голоса нет".to_string())?),
+        _ => None,
+    };
     {
         let mut s = STATUS.lock();
         if s.running {
@@ -272,8 +304,8 @@ pub fn start() -> Result<(), String> {
         }
         *s = Status { running: true, step: "Начинаю…".to_string(), ..Default::default() };
     }
-    std::thread::spawn(|| {
-        let result = run_install();
+    std::thread::spawn(move || {
+        let result = run_install(extra);
         let mut s = STATUS.lock();
         s.running = false;
         match result {
@@ -294,6 +326,21 @@ pub fn start() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_known_extra_voices_are_taken_and_their_files_are_named_by_the_table() {
+        assert_eq!(extra_id("piper:denis"), Some("denis"));
+        assert_eq!(extra_id("piper:ruslan"), Some("ruslan"));
+        assert_eq!(extra_id("piper"), None);
+        assert_eq!(extra_id("piper:../../x"), None);
+        assert_eq!(extra_id("piper:irina"), None);
+        assert_eq!(extra_id(""), None);
+        assert!(start(Some("../evil")).is_err(), "an unknown voice does not start a download");
+        for (id, folder, name, _) in EXTRA_RU {
+            assert!(folder.ends_with("medium") && folder.contains(id) && name == format!("ru_RU-{}-medium", id));
+            assert!(voice_url(folder, name, ".onnx", &format!("ru-{}.onnx", id)).starts_with("https://huggingface.co/rhasspy/piper-voices/"));
+        }
+    }
 
     #[test]
     fn a_voice_file_is_checked_by_its_pin_or_at_least_by_its_shape() {
