@@ -872,14 +872,14 @@
       </div>
       <div class="card" style="margin-top:12px"><h3>Создать ключи (Keygen)</h3>
         <div class="lm-grid">
-          <label>Тип<select id="kg-purpose"><option value="NEW">Новая подписка</option><option value="RENEWAL">Ключ продления</option></select></label>
+          <label hidden>Тип<select id="kg-purpose"><option value="NEW">Новая подписка</option><option value="RENEWAL">Ключ продления</option></select></label>
           <label>Тариф<select id="kg-tariff"></select></label>
-          <label>Свой срок (вместо тарифа)<select id="kg-custom-kind"><option value="">— нет —</option><option value="DAYS">Дни (не меньше 7)</option><option value="MONTHS">Календарные месяцы</option></select></label>
-          <label>Сколько дней / месяцев<input type="number" id="kg-custom-amount" min="1" value="30"></label>
-          <label>Цена (центы)<input type="number" id="kg-price" min="0" placeholder="из тарифа"></label>
-          <label>Валюта<input type="text" id="kg-currency" value="USD" maxlength="5"></label>
-          <label>Активировать до (дней с сегодня)<input type="number" id="kg-activate-days" min="1" placeholder="по умолчанию 365"></label>
-          <label>Подписка не раньше (дата)<input type="date" id="kg-start"></label>
+          <label hidden>Свой срок (вместо тарифа)<select id="kg-custom-kind"><option value="">— нет —</option><option value="DAYS">Дни (не меньше 7)</option><option value="MONTHS">Календарные месяцы</option></select></label>
+          <label hidden>Сколько дней / месяцев<input type="number" id="kg-custom-amount" min="1" value="30"></label>
+          <label hidden>Цена (центы)<input type="number" id="kg-price" min="0" placeholder="из тарифа"></label>
+          <label hidden>Валюта<input type="text" id="kg-currency" value="USD" maxlength="5"></label>
+          <label hidden>Активировать до (дней с сегодня)<input type="number" id="kg-activate-days" min="1" placeholder="по умолчанию 365"></label>
+          <label hidden>Подписка не раньше (дата)<input type="date" id="kg-start"></label>
           <label>Сколько ключей<input type="number" id="kg-count" min="1" max="500" value="1"></label>
           <label>Заметка / покупатель<input type="text" id="kg-note" maxlength="200"></label>
           <div><button class="btn primary" id="kg-go" type="button">Создать</button></div>
@@ -894,11 +894,11 @@
         <div class="lic-msg" id="ll-msg"></div>
         <div style="overflow:auto"><table class="lm-table"><thead><tr><th>Ключ</th><th>Тариф</th><th>Статус</th><th>Начало</th><th>Конец / осталось</th><th>Оплата</th><th>Привязка</th><th>Заметка</th><th></th></tr></thead><tbody id="ll-body"></tbody></table></div>
       </div>
-      <div class="card" style="margin-top:12px"><h3>Тарифы и цены</h3>
+      <div class="card" hidden style="margin-top:12px"><h3>Тарифы и цены</h3>
         <div style="overflow:auto"><table class="lm-table"><thead><tr><th>Код</th><th>Название</th><th>Срок</th><th>Цена (центы)</th><th>Валюта</th><th>Включён</th><th></th></tr></thead><tbody id="tt-body"></tbody></table></div>
         <div class="lic-msg" id="tt-msg"></div>
       </div>
-      <div class="card" style="margin-top:12px"><h3>Журнал изменений</h3>
+      <div class="card" hidden style="margin-top:12px"><h3>Журнал изменений</h3>
         <div class="lm-grid"><label>Номер лицензии (необязательно)<input type="text" id="au-lid"></label><div><button class="btn" id="au-go" type="button">Показать</button></div></div>
         <div style="overflow:auto"><table class="lm-table"><thead><tr><th>Когда</th><th>Кто</th><th>Что</th><th>Лицензия</th><th>Было → стало</th></tr></thead><tbody id="au-body"></tbody></table></div>
       </div>
