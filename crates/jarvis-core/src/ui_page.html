@@ -1039,6 +1039,8 @@
           <div class="r"><button class="btn" id="vi-btn">Установить голос Джарвиса</button></div></div>
         <div class="setrow"><div class="l">Голос<small id="voice-hint">Джарвис (Piper) — нейросетевой голос, работает без интернета</small></div>
           <div class="r"><select id="voice-select"><option value="">Автоматически</option></select></div></div>
+        <div class="setrow" id="cloud-row"><div class="l">Облачный голос (Яндекс SpeechKit)<small id="cloud-hint">Необязательно. Нужен ваш ключ от Yandex Cloud (сервисный аккаунт с ролью ai.speechkit-tts.user). <b>Текст ответов уходит в Яндекс</b> и услуга платная по тарифу Яндекса. После сохранения ключа голоса Яндекса появятся в списке «Голос». Если облако не отвечает, говорит голос Джарвиса.</small></div>
+          <div class="r"><input type="password" id="cloud-key" placeholder="ключ Яндекса" autocomplete="off"><button type="button" class="btn small" id="cloud-save">Сохранить ключ</button><button type="button" class="btn small" id="cloud-forget">Удалить ключ</button></div></div>
         <div class="setrow"><div class="l">Скорость речи</div>
           <div class="r"><div class="seg" id="rate-seg"><button data-rate="0.8">Медленно</button><button data-rate="1">Норм</button><button data-rate="1.25">Быстро</button><button data-rate="1.5">Очень быстро</button></div><input type="range" id="rate" min="0.6" max="1.6" step="0.05" value="1"><b id="rate-v" style="min-width:42px;text-align:right">1.0×</b></div></div>
         <div class="setrow"><div class="l">Громкость озвучки<small>громкость голоса Джарвиса; громкость Windows не меняется</small></div>
@@ -2510,6 +2512,7 @@ async function loadSettings() {
     $('#ai-key').value = ''; $('#ai-key-hint').textContent = s.ai_key_saved ? 'ключ сохранён (оставьте поле пустым, чтобы не менять)' : 'хранится только на этом компьютере'; $('#ai-key-hint').dataset.base = $('#ai-key-hint').textContent;
     updateAiRows();
     arLoad(); applyPrivacy(s); applyGeneral(s); $('#ai-screen').checked = !!s.ai_screen;
+    $('#cloud-key').placeholder = s.cloud_tts_key_saved ? 'ключ сохранён (оставьте пустым, чтобы не менять)' : 'ключ Яндекса';
     $('#voice-hint').textContent = s.piper ? 'Джарвис (Piper) — нейросетевой голос, работает без интернета' : 'Piper не установлен: говорит голос Windows (в большом установщике есть Piper)';
     if (!$('#rv-select').options.length) {
       try { (await (await fetch('/reaction-voices')).json()).forEach(v => $('#rv-select').add(new Option(v.name, v.id))); } catch (e) {}
@@ -2541,6 +2544,13 @@ $('#vi-btn').onclick = async () => {
 $('#rv-select').onchange = e => saveSettings({ reaction_voice: e.target.value });
 $('#rv-test').onclick = async () => { await new Promise(r => setTimeout(r, 350)); await action('reaction_preview'); };
 // a Piper voice that is not on the disk yet is loaded when it is chosen (a few dozens of MB); it speaks as soon as it is here
+// the cloud voice: the key is saved like the AI keys (encrypted, never shown), then the list of voices is loaded again
+$('#cloud-save').onclick = async () => {
+  const k = $('#cloud-key').value.trim(); if (!k) return;
+  await api('/settings', { cloud_tts_key: k }); $('#cloud-key').value = ''; $('#cloud-key').placeholder = 'ключ сохранён (оставьте пустым, чтобы не менять)';
+  voicesLoaded = false; setTimeout(loadSettings, 300);
+};
+$('#cloud-forget').onclick = async () => { await action('cloud_tts_key_forget'); $('#cloud-key').placeholder = 'ключ Яндекса'; voicesLoaded = false; setTimeout(loadSettings, 300); };
 $('#voice-select').onchange = async e => {
   const v = e.target.value, opt = e.target.selectedOptions[0];
   if (!(v.startsWith('piper:') && opt && opt.textContent.includes('будет загружен'))) { saveSettings({ voice_name: v }); return; }

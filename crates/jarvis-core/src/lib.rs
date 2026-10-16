@@ -48,6 +48,7 @@ pub mod audio_buffer;
 pub mod tts;
 
 pub mod silero;
+pub mod yandex;
 
 pub mod origin;
 pub mod confirm;

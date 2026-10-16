@@ -1090,6 +1090,55 @@ fn speak_piper(exe: &Path, model: &Path, text: &str, generation: u64) -> bool {
     true
 }
 
+// the cloud voice (Yandex SpeechKit): piece by piece, the next piece is made while this one is played; false when nothing came
+// at all (then Piper takes over)
+fn speak_yandex(voice: &str, text: &str, generation: u64) -> bool {
+    let chunks = split_chunks(text);
+    if chunks.is_empty() {
+        return true;
+    }
+    let key = crate::uistate::cloud_tts_key();
+    let seq = WAV_SEQ.fetch_add(1, Ordering::SeqCst);
+    let wav_of = |i: usize| std::env::temp_dir().join(format!("jarvis_yandex_{}_{}_{}_{}.wav", std::process::id(), generation, seq, i));
+    let cancelled = move || GENERATION.load(Ordering::SeqCst) != generation;
+    let speed = crate::uistate::settings().voice_rate;
+    if let Err(why) = crate::yandex::synth(&key, &chunks[0], voice, speed, &wav_of(0)) {
+        note_play(Err(format!("облачный голос не создал звук: {}", why)));
+        tell_once(&format!("Облачный голос Яндекса не сработал ({}), отвечает Jarvis (Piper). Проверьте Настройки → Голос.", why));
+        return false;
+    }
+    for i in 0..chunks.len() {
+        let next = if i + 1 < chunks.len() {
+            let (text, wav, key, voice) = (chunks[i + 1].clone(), wav_of(i + 1), key.clone(), voice.to_string());
+            Some(std::thread::spawn(move || crate::yandex::synth(&key, &text, &voice, speed, &wav)))
+        } else {
+            None
+        };
+        if !cancelled() {
+            play_wav(&wav_of(i), generation);
+        }
+        let _ = std::fs::remove_file(wav_of(i));
+        if cancelled() {
+            if let Some(h) = next {
+                let _ = h.join();
+                let _ = std::fs::remove_file(wav_of(i + 1));
+            }
+            return true;
+        }
+        if let Some(h) = next {
+            match h.join() {
+                Ok(Ok(())) => {}
+                Ok(Err(why)) => {
+                    tell_once(&format!("Облачный голос остановился посреди ответа: {}", why));
+                    return true;
+                }
+                Err(_) => return true,
+            }
+        }
+    }
+    true
+}
+
 // false only when no sound came at all (then Piper takes over)
 fn speak_silero(speaker: &str, text: &str, generation: u64) -> bool {
     let chunks = split_chunks(text);
@@ -1469,6 +1518,12 @@ fn speak_blocking(text: &str, lang: &str, generation: u64) {
         speak_sapi(&text, &lang, generation);
         return;
     }
+    if let Some(voice) = crate::yandex::voice_of(&choice) {
+        // the cloud voice of the user's own key; when it cannot speak, Jarvis's own Piper takes over (never the Windows voice)
+        if speak_yandex(voice, &text, generation) {
+            return;
+        }
+    }
     if let Some(speaker) = crate::silero::speaker_of(&choice) {
         // the voice of the other program; when it cannot speak, Jarvis's own Piper takes over (never the Windows voice)
         if speak_silero(speaker, &text, generation) {
@@ -1500,6 +1555,12 @@ pub fn list_voices() -> Vec<(String, String)> {
         for (id, _, _, label) in crate::voice_install::EXTRA_RU {
             let text = if crate::voice_install::extra_installed(id) { label.to_string() } else { format!("{} — будет загружен при выборе", label) };
             list.push((format!("{}{}", crate::voice_install::EXTRA_PREFIX, id), text));
+        }
+    }
+    // the cloud voices of Yandex: only when the user saved his own key (the text of an answer goes to Yandex)
+    if !crate::uistate::cloud_tts_key().is_empty() && tts_lang() == "ru" {
+        for (id, label) in crate::yandex::VOICES {
+            list.push((format!("{}{}", crate::yandex::PREFIX, id), label.to_string()));
         }
     }
     // the Silero voices of the other program, only when it is installed here
