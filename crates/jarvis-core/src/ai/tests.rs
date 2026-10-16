@@ -1475,3 +1475,14 @@ fn a_fresh_question_goes_to_perplexity_and_the_others_to_the_usual_provider() {
     crate::uistate::update_settings(&serde_json::json!({ "ai_provider": "none", "ai_key": "", "ai_model": "" }));
     assert!(!is_configured());
 }
+
+#[test]
+fn a_model_of_another_provider_is_not_sent_to_perplexity() {
+    for left_over in ["gemini-flash-latest", "Ai", "gpt-4o-mini", ""] {
+        assert_eq!(conf_from("perplexity", left_over, "pplx-x", "").unwrap().model, "sonar", "{}", left_over);
+    }
+    assert_eq!(conf_from("perplexity", "sonar-pro", "pplx-x", "").unwrap().model, "sonar-pro");
+    assert_eq!(conf_from("perplexity", "Sonar-Reasoning", "pplx-x", "").unwrap().model, "Sonar-Reasoning");
+    // the others keep what the user typed
+    assert_eq!(conf_from("openai", "gpt-4o", "k", "").unwrap().model, "gpt-4o");
+}

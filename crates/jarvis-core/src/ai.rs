@@ -247,6 +247,8 @@ pub fn conf_from(provider: &str, model: &str, key: &str, url: &str) -> Result<Pr
     } else {
         typed
     };
+    // a model name left over from another provider («gemini-flash-latest», «Ai») is not sent to Perplexity: its models are «sonar…»
+    let model = if provider == "perplexity" && !model.to_lowercase().starts_with("sonar") { "sonar" } else { model };
     Ok(ProviderConf { kind, name: name.to_string(), base, model: model.to_string(), key: key.trim().to_string(), route: String::new() })
 }
 

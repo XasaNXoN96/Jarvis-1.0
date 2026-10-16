@@ -137,6 +137,8 @@
   .h-sum { flex-shrink: 0; position: relative; z-index: 3; margin: 4px 0 2px; }
   .h-obj { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12px; min-width: 0; }
   .h-obj[hidden] { display: none; } #name-ask[hidden] { display: none; }
+  /* the card of the name stops before the column of the state signs on the right (it covered the buttons «Сохранить» and «Оставить Джарвис») */
+  #name-ask { margin: 8px 280px 8px 16px !important; } @media (max-width: 1250px) { #name-ask { margin-right: 84px !important; } }
   .h-obj .ho-st { padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line, rgba(255,255,255,.12)); white-space: nowrap; flex-shrink: 0; }
   .h-obj[data-s="ok"] .ho-st { border-color: #34d399; } .h-obj[data-s="warn"] .ho-st { border-color: #fbbf24; } .h-obj[data-s="bad"] .ho-st { border-color: #f87171; } .h-obj[data-s="info"] .ho-st { border-color: #60a5fa; }
   .h-obj .ho-t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .85; }
@@ -579,7 +581,7 @@
         <button type="button" class="wbox" id="wbox" title="Погода: выберите город в настройках"><span class="w-main" id="w-main">Погода…</span><small id="w-city"></small></button>
         <div class="clockbox" title="Время и дата берутся с этого компьютера"><div class="clk" id="clk-time">--:--</div><div class="clk-date" id="clk-date"></div></div>
       </div>
-      <div class="card" id="name-ask" hidden style="margin: 8px 16px; position: relative; z-index: 3;">
+      <div class="card" id="name-ask" hidden style="position: relative; z-index: 3;">
         <div class="setrow"><div class="l">Как назвать помощника?<small>Он будет откликаться на это имя и голосом, и в тексте (например: «Карен, таймер на 5 минут»). По умолчанию — «Джарвис». Имя можно сменить в Настройках.</small></div>
           <div class="r"><input type="text" id="name-ask-input" placeholder="например: Карен" maxlength="20"><button class="btn primary" id="name-ask-save" type="button">Сохранить</button><button class="btn" id="name-ask-skip" type="button">Оставить «Джарвис»</button></div></div>
         <div class="msgline" id="name-ask-msg"></div>
@@ -1792,7 +1794,7 @@ function voiceChip(v) {
   const rbv = $('#hs-voice'); rbv.dataset.s = vs; rbv.querySelector('em').textContent = label; rbv.title = 'Голос: ' + label + (v.detail ? ' — ' + v.detail : '');
   $('#hsc-voice').dataset.s = vs; $('#hsc-vs').textContent = label; if (window.syncStateTabs) syncStateTabs();
   // the sphere follows the real state of the voice
-  if (performance.now() > stateUntil) { const map = { LISTENING: 'listening', SPEAKING: 'speaking' }; const want = map[v.state] || (v.state === 'ERROR' ? 'error' : 'idle'); if (state !== want && state !== 'busy' && state !== 'wake') setState(want); }
+  if (performance.now() > stateUntil) { const map = { LISTENING: 'listening', SPEAKING: 'speaking' }; const want = map[v.state] || 'idle'; if (state !== want && state !== 'busy' && state !== 'wake') setState(want); if (state === 'idle') $('#state').textContent = v.state === 'ERROR' ? 'только текст' : 'готов'; }
 }
 // Jarvis answers with his OWN voice: when that is not possible the user is told why, with a button to fix it
 function applySpeech(s) {
@@ -2375,8 +2377,8 @@ async function loadSettings() {
     $('#tts-on').checked = !!s.tts_enabled; $('#tts-warm').checked = s.tts_warm !== false;
     if (document.activeElement !== $('#city-input')) $('#city-input').value = s.city || '';
     if (document.activeElement !== $('#name-input')) $('#name-input').value = s.assistant_name || '';
-    $('#ai-fallback').checked = !!s.ai_fallback; $('#ai-mode').value = s.ai_mode || ''; $('#ai-search-auto').checked = s.ai_search_auto !== false; $('#ai-search-key').value = ''; $('#ai-search-hint').dataset.saved = s.ai_search_key_saved ? '1' : ''; $('#ai-search-key').placeholder = s.ai_search_key_saved ? 'ключ сохранён (оставьте пустым, чтобы не менять)' : 'ключ pplx-…'; $('#ai-provider').value = s.ai_provider || 'none'; $('#ai-model').value = s.ai_model || ''; $('#ai-url').value = s.ai_url || ''; $('#ai-route').value = s.ai_route || ''; $('#ai-route-row').style.display = s.ai_provider === 'openrouter' ? '' : 'none';
-    $('#ai-key').value = ''; $('#ai-key-hint').textContent = s.ai_key_saved ? 'ключ сохранён (оставьте поле пустым, чтобы не менять)' : 'хранится только на этом компьютере';
+    $('#ai-fallback').checked = !!s.ai_fallback; $('#ai-mode').value = s.ai_mode || ''; aiSavedProvider = s.ai_provider || ''; $('#ai-search-auto').checked = s.ai_search_auto !== false; $('#ai-search-key').value = ''; $('#ai-search-hint').dataset.saved = s.ai_search_key_saved ? '1' : ''; $('#ai-search-key').placeholder = s.ai_search_key_saved ? 'ключ сохранён (оставьте пустым, чтобы не менять)' : 'ключ pplx-…'; $('#ai-provider').value = s.ai_provider || 'none'; $('#ai-model').value = s.ai_model || ''; $('#ai-url').value = s.ai_url || ''; $('#ai-route').value = s.ai_route || ''; $('#ai-route-row').style.display = s.ai_provider === 'openrouter' ? '' : 'none';
+    $('#ai-key').value = ''; $('#ai-key-hint').textContent = s.ai_key_saved ? 'ключ сохранён (оставьте поле пустым, чтобы не менять)' : 'хранится только на этом компьютере'; $('#ai-key-hint').dataset.base = $('#ai-key-hint').textContent;
     updateAiRows();
     arLoad(); applyPrivacy(s); applyGeneral(s); $('#ai-screen').checked = !!s.ai_screen;
     $('#voice-hint').textContent = s.piper ? 'Джарвис (Piper) — нейросетевой голос, работает без интернета' : 'Piper не установлен: говорит голос Windows (в большом установщике есть Piper)';
@@ -2436,8 +2438,12 @@ $('#city-save').onclick = async () => {
 $('#tts-on').onchange = e => action('tts_toggle', { value: e.target.checked });
 $('#tts-warm').onchange = e => saveSettings({ tts_warm: e.target.checked });
 $('#tts-test').onclick = async () => { await new Promise(r => setTimeout(r, 350)); await action('tts_test'); };
+let aiSavedProvider = '';
 function updateAiRows() {
   const p = $('#ai-provider').value;
+  // the saved key belongs to the provider it was entered for: after a change the key of the new provider must be entered again
+  const kh = $('#ai-key-hint');
+  if (kh) { const other = aiSavedProvider && aiSavedProvider !== 'none' && p !== aiSavedProvider && p !== 'none' && p !== 'ollama'; kh.style.color = other ? '#ffb454' : ''; if (other) kh.textContent = 'Выбран другой провайдер: сохранённый ключ от прежнего. Вставьте ключ для этого провайдера.'; else if (kh.style.color === '' && kh.dataset.base) kh.textContent = kh.dataset.base; }
   $('#ai-url-row').style.display = (p === 'ollama' || p === 'custom' || p === 'anthropic') ? '' : 'none';
   $('#ai-key-row').style.display = (p === 'none' || p === 'ollama') ? 'none' : '';
   $('#ai-route-row').style.display = p === 'openrouter' ? '' : 'none';
@@ -2502,7 +2508,7 @@ async function saveAi() {
   patch.ai_search_auto = $('#ai-search-auto').checked;
   const skey = $('#ai-search-key').value.trim(); if (skey) patch.ai_search_key = skey;
   const key = $('#ai-key').value.trim(); if (key) patch.ai_key = key;
-  await api('/settings', patch); $('#ai-search-key').value = ''; if (skey) $('#ai-search-key').placeholder = 'ключ сохранён (оставьте пустым, чтобы не менять)'; $('#ai-key').value = ''; if (key) $('#ai-key-hint').textContent = 'ключ сохранён (оставьте поле пустым, чтобы не менять)';
+  await api('/settings', patch); aiSavedProvider = patch.ai_provider; { const h = $('#ai-key-hint'); h.style.color = ''; } $('#ai-search-key').value = ''; if (skey) $('#ai-search-key').placeholder = 'ключ сохранён (оставьте пустым, чтобы не менять)'; $('#ai-key').value = ''; if (key) $('#ai-key-hint').textContent = 'ключ сохранён (оставьте поле пустым, чтобы не менять)';
 }
 $('#ai-save').onclick = async () => { await saveAi(); $('#ai-msg').className = 'msgline ok'; $('#ai-msg').textContent = 'Сохранено'; };
 $('#ai-test').onclick = async () => {
