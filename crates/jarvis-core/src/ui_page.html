@@ -2145,17 +2145,18 @@ try { subsOn = localStorage.getItem('jarvis-subs') !== 'off'; } catch (e) {}
 const subsBox = $('#subs'), subsWord = $('#subs-w');
 let subsSeq = -1, subsWords = [], subsStart = 0, subsTimes = [], subsEnd = 0, subsRaf = 0, subsHide = 0;
 // the length of a word on the screen follows its length in speech (about 14 letters a second, a little pause between words)
-function subsPlan(text) {
+function subsPlan(text, user) {
+  const k = user ? 0.05 : 0.058;
   const words = text.split(/\s+/).filter(Boolean), at = [];
   let t = 0;
-  for (const w of words) { at.push(t); t += (w.replace(/[^\p{L}\p{N}]/gu, '').length + 1.6) * 0.068; }
+  for (const w of words) { at.push(t); t += (w.replace(/[^\p{L}\p{N}]/gu, '').length + 1.6) * k; }
   return { words, at, total: t };
 }
 function subsTick() {
   const now = performance.now() - subsStart;
   let i = -1;
   for (let k = 0; k < subsTimes.length; k++) if (subsTimes[k] * 1000 <= now) i = k; else break;
-  if (i >= 0 && subsWord.textContent !== subsWords[i]) { subsWord.textContent = subsWords[i]; subsWord.style.animation = 'none'; void subsWord.offsetWidth; subsWord.style.animation = ''; }
+  if (i >= 0 && subsWord.textContent !== subsWords[i]) { subsWord.textContent = subsWords[i]; subsWord.style.fontSize = subsWords[i].length > 11 ? 'clamp(24px, 4.2vw, 50px)' : ''; subsWord.style.animation = 'none'; void subsWord.offsetWidth; subsWord.style.animation = ''; }
   if (now < subsEnd * 1000 + 700) subsRaf = requestAnimationFrame(subsTick);
   else { subsBox.classList.remove('on'); subsWord.textContent = ''; }
 }
@@ -2165,7 +2166,7 @@ function subsApply(d) {
     subsSeq = d.seq;
     // a phrase that is not being said any more (the window was opened later) is not shown
     if (!d.speaking && d.elapsed_ms > 1500) return;
-    const p = subsPlan(d.text); subsWords = p.words; subsTimes = p.at; subsEnd = p.total;
+    const p = subsPlan(d.text, d.user); subsWords = p.words; subsTimes = p.at; subsEnd = p.total;
     subsStart = performance.now() - d.elapsed_ms;
     cancelAnimationFrame(subsRaf); subsBox.classList.add('on'); subsRaf = requestAnimationFrame(subsTick);
   }

@@ -1450,20 +1450,30 @@ fn speak_inner(text: &str, dedupe: bool) {
 
 // The words that are being said right now, for the subtitles of the window (word by word, as in a video). `seq` grows with every
 // new phrase; the window counts the time itself from `elapsed_ms`.
-static SUBTITLE: Lazy<Mutex<(u64, String, Option<std::time::Instant>)>> = Lazy::new(|| Mutex::new((0, String::new(), None)));
+static SUBTITLE: Lazy<Mutex<(u64, String, Option<std::time::Instant>, bool)>> = Lazy::new(|| Mutex::new((0, String::new(), None, false)));
 
 fn set_subtitle(text: &str) {
+    set_subtitle_as(text, false);
+}
+
+// What the USER said (the recognised phrase) is shown the same way, a little faster: it is already over when it is recognised.
+pub fn show_user_subtitle(text: &str) {
+    set_subtitle_as(text, true);
+}
+
+fn set_subtitle_as(text: &str, user: bool) {
     // marks of the markup and code blocks are not words to read
     let clean: String = text.lines().filter(|l| !l.trim_start().starts_with("```")).collect::<Vec<_>>().join(" ").chars().filter(|c| !matches!(c, '*' | '#' | '`' | '_' | '>')).collect();
     let mut g = SUBTITLE.lock();
     g.0 += 1;
     g.1 = clean.split_whitespace().collect::<Vec<_>>().join(" ");
     g.2 = Some(std::time::Instant::now());
+    g.3 = user;
 }
 
 pub fn subtitle_json() -> serde_json::Value {
     let g = SUBTITLE.lock();
-    serde_json::json!({ "seq": g.0, "text": g.1, "speaking": is_speaking(), "elapsed_ms": g.2.map(|t| t.elapsed().as_millis() as u64).unwrap_or(0) })
+    serde_json::json!({ "seq": g.0, "text": g.1, "user": g.3, "speaking": g.3 || is_speaking(), "elapsed_ms": g.2.map(|t| t.elapsed().as_millis() as u64).unwrap_or(0) })
 }
 
 // says the phrase and returns when it is finished (or interrupted)
@@ -1914,5 +1924,22 @@ mod warm_tests {
         let v: serde_json::Value = serde_json::from_str(&line).unwrap();
         assert_eq!(v["text"], "Привет \"мир\"");
         assert_eq!(v["output_file"], "C:\\Temp\\a b.wav");
+    }
+}
+
+#[cfg(test)]
+mod subtitle_tests {
+    #[test]
+    fn the_subtitle_follows_the_last_phrase_and_marks_what_the_user_said() {
+        super::show_user_subtitle("Джарвис, включи режим психолога");
+        let a = super::subtitle_json();
+        assert_eq!(a["user"], true);
+        assert_eq!(a["text"], "Джарвис, включи режим психолога");
+        assert_eq!(a["speaking"], true, "a phrase of the user is shown at once");
+        super::set_subtitle("Режим психолога включён.\n```\ncode\n```");
+        let b = super::subtitle_json();
+        assert_eq!(b["user"], false);
+        assert!(b["seq"].as_u64().unwrap() > a["seq"].as_u64().unwrap());
+        assert_eq!(b["text"], "Режим психолога включён. code", "marks of the markup are not words");
     }
 }

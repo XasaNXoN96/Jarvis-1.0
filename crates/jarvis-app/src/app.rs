@@ -382,6 +382,8 @@ fn recognize_command(
                     ipc::send(IpcEvent::SpeechRecognized {
                         text: recognized_voice.clone(),
                     });
+                    // the words of the user appear in the subtitles of the window too (with the wake word, as they were said)
+                    jarvis_core::tts::show_user_subtitle(&recognized_voice);
                     
                     recognized_voice = recognized_voice.to_lowercase();
                     
