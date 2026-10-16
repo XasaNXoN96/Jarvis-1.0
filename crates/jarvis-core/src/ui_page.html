@@ -2523,9 +2523,15 @@ async function loadSettings() {
       const vs = await (await fetch('/voices')).json();
       const vsel = $('#voice-select'); vsel.textContent = '';
       for (const v of vs) vsel.add(new Option(v.name, v.id));
-      vsel.value = s.voice_name || '';
-    } else { $('#voice-select').value = s.voice_name || ''; }
+      setVoiceSelect(s.voice_name || '');
+    } else { setVoiceSelect(s.voice_name || ''); }
   } catch (e) {}
+}
+// the list shows the voice that is REALLY saved: a saved voice that is not in the list (another program's voice that is not found
+// now, a voice that was chosen on the phone) is added to it under its own name instead of the list showing «Автоматически»
+function setVoiceSelect(v) {
+  const sel = $('#voice-select'); sel.value = v;
+  if (v && sel.value !== v) { sel.add(new Option('Сохранён голос: ' + v + ' (его нет в списке)', v)); sel.value = v; }
 }
 $('#mic-select').onchange = e => { saveSettings({ mic_device: +e.target.value }); $('#mic-msg').className = 'msgline ok'; $('#mic-msg').textContent = 'Сохранено. Перезапустите Джарвиса, чтобы микрофон сменился.'; };
 $('#vi-btn').onclick = async () => {
