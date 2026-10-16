@@ -79,6 +79,8 @@ pub struct UiSettings {
     pub ai_model: String,
     // the manner of the AI answers: "" (usual), "psychologist", "teacher", "coder", "friend" (ai.rs: modes)
     pub ai_mode: String,
+    // the window covers the whole screen without its frame (Alt+Enter switches it; kept for the next start)
+    pub window_fullscreen: bool,
     pub ai_key: String,
     // a second key, Perplexity Sonar: used by itself for questions that need fresh facts (ai.rs: conf_for)
     pub ai_search_key: String,
@@ -156,7 +158,7 @@ pub fn browser_exe(key: &str) -> Option<&'static str> {
 impl Default for UiSettings {
     fn default() -> Self {
         Self {
-            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: false, city: String::new(), reaction_voice: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_mode: String::new(), ai_key: String::new(), ai_search_key: String::new(), ai_search_auto: true, ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
+            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: false, city: String::new(), reaction_voice: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_mode: String::new(), window_fullscreen: true, ai_key: String::new(), ai_search_key: String::new(), ai_search_auto: true, ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
             ai_enabled: true, mic_off: false,
             notify_show: true, notify_speak: true, notify_sound: true, dnd: false,
             ext_enabled: false, ext_show: true, ext_speak: false, ext_strict: true, ext_allowed: Vec::new(), ext_blocked: Vec::new(), ext_seen: Vec::new(),
@@ -385,6 +387,14 @@ pub fn assistant_name() -> String {
 
 // merge the fields present in `patch` into the settings and save
 // the manner of the AI answers (ai.rs: modes) by its id; the app crate has no JSON of its own
+pub fn window_fullscreen() -> bool {
+    settings().window_fullscreen
+}
+
+pub fn set_window_fullscreen(on: bool) {
+    update_settings(&json!({ "window_fullscreen": on }));
+}
+
 pub fn set_ai_mode(id: &str) {
     update_settings(&json!({ "ai_mode": id }));
 }
@@ -431,6 +441,7 @@ pub fn update_settings(patch: &Value) {
         // only a known mode is kept; anything else is the usual manner
         s.ai_mode = crate::ai::mode_id(v).to_string();
     }
+    if let Some(v) = patch.get("window_fullscreen").and_then(|v| v.as_bool()) { s.window_fullscreen = v; }
     if let Some(v) = patch.get("ai_search_key").and_then(|v| v.as_str()) { s.ai_search_key = v.trim().chars().take(300).collect(); }
     if let Some(v) = patch.get("ai_search_auto").and_then(|v| v.as_bool()) { s.ai_search_auto = v; }
     if let Some(v) = patch.get("ai_fallback").and_then(|v| v.as_bool()) { s.ai_fallback = v; }
@@ -1022,5 +1033,15 @@ mod status_tests {
         assert_eq!(super::command_status("assistant_timer_set"), None, "an ordinary command just works");
         assert_eq!(super::command_status("assistant_unlock").unwrap().0, "unavailable");
     }
-}
 
+    #[test]
+    fn the_window_starts_over_the_whole_screen_and_the_choice_is_kept() {
+        assert!(crate::uistate::UiSettings::default().window_fullscreen, "the first start has no title bar");
+        let old: crate::uistate::UiSettings = serde_json::from_str(r#"{"voice_rate":1.2}"#).unwrap();
+        assert!(old.window_fullscreen, "settings of an older version get the default");
+        let mut s = crate::uistate::UiSettings::default();
+        let patch = serde_json::json!({ "window_fullscreen": false });
+        if let Some(v) = patch.get("window_fullscreen").and_then(|v| v.as_bool()) { s.window_fullscreen = v; }
+        assert!(!s.window_fullscreen);
+    }
+}

@@ -216,6 +216,24 @@
   .lm-tabs { display: flex; gap: 6px; margin: 0 0 12px; } .lm-tabs button { border: 1px solid var(--line); background: #ffffff08; color: var(--dim); padding: 8px 16px; border-radius: 999px; cursor: pointer; font: inherit; } .lm-tabs button.on { color: var(--text); border-color: var(--accent); background: #ffffff14; }
   .lm-count { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 10px; } .lm-count span { padding: 5px 12px; border-radius: 999px; background: #ffffff0a; font-size: 13px; } .lm-count b { font-weight: 600; }
   .ak-used td { opacity: .6; } .ak-used .ak-key { text-decoration: line-through; } .ak-badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; white-space: nowrap; } .ak-badge.used { background: #ff6b7a22; color: #ff9aa6; } .ak-badge.free { background: #5be3a122; color: var(--ok); } .ak-badge.off { background: #ffffff14; color: var(--dim); } .ak-new td { animation: akflash 2.5s ease-out; } @keyframes akflash { from { background: #5be3a144; } to { background: transparent; } }
+  /* the windows of the license: fields that can be read (the first version was too dim) */
+  .mdl { color-scheme: dark; }
+  .mdl input[type=text] { background: #23242b; color: #f4f4f7; border: 1px solid #5a5c68; min-height: 38px; padding: 8px 11px; font-size: 14px; }
+  .mdl input::placeholder { color: #9193a0; opacity: 1; }
+  .mdl input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+  /*ADMIN-BEGIN*/
+  /* the license manager of Jarvis Admin: fields and captions that can be read */
+  #page-licmgr { color-scheme: dark; }
+  #page-licmgr .lm-grid label, #page-licmgr .dim, #page-licmgr small { color: #c4c6d0; font-size: 13px; }
+  #page-licmgr .lm-grid input, #page-licmgr .lm-grid select, #page-licmgr .lm-table input { background: #23242b; color: #f4f4f7; border: 1px solid #5a5c68; min-height: 38px; padding: 8px 11px; font-size: 14px; }
+  #page-licmgr .lm-grid > * { min-width: 0; } #page-licmgr .lm-grid input, #page-licmgr .lm-grid select { width: 100%; box-sizing: border-box; }
+  #page-licmgr .lm-grid input::placeholder { color: #9193a0; opacity: 1; }
+  #page-licmgr .lm-grid input:focus, #page-licmgr .lm-grid select:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+  #page-licmgr .lm-table th { color: #c4c6d0; font-weight: 600; } #page-licmgr .lm-table td { color: #ececf0; border-bottom-color: #ffffff22; }
+  #page-licmgr .card h3 { color: #d8dae3; }
+  #page-licmgr .lic-msg { color: #c4c6d0; } #page-licmgr .lic-msg.bad { color: #ff8a97; } #page-licmgr .lic-msg.ok { color: #7be8ad; }
+  .lm-tabs button { color: #c4c6d0; border-color: #5a5c68; }
+  /*ADMIN-END*/
   .lm-keys { white-space: pre; font-family: ui-monospace, Consolas, monospace; background: #00000040; border-radius: 10px; padding: 10px 12px; margin: 8px 0; user-select: all; max-height: 220px; overflow: auto; }
   #close-dlg { position: fixed; inset: 0; background: #060609cc; display: none; align-items: center; justify-content: center; z-index: 100; padding: 16px; }
   #close-dlg.on { display: flex; }
@@ -564,7 +582,7 @@
     <div class="grow"></div>
     <button type="button" id="full-btn" title="Полноэкранный режим (F11)"><span class="ei" data-ico="full"></span><span>Во весь экран</span></button>
     <button type="button" id="close-open" style="display:none" title="Свернуть в трей или полностью закрыть JARVIS"><span class="ei" data-ico="power"></span><span id="close-open-t">Закрыть JARVIS…</span></button>
-    <div class="small">Нажмите на сферу или скажите «Джарвис». Или напишите сообщение.</div>
+    <div class="small">Нажмите на сферу или скажите «Джарвис». Или напишите сообщение. Alt+Enter — весь экран / окно.</div>
   </nav>
 
   <div class="content">
@@ -2339,10 +2357,16 @@ function setFull(on) {
   }
 }
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && isFull && !ownWindow) setFull(false); });
+function winFullToggle() {
+  if (ownWindow) { window.ipc.postMessage('winfull:toggle'); return; }
+  try { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {}); else document.exitFullscreen().catch(() => {}); } catch (e) {}
+}
 $('#full-btn').onclick = () => setFull(!isFull);
 $('#full-exit').onclick = () => setFull(false);
 // one key handler: Esc does ONE thing — closes the dialog, else folds the big sphere, else leaves the full screen
 document.addEventListener('keydown', e => {
+  // Alt+Enter: the window over the whole screen without its title bar <-> the usual window
+  if (e.altKey && e.key === 'Enter') { e.preventDefault(); winFullToggle(); return; }
   if (e.key === 'F11') { e.preventDefault(); setFull(!isFull); return; }
   if (e.key !== 'Escape') return;
   if ($('#close-dlg').classList.contains('on')) closeAnswer('cancel');

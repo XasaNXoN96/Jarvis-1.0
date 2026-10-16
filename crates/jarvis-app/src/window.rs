@@ -27,6 +27,8 @@ pub enum UserEvent {
     Close(String),
     // the button / F11 of the page: the window covers the whole screen without its frame, or comes back
     Fullscreen(bool),
+    // Alt+Enter: the window covers the whole screen without its frame <-> the window with its title bar
+    ToggleWindowFullscreen,
     Menu(MenuEvent),
 }
 
@@ -107,6 +109,8 @@ fn make_window(target: &tao::event_loop::EventLoopWindowTarget<UserEvent>, h: &H
         .with_inner_size(tao::dpi::LogicalSize::new(1040.0, 740.0))
         .with_min_inner_size(tao::dpi::LogicalSize::new(380.0, 480.0))
         .with_window_icon(load_icon(h.icon_png))
+        // the window starts over the whole screen without the title bar (Alt+Enter brings the frame back; the choice is kept)
+        .with_fullscreen(if jarvis_core::uistate::window_fullscreen() { Some(tao::window::Fullscreen::Borderless(None)) } else { None })
         .with_visible(false)
         .build(target)
         .map_err(|e| e.to_string())?;
@@ -121,6 +125,8 @@ fn make_window(target: &tao::event_loop::EventLoopWindowTarget<UserEvent>, h: &H
                 let _ = ipc_proxy.send_event(UserEvent::Close(answer.to_string()));
             } else if let Some(on) = full_request(body) {
                 let _ = ipc_proxy.send_event(UserEvent::Fullscreen(on));
+            } else if is_window_toggle(body) {
+                let _ = ipc_proxy.send_event(UserEvent::ToggleWindowFullscreen);
             }
         })
         // the page of Jarvis stays in the window; any other address opens in the browser
@@ -159,6 +165,11 @@ pub fn full_request(body: &str) -> Option<bool> {
         "full:off" => Some(false),
         _ => None,
     }
+}
+
+// "winfull:toggle" of the page (Alt+Enter)
+pub fn is_window_toggle(body: &str) -> bool {
+    body == "winfull:toggle"
 }
 
 fn show(w: &Win) {
@@ -288,7 +299,16 @@ pub fn run(h: Hooks) -> ! {
             Event::UserEvent(UserEvent::Hide) => hide_any(&win),
             Event::UserEvent(UserEvent::Fullscreen(on)) => {
                 if let Some(w) = &win {
-                    w.window.set_fullscreen(if on { Some(tao::window::Fullscreen::Borderless(None)) } else { None });
+                    // leaving the full screen mode of the page returns to the choice of the user (the whole screen or the frame)
+                    let keep = on || jarvis_core::uistate::window_fullscreen();
+                    w.window.set_fullscreen(if keep { Some(tao::window::Fullscreen::Borderless(None)) } else { None });
+                }
+            }
+            Event::UserEvent(UserEvent::ToggleWindowFullscreen) => {
+                if let Some(w) = &win {
+                    let now_full = w.window.fullscreen().is_some();
+                    w.window.set_fullscreen(if now_full { None } else { Some(tao::window::Fullscreen::Borderless(None)) });
+                    jarvis_core::uistate::set_window_fullscreen(!now_full);
                 }
             }
             // the Windows session ends or the installer asks Jarvis to close (Restart Manager): a full, clean exit
@@ -360,5 +380,12 @@ mod tests {
         assert_eq!(full_request("full:off"), Some(false));
         assert_eq!(full_request("full:yes"), None);
         assert_eq!(full_request("close:tray"), None);
+    }
+
+    #[test]
+    fn the_window_toggle_is_its_own_word() {
+        assert!(is_window_toggle("winfull:toggle"));
+        assert!(!is_window_toggle("full:on") && !is_window_toggle("close:exit") && !is_window_toggle("winfull:"));
+        assert_eq!(full_request("winfull:toggle"), None, "it is not the full screen mode of the page");
     }
 }
