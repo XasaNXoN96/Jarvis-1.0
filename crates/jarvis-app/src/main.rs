@@ -484,6 +484,7 @@ pub fn shutdown_and_exit() -> ! {
     if let Some(id) = jarvis_core::ai::store().active() {
         jarvis_core::ai::stop(&id);
     }
+    jarvis_core::gamemode::release_all();
     jarvis_core::tts::shutdown();
     // released and never reopened by the background recovery
     jarvis_core::recorder::shutdown();

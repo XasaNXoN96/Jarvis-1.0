@@ -1078,6 +1078,14 @@
         <small class="dim">Ответы ИИ появляются на странице «Диалог». Ключ хранится только на этом компьютере в зашифрованном виде (шифрование Windows) и не показывается в окне. Сообщения уходят провайдеру, когда вы нажимаете «Отправить» или задаёте вопрос; команды компьютера («открой ворд», «поставь таймер») в ИИ не отправляются.</small>
       </div>
 
+      <div class="card" data-cat="general" id="game-card"><h3><span class="ei">🎮</span>Игровой режим (голосовое управление игрой)</h3>
+        <div class="setrow"><div class="l">Голосовое управление для игр<small id="game-hint">Только для одиночных игр. Работает в окне игры из списка (по умолчанию Call of Duty: iw3sp.exe, iw4sp.exe, iw5sp.exe). Включить можно и голосом: «Джарвис, включи голосовое управление для игр». Клавиши и список игр меняются файлом game_profile.json (см. docs/GAME-MODE.md).</small></div>
+          <div class="r"><span id="game-state" class="dim"></span> <button class="btn" id="game-on" type="button">Включить</button> <button class="btn" id="game-off" type="button">Выключить</button></div></div>
+        <div class="setrow"><div class="l">Помощь прицела (эксперимент)<small id="aim-hint">Только в одиночных играх. Работает, пока вы держите правую кнопку мыши в окне игры: по картинке экрана находит ближайшего человека и плавно подводит прицел к его голове. Нужен файл модели (см. docs/GAME-MODE.md). Выключена при каждом запуске.</small></div>
+          <div class="r"><span id="aim-state" class="dim"></span> <button class="btn" id="aim-on" type="button">Включить</button> <button class="btn" id="aim-off" type="button">Выключить</button></div></div>
+        <div class="msgline" id="game-msg"></div>
+        <small class="dim">Фразы: иди вперёд / назад / влево / вправо, беги, стой · смотри налево / направо / вверх / вниз (можно «на 45 градусов», «чуть», «разворот») · стреляй, огонь очередью, прекрати огонь · целься, не целься · перезаряди, гранату, нож, прыгай, присядь, используй. «Стой» отпускает все клавиши. Работает только если окно игры впереди.</small>
+      </div>
       <div class="card" data-cat="general" id="upd-card"><h3><span class="ei">⟳</span>Обновления</h3>
         <div class="setrow"><div class="l">Версия программы<small id="upd-hint">Проверка и установка обновлений только по вашей кнопке</small></div>
           <div class="r"><b id="upd-cur"></b> <button class="btn" id="upd-check" type="button">Проверить обновления</button> <button class="btn primary" id="upd-go" type="button" hidden>Скачать</button></div></div>
@@ -2486,6 +2494,23 @@ $('#upd-go').onclick = async () => {
   if (updStep === 'download') updWait(); else $('#upd-msg').textContent = 'Запускаю установщик…';
 };
 updRefresh();
+
+
+// the game mode: the state and the two buttons (the same thing as the phrases «включи / выключи игровой режим»)
+async function gameRefresh() {
+  let g; try { g = await (await fetch('/game')).json(); } catch (e) { return; }
+  const a = g.aim || {}; $('#aim-state').textContent = a.enabled ? 'включена (' + (a.frames || 0) + ' кадров' + (a.last_frame_ms ? ', ' + a.last_frame_ms + ' мс на кадр' : '') + ')' : (a.problem ? 'выключена: ' + a.problem : (a.model_found ? 'выключена' : 'нет файла модели'));
+  $('#game-state').textContent = g.active ? (g.in_game ? 'включён, игра в фокусе' : 'включён, окно игры не впереди') : 'выключен';
+}
+async function gameSet(on) {
+  const r = await action('game_mode', { value: on }).catch(() => ({}));
+  const m = $('#game-msg'); m.className = 'msgline' + (r && r.ok === false ? ' bad' : ' ok'); m.textContent = (r && r.message) || '';
+  gameRefresh();
+}
+$('#game-on').onclick = () => gameSet(true); $('#game-off').onclick = () => gameSet(false);
+$('#aim-on').onclick = async () => { const r = await action('game_aim', { value: true }).catch(() => ({})); const m = $('#game-msg'); m.className = 'msgline ok'; m.textContent = (r && r.message) || ''; gameRefresh(); };
+$('#aim-off').onclick = async () => { const r = await action('game_aim', { value: false }).catch(() => ({})); const m = $('#game-msg'); m.className = 'msgline ok'; m.textContent = (r && r.message) || ''; gameRefresh(); };
+gameRefresh(); setInterval(gameRefresh, 4000);
 
 async function aiOpen() { await aiRefreshList(); await pollNow(true); }
 $('#chat-new').onclick = async () => { await chatApi({ op: 'new' }); await pollNow(true); aiRefreshList(); curInput().focus(); };

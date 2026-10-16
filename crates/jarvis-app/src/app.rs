@@ -617,6 +617,39 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
         jarvis_core::confirm::Reply::OtherDoor => info!("A phrase from the {} door does not answer the open question", source.as_str()),
         jarvis_core::confirm::Reply::NotAnAnswer => {}
     }
+    // «Джарвис, включи голосовое управление для игр»: while the game mode is on, short phrases («иди вперёд», «смотри налево»,
+    // «стой») are keys and mouse moves of the game profile (gamemode.rs). The mode itself is a paid function (Premium).
+    if jarvis_core::gamemode::would_handle(text) {
+        let turning_on = !jarvis_core::gamemode::is_active();
+        if turning_on {
+            if let Err(denied) = jarvis_core::access::check("game_mode") {
+                let msg = denied.message.clone();
+                open_request(text, "command");
+                say(&msg);
+                ipc::send(IpcEvent::Output { text: msg.clone() });
+                jarvis_core::dialog::reply(&msg, "local");
+                jarvis_core::dialog::end(false);
+                ipc::send(IpcEvent::Idle);
+                return false;
+            }
+        }
+        if let Some(msg) = jarvis_core::gamemode::handle(text) {
+            // an action of the game is silent (the game answers by itself); only the mode and the errors are told
+            if !msg.is_empty() {
+                open_request(text, "command");
+                say(&msg);
+                ipc::send(IpcEvent::Output { text: msg.clone() });
+                jarvis_core::dialog::reply(&msg, "local");
+                jarvis_core::dialog::end(true);
+                if jarvis_core::tts::is_enabled() {
+                    jarvis_core::tts::speak(&msg);
+                }
+            }
+            jarvis_core::uistate::log_action(text, "игровой режим", true);
+            ipc::send(IpcEvent::Idle);
+            return false;
+        }
+    }
     // «режим психолога», «обычный режим»: the manner of the AI answers (ai.rs: modes). Free for everybody, changes only the style.
     if let Some((id, name)) = jarvis_core::ai::mode_phrase(text) {
         jarvis_core::uistate::set_ai_mode(id);

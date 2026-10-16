@@ -87,6 +87,8 @@ pub mod filesearch;
 pub mod guard;
 pub mod instance;
 pub mod input;
+pub mod gamemode;
+pub mod aimassist;
 pub mod scenario;
 pub mod tasks;
 pub mod telegram;

@@ -489,6 +489,22 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
                 Err(e) => json!({ "ok": false, "message": e }),
             }
         }
+        // the game mode (gamemode.rs): the same phrases as by voice, on buttons
+        "game_mode" => {
+            let on = body.get("value").and_then(|v| v.as_bool()).unwrap_or(false);
+            if on {
+                if let Err(d) = crate::access::check("game_mode") {
+                    return json!({ "ok": false, "message": d.message });
+                }
+            }
+            let msg = crate::gamemode::handle(if on { "включи игровой режим" } else { "выключи игровой режим" }).unwrap_or_default();
+            json!({ "ok": true, "message": msg })
+        }
+        "game_aim" => {
+            let on = body.get("value").and_then(|v| v.as_bool()).unwrap_or(false);
+            let msg = crate::gamemode::handle(if on { "включи помощь прицела" } else { "выключи помощь прицела" }).unwrap_or_else(|| "Сначала включите игровой режим.".into());
+            json!({ "ok": true, "message": msg })
+        }
         // updates: check, download, install — each one on a button (see updater.rs)
         "update_check" => match crate::updater::check() {
             Ok(()) => json!({ "ok": true }),
@@ -1047,6 +1063,7 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
             browser_window_closed();
             respond(&mut stream, "200 OK", "application/json", "{\"ok\":true}");
         }
+        ("GET", "/game") => respond(&mut stream, "200 OK", "application/json", &crate::gamemode::status_json().to_string()),
         ("GET", "/update") => respond(&mut stream, "200 OK", "application/json", &crate::updater::status_json().to_string()),
         ("GET", "/voice-install") => respond(&mut stream, "200 OK", "application/json", &crate::voice_install::status_json().to_string()),
         ("GET", "/chats") => respond(&mut stream, "200 OK", "application/json", &chats_json().to_string()),
