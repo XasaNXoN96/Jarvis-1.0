@@ -6,7 +6,7 @@
 //! folder on another account or computer cannot use it. State is kept in `license.json`, protected by an HMAC made with a key derived
 //! from the seed: a hand-made edit (the clock floor, the token) is noticed and the file is dropped, i.e. the program falls back to Demo.
 use crate::access::{Denied, LicenseView, Why};
-use jarvis_license::{entitlement, installation_id_of, new_installation, normalize_key, parse_public_key, sha256_hex, sign_proof, verify_token, Claims, Entitlement};
+use jarvis_license::{entitlement, installation_id_of, new_installation, normalize_key, parse_public_key, sha256_hex, sign_proof, verify_token, verify_token_any, Claims, Entitlement};
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -223,7 +223,7 @@ pub fn status() -> Value {
             LicenseView::NeedsRefresh => "needs_refresh",
             LicenseView::None => "demo",
         };
-        let mut v = json!({ "state": name, "edition": crate::access::edition_name(), "configured": cfg_ok(), "server": cfg_url(), "last_refresh": st.last_refresh, "installation": installation_short(st) });
+        let mut v = json!({ "state": name, "edition": crate::access::edition_name(), "configured": pubkey().is_some(), "online": cfg_ok(), "server": cfg_url(), "last_refresh": st.last_refresh, "installation": installation_short(st), "computer_code": seed_of(st).map(|s| installation_id_of(&s)).unwrap_or_default() });
         if let Some(c) = c {
             v["plan"] = json!(c.plan);
             v["lifetime"] = json!(c.sub_end.is_none());
@@ -332,6 +332,10 @@ fn adopt(token: &str, server_time: Option<i64>) -> Result<(), String> {
 
 // Activation: ONLINE only. The key is checked by the server; a key that is bound to another installation is refused there.
 pub fn activate(key_raw: &str) -> Result<Value, String> {
+    // an OFFLINE key (made by the owner for this very computer, no server) is a long text with a dot, not groups of letters
+    if looks_offline(key_raw) {
+        return activate_offline(key_raw.trim());
+    }
     let key = normalize_key(key_raw).ok_or("Ключ введён неверно. Он состоит из групп букв и цифр, например XXXX-XXXX-…")?;
     let (seed, inst) = with_state(|st| {
         let s = ensure_seed(st);
@@ -345,6 +349,34 @@ pub fn activate(key_raw: &str) -> Result<Value, String> {
     }
     adopt(v.get("token").and_then(|t| t.as_str()).unwrap_or(""), v.get("server_time").and_then(|t| t.as_i64()))?;
     Ok(status_with_result(&v))
+}
+
+fn looks_offline(text: &str) -> bool {
+    let t = text.trim();
+    t.len() > 80 && t.matches('.').count() == 1 && !t.contains(char::is_whitespace)
+}
+
+// OFFLINE activation: the signature, this computer and the end decide; the server is not asked
+pub fn activate_offline(token: &str) -> Result<Value, String> {
+    let (key, inst) = with_state(|st| {
+        let s = ensure_seed(st);
+        (pubkey(), installation_id_of(&s))
+    });
+    let key = key.ok_or("В этой сборке нет открытого ключа владельца: проверить ключ нечем.")?;
+    let claims = verify_token_any(token, &key).map_err(|_| "Ключ не прошёл проверку подписи: он повреждён или выдан не владельцем программы.".to_string())?;
+    if !jarvis_license::is_offline_lid(&claims.lid) {
+        return Err("Это не ключ для работы без интернета. Введите ключ вида XXXX-XXXX-… или попросите у владельца офлайн-ключ.".into());
+    }
+    if claims.inst != inst {
+        return Err("Этот ключ выдан для другого компьютера. Отправьте владельцу код этого компьютера (он показан в окне активации) и получите новый ключ.".into());
+    }
+    if let Some(end) = claims.sub_end {
+        if end <= now() {
+            return Err("Срок этого ключа уже закончился.".into());
+        }
+    }
+    adopt(token, None)?;
+    Ok(status())
 }
 
 // Renewal: a dedicated renewal key adds its period to the license of this installation.
@@ -385,6 +417,10 @@ pub fn refresh() -> Result<(), String> {
         None => (None, String::new(), None),
     });
     let (Some(seed), Some(lid)) = (seed, lid) else { return Ok(()) };
+    // an offline key has no server record: nothing to refresh (and nothing may be dropped because the server does not know it)
+    if jarvis_license::is_offline_lid(&lid) {
+        return Ok(());
+    }
     let ts = now();
     let body = json!({ "lid": lid, "installation": inst, "ts": ts, "sig": sign_proof(&seed, "refresh", ts, &lid) });
     let (status, v) = match post("/licenses/refresh", &body) {
@@ -588,6 +624,53 @@ mod tests {
         assert!(e.contains("закончилась"), "{}", e);
         assert_eq!(view(), LicenseView::Expired, "the token still carries the end date: Premium is off, the renewal is offered");
         TEST_CLOCK_SHIFT.store(0, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    // an offline key: made by the owner for ONE computer, no server is asked, ever
+    #[test]
+    fn an_offline_key_works_on_its_own_computer_without_a_server_and_not_on_another_or_forged_or_ended() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let _g = test_lock();
+        test_reset();
+        let owner = SigningKey::generate(&mut rand::rngs::OsRng);
+        let asked = Arc::new(AtomicUsize::new(0));
+        let a2 = asked.clone();
+        test_setup(&B64.encode(owner.verifying_key().to_bytes()), move |_, _, _| {
+            a2.fetch_add(1, Ordering::SeqCst);
+            Err("Нет связи с сервером лицензий.".to_string())
+        });
+        let mine = installation_id();
+        let token_for = |inst: &str, period: jarvis_license::Period, tail: &str| jarvis_license::sign_token(&owner, &jarvis_license::offline_claims(inst, "MONTHLY", period, now(), tail));
+        assert_eq!(view(), LicenseView::None);
+        // a key of another computer, a forged one, garbage: nothing changes
+        let (_, other) = new_installation();
+        assert!(activate(&token_for(&other, jarvis_license::Period::Days(30), "aaaa")).unwrap_err().contains("другого компьютера"));
+        let stranger = SigningKey::generate(&mut rand::rngs::OsRng);
+        let forged = jarvis_license::sign_token(&stranger, &jarvis_license::offline_claims(&mine, "MONTHLY", jarvis_license::Period::Days(30), now(), "bbbb"));
+        assert!(activate(&forged).unwrap_err().contains("подписи"));
+        assert!(activate(&format!("{}.{}", "x".repeat(60), "y".repeat(60))).unwrap_err().contains("подписи"));
+        assert_eq!(view(), LicenseView::None);
+        // a server key typed as an offline one: refused (it has no OFF- id)
+        let online_like = jarvis_license::sign_token(&owner, &Claims { v: 1, aud: jarvis_license::AUDIENCE.into(), lid: "L1".into(), tier: "PREMIUM".into(), plan: "MONTHLY".into(), inst: mine.clone(), iat: now(), sub_end: Some(now() + 86_400), refresh_by: now() + 3600 });
+        assert!(activate(&online_like).unwrap_err().contains("не ключ для работы без интернета"));
+        // its own computer: Premium, and the refresh never goes to a server
+        let good = token_for(&mine, jarvis_license::Period::Days(30), "cccc");
+        let st = activate(&good).expect("the offline key is taken");
+        assert_eq!(st["state"], "premium");
+        assert_eq!(view(), LicenseView::Premium);
+        assert!(refresh().is_ok());
+        assert_eq!(asked.load(Ordering::SeqCst), 0, "the server was never asked");
+        // a week of no refresh does not matter; the end does
+        TEST_CLOCK_SHIFT.store(40 * 86_400, Ordering::SeqCst);
+        assert_eq!(view(), LicenseView::Expired);
+        TEST_CLOCK_SHIFT.store(0, Ordering::SeqCst);
+        // a key whose end has already passed is refused at once (a fresh installation: the reset also clears the test setup)
+        test_reset();
+        test_setup(&B64.encode(owner.verifying_key().to_bytes()), |_, _, _| Err("Нет связи с сервером лицензий.".to_string()));
+        let old_key = jarvis_license::sign_token(&owner, &jarvis_license::offline_claims(&installation_id(), "MONTHLY", jarvis_license::Period::Days(1), now() - 5 * 86_400, "dddd"));
+        assert!(activate(&old_key).unwrap_err().contains("закончился"));
+        assert_eq!(view(), LicenseView::None);
+        test_reset();
     }
 
     #[test]

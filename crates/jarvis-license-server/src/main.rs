@@ -4,13 +4,14 @@
 //!   admin-create <name>      create an administrator and print his token ONCE
 //!   serve                    run the server (behind a reverse proxy with TLS)
 //!   backup <file>            a consistent copy of the database into a NEW file
+//!   offline-sign <computer-code> <plan> <30d|6m|life> [log-file]   a key for ONE computer, made by hand, with no server (the owner's signing key)
 //!   update-keygen <file>     a NEW key pair for signing program updates (the secret goes into <file>; the public key is printed)
 //!   update-sign <keyfile> <installer.exe> <version> <https-url> [notes]   prints the signed update manifest (update.json)
 use jarvis_license_server::{api::Api, config, http, store::Store};
 use std::sync::Arc;
 
 fn usage() -> ! {
-    eprintln!("использование: jarvis-license-server init | public-key | admin-create <имя> | serve | backup <файл> | update-keygen <файл> | update-sign <ключ> <установщик> <версия> <https-адрес> [заметки]\nнастройки: см. deploy/license-server.env.example");
+    eprintln!("использование: jarvis-license-server init | public-key | admin-create <имя> | serve | backup <файл> | offline-sign <код-компьютера> <тариф> <30d|6m|life> [журнал] | update-keygen <файл> | update-sign <ключ> <установщик> <версия> <https-адрес> [заметки]\nнастройки: см. deploy/license-server.env.example");
     std::process::exit(2)
 }
 
@@ -57,6 +58,38 @@ fn run(cmd: &str, rest: &[String]) -> Result<(), String> {
             let store = Store::open(&cfg.db_path, cfg.pepper.clone(), cfg.signing.clone(), cfg.grace_hours, cfg.default_activation_days)?;
             store.backup_to(std::path::Path::new(target))?;
             println!("копия базы: {}", target);
+            Ok(())
+        }
+        "offline-sign" => {
+            use rand::RngCore;
+            let (Some(inst), Some(plan), Some(term)) = (rest.first(), rest.get(1), rest.get(2)) else {
+                return Err("нужно: offline-sign <код-компьютера> <тариф> <срок: 30d | 6m | life> [журнал]".into());
+            };
+            if jarvis_license::parse_public_key(inst).is_none() {
+                return Err("код компьютера неверный: это 43 знака из окна активации покупателя".into());
+            }
+            let period = match term.as_str() {
+                "life" | "lifetime" => jarvis_license::Period::Lifetime,
+                t if t.ends_with('d') => jarvis_license::Period::Days(t[..t.len() - 1].parse().ok().filter(|n: &u32| (1..=3650).contains(n)).ok_or("срок в днях: от 1d до 3650d")?),
+                t if t.ends_with('m') => jarvis_license::Period::Months(t[..t.len() - 1].parse().ok().filter(|n: &u32| (1..=120).contains(n)).ok_or("срок в месяцах: от 1m до 120m")?),
+                _ => return Err("срок: 30d (дни), 6m (месяцы) или life (навсегда)".into()),
+            };
+            let signing_path = std::env::var("JARVIS_LS_SIGNING_KEY_FILE").map_err(|_| "задайте JARVIS_LS_SIGNING_KEY_FILE (ключ подписи владельца)")?;
+            let sk = config::load_signing_key(std::path::Path::new(&signing_path))?;
+            let now = http::now();
+            let mut tail = [0u8; 6];
+            rand::rngs::OsRng.fill_bytes(&mut tail);
+            let tail: String = tail.iter().map(|b| format!("{:02x}", b)).collect();
+            let claims = jarvis_license::offline_claims(inst, plan, period, now, &tail);
+            let token = jarvis_license::sign_token(&sk, &claims);
+            if let Some(log) = rest.get(3) {
+                // the list of what was issued: who can check later which key belongs to which computer
+                use std::io::Write;
+                let mut f = std::fs::OpenOptions::new().create(true).append(true).open(log).map_err(|e| format!("журнал: {}", e))?;
+                let _ = writeln!(f, "{}\t{}\t{}\t{}\t{}", now, claims.lid, plan, term, inst);
+            }
+            println!("{}", token);
+            eprintln!("ключ {} для компьютера {}…, тариф {}, срок {}; работает без сервера только на этом компьютере", claims.lid, &inst[..8], plan, term);
             Ok(())
         }
         "update-keygen" => {

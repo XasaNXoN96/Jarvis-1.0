@@ -193,6 +193,32 @@ pub fn version_newer(current: &str, remote: &str) -> bool {
     r > c
 }
 
+// An OFFLINE key is a token like the server's, but signed by the owner by hand for ONE installation (its code is inside): its license
+// id starts with this prefix, the server is never asked about it, and nothing but its signature, its installation and its end decides.
+pub const OFFLINE_PREFIX: &str = "OFF-";
+
+pub fn is_offline_lid(lid: &str) -> bool {
+    lid.starts_with(OFFLINE_PREFIX)
+}
+
+// the claims of an offline key; `period` None = lifetime
+#[cfg(feature = "server")]
+pub fn offline_claims(installation: &str, plan: &str, period: Period, now: i64, lid_tail: &str) -> Claims {
+    let sub_end = period.end_from(now);
+    Claims {
+        v: TOKEN_VERSION,
+        aud: AUDIENCE.to_string(),
+        lid: format!("{}{}", OFFLINE_PREFIX, lid_tail),
+        tier: "PREMIUM".to_string(),
+        plan: plan.to_string(),
+        inst: installation.to_string(),
+        iat: now,
+        sub_end,
+        // never asks the server: the end of the subscription (or a hundred years) is the only limit
+        refresh_by: sub_end.unwrap_or(now + 36_500 * 86_400),
+    }
+}
+
 pub fn parse_public_key(b64: &str) -> Option<VerifyingKey> {
     let bytes: [u8; 32] = B64.decode(b64.trim()).ok()?.try_into().ok()?;
     VerifyingKey::from_bytes(&bytes).ok()
@@ -302,6 +328,36 @@ mod tests {
         let (other, _) = server_pair();
         let forged = sign_update(&other, "1.2.0", "https://example.com/Jarvis-Setup.exe", &sha, 9);
         assert!(!verify_update(&key, "1.2.0", "https://example.com/Jarvis-Setup.exe", &sha, 9, &forged), "another key");
+    }
+
+    #[cfg(feature = "server")]
+    #[test]
+    fn an_offline_key_works_on_its_own_computer_until_its_end_and_nowhere_else() {
+        let (sk, pubkey) = server_pair();
+        let key = parse_public_key(&pubkey).unwrap();
+        let (_, mine) = new_installation();
+        let (_, other) = new_installation();
+        let c = offline_claims(&mine, "MONTHLY", Period::Days(30), 1_000_000, "ab12");
+        let token = sign_token(&sk, &c);
+        assert!(is_offline_lid(&c.lid) && !is_offline_lid("L1"));
+        // on its own computer it is Premium until the end, with no server
+        let got = verify_token(&token, &key, &mine).unwrap();
+        assert!(matches!(entitlement(&got, 1_000_100, 1_000_000), Entitlement::Premium { .. }));
+        assert!(matches!(entitlement(&got, 1_000_000 + 31 * 86_400, 1_000_000), Entitlement::Expired { .. }), "the end is the end");
+        // on another computer it is nothing
+        assert_eq!(verify_token(&token, &key, &other), Err(TokenError::WrongInstallation));
+        // a forged one (another signer) and a changed one are nothing
+        let (forger, _) = server_pair();
+        assert!(verify_token(&sign_token(&forger, &c), &key, &mine).is_err());
+        let mut changed = c.clone();
+        changed.sub_end = Some(changed.sub_end.unwrap() + 365 * 86_400);
+        let (payload, sig) = token.split_once('.').unwrap();
+        let fake = format!("{}.{}", B64.encode(serde_json::to_vec(&changed).unwrap()), sig);
+        assert!(verify_token(&fake, &key, &mine).is_err());
+        let _ = payload;
+        // lifetime: no end
+        let life = offline_claims(&mine, "LIFETIME", Period::Lifetime, 1_000_000, "cd34");
+        assert!(matches!(entitlement(&life, 1_000_000 + 3000 * 86_400, 1_000_000), Entitlement::Premium { sub_end: None, .. }));
     }
 
     #[test]

@@ -1181,8 +1181,9 @@
   <h3 id="lic-dlg-title">Jarvis Premium</h3>
   <p id="lic-dlg-state"></p>
   <div id="lic-act">
-    <p>Введите ключ активации. Активация работает только с интернетом: ключ проверяет сервер и привязывает его к этой установке.</p>
-    <input type="text" id="lic-key" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false" maxlength="60">
+    <p>Введите ключ активации. Ключ вида XXXX-XXXX-… проверяет сервер через интернет. Длинный ключ, который вам выдал владелец для вашего компьютера, работает без интернета и только на этом компьютере.</p>
+    <input type="text" id="lic-key" placeholder="ключ" autocomplete="off" spellcheck="false" maxlength="800">
+    <p class="dim" style="margin:8px 0 0;font-size:12.5px">Код этого компьютера (его нужно отправить владельцу, чтобы получить ключ без интернета): <code id="lic-code" style="word-break:break-all;user-select:all"></code> <button type="button" class="btn small" id="lic-code-copy">Копировать</button></p>
     <div class="lic-msg" id="lic-msg"></div>
     <div class="acts"><button class="btn primary" id="lic-do" type="button">Активировать</button></div>
   </div>
@@ -2213,7 +2214,8 @@ function licRender(s) {
   const act = $('#lic-act'); act.hidden = licRenewMode;
   $('#lic-renew').hidden = !licRenewMode;
   $('#lic-dlg-title').textContent = licRenewMode ? 'Продлить подписку' : s.state === 'premium' ? 'Jarvis Premium' : 'Активировать Premium';
-  if (!s.configured && !admin) setLicMsg('#lic-msg', 'В этой сборке не задан сервер лицензий — активация невозможна.', 'bad');
+  $('#lic-code').textContent = s.computer_code || '';
+  if (!s.configured && !admin) setLicMsg('#lic-msg', 'В этой сборке нет ключа владельца — активация невозможна.', 'bad');
 }
 function setLicMsg(sel, text, cls) { const el = $(sel); el.textContent = text || ''; el.className = 'lic-msg' + (cls ? ' ' + cls : ''); }
 async function licLoad() {
@@ -2275,6 +2277,7 @@ $('#lic-rdo').onclick = async () => {
   catch (e) { setLicMsg('#lic-rmsg', 'Нет связи с Джарвисом.', 'bad'); }
   $('#lic-rdo').disabled = false;
 };
+$('#lic-code-copy').onclick = async () => { const t = $('#lic-code').textContent; try { await navigator.clipboard.writeText(t); setLicMsg('#lic-msg', 'Код компьютера скопирован.', 'ok'); } catch (e) { const r = document.createRange(); r.selectNodeContents($('#lic-code')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); setLicMsg('#lic-msg', 'Код выделен: нажмите Ctrl+C.', ''); } };
 $('#lic-key').addEventListener('keydown', e => { if (e.key === 'Enter') $('#lic-do').click(); });
 $('#lic-rkey').addEventListener('keydown', e => { if (e.key === 'Enter') $('#lic-rdo').click(); });
 licLoad(); setInterval(licLoad, 4000);
