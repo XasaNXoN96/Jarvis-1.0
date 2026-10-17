@@ -41,6 +41,8 @@ pub struct Keys {
     pub inventory: u16,
     pub map: u16,
     pub heal: u16,
+    // shooters: «смени оружие»
+    pub weapon: u16,
 }
 
 // the kind of a game: the phrases that are understood besides the common ones (walk, look, jump, stop ...)
@@ -155,7 +157,7 @@ impl Default for Profile {
             title: "Call of Duty (одиночная кампания)".into(),
             exes: vec!["iw3sp.exe".into(), "iw4sp.exe".into(), "iw5sp.exe".into()],
             keys: Keys { forward: v("w"), back: v("s"), left: v("a"), right: v("d"), jump: v("space"), crouch: v("c"), sprint: v("shift"), reload: v("r"), grenade: v("g"), melee: v("v"), use_key: v("f"),
-                handbrake: v("space"), nitro: v("shift"), horn: v("h"), camera: v("c"), dodge: v("ctrl"), inventory: v("i"), map: v("m"), heal: v("x") },
+                handbrake: v("space"), nitro: v("shift"), horn: v("h"), camera: v("c"), dodge: v("ctrl"), inventory: v("i"), map: v("m"), heal: v("x"), weapon: v("q") },
             px_per_90: 450,
             aim: crate::aimassist::AimConfig::default(),
             extra: Vec::new(),
@@ -228,6 +230,7 @@ fn apply_keys(keys: &mut Keys, map: &serde_json::Map<String, Value>) -> Result<(
             "inventory" => keys.inventory = code,
             "map" => keys.map = code,
             "heal" => keys.heal = code,
+            "weapon" => keys.weapon = code,
             other => return Err(format!("в game_profile.json неизвестное действие «{}»", other)),
         }
     }
@@ -361,6 +364,8 @@ pub enum Tap {
     Inventory,
     Map,
     Heal,
+    // «смени оружие»
+    Weapon,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -382,6 +387,8 @@ pub enum Action {
     AimOn,
     AimOff,
     Tap(Tap),
+    // «следующее / предыдущее оружие»: a notch of the mouse wheel (+1 up, -1 down)
+    Wheel(i32),
     // the experimental aim assist on / off (aimassist.rs)
     AimAssist(bool),
     // «добавь эту игру» / «забудь эту игру»: the program of the window in front joins the list of games (or leaves it)
@@ -581,6 +588,32 @@ pub fn parse(text: &str, active: bool) -> Option<Action> {
         let long = has(&t, &["очеред", "долго", "непрерывн", "много"]);
         return Some(Action::Fire(if long { 1200 } else { 250 }));
     }
+    // the weapon: «смени оружие» (a key), «следующее / предыдущее оружие» (the wheel), «оружие два» / «второе оружие» (the number key)
+    if has(&t, &["оруж", "ствол", "пушк", "автомат", "пистолет"]) && !has(&t, &["опусти", "убери", "спрячь"]) {
+        if has(&t, &["следующ", "дальше"]) {
+            return Some(Action::Wheel(-1));
+        }
+        if has(&t, &["предыдущ", "прошл", "прежн"]) {
+            return Some(Action::Wheel(1));
+        }
+        let slot = t.split(' ').find_map(|w| match w {
+            w if w.starts_with("перв") || w == "1" || w == "один" => Some(1u8),
+            w if w.starts_with("втор") || w == "2" || w == "два" => Some(2),
+            w if w.starts_with("трет") || w == "3" || w == "три" => Some(3),
+            w if w.starts_with("четв") || w == "4" => Some(4),
+            w if w.starts_with("пят") || w == "5" => Some(5),
+            _ => None,
+        });
+        if let Some(n) = slot {
+            let vk = crate::input::vk(&n.to_string()).unwrap_or(0);
+            if vk != 0 {
+                return Some(Action::Custom(vec![Step::Tap(vk)]));
+            }
+        }
+        if has(&t, &["смен", "поменя", "друг", "переключ", "достан"]) {
+            return Some(Action::Tap(Tap::Weapon));
+        }
+    }
     // a turn of the view: a looking verb and a direction
     let look = has(&t, &["смотр", "посмотр", "поверн", "повор", "оглян", "разверн", "разворот", "глян", "взгляни"]);
     let right = has(&t, &["право", "направо", "вправо", "правее"]);
@@ -631,23 +664,48 @@ pub fn parse(text: &str, active: bool) -> Option<Action> {
     if has(&t, &["беги", "бегом", "спринт", "ускорьс"]) {
         return Some(Action::Run);
     }
-    // walking: a direction word (with «иди» or alone)
-    if has(&t, &["вперед", "прямо"]) {
+    // walking: a direction word (with «иди» or alone). The recognizer often writes the word a little wrong («впереть», «в перед»,
+    // «иду вперёд»): such a word is still the direction
+    // («перед» is a real word of its own: «перед дверью» is not «вперёд»)
+    let near_any = |targets: &[&str]| t.split(' ').any(|w| w != "перед" && targets.iter().any(|x| near(w, x)));
+    if has(&t, &["вперед", "прямо"]) || t.contains("в перед") || near_any(&["вперед"]) {
         return Some(Action::Walk(Dir::Forward));
     }
-    if has(&t, &["назад", "отступ", "пятис"]) {
+    if has(&t, &["назад", "отступ", "пятис"]) || near_any(&["назад"]) {
         return Some(Action::Walk(Dir::Back));
     }
+    let left = left || near_any(&["налево", "влево"]);
+    let right = right || near_any(&["направо", "вправо"]);
     if left && !right {
         return Some(Action::Walk(Dir::Left));
     }
     if right && !left {
         return Some(Action::Walk(Dir::Right));
     }
-    if has(&t, &["иди", "шагай", "двигайс"]) {
+    // only a walking verb: forward
+    if has(&t, &["иди", "иду", "идем", "идти", "идите", "шагай", "шагом", "двигайс", "двигай", "топай", "ступай", "пошел", "пойди", "дуй"]) {
         return Some(Action::Walk(Dir::Forward));
     }
     None
+}
+
+// two words that differ by one letter (for words of five letters and longer; by two for eight and longer): a misheard word
+fn near(a: &str, b: &str) -> bool {
+    let (x, y): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    if x.len() < 5 || y.len() < 5 || x.len().abs_diff(y.len()) > 2 {
+        return false;
+    }
+    let max = if y.len() >= 8 { 2 } else { 1 };
+    // the edit distance of Levenshtein
+    let mut prev: Vec<usize> = (0..=y.len()).collect();
+    for (i, cx) in x.iter().enumerate() {
+        let mut cur = vec![i + 1];
+        for (j, cy) in y.iter().enumerate() {
+            cur.push((prev[j] + usize::from(cx != cy)).min(prev[j + 1] + 1).min(cur[j] + 1));
+        }
+        prev = cur;
+    }
+    prev[y.len()] <= max
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -658,6 +716,8 @@ pub trait Backend {
     fn mouse_move(&mut self, dx: i32, dy: i32);
     fn button(&mut self, right: bool, down: bool);
     fn pause(&mut self, ms: u64);
+    // a turn of the mouse wheel, in notches (+ up, - down)
+    fn wheel(&mut self, _notches: i32) {}
     // asked before every step of a phrase with several steps (a macro): false = the game is not in front any more, an anti-cheat program
     // started, or the user pressed Esc; the rest of the steps is not sent and the keys are released
     fn may_continue(&mut self, _profile: &Profile) -> bool {
@@ -700,6 +760,74 @@ impl Game {
         !self.held.is_empty() || self.left_button || self.right_button
     }
 
+    // The user presses a key of walking himself while Jarvis holds keys: his hand wins. The opposite key that Jarvis holds is let go
+    // («иди вперёд», then S on the keyboard: back, not forward); pressing back also ends a run.
+    pub fn user_key(&mut self, vk: u16, b: &mut dyn Backend) -> bool {
+        let k = self.profile.keys.clone();
+        let opposite = if vk == k.forward {
+            k.back
+        } else if vk == k.back {
+            k.forward
+        } else if vk == k.left {
+            k.right
+        } else if vk == k.right {
+            k.left
+        } else {
+            return false;
+        };
+        let mut changed = false;
+        if self.held.contains(&opposite) {
+            self.release(opposite, b);
+            changed = true;
+        }
+        if vk == k.back && self.held.contains(&k.sprint) {
+            self.release(k.sprint, b);
+            changed = true;
+        }
+        // the key itself is the user's now (it is down on his keyboard): Jarvis does not hold it any more
+        if self.held.remove(&vk) {
+            changed = true;
+        }
+        changed
+    }
+
+    // Jarvis' keys against the real keyboard (a few times a second while keys are held).
+    //  * a key that Jarvis holds but that is not down any more was let go by the user: it is not «held» any more, so that the next
+    //    «иди вперёд» presses it again
+    //  * a walking key that Jarvis does not hold and that went down just now was pressed by the user: `user_key`
+    // `just_sent`: Jarvis itself sent a key a moment ago, the keyboard state is not read then. `seen` is what was down the last time.
+    pub fn sync_with_keyboard(&mut self, down: &dyn Fn(u16) -> bool, just_sent: bool, seen: &mut BTreeSet<u16>, b: &mut dyn Backend) -> bool {
+        let k = self.profile.keys.clone();
+        let walking: Vec<u16> = [k.forward, k.back, k.left, k.right].into_iter().filter(|v| *v != 0).collect();
+        if just_sent {
+            *seen = walking.iter().copied().filter(|v| !self.held.contains(v) && down(*v)).collect();
+            return false;
+        }
+        let mut changed = false;
+        for vk in self.held.clone() {
+            if !down(vk) {
+                self.held.remove(&vk);
+                changed = true;
+            }
+        }
+        for vk in walking {
+            if self.held.contains(&vk) {
+                seen.remove(&vk);
+                continue;
+            }
+            let now = down(vk);
+            if now && !seen.contains(&vk) {
+                changed |= self.user_key(vk, b);
+            }
+            if now {
+                seen.insert(vk);
+            } else {
+                seen.remove(&vk);
+            }
+        }
+        changed
+    }
+
     // carries the action out; the short answer for the user (empty = no answer needed)
     pub fn apply(&mut self, a: &Action, b: &mut dyn Backend) -> String {
         let k = self.profile.keys.clone();
@@ -714,7 +842,7 @@ impl Game {
                 crate::aimassist::set_enabled(false, &self.profile.aim);
                 "Игровой режим выключен, все клавиши отпущены.".into()
             }
-            Action::Help => "Фразы: иди вперёд / назад / влево / вправо, беги, стой; смотри налево / направо / вверх / вниз (можно «на 45 градусов», «чуть», «разворот»); стреляй, очередью, прекрати огонь; целься, не целься; перезаряди, граната, нож, прыгай, присядь, используй. Помощь прицела (эксперимент): «включи помощь прицела» / «выключи помощь прицела». Своя игра: «добавь эту игру» (можно «как гонку» или «как экшен»). Гонки: газ, тормоз, прямо, ручник, нитро, сигнал. Экшен: атакуй, блок, перекат, инвентарь, карта, полечись.".into(),
+            Action::Help => "Фразы: иди вперёд / назад / влево / вправо, беги, стой; смотри налево / направо / вверх / вниз (можно «на 45 градусов», «чуть», «разворот»); стреляй, очередью, прекрати огонь; целься, не целься; перезаряди, граната, нож, прыгай, присядь, используй; смени оружие, следующее / предыдущее оружие, второе оружие. Помощь прицела (эксперимент): «включи помощь прицела» / «выключи помощь прицела». Своя игра: «добавь эту игру» (можно «как гонку» или «как экшен»). Гонки: газ, тормоз, прямо, ручник, нитро, сигнал. Экшен: атакуй, блок, перекат, инвентарь, карта, полечись.".into(),
             Action::ReleaseAll => {
                 self.release_all(b);
                 String::new()
@@ -826,6 +954,10 @@ impl Game {
                 }
                 String::new()
             }
+            Action::Wheel(n) => {
+                b.wheel(*n);
+                String::new()
+            }
             Action::Tap(t) => {
                 let vk = match t {
                     Tap::Jump => k.jump,
@@ -842,6 +974,7 @@ impl Game {
                     Tap::Inventory => k.inventory,
                     Tap::Map => k.map,
                     Tap::Heal => k.heal,
+                    Tap::Weapon => k.weapon,
                 };
                 if vk != 0 {
                     b.key(vk, true);
@@ -878,6 +1011,20 @@ fn in_game(profile: &Profile) -> bool {
     front_exe().map(|e| profile.all_exes().iter().any(|x| *x == e)).unwrap_or(false)
 }
 
+// the time of the last key or button that Jarvis itself sent (milliseconds since the start): the keyboard is not read right after it,
+// because Jarvis' own keys are on the keyboard state too
+static LAST_SENT_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static CLOCK: Lazy<std::time::Instant> = Lazy::new(std::time::Instant::now);
+
+fn mark_sent() {
+    LAST_SENT_MS.store(CLOCK.elapsed().as_millis() as u64 + 1, std::sync::atomic::Ordering::SeqCst);
+}
+
+fn just_sent() -> bool {
+    let last = LAST_SENT_MS.load(std::sync::atomic::Ordering::SeqCst);
+    last != 0 && (CLOCK.elapsed().as_millis() as u64).saturating_sub(last) < 150
+}
+
 #[cfg(target_os = "windows")]
 struct WinBackend;
 
@@ -885,6 +1032,7 @@ struct WinBackend;
 impl Backend for WinBackend {
     fn key(&mut self, vk: u16, down: bool) {
         use winapi::um::winuser::*;
+        mark_sent();
         unsafe {
             let mut i: INPUT = std::mem::zeroed();
             i.type_ = INPUT_KEYBOARD;
@@ -905,6 +1053,16 @@ impl Backend for WinBackend {
             i.type_ = INPUT_MOUSE;
             // RELATIVE movement: games that take the mouse for the camera read the changes, not the position of the cursor
             *i.u.mi_mut() = MOUSEINPUT { dx, dy, mouseData: 0, dwFlags: MOUSEEVENTF_MOVE, time: 0, dwExtraInfo: 0 };
+            SendInput(1, &mut i, std::mem::size_of::<INPUT>() as i32);
+        }
+    }
+    fn wheel(&mut self, notches: i32) {
+        use winapi::um::winuser::*;
+        unsafe {
+            let mut i: INPUT = std::mem::zeroed();
+            i.type_ = INPUT_MOUSE;
+            // one notch is 120 units (WHEEL_DELTA); the amount goes in mouseData as a signed number
+            *i.u.mi_mut() = MOUSEINPUT { dx: 0, dy: 0, mouseData: (notches * 120) as u32, dwFlags: MOUSEEVENTF_WHEEL, time: 0, dwExtraInfo: 0 };
             SendInput(1, &mut i, std::mem::size_of::<INPUT>() as i32);
         }
     }
@@ -946,6 +1104,11 @@ impl Backend for LogBackend {
         #[cfg(test)]
         TEST_LOG.with(|l| l.borrow_mut().push(format!("move {} {}", dx, dy)));
         let _ = (dx, dy);
+    }
+    fn wheel(&mut self, notches: i32) {
+        #[cfg(test)]
+        TEST_LOG.with(|l| l.borrow_mut().push(format!("wheel {}", notches)));
+        let _ = notches;
     }
     fn button(&mut self, right: bool, down: bool) {
         #[cfg(test)]
@@ -1226,6 +1389,31 @@ fn start_watchdog() {
         return;
     }
     crate::gameoverlay::start();
+    // the hand of the user wins over the voice: his keys on the keyboard are compared with the keys that Jarvis holds
+    #[cfg(all(target_os = "windows", not(test)))]
+    std::thread::spawn(|| {
+        use winapi::um::winuser::GetAsyncKeyState;
+        let mut seen = BTreeSet::new();
+        let mut armed = false;
+        let down = |vk: u16| unsafe { (GetAsyncKeyState(vk as i32) as u16) & 0x8000 != 0 };
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            let Some(mut g) = GAME.try_lock() else { continue };
+            if !g.active || !g.anything_held() || !in_game(&g.profile) {
+                armed = false;
+                continue;
+            }
+            // the first look only remembers what is already down (a key that the user was holding before is not a new press)
+            if !armed {
+                armed = true;
+                let k = g.profile.keys.clone();
+                seen = [k.forward, k.back, k.left, k.right].into_iter().filter(|v| *v != 0 && down(*v)).collect();
+                continue;
+            }
+            let sent = just_sent();
+            with_backend(|b| g.sync_with_keyboard(&down, sent, &mut seen, b));
+        }
+    });
     std::thread::spawn(|| loop {
         std::thread::sleep(std::time::Duration::from_millis(500));
         let mut g = GAME.lock();
@@ -1243,6 +1431,41 @@ fn start_watchdog() {
             log::info!("Game mode: the game window is not in front, the keys are released");
         }
     });
+}
+
+// what the program heard last in the game mode (shown for a few seconds on the label over the game): the words and whether they were
+// understood. Only in memory.
+static HEARD: Lazy<Mutex<Option<(std::time::Instant, String, bool)>>> = Lazy::new(|| Mutex::new(None));
+
+pub fn note_heard(text: &str, understood: bool) {
+    *HEARD.lock() = Some((std::time::Instant::now(), text.chars().take(40).collect(), understood));
+}
+
+// (the words, understood) when the last phrase is recent
+pub fn last_heard() -> Option<(String, bool)> {
+    HEARD.lock().as_ref().filter(|h| h.0.elapsed() < std::time::Duration::from_secs(4)).map(|h| (h.1.clone(), h.2))
+}
+
+// While the mode is on the program goes on listening without the word «Джарвис» (a game is played in short phrases): the caller
+// of a phrase asks if it should keep the microphone open.
+pub fn keep_listening() -> bool {
+    is_active()
+}
+
+// A short spoken phrase while a game is in front and the mode is on, that is neither a phrase of the game nor a command of the
+// computer, is a misheard game phrase: it must not go to the AI («объясни, что такое иди в перёд»). The answer for the window (None:
+// this is not such a case and the phrase goes its usual way). Long sentences are questions and go on.
+pub fn unrecognised(text: &str) -> Option<String> {
+    if !is_active() || !in_game_now() {
+        return None;
+    }
+    let t = normalize(text);
+    if t.is_empty() || t.split(' ').count() > 5 {
+        return None;
+    }
+    note_heard(&t, false);
+    note_event("фраза не понята (ИИ не вызывался)");
+    Some(format!("Не понял команду игры: «{}». Скажите, например: иди вперёд, стой, смени оружие. Вопрос для ИИ — после «выключи игровой режим».", t))
 }
 
 // what a phrase means in the game mode right now: the user's own phrases first, then the phrases of the kind of the game in front,
@@ -1430,6 +1653,9 @@ pub fn status_json() -> Value {
 // A phrase of the user: Some(the answer to show) when it belonged to the game mode (the caller stops there), None otherwise.
 pub fn handle(text: &str) -> Option<String> {
     let action = decide(text)?;
+    if !matches!(action, Action::On | Action::Off) {
+        note_heard(&normalize(text), true);
+    }
     // a new action of the game (or «стой») ends the macro that plays; the answers about the screen, the list and the macros do not
     if !matches!(action, Action::Hint | Action::ReadText(_) | Action::MacroStart(_) | Action::MacroStop | Action::MacroDelete(_) | Action::AddGame(_) | Action::ForgetGame | Action::Help | Action::AimAssist(_)) {
         cancel_playing();
@@ -1720,6 +1946,172 @@ mod tests {
         for part in ["Отчёт по играм", "Режим включён: нет", "защита от читов: не найдена", "fallout3.exe · Fallout 3 · action · scan", "Игры в списке (1)", "Последний поиск игр", "проверка отчёта", "не входят: ключи"] {
             assert!(r.contains(part), "{}: {}", part, r);
         }
+        reset_global();
+    }
+
+    // ---- the hand of the user wins over the voice ----
+    fn walking_game() -> Game {
+        Game { profile: Profile::default(), active: true, ..Default::default() }
+    }
+
+    #[test]
+    fn the_back_key_of_the_user_lets_go_of_the_forward_key_of_the_voice() {
+        let (w, s, a, d, shift) = (0x57u16, 0x53u16, 0x41u16, 0x44u16, 0x10u16);
+        let mut g = walking_game();
+        let mut r = Rec::default();
+        g.apply(&Action::Walk(Dir::Forward), &mut r);
+        r.0.clear();
+        // «иди вперёд», then the user presses S: forward is let go (a key-up is sent), the user's S is his own
+        assert!(g.user_key(s, &mut r));
+        assert_eq!(r.0, vec![format!("{:#x}↑", w)]);
+        assert!(!g.held.contains(&w) && !g.held.contains(&s));
+        // a key that is not about walking changes nothing (a jump while walking by voice)
+        let mut g = walking_game();
+        let mut r = Rec::default();
+        g.apply(&Action::Walk(Dir::Forward), &mut r);
+        r.0.clear();
+        assert!(!g.user_key(0x20, &mut r) && r.0.is_empty() && g.held.contains(&w));
+        // the side keys are not opposite to forward: walking forward goes on (a diagonal)
+        assert!(!g.user_key(a, &mut r) && !g.user_key(d, &mut r));
+        assert!(g.held.contains(&w) && r.0.is_empty());
+        // left and right are opposite to each other
+        g.apply(&Action::Walk(Dir::Left), &mut r);
+        r.0.clear();
+        assert!(g.user_key(d, &mut r) && !g.held.contains(&a) && g.held.contains(&w));
+        // back also ends a run
+        let mut g = walking_game();
+        let mut r = Rec::default();
+        g.apply(&Action::Run, &mut r);
+        assert!(g.held.contains(&shift));
+        assert!(g.user_key(s, &mut r));
+        assert!(!g.held.contains(&w) && !g.held.contains(&shift));
+    }
+
+    #[test]
+    fn the_keyboard_is_read_a_moment_after_the_keys_of_the_program_and_its_stale_holds_are_dropped() {
+        use std::cell::RefCell;
+        let (w, s) = (0x57u16, 0x53u16);
+        let mut g = walking_game();
+        let mut r = Rec::default();
+        let mut seen = BTreeSet::new();
+        g.apply(&Action::Walk(Dir::Forward), &mut r);
+        r.0.clear();
+        let keys: RefCell<BTreeSet<u16>> = RefCell::new([w].into_iter().collect());
+        let down = |vk: u16| keys.borrow().contains(&vk);
+        // nothing happens: only W is down, and it is Jarvis'
+        assert!(!g.sync_with_keyboard(&down, false, &mut seen, &mut r) && g.held.contains(&w));
+        // right after a key of the program the keyboard is not read at all
+        keys.borrow_mut().insert(s);
+        assert!(!g.sync_with_keyboard(&down, true, &mut seen, &mut r) && r.0.is_empty());
+        // S was already down then: it is not a new press (it was down before)
+        assert!(!g.sync_with_keyboard(&down, false, &mut seen, &mut r) && g.held.contains(&w));
+        // the user lets go of S and presses it again: that is a new press, W is let go
+        keys.borrow_mut().remove(&s);
+        g.sync_with_keyboard(&down, false, &mut seen, &mut r);
+        keys.borrow_mut().insert(s);
+        assert!(g.sync_with_keyboard(&down, false, &mut seen, &mut r));
+        assert_eq!(r.0, vec![format!("{:#x}↑", w)]);
+        // the user lets go of W himself while Jarvis thinks it is held: the hold is dropped, so the next «иди вперёд» presses it again
+        let mut g = walking_game();
+        let mut r = Rec::default();
+        g.apply(&Action::Walk(Dir::Forward), &mut r);
+        let mut seen = BTreeSet::new();
+        *keys.borrow_mut() = BTreeSet::new();
+        assert!(g.sync_with_keyboard(&down, false, &mut seen, &mut r));
+        assert!(!g.held.contains(&w));
+        r.0.clear();
+        g.apply(&Action::Walk(Dir::Forward), &mut r);
+        assert_eq!(r.0, vec![format!("{:#x}↓", w)], "the key is pressed again");
+    }
+
+    // ---- what the recognizer writes, and the weapon ----
+    #[test]
+    fn walking_is_understood_from_what_the_recognizer_really_writes_and_other_words_are_not_taken() {
+        for t in ["иди вперед", "иду вперед", "идти вперёд", "иди в перед", "иди впереть", "иди вперет", "вперёд", "двигай вперёд", "иди впереди", "шагай вперед", "топай", "пошёл вперёд", "иди", "ИДИ ВПЕРЁД!", "иди, вперёд."] {
+            assert_eq!(p(t), Some(Action::Walk(Dir::Forward)), "{}", t);
+        }
+        for t in ["иди назад", "иди назат", "назад", "отступай"] {
+            assert_eq!(p(t), Some(Action::Walk(Dir::Back)), "{}", t);
+        }
+        assert_eq!(p("иди налево"), Some(Action::Walk(Dir::Left)));
+        assert_eq!(p("иди влеве"), Some(Action::Walk(Dir::Left)));
+        assert_eq!(p("иди направа"), Some(Action::Walk(Dir::Right)));
+        // not game phrases: ordinary talk and commands stay what they are
+        for t in ["сколько времени", "открой браузер", "какая погода", "включи музыку", "который час", "перед дверью", "поставь таймер на пять минут", "привет как дела"] {
+            assert_eq!(p(t), None, "{}", t);
+        }
+        // the edit distance: one letter for a word of five, two for a long one, never for a short one
+        assert!(near("вперет", "вперед") && near("назат", "назад") && near("направа", "направо"));
+        assert!(!near("иди", "иду"), "a short word is never taken for another");
+        assert!(!near("поезд", "вперед") && !near("перед", "назад") && !near("погода", "вперед"));
+        assert_eq!(p("перед дверью"), None);
+    }
+
+    // a backend that remembers keys and the wheel
+    #[derive(Default)]
+    struct Weapons(Vec<String>);
+    impl Backend for Weapons {
+        fn key(&mut self, vk: u16, down: bool) {
+            self.0.push(format!("{:#x}{}", vk, if down { "↓" } else { "↑" }));
+        }
+        fn mouse_move(&mut self, _: i32, _: i32) {}
+        fn button(&mut self, _: bool, _: bool) {}
+        fn pause(&mut self, _: u64) {}
+        fn wheel(&mut self, n: i32) {
+            self.0.push(format!("wheel {}", n));
+        }
+    }
+
+    #[test]
+    fn the_weapon_is_changed_by_a_key_by_the_wheel_or_by_the_number() {
+        assert_eq!(p("смени оружие"), Some(Action::Tap(Tap::Weapon)));
+        assert_eq!(p("поменяй оружие"), Some(Action::Tap(Tap::Weapon)));
+        assert_eq!(p("достань другое оружие"), Some(Action::Tap(Tap::Weapon)));
+        assert_eq!(p("переключи ствол"), Some(Action::Tap(Tap::Weapon)));
+        assert_eq!(p("следующее оружие"), Some(Action::Wheel(-1)));
+        assert_eq!(p("предыдущее оружие"), Some(Action::Wheel(1)));
+        assert_eq!(p("второе оружие"), Some(Action::Custom(vec![Step::Tap(0x32)])));
+        assert_eq!(p("оружие три"), Some(Action::Custom(vec![Step::Tap(0x33)])));
+        assert_eq!(p("первое оружие"), Some(Action::Custom(vec![Step::Tap(0x31)])));
+        // «опусти оружие» is still «не целься», not a change of weapon
+        assert_eq!(p("опусти оружие"), Some(Action::AimOff));
+        // what is sent: the key «weapon» (Q by default; the profile may change it) and a notch of the wheel
+        let mut g = walking_game();
+        let mut b = Weapons::default();
+        g.apply(&Action::Tap(Tap::Weapon), &mut b);
+        g.apply(&Action::Wheel(-1), &mut b);
+        g.apply(&Action::Wheel(1), &mut b);
+        assert_eq!(b.0, vec!["0x51↓", "0x51↑", "wheel -1", "wheel 1"]);
+        let mut o = serde_json::Map::new();
+        o.insert("weapon".into(), serde_json::json!("1"));
+        let mut keys = Profile::default().keys;
+        apply_keys(&mut keys, &o).unwrap();
+        assert_eq!(keys.weapon, 0x31);
+    }
+
+    #[test]
+    fn a_short_misheard_phrase_in_a_game_is_not_given_to_the_ai_and_a_long_one_or_another_window_is() {
+        let _l = GLOBAL.lock();
+        reset_global();
+        {
+            let mut g = GAME.lock();
+            g.active = true;
+        }
+        TEST_FRONT.with(|t| *t.borrow_mut() = Some(Some("iw4sp.exe".into())));
+        let msg = unrecognised("иди в пёрет").expect("a short misheard phrase is swallowed");
+        assert!(msg.contains("иди в перет") && msg.contains("Не понял"), "{}", msg);
+        assert_eq!(last_heard().map(|h| h.1), Some(false));
+        // a long sentence is a question: it goes on to the AI
+        assert!(unrecognised("объясни мне пожалуйста как работает двигатель внутреннего сгорания").is_none());
+        // another window is in front: the usual way
+        TEST_FRONT.with(|t| *t.borrow_mut() = Some(Some("chrome.exe".into())));
+        assert!(unrecognised("иди в пёрет").is_none());
+        // the mode is off: the usual way, and the microphone is not kept open
+        TEST_FRONT.with(|t| *t.borrow_mut() = Some(Some("iw4sp.exe".into())));
+        assert!(keep_listening());
+        GAME.lock().active = false;
+        assert!(unrecognised("иди в пёрет").is_none() && !keep_listening());
+        TEST_FRONT.with(|t| *t.borrow_mut() = None);
         reset_global();
     }
 

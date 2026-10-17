@@ -301,6 +301,16 @@ impl Drop for ListeningGuard {
     }
 }
 
+// the pauses after which listening for commands ends: normal ones, and long ones while the game mode is on (the game mode itself
+// ends the listening: «выключи игровой режим»)
+fn silence_limit(normal: u32) -> u32 {
+    if jarvis_core::gamemode::keep_listening() { normal.saturating_mul(120) } else { normal }
+}
+
+fn game_wait(normal: std::time::Duration) -> std::time::Duration {
+    if jarvis_core::gamemode::keep_listening() { std::time::Duration::from_secs(3600) } else { normal }
+}
+
 fn recognize_command(
     frame_buffer: &mut [i16],
     rt: &tokio::runtime::Runtime,
@@ -366,7 +376,8 @@ fn recognize_command(
                 } else {
                     silence_frames += 1;
                     
-                    if silence_frames > silence_threshold {
+                    // (while the game mode is on the microphone stays open: a pause of a minute is not the end of a game)
+                    if silence_frames > silence_limit(silence_threshold) {
                         info!("Long silence detected, returning to wake word mode.");
                         return;
                     }
@@ -486,7 +497,7 @@ fn recognize_command(
                 } else {
                     silence_frames += 1;
                     
-                    if silence_frames > silence_threshold {
+                    if silence_frames > silence_limit(silence_threshold) {
                         info!("Long silence detected, returning to wake word mode.");
                         return;
                     }
@@ -496,7 +507,7 @@ fn recognize_command(
         
         // timeout
         if let Ok(elapsed) = start.elapsed() {
-            if elapsed > config::CMS_WAIT_DELAY {
+            if elapsed > game_wait(config::CMS_WAIT_DELAY) {
                 info!("Command timeout, returning to wake word mode.");
                 return;
             }
@@ -653,7 +664,9 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
             }
             jarvis_core::uistate::log_action(text, "игровой режим", true);
             ipc::send(IpcEvent::Idle);
-            return false;
+            // a game is played in short phrases: while the mode is on, the microphone stays open and the word «Джарвис» is not needed
+            // before every one of them (the mode off: back to the word)
+            return jarvis_core::gamemode::keep_listening();
         }
     }
     // «режим психолога», «обычный режим»: the manner of the AI answers (ai.rs: modes). Free for everybody, changes only the style.
@@ -791,6 +804,23 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
         .or_else(|| commands::fetch_dictation(text, commands_list))
         .or_else(|| commands::fetch_site(text, commands_list))
         .or_else(|| commands::fetch_indexed_program(text, commands_list));
+
+    // the game mode is on, a game is in front and a SHORT phrase was said that is not a phrase of the game and not a command of the
+    // computer: a misheard game phrase. The AI is not asked (it would explain "иди в перёд" to a player): the label over the game
+    // shows what was heard, and the microphone stays open. Typed text and long sentences go the usual way.
+    if program_cmd.is_none() && VOICE_INPUT.load(std::sync::atomic::Ordering::SeqCst) && commands::fetch_by_triggers(text, commands_list).is_none() {
+        if let Some(msg) = jarvis_core::gamemode::unrecognised(text) {
+            info!("Game mode: a short phrase was not understood ({} chars), the AI is not asked", text.chars().count());
+            open_request(text, "command");
+            say(&msg);
+            ipc::send(IpcEvent::Output { text: msg.clone() });
+            jarvis_core::dialog::reply(&msg, "local");
+            jarvis_core::dialog::end(false);
+            jarvis_core::uistate::log_action(text, "игровой режим: фраза не понята", false);
+            ipc::send(IpcEvent::Idle);
+            return true;
+        }
+    }
 
     // a question for the AI ("что такое программа", "объясни, как работает Excel"): the commands do not run it
     if program_cmd.is_none() && jarvis_core::route::decide(text, jarvis_core::ai::is_configured()) == jarvis_core::route::Route::Ai {

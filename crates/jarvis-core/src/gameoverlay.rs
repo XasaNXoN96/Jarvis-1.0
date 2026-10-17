@@ -10,7 +10,7 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 
 // the text of the label
-pub fn label_text(held: &[String], aim: bool, recording: Option<&str>) -> String {
+pub fn label_text(held: &[String], aim: bool, recording: Option<&str>, heard: Option<(&str, bool)>) -> String {
     let mut s = String::from("● ИГРОВОЙ РЕЖИМ");
     if !held.is_empty() {
         s.push_str(" · ");
@@ -22,12 +22,17 @@ pub fn label_text(held: &[String], aim: bool, recording: Option<&str>) -> String
     if let Some(name) = recording {
         s.push_str(&format!(" · ЗАПИСЬ «{}»", name));
     }
+    // what was heard last (for a few seconds): so that the user sees what the microphone made of his words
+    if let Some((words, ok)) = heard {
+        s.push_str(&format!(" · «{}» {}", words, if ok { "✓" } else { "✗ не понял" }));
+    }
     s
 }
 
 pub fn current_label() -> String {
     let held: Vec<String> = gamemode::held_names();
-    label_text(&held, crate::aimassist::is_enabled(), crate::gamemacro::recording_name().as_deref())
+    let heard = gamemode::last_heard();
+    label_text(&held, crate::aimassist::is_enabled(), crate::gamemacro::recording_name().as_deref(), heard.as_ref().map(|(w, ok)| (w.as_str(), *ok)))
 }
 
 // a 40 ms tone (48 kHz, mono, 16 bit) with a soft start and end: a click that says «done»
@@ -112,7 +117,7 @@ mod win {
             let wc = WNDCLASSEXW { cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32, style: 0, lpfnWndProc: Some(proc_), cbClsExtra: 0, cbWndExtra: 0, hInstance: hinst, hIcon: std::ptr::null_mut(), hCursor: std::ptr::null_mut(), hbrBackground: std::ptr::null_mut(), lpszMenuName: std::ptr::null(), lpszClassName: class.as_ptr(), hIconSm: std::ptr::null_mut() };
             RegisterClassExW(&wc);
             // always on top, passes the mouse through, never takes the focus, not in the task bar
-            let hwnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, class.as_ptr(), wide("Jarvis game").as_ptr(), WS_POPUP, 24, 24, 560, 34, std::ptr::null_mut(), std::ptr::null_mut(), hinst, std::ptr::null_mut());
+            let hwnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, class.as_ptr(), wide("Jarvis game").as_ptr(), WS_POPUP, 24, 24, 860, 34, std::ptr::null_mut(), std::ptr::null_mut(), hinst, std::ptr::null_mut());
             if hwnd.is_null() {
                 return;
             }
@@ -126,7 +131,7 @@ mod win {
                     ShowWindow(hwnd, if want { SW_SHOWNOACTIVATE } else { SW_HIDE });
                     shown = want;
                     if want {
-                        SetWindowPos(hwnd, HWND_TOPMOST, 24, 24, 560, 34, SWP_NOACTIVATE);
+                        SetWindowPos(hwnd, HWND_TOPMOST, 24, 24, 860, 34, SWP_NOACTIVATE);
                     }
                 }
                 if want && text != last {
@@ -157,10 +162,12 @@ mod tests {
 
     #[test]
     fn the_label_tells_the_state() {
-        assert_eq!(label_text(&[], false, None), "● ИГРОВОЙ РЕЖИМ");
-        assert_eq!(label_text(&["W".into(), "SHIFT".into()], false, None), "● ИГРОВОЙ РЕЖИМ · W+SHIFT");
-        assert_eq!(label_text(&[], true, None), "● ИГРОВОЙ РЕЖИМ · ПРИЦЕЛ");
-        assert_eq!(label_text(&["W".into()], true, Some("комбо")), "● ИГРОВОЙ РЕЖИМ · W · ПРИЦЕЛ · ЗАПИСЬ «комбо»");
+        assert_eq!(label_text(&[], false, None, None), "● ИГРОВОЙ РЕЖИМ");
+        assert_eq!(label_text(&["W".into(), "SHIFT".into()], false, None, None), "● ИГРОВОЙ РЕЖИМ · W+SHIFT");
+        assert_eq!(label_text(&[], true, None, None), "● ИГРОВОЙ РЕЖИМ · ПРИЦЕЛ");
+        assert_eq!(label_text(&["W".into()], true, Some("комбо"), None), "● ИГРОВОЙ РЕЖИМ · W · ПРИЦЕЛ · ЗАПИСЬ «комбо»");
+        assert_eq!(label_text(&["W".into()], false, None, Some(("иди вперёд", true))), "● ИГРОВОЙ РЕЖИМ · W · «иди вперёд» ✓");
+        assert_eq!(label_text(&[], false, None, Some(("иди в перёт", false))), "● ИГРОВОЙ РЕЖИМ · «иди в перёт» ✗ не понял");
     }
 
     #[test]
