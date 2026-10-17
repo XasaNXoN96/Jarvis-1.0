@@ -458,6 +458,8 @@ pub fn status_json() -> Value {
     let l = LIVE.lock();
     let step = l.enrolling.as_ref().map(|e| e.len()).unwrap_or(0);
     json!({
+        // no microphone in this computer: the voice is recorded on the remote page
+        "no_pc_mic": crate::VOICE_ERROR.lock().contains("устройства записи"),
         "enrolled": s.print.is_some(), "enabled": s.enabled && s.print.is_some(), "strictness": s.strictness,
         "enrolling": l.enrolling.is_some(), "testing": l.testing, "step": step, "total": PROMPTS.len(),
         "prompt": if l.enrolling.is_some() { PROMPTS.get(step).copied().unwrap_or("") } else { "" },
@@ -470,15 +472,14 @@ pub fn status_json() -> Value {
 #[cfg(test)]
 pub(crate) static TEST_LOCK: Mutex<()> = Mutex::new(());
 
+// synthetic voices for the tests (here and in the tests of the remote page)
 #[cfg(test)]
-mod tests {
-    use super::*;
-
+pub(crate) mod synth {
     const SR: u32 = 16_000;
 
     // a small «voice» made by the source-and-filter way: pulses of the pitch `f0`, three resonances (the formants) that change with the
     // sounds, a little noise; `seed` makes another «phrase»
-    fn voice(f0: f32, formant_scale: f32, seed: u64, secs: f32) -> Vec<i16> {
+    pub fn voice(f0: f32, formant_scale: f32, seed: u64, secs: f32) -> Vec<i16> {
         let mut rng = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
         let mut rand = move || {
             rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
@@ -524,6 +525,15 @@ mod tests {
         }
         out
     }
+
+}
+
+#[cfg(test)]
+mod tests {
+    use super::synth::voice;
+    use super::*;
+
+    const SR: u32 = 16_000;
 
     fn noise(secs: f32, seed: u64) -> Vec<i16> {
         let mut rng = seed;

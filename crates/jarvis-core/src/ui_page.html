@@ -2931,8 +2931,11 @@ async function vpRefresh() {
   $('#vp-strict').value = String(v.strictness);
   $('#vp-rec').textContent = v.enrolled ? 'Записать заново' : 'Записать мой голос';
   $('#vp-rec').hidden = !!v.enrolling; $('#vp-cancel').hidden = !v.enrolling;
-  $('#vp-test').disabled = !v.enrolled || !!v.enrolling; $('#vp-del').disabled = !v.enrolled && !v.enrolling;
-  $('#vp-note').textContent = v.note || (v.enrolled ? 'Образец записан.' : 'Образец не записан.');
+  $('#vp-test').disabled = !!v.no_pc_mic || !v.enrolled || !!v.enrolling; $('#vp-del').disabled = !v.enrolled && !v.enrolling;
+  // a computer without a microphone: the voice is recorded on the remote page of the phone or the tablet
+  const remoteOnly = v.no_pc_mic ? ' На этом компьютере нет микрофона: записывайте голос на пульте (телефон или планшет): вкладка «Ещё» → «Мой голос».' : '';
+  $('#vp-note').textContent = (v.note || (v.enrolled ? 'Образец записан.' : 'Образец не записан.')) + remoteOnly;
+  $('#vp-rec').disabled = !!v.no_pc_mic; $('#vp-test').disabled = !!v.no_pc_mic || !v.enrolled || !!v.enrolling;
   $('#vp-stat').textContent = v.enrolled ? 'Принято фраз: ' + v.accepted + ', отклонено: ' + v.rejected + (v.last ? ' · последняя: ' + (v.last.ok ? 'принята' : 'отклонена') + ' (расстояние ' + v.last.distance.toFixed(2) + ', порог ' + v.last.threshold.toFixed(2) + ')' : '') : '';
 }
 async function vpAct(name, extra) { const r = await action(name, extra).catch(() => ({})); if (r.ok === false) $('#vp-note').textContent = r.message || 'Не получилось.'; vpRefresh(); }

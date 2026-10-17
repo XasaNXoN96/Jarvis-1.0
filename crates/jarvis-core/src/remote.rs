@@ -777,15 +777,17 @@ struct Request {
     body: String,
 }
 
+// the largest phrase of speech from the page: ten seconds of 16-bit 16 kHz audio in base64
+pub const MAX_AUDIO_BODY: usize = 460_000;
+
 fn read_request<S: Read>(stream: &mut S) -> std::io::Result<Request> {
     let mut buf: Vec<u8> = Vec::new();
     let mut chunk = [0u8; 2048];
     // the whole request must arrive within a few seconds (each read has its own timeout, but a client sending one
     // byte now and then could otherwise hold a connection — and with it a slot — for hours)
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
-    let late = || std::time::Instant::now() > deadline;
+    let mut deadline = std::time::Instant::now() + Duration::from_secs(10);
     let header_end = loop {
-        if late() {
+        if std::time::Instant::now() > deadline {
             return Err(std::io::ErrorKind::TimedOut.into());
         }
         let n = stream.read(&mut chunk)?;
@@ -828,11 +830,17 @@ fn read_request<S: Read>(stream: &mut S) -> std::io::Result<Request> {
             }
         }
     }
-    if content_length > 2000 {
+    // a phrase of speech from the microphone of the page (base64 of 16 kHz audio) is bigger than a command and takes longer to arrive;
+    // nothing else may be
+    let audio = method == "POST" && path.split('?').next() == Some("/voice-audio");
+    if audio {
+        deadline = std::time::Instant::now() + Duration::from_secs(25);
+    }
+    if content_length > if audio { MAX_AUDIO_BODY } else { 2000 } {
         return Err(std::io::ErrorKind::InvalidData.into());
     }
     while buf.len() < header_end + content_length {
-        if late() {
+        if std::time::Instant::now() > deadline {
             return Err(std::io::ErrorKind::TimedOut.into());
         }
         let n = stream.read(&mut chunk)?;
@@ -990,6 +998,62 @@ fn token_in_path(path: &str) -> Option<String> {
         .find_map(|kv| kv.strip_prefix("t=").map(|v| v.to_string()))
 }
 
+// the buttons of «Мой голос» on the page: start, cancel, test, delete, enable:1 / enable:0, strict:0..2
+fn voiceprint_do(op: &str) -> Result<(), String> {
+    match op {
+        "start" => crate::voiceprint::start_enrollment(),
+        "cancel" => crate::voiceprint::cancel_enrollment(),
+        "test" => crate::voiceprint::start_test(),
+        "delete" => crate::voiceprint::delete(),
+        "enable:1" => return crate::voiceprint::set_enabled(true),
+        "enable:0" => return crate::voiceprint::set_enabled(false),
+        "strict:0" | "strict:1" | "strict:2" => crate::voiceprint::set_strictness(op.as_bytes()[7] - b'0'),
+        _ => return Err("неизвестное действие".into()),
+    }
+    Ok(())
+}
+
+// A phrase of speech recorded by the microphone of the page (16 kHz mono). While the voice is being recorded or tested the phrase is
+// only measured. Otherwise: the voice is compared with the print of the owner (when that lock is on), the phrase is recognized here
+// (offline, Vosk) and runs as a command of the phone. What came back: for the page to show.
+pub fn voice_audio(samples: &[i16]) -> serde_json::Value {
+    use serde_json::json;
+    if crate::voiceprint::capturing() {
+        let message = crate::voiceprint::take_capture(samples, 16_000);
+        return json!({ "ok": true, "kind": "capture", "message": message, "status": crate::voiceprint::status_json() });
+    }
+    if crate::voiceprint::is_active() {
+        if let crate::voiceprint::Verdict::Refused { distance, threshold } = crate::voiceprint::check(samples, 16_000) {
+            info!("Remote control voice: not the owner's voice (distance {:.2}, threshold {:.2})", distance, threshold);
+            crate::uistate::log_event("info", &format!("Голос с пульта не распознан как ваш (расстояние {:.2}, порог {:.2}): фраза проигнорирована", distance, threshold));
+            return json!({ "ok": false, "kind": "refused", "message": format!("Голос не распознан как ваш (расстояние {:.2}, порог {:.2}). Если это были вы: «Мягче» или «Записать заново».", distance, threshold) });
+        }
+    }
+    let text = match crate::tgvoice::recognize(samples) {
+        Ok(t) => t.trim().to_string(),
+        Err(e) => return json!({ "ok": false, "kind": "error", "message": e }),
+    };
+    if text.is_empty() {
+        return json!({ "ok": false, "kind": "empty", "message": "Не расслышал." });
+    }
+    // the words of Jarvis himself that the microphone of the page caught (the answer is played by the computer or by the page)
+    if crate::tts::is_own_echo(&text) {
+        info!("Remote control voice: the own voice of Jarvis was ignored");
+        return json!({ "ok": false, "kind": "echo", "message": "Это был голос самого Джарвиса." });
+    }
+    if text.chars().count() > 300 {
+        return json!({ "ok": false, "kind": "error", "message": "Фраза слишком длинная." });
+    }
+    if !queue_ready_for_phone() {
+        return json!({ "ok": false, "kind": "error", "message": "Компьютер пока не принимает команды (Jarvis запускается или пульт выключен)." });
+    }
+    // what was said is private: only its size goes to the log
+    info!("Remote control spoken command: {} chars", text.chars().count());
+    note_phone_command();
+    submit(Source::Phone, &text);
+    json!({ "ok": true, "kind": "command", "text": text })
+}
+
 fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
     let req = read_request(stream)?;
 
@@ -1062,6 +1126,23 @@ fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
                 respond(stream, "200 OK", "text/plain", "ok");
             } else {
                 respond(stream, "503 Service Unavailable", "text/plain", "not ready");
+            }
+        }
+        // «Мой голос» (voiceprint.rs) from the page: the state, the buttons, and the phrases of speech that the page records
+        ("GET", "/voiceprint") => respond(stream, "200 OK", "application/json", &crate::voiceprint::status_json().to_string()),
+        ("POST", "/voiceprint-do") => match voiceprint_do(req.body.trim()) {
+            Ok(()) => respond(stream, "200 OK", "application/json", &crate::voiceprint::status_json().to_string()),
+            Err(e) => respond(stream, "400 Bad Request", "application/json", &serde_json::json!({ "ok": false, "message": e }).to_string()),
+        },
+        ("POST", "/voice-audio") => {
+            let bytes = crate::docai::b64_decode(req.body.trim()).unwrap_or_default();
+            // from 0.4 s to 10 s of 16 kHz 16-bit audio
+            if bytes.len() % 2 != 0 || !(12_800..=320_000).contains(&bytes.len()) {
+                respond(stream, "400 Bad Request", "application/json", &serde_json::json!({ "ok": false, "kind": "error", "message": "Звук не подходит: нужна фраза от 0,4 до 10 секунд." }).to_string());
+            } else {
+                let samples: Vec<i16> = bytes.chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]])).collect();
+                info!("Remote control voice: {} samples", samples.len());
+                respond(stream, "200 OK", "application/json", &voice_audio(&samples).to_string());
             }
         }
         // what plays on the computer now (the window titles of the players and of YouTube in a browser)
@@ -1260,6 +1341,20 @@ const PAGE: &str = r#"<!doctype html>
     </section>
     <section id="g-voicepick"><h2>Голос Джарвиса</h2>
       <div class="row" style="display:block"><div>Кто отвечает<small>тот же выбор, что в Настройках → Голос на компьютере</small></div><select id="vsel" aria-label="Голос Джарвиса"><option value="">Загружаю список…</option></select><div class="dim" id="vmsg"></div></div>
+    </section>
+    <section id="g-vp"><h2>Мой голос</h2>
+      <div class="row" style="display:block"><div>Чтобы Jarvis слушал только вас<small>микрофон этого устройства записывает ваши фразы и отправляет их на компьютер; звук не сохраняется, хранятся только числа</small></div>
+        <div class="dim" id="vp-note">Загружаю…</div>
+        <div class="dim" id="vp-stat"></div>
+        <button class="btn wide" id="vp-rec" type="button">Записать мой голос</button>
+        <button class="btn wide" id="vp-cancel" type="button" hidden>Отмена</button>
+        <button class="btn wide" id="vp-test" type="button">Проверить мой голос</button>
+        <label class="dim" style="display:block;margin-top:10px"><input type="checkbox" id="vp-on"> Слушать только мой голос</label>
+        <label class="dim" style="display:block;margin-top:6px"><input type="checkbox" id="pcrec"> Распознавать речь на компьютере (офлайн, без интернета у планшета)</label>
+        <select id="vp-strict" aria-label="Строгость проверки голоса"><option value="0">Мягче</option><option value="1">Обычная</option><option value="2">Строже</option></select>
+        <button class="btn wide" id="vp-del" type="button">Удалить мой голос</button>
+      </div>
+      <div class="dim">Это простая защита (экспериментально): голос различается по тембру и высоте и может ошибаться на похожих голосах. Когда включено «Слушать только мой голос», речь распознаёт компьютер, а не браузер планшета.</div>
     </section>
     <section id="g-limits"><h2>Чего пульт не делает</h2>
       <div class="dim">Пульт — это страница в браузере, а не приложение. Поэтому он не блокирует и не усыпляет телефон, не читает уведомления телефона и не управляет его другими приложениями. Обойти экран блокировки, PIN-код или разрешения Android он не пытается.</div>
@@ -1490,6 +1585,8 @@ function voice(st, err) {
 if (!window.isSecureContext) { voice('unavailable', 'Голос: нужна защищённая страница пульта (кнопка ниже). Текстом всё работает.'); }
 else if (!SR) { voice('unavailable', 'Этот браузер не умеет распознавать речь. Используйте Chrome или микрофон на клавиатуре.'); }
 function listen() {
+  // the lock to the voice of the owner (or the user's choice): the computer recognizes the speech, not the browser
+  if (usePc()) { pcListen(); return; }
   if (!window.isSecureContext) { $('help').style.display = 'block'; voice('unavailable', 'Браузер не разрешает микрофон на этой странице. Откройте защищённую страницу (ниже).'); wantVoice = false; return; }
   if (!SR) { voice('unavailable', 'Браузер не умеет слушать. Нажмите значок микрофона на клавиатуре в поле команды.'); wantVoice = false; return; }
   rec = new SR(); rec.lang = navigator.language && !/^ru/i.test(navigator.language) && /^(en|uk)/i.test(navigator.language) ? navigator.language : 'ru-RU'; rec.interimResults = true; rec.continuous = false;
@@ -1511,8 +1608,108 @@ function listen() {
   };
   try { rec.start(); } catch (e) { rec = null; micBtn.classList.remove('on'); voice('error', 'Не удалось включить микрофон: ' + e.message); wantVoice = false; }
 }
-micBtn.onclick = () => { if (rec) { wantVoice = false; $('cont').checked = false; rec.stop(); return; } wantVoice = $('cont').checked; listen(); };
+micBtn.onclick = () => { if (pcMic) { wantVoice = false; $('cont').checked = false; pcStop(); return; } if (rec) { wantVoice = false; $('cont').checked = false; rec.stop(); return; } wantVoice = $('cont').checked; listen(); };
 $('cont').onchange = () => { wantVoice = $('cont').checked; if (wantVoice && !rec) listen(); if (!wantVoice && rec) rec.stop(); };
+
+// ---------- the microphone of this page for the computer: «Мой голос» and offline recognition on the computer ----------
+// The page records speech itself, cuts it into phrases (by pauses) and sends every phrase to the computer: it keeps or checks the
+// voiceprint (recording the voice), or compares the voice with the print and recognizes the phrase offline and runs it as a command.
+let pcMic = null, vp = { enrolled: false, enabled: false, enrolling: false, testing: false };
+const usePc = () => $('pcrec').checked || vp.enabled;
+function toPcm16(frames, rate) {
+  let n = 0; for (const f of frames) n += f.length;
+  const all = new Float32Array(n); let o = 0; for (const f of frames) { all.set(f, o); o += f.length; }
+  const ratio = rate / 16000, m = Math.floor(n / ratio), out = new Int16Array(m);
+  for (let i = 0; i < m; i++) { const a = Math.floor(i * ratio), b = Math.min(n, Math.floor((i + 1) * ratio)); let s = 0; for (let j = a; j < b; j++) s += all[j]; const v = s / Math.max(1, b - a); out[i] = Math.max(-1, Math.min(1, v)) * 32767; }
+  const bytes = new Uint8Array(out.buffer); let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+async function pcMicStart(onPhrase) {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  const AC = window.AudioContext || window.webkitAudioContext; const ctx = new AC();
+  const src = ctx.createMediaStreamSource(stream), proc = ctx.createScriptProcessor(4096, 1, 1), mute = ctx.createGain(); mute.gain.value = 0;
+  const blockSec = 4096 / ctx.sampleRate;
+  let pre = [], buf = [], voiced = 0, silent = 0, floor = 0.004, on = false;
+  proc.onaudioprocess = e => {
+    // while the answer is played by this page the microphone hears it: nothing is taken then
+    if (speakingHere) { pre = []; buf = []; on = false; return; }
+    const x = e.inputBuffer.getChannelData(0); let sum = 0; for (let i = 0; i < x.length; i++) sum += x[i] * x[i];
+    const rms = Math.sqrt(sum / x.length), thr = Math.max(0.012, floor * 3.5), copy = new Float32Array(x);
+    if (!on) {
+      floor = floor * 0.95 + rms * 0.05; pre.push(copy); if (pre.length > 3) pre.shift();
+      if (rms > thr) { on = true; buf = pre.slice(); pre = []; voiced = 1; silent = 0; }
+      return;
+    }
+    buf.push(copy); if (rms > thr) { voiced++; silent = 0; } else silent++;
+    if (silent * blockSec > 0.8 || buf.length * blockSec > 8) {
+      const frames = buf, v = voiced; on = false; buf = []; voiced = 0; silent = 0;
+      if (v * blockSec >= 0.4) onPhrase(toPcm16(frames, ctx.sampleRate));
+    }
+  };
+  src.connect(proc); proc.connect(mute); mute.connect(ctx.destination);
+  return { stop() { try { proc.onaudioprocess = null; proc.disconnect(); src.disconnect(); stream.getTracks().forEach(t => t.stop()); ctx.close(); } catch (e) {} } };
+}
+function pcStop() { if (pcMic) { pcMic.stop(); pcMic = null; } micBtn.classList.remove('on'); if (state.voice === 'listening') voice('off'); }
+async function pcSend(b64) {
+  const c = new AbortController(), t = setTimeout(() => c.abort(), 25000);
+  try {
+    const r = await fetch('/voice-audio', { method: 'POST', headers: { 'X-Token': token, 'X-Rid': rid() }, body: b64, signal: c.signal });
+    const j = await r.json().catch(() => ({ ok: false, message: 'Ошибка ' + r.status }));
+    connected(); return j;
+  } catch (e) { return { ok: false, kind: 'error', message: 'Нет связи с компьютером.' }; } finally { clearTimeout(t); }
+}
+// a phrase of the command mode: the answer of the computer is shown
+async function pcCommandPhrase(b64) {
+  heard.textContent = 'Распознаю на компьютере…';
+  const j = await pcSend(b64);
+  if (j.kind === 'command') { heard.textContent = '«' + j.text + '» ✓'; status.textContent = '✓ ' + j.text; }
+  else if (j.kind === 'echo') heard.textContent = '';
+  else heard.textContent = (j.message || 'Не получилось.');
+  if (!$('cont').checked) pcStop();
+}
+async function pcListen() {
+  if (pcMic) return;
+  if (!window.isSecureContext || !navigator.mediaDevices) { voice('unavailable', 'Браузер не разрешает микрофон на этой странице. Откройте защищённую страницу (ниже).'); return; }
+  try { pcMic = await pcMicStart(pcCommandPhrase); micBtn.classList.add('on'); heard.textContent = 'Слушаю (голос обрабатывает компьютер)… Нажмите на сферу, чтобы остановить.'; voice('listening'); }
+  catch (e) { pcMic = null; voice('error', 'Нет доступа к микрофону: разрешите его для этой страницы.'); }
+}
+// ---- the card «Мой голос» ----
+async function vpLoad() {
+  try {
+    const r = await fetchT('/voiceprint', { headers: { 'X-Token': token } }); if (!r.ok) return;
+    vp = await r.json();
+    $('vp-note').textContent = vp.note || (vp.enrolled ? 'Образец голоса записан.' : 'Образец не записан.');
+    $('vp-on').checked = !!vp.enabled; $('vp-on').disabled = !vp.enrolled; $('vp-strict').value = String(vp.strictness);
+    $('vp-rec').hidden = !!vp.enrolling; $('vp-cancel').hidden = !vp.enrolling; $('vp-rec').textContent = vp.enrolled ? 'Записать заново' : 'Записать мой голос';
+    $('vp-test').disabled = !vp.enrolled || !!vp.enrolling; $('vp-del').disabled = !vp.enrolled && !vp.enrolling;
+    $('vp-stat').textContent = vp.enrolled ? 'Принято фраз: ' + vp.accepted + ', отклонено: ' + vp.rejected + (vp.last ? ' · последняя: ' + (vp.last.ok ? 'принята' : 'отклонена') + ' (' + vp.last.distance.toFixed(2) + ' при пороге ' + vp.last.threshold.toFixed(2) + ')' : '') : '';
+  } catch (e) {}
+}
+async function vpDo(op) { try { await fetchT('/voiceprint-do', { method: 'POST', headers: { 'X-Token': token, 'X-Rid': rid() }, body: op }); } catch (e) {} await vpLoad(); }
+// recording the voice or testing it: the microphone of the page sends every phrase; it stops when the computer says it is done
+async function vpCapture(op) {
+  if (!window.isSecureContext || !navigator.mediaDevices) { $('vp-note').textContent = 'Нужна защищённая страница пульта (кнопка ниже в подсказке).'; return; }
+  wantVoice = false; $('cont').checked = false; if (rec) { try { rec.abort(); } catch (e) {} } pcStop();
+  await vpDo(op);
+  try {
+    pcMic = await pcMicStart(async b64 => {
+      $('vp-note').textContent = 'Обрабатываю…';
+      const j = await pcSend(b64);
+      await vpLoad();
+      if (j.message) $('vp-note').textContent = j.message;
+      if (!vp.enrolling && !vp.testing) pcStop();
+    });
+    micBtn.classList.add('on');
+  } catch (e) { pcMic = null; $('vp-note').textContent = 'Нет доступа к микрофону: разрешите его для этой страницы.'; await vpDo('cancel'); }
+}
+$('vp-rec').onclick = () => vpCapture('start'); $('vp-test').onclick = () => vpCapture('test');
+$('vp-cancel').onclick = async () => { pcStop(); await vpDo('cancel'); };
+$('vp-del').onclick = async () => { if (confirm('Удалить записанный образец голоса? Jarvis снова будет слушать всех.')) { pcStop(); await vpDo('delete'); } };
+$('vp-on').onchange = e => vpDo(e.target.checked ? 'enable:1' : 'enable:0'); $('vp-strict').onchange = e => vpDo('strict:' + e.target.value);
+$('pcrec').checked = (() => { try { return localStorage.getItem('jarvis_pcrec') === '1'; } catch (e) { return false; } })();
+$('pcrec').onchange = () => { try { localStorage.setItem('jarvis_pcrec', $('pcrec').checked ? '1' : '0'); } catch (e) {} if (pcMic) pcStop(); };
+vpLoad(); setInterval(() => { if ($('t-more').classList.contains('on')) vpLoad(); }, 2500);
 
 // ---------- what plays on the computer now (AIMP, YouTube in a browser ...), asked while the sound tab is open ----------
 let npTimer = 0;
@@ -1997,7 +2194,50 @@ mod tests {
         String::from_utf8_lossy(&p.output).to_string()
     }
 
-    // the phone chooses the voice of the answers from the list of the computer; nothing else can be set, and a wrong secret sets nothing
+    fn pcm_base64(samples: &[i16]) -> String {
+        let bytes: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
+        crate::docai::b64_encode(&bytes)
+    }
+
+    // «Мой голос» from the page: every door needs the secret; the voice is recorded from phrases of audio that the page sends; a voice that
+    // is not the owner's is stopped before anything is recognized or run
+    #[test]
+    fn the_page_records_the_voice_of_the_owner_and_the_lock_stops_another_voice_before_recognition() {
+        use crate::voiceprint::synth::voice;
+        let _g = PHONE_TEST_LOCK.lock();
+        let _v = crate::voiceprint::TEST_LOCK.lock();
+        phone_for_tests(true, true);
+        crate::voiceprint::delete();
+        let t = token();
+        // the secret
+        for path in ["/voiceprint", "/voiceprint-do", "/voice-audio"] {
+            let a = if path == "/voiceprint" { phone_get(path, "wrong-token") } else { phone_request(path, "wrong-token", "start") };
+            assert!(a.starts_with("HTTP/1.1 403"), "{}: {}", path, a);
+        }
+        // the buttons
+        assert!(phone_request("/voiceprint-do", &t, "format c:").starts_with("HTTP/1.1 400"));
+        assert!(phone_request("/voiceprint-do", &t, "enable:1").starts_with("HTTP/1.1 400"), "no print yet");
+        let started = phone_request("/voiceprint-do", &t, "start");
+        assert!(started.starts_with("HTTP/1.1 200") && started.contains("\"enrolling\":true"), "{}", started);
+        // bad audio: not base64, too short
+        assert!(phone_request("/voice-audio", &t, "это не звук!").starts_with("HTTP/1.1 400"));
+        assert!(phone_request("/voice-audio", &t, &pcm_base64(&voice(110.0, 1.0, 1, 0.1))).starts_with("HTTP/1.1 400"));
+        // five phrases of the owner
+        for seed in 1..=5u64 {
+            let r = phone_request("/voice-audio", &t, &pcm_base64(&voice(110.0, 1.0, seed, 2.5)));
+            assert!(r.starts_with("HTTP/1.1 200") && r.contains("\"kind\":\"capture\""), "{}", r);
+        }
+        assert!(phone_get("/voiceprint", &t).contains("\"enrolled\":true"));
+        // the lock on: another voice is refused before the recognition (the message says so), the owner goes on to the recognition
+        assert!(phone_request("/voiceprint-do", &t, "enable:1").contains("\"enabled\":true"));
+        let other = phone_request("/voice-audio", &t, &pcm_base64(&voice(210.0, 1.2, 41, 2.5)));
+        assert!(other.contains("\"kind\":\"refused\"") && other.contains("не распознан как ваш"), "{}", other);
+        let owner = phone_request("/voice-audio", &t, &pcm_base64(&voice(110.0, 1.0, 31, 2.5)));
+        assert!(!owner.contains("refused"), "the owner is not refused: {}", owner);
+        crate::voiceprint::delete();
+    }
+
+        // the phone chooses the voice of the answers from the list of the computer; nothing else can be set, and a wrong secret sets nothing
     #[test]
     fn the_phone_chooses_a_voice_from_the_list_only_and_only_with_the_secret() {
         let _g = PHONE_TEST_LOCK.lock();
