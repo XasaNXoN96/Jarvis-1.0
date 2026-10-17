@@ -970,6 +970,7 @@
           <div class="r"><input type="number" id="gp-aim-min" min="0" max="400" step="2" style="width:76px"> <button class="btn" id="gp-aim-save" type="button">Сохранить настройки</button></div></div>
         <div class="setrow"><div class="l">Диагностика<small>модель, источник и проверка целостности, среда выполнения, устройство, захват экрана, время кадра, ошибки. Ключей, снимков экрана и голоса в отчёте нет</small></div>
           <div class="r"><button class="btn" id="gp-aim-report" type="button">Копировать отчёт</button></div></div>
+        <div class="msgline" id="gp-aim-msg" role="status" style="padding:6px 0"></div>
         <small class="dim">Модель находит человека целиком (не отдельно голову и корпус): «голова» и «корпус» — точки внутри рамки человека. Фразы: «целься в голову» / «целься в корпус», «прицельный огонь», «не целься», «стой» (выключает всё сразу). Помощь работает только пока удерживается правая кнопка мыши в окне игры, выключена при каждом запуске и не работает при защите от читов. Подробности и лицензия модели: docs/GAME-MODE.md.</small>
       </div>
       <div class="card"><h3><span class="ei">⏺</span>Макросы голосом</h3>
@@ -2727,6 +2728,7 @@ const GP_VIEWS = [['large', 'Крупные значки'], ['medium', 'Обыч
 const GP_SORTS = ['name', 'added', 'recent'];
 const GP_GENRES = { shooter: 'Шутер', racing: 'Гонки', action: 'Экшен / приключения' };
 const gpEsc = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function aimMsg(t, ok) { const m = $('#gp-aim-msg'); if (!m) return; m.className = 'msgline' + (ok === false ? ' bad' : (ok ? ' ok' : '')); m.textContent = t || ''; }
 function gpMsg(t, ok) { const m = $('#gp-msg'); m.className = 'msgline' + (ok === false ? ' bad' : (ok ? ' ok' : '')); m.textContent = t || ''; }
 try { const v = localStorage.getItem('games-view'); if (GP_VIEWS.some(x => x[0] === v)) GP.view = v; const s = localStorage.getItem('games-sort'); if (GP_SORTS.includes(s)) GP.sort = s; } catch (e) {}
 
@@ -2973,8 +2975,8 @@ $('#gp-scan').onclick = async () => { const r = await action('game_scan').catch(
 
 // ---- the mode, the label, the sound, the report ----
 $('#gp-report').onclick = async () => { try { const t = await (await fetch('/games-report')).text(); await copyText(t, $('#gp-report')); gpMsg('Отчёт скопирован', true); } catch (e) { gpMsg('Не удалось скопировать', false); } };
-$('#gp-aim-on').onclick = async () => { const r = await action('game_aim', { value: true }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gpSummary(); aimRefresh(); };
-$('#gp-aim-off').onclick = async () => { const r = await action('game_aim', { value: false }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gpSummary(); aimRefresh(); };
+$('#gp-aim-on').onclick = async () => { const r = await action('game_aim', { value: true }).catch(() => ({})); gpMsg(r.message, r.ok !== false); aimMsg(r.message || (r.ok === false ? 'Не удалось' : ''), r.ok !== false); gpSummary(); aimRefresh(); };
+$('#gp-aim-off').onclick = async () => { const r = await action('game_aim', { value: false }).catch(() => ({})); gpMsg(r.message, r.ok !== false); aimMsg(r.message || (r.ok === false ? 'Не удалось' : ''), r.ok !== false); gpSummary(); aimRefresh(); };
 $('#gp-on').onclick = async () => { const r = await action('game_mode', { value: true }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gpSummary(); };
 $('#gp-off').onclick = async () => { const r = await action('game_mode', { value: false }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gpSummary(); };
 $('#gp-overlay').onchange = async e => { const r = await action('game_opts', { overlay: e.target.checked }).catch(() => ({})); if (r.ok === false) { e.target.checked = !e.target.checked; gpMsg(r.message, false); } };
@@ -3034,7 +3036,7 @@ async function aimRefresh() {
   }
   clearTimeout(AIM.timer); if (busy) AIM.timer = setTimeout(aimRefresh, 700);
 }
-async function aimDo(name, extra) { const r = await action(name, extra || {}).catch(() => ({ ok: false, message: 'Не удалось связаться с программой.' })); if (!r.cancelled) gpMsg(r.message, r.ok !== false); aimRefresh(); return r; }
+async function aimDo(name, extra) { const r = await action(name, extra || {}).catch(() => ({ ok: false, message: 'Не удалось связаться с программой.' })); if (!r.cancelled) { gpMsg(r.message, r.ok !== false); aimMsg(r.message, r.ok !== false); } aimRefresh(); return r; }
 $('#gp-aim-install').onclick = () => aimDo('aim_model_install');
 $('#gp-aim-model').onclick = () => aimDo('aim_pick_model');
 $('#gp-aim-cancel').onclick = () => aimDo('aim_model_cancel');
