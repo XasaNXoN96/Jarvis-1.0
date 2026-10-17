@@ -250,6 +250,8 @@ fn main() -> Result<(), String> {
     jarvis_core::tts::init();
     // saved privacy choices (microphone off), a message about an unreadable settings file, the notification watcher
     jarvis_core::uistate::init();
+    // the global hotkey (hotkey.rs): registered at start, the result is shown on the settings page
+    jarvis_core::hotkey::apply(&jarvis_core::uistate::settings().hotkey);
     jarvis_core::licensing::start_background();
     jarvis_core::notify::ext_apply();
     jarvis_core::lua::init_timers();

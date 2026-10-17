@@ -639,12 +639,31 @@
   .gp-modal .form label { display: grid; gap: 4px; font-size: 13px; color: var(--dim); }
   .gp-modal .form .r { display: flex; gap: 8px; } .gp-modal .form .r input { flex: 1; width: auto; max-width: none; min-width: 0; }
   .gp-modal .form select { width: 100%; max-width: none; }
+
+  /* the mini mode: a small strip over the other windows (window.rs makes the window small and puts it on top) */
+  #mini { display: none; }
+  body.mini .shell, body.mini #wincap, body.mini #wincap-zone { display: none !important; }
+  body.mini #mini { display: flex; align-items: center; gap: 10px; position: fixed; inset: 0; padding: 8px 10px; background: var(--bg, #0b0f14); user-select: none; cursor: grab; overflow: hidden; }
+  #mini .mdot { width: 44px; height: 44px; border-radius: 50%; flex: none; border: 0; background: radial-gradient(circle at 35% 30%, #7fd7ff, #2a6fd6 60%, #123); box-shadow: 0 0 14px rgba(77,163,255,.55); cursor: pointer; transition: box-shadow .2s, transform .2s; }
+  #mini[data-s="listening"] .mdot, #mini[data-s="wake"] .mdot { box-shadow: 0 0 22px rgba(80,255,170,.9); transform: scale(1.08); }
+  #mini[data-s="speaking"] .mdot { box-shadow: 0 0 22px rgba(255,200,80,.9); }
+  #mini[data-s="error"] .mdot, #mini[data-s="off"] .mdot { background: radial-gradient(circle at 35% 30%, #ff9a9a, #b02a2a 60%, #300); box-shadow: none; }
+  #mini .mtxt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  #mini .mtxt b { font-size: 11px; letter-spacing: .28em; text-transform: uppercase; color: var(--dim, #8aa); }
+  #mini .mtxt span { font-size: 13px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  #mini .mb { flex: none; width: 30px; height: 30px; border-radius: 8px; border: 1px solid rgba(127,127,127,.35); background: transparent; color: inherit; cursor: pointer; font-size: 14px; }
   .gp-modal .form .acts { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 </style>
 </head>
 <body>
 <div id="wincap-zone"></div>
-<div id="wincap" role="toolbar" aria-label="Окно"><span>ДЖАРВИС</span><span class="grow"></span><button type="button" id="wc-min" title="Свернуть">&#8212;</button><button type="button" id="wc-full" title="Окно / весь экран (Alt+Enter)">&#10064;</button><button type="button" id="wc-close" title="Закрыть">&#10005;</button></div>
+<div id="wincap" role="toolbar" aria-label="Окно"><span>ДЖАРВИС</span><span class="grow"></span><button type="button" id="wc-mini" title="Мини-режим: маленькое окно поверх других">&#9645;</button><button type="button" id="wc-min" title="Свернуть">&#8212;</button><button type="button" id="wc-full" title="Окно / весь экран (Alt+Enter)">&#10064;</button><button type="button" id="wc-close" title="Закрыть">&#10005;</button></div>
+<div id="mini" data-s="idle" role="region" aria-label="Мини-режим Джарвиса">
+  <button type="button" class="mdot" id="mini-orb" title="Нажмите: Джарвис начнёт слушать"></button>
+  <div class="mtxt"><b id="mini-state">готов</b><span id="mini-text"></span></div>
+  <button type="button" class="mb" id="mini-stop" title="Замолчать">&#9632;</button>
+  <button type="button" class="mb" id="mini-open" title="Вернуть обычное окно">&#10530;</button>
+</div>
 <div class="shell">
   <nav>
     <div class="brand"><span class="dot" id="dot"></span><b>JARVIS</b><button type="button" class="nav-fold" id="nav-fold" title="Свернуть меню" data-ico="fold"></button></div>
@@ -1176,6 +1195,10 @@
           <div class="r"><label class="sw"><input type="checkbox" id="mic-on"><span></span></label></div></div>
         <div class="setrow"><div class="l">Чувствительность микрофона<small>как легко Джарвис принимает звук за речь: больше — слышит тихий голос (но и шум), меньше — только громкую речь. 50% — как раньше. Применяется сразу</small></div>
           <div class="r"><input type="range" id="mic-sens" min="0" max="100" step="5" value="50"><b id="mic-sens-v" style="min-width:42px;text-align:right">50%</b></div></div>
+        <div class="setrow"><div class="l">Горячая клавиша<small id="hk-hint">одно сочетание на весь Windows: нажали — Джарвис слушает без слова «Джарвис»; пока он говорит — замолкает. Нужен Ctrl, Alt или Win, например Ctrl+Alt+J. Пусто — выключено</small></div>
+          <div class="r"><input type="text" id="hk-val" maxlength="24" style="width:130px" placeholder="Ctrl+Alt+J"> <button class="btn" id="hk-save" type="button">Сохранить</button></div></div>
+        <div class="setrow"><div class="l">Перебивание голосом<small>пока Джарвис говорит, слова «стоп», «хватит», «замолчи» его останавливают. Микрофон слышит и колонки, поэтому по умолчанию выключено: включайте, если слышно хорошо или вы в наушниках</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="barge-on"><span></span></label></div></div>
         <div class="setrow"><div class="l">Проверка микрофона<small>скажите что-нибудь: полоска должна двигаться. Это микрофон, который слушает сам Jarvis</small></div>
           <div class="r"><div class="meter" id="meter"></div><button class="btn small" id="mic-test">Проверить</button></div></div>
         <div class="msgline" id="mic-msg"></div>
@@ -2576,6 +2599,28 @@ window.addEventListener('resize', syncNativeFull); syncNativeFull(); setTimeout(
   zone.addEventListener('mouseenter', open); cap.addEventListener('mouseenter', open); cap.addEventListener('mouseleave', later);
   document.addEventListener('mouseleave', later);
 })();
+
+// ---- the mini mode: a small strip over the other windows; the state and the last words are copied from the main page ----
+const MINI = { on: false };
+function miniSet(on) {
+  if (!ownWindow) return;
+  MINI.on = on; document.body.classList.toggle('mini', on);
+  window.ipc.postMessage(on ? 'win:mini:on' : 'win:mini:off');
+}
+(() => {
+  const st = $('#state'), tx = $('#status'), mini = $('#mini');
+  const map = { 'готов': 'idle', 'слушаю': 'listening', 'слышу': 'wake', 'говорю': 'speaking', 'выполняю': 'busy', 'ошибка': 'error', 'нет связи': 'off' };
+  const sync = () => { $('#mini-state').textContent = st.textContent; mini.dataset.s = map[st.textContent] || 'idle'; $('#mini-text').textContent = tx.textContent; };
+  new MutationObserver(sync).observe(st, { childList: true, characterData: true, subtree: true });
+  new MutationObserver(sync).observe(tx, { childList: true, characterData: true, subtree: true });
+  sync();
+  $('#mini-orb').onclick = e => { e.stopPropagation(); $('#orb').click(); };
+  $('#mini-stop').onclick = e => { e.stopPropagation(); action('tts_stop').catch(() => {}); };
+  $('#mini-open').onclick = e => { e.stopPropagation(); miniSet(false); };
+  mini.addEventListener('mousedown', e => { if (e.button === 0 && !e.target.closest('button')) window.ipc.postMessage('win:drag'); });
+  mini.addEventListener('dblclick', () => miniSet(false));
+})();
+$('#wc-mini').onclick = () => miniSet(true);
 $('#wc-min').onclick = () => { if (ownWindow) window.ipc.postMessage('win:min'); };
 $('#wc-full').onclick = () => winFullToggle();
 $('#wc-close').onclick = () => window.jarvisCloseRequest();
@@ -3206,6 +3251,8 @@ function applyGeneral(s) {
   $('#as-hint').textContent = as.supported === false ? 'доступно только в Windows' : (as.other_copy ? 'включено для другой копии Джарвиса — переключите, чтобы запускать эту' : 'запускать Джарвиса в фоне (значок в трее) при входе в Windows; та же настройка, что в установщике');
   document.querySelectorAll('#br-seg button').forEach(b => b.classList.toggle('active', (s.browser || '') === b.dataset.br));
   const e = s.engines; $('#eng-info').textContent = e ? 'активация: ' + e.wake + ' · распознавание речи: ' + e.stt + ' (на этом компьютере, звук никуда не отправляется) · намерения: ' + e.intent + ' · параметры: ' + e.slots + '. Меняются в меню трея, применяются после перезапуска' : '—';
+  $('#hk-val').value = s.hotkey || ''; $('#barge-on').checked = !!s.barge_in;
+  { const st = s.hotkey_status || 'off'; $('#hk-hint').dataset.st = st; if (s.hotkey && st.startsWith('error')) hkMsg(false, 'Горячая клавиша: ' + st.slice(7)); }
   $('#mic-sens').value = s.mic_sensitivity ?? 50; $('#mic-sens-v').textContent = (s.mic_sensitivity ?? 50) + '%';
   $('#tts-vol').value = s.tts_volume ?? 100; $('#tts-vol-v').textContent = (s.tts_volume ?? 100) + '%';
   document.querySelectorAll('#rate-seg button').forEach(b => b.classList.toggle('active', Math.abs(+b.dataset.rate - (+s.voice_rate || 1)) < 0.03));
@@ -3214,6 +3261,9 @@ function genMsg(ok, t) { const m = $('#gen-msg'); m.className = 'msgline ' + (ok
 $('#as-on').onchange = async e => { const r = await action('autostart', { value: e.target.checked }); genMsg(r.ok, r.ok ? (e.target.checked ? 'Джарвис будет запускаться вместе с Windows' : 'Автозагрузка выключена') : r.message); loadSettings(); };
 document.querySelectorAll('#br-seg button').forEach(b => b.onclick = async () => { await api('/settings', { browser: b.dataset.br }); genMsg(true, 'Сайты будут открываться: ' + b.textContent); loadSettings(); });
 $('#logs-open').onclick = async () => { const r = await action('open_logs'); if (!r.ok) genMsg(false, r.message); };
+function hkMsg(ok, t) { const m = $('#mic-msg'); m.className = 'msgline ' + (ok ? 'ok' : 'bad'); m.textContent = t; }
+$('#hk-save').onclick = async () => { const r = await api('/settings', { hotkey: $('#hk-val').value }).catch(() => null); await loadSettings(); const s2 = await (await fetch('/settings')).json().catch(() => ({})); if (s2.hotkey_error) hkMsg(false, s2.hotkey_error); else if ((s2.hotkey_status || '').startsWith('error')) hkMsg(false, s2.hotkey_status.slice(7)); else hkMsg(true, s2.hotkey ? 'Горячая клавиша: ' + s2.hotkey : 'Горячая клавиша выключена'); };
+$('#barge-on').onchange = e => { saveSettings({ barge_in: e.target.checked }); hkMsg(true, e.target.checked ? 'Перебивание включено' : 'Перебивание выключено'); };
 $('#mic-sens').oninput = e => { $('#mic-sens-v').textContent = e.target.value + '%'; saveSettings({ mic_sensitivity: +e.target.value }); };
 $('#tts-vol').oninput = e => { $('#tts-vol-v').textContent = e.target.value + '%'; saveSettings({ tts_volume: +e.target.value }); };
 document.querySelectorAll('#rate-seg button').forEach(b => b.onclick = () => { $('#rate').value = b.dataset.rate; $('#rate').oninput({ target: $('#rate') }); document.querySelectorAll('#rate-seg button').forEach(x => x.classList.toggle('active', x === b)); });

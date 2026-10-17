@@ -219,7 +219,12 @@ fn main_loop(text_cmd_rx: &Receiver<Incoming>, rt: &tokio::runtime::Runtime) -> 
             
             VadState::VoiceActive => {
                 // dual-feed: speech recognizer gets frames in parallel with wake word detector
-                let _ = stt::recognize(&frame_buffer, false);
+                // (a finished phrase while Jarvis talks may be a spoken «стоп»: barge.rs decides)
+                if let Some(phrase) = stt::recognize(&frame_buffer, false) {
+                    if jarvis_core::barge::try_interrupt(&phrase) {
+                        stt::reset_speech_recognizer();
+                    }
+                }
 
                 // feed to wake word detector
                 if let Some(_keyword_index) = listener::data_callback(&frame_buffer) {

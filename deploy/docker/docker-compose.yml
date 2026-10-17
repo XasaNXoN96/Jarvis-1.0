@@ -1,0 +1,33 @@
+# The license server behind Caddy (HTTPS from Let's Encrypt, made by Caddy itself).
+#   1. in this folder:  echo "LICENSE_DOMAIN=license.example.com" > .env     (your domain; its DNS A record points to this server)
+#   2. docker compose up -d --build
+#   3. docker compose exec license jarvis-license-server public-key          -> JARVIS_LICENSE_PUBKEY of the repository
+#      docker compose exec license jarvis-license-server admin-create owner  -> the token of the administrator (shown once)
+# Only Caddy publishes ports (80/443); the server itself is reachable inside the compose network only.
+services:
+  license:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    restart: unless-stopped
+    volumes:
+      - license-data:/data
+    environment:
+      JARVIS_LS_CLIENT_IP_HEADER: X-Forwarded-For
+      JARVIS_LS_GRACE_HOURS: "72"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      LICENSE_DOMAIN: ${LICENSE_DOMAIN:?set LICENSE_DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on: [license]
+volumes:
+  license-data:
+  caddy-data:

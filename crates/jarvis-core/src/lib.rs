@@ -99,6 +99,8 @@ pub mod voiceprint;
 pub mod aimassist;
 pub mod aimdetect;
 pub mod aimmodel;
+pub mod hotkey;
+pub mod barge;
 pub mod scenario;
 pub mod tasks;
 pub mod telegram;

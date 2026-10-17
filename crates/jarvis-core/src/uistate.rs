@@ -124,6 +124,10 @@ pub struct UiSettings {
     pub browser: String,
     // how easily the microphone takes a sound for speech, 0..100 (50 = as before)
     pub mic_sensitivity: u8,
+    // the global hotkey (hotkey.rs): "" = off
+    pub hotkey: String,
+    // a spoken «стоп» silences Jarvis while he talks (off by default: see barge.rs)
+    pub barge_in: bool,
 }
 
 // the speech threshold of the microphone for a sensitivity: 50 % = 100 (the old fixed value), 100 % = 30 (hears a
@@ -166,11 +170,13 @@ impl Default for UiSettings {
             ext_enabled: false, ext_show: true, ext_speak: false, ext_strict: true, ext_allowed: Vec::new(), ext_blocked: Vec::new(), ext_seen: Vec::new(),
             ext_social: Vec::new(), ext_social_speak: Vec::new(),
             ui: Default::default(),
-            tts_volume: 100, tts_warm: true, browser: String::new(), mic_sensitivity: 50, ai_screen: false,
+            tts_volume: 100, tts_warm: true, browser: String::new(), mic_sensitivity: 50, ai_screen: false, hotkey: crate::hotkey::DEFAULT.into(), barge_in: false,
         }
     }
 }
 
+// why the last hotkey the page sent was not taken (shown once)
+static HOTKEY_ERROR: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(String::new()));
 static SETTINGS: Lazy<Mutex<UiSettings>> = Lazy::new(|| Mutex::new(load_settings()));
 // a settings file that could not be read: what happened (shown once as an important notification)
 static LOAD_PROBLEM: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(String::new()));
@@ -498,6 +504,14 @@ pub fn update_settings(patch: &Value) {
         }
     }
     if let Some(v) = patch.get("mic_sensitivity").and_then(|v| v.as_u64()) { s.mic_sensitivity = v.min(100) as u8; apply_mic_threshold(&s); }
+    if let Some(v) = patch.get("barge_in").and_then(|v| v.as_bool()) { s.barge_in = v; }
+    if let Some(v) = patch.get("hotkey").and_then(|v| v.as_str()) {
+        // a combination that does not parse is not saved (the page shows the reason)
+        match crate::hotkey::normalize(v) {
+            Ok(n) => { s.hotkey = n; crate::hotkey::apply(&s.hotkey); HOTKEY_ERROR.lock().clear(); }
+            Err(e) => *HOTKEY_ERROR.lock() = e,
+        }
+    }
     if let Some(v) = patch.get("browser").and_then(|v| v.as_str()) { s.browser = if browser_exe(v).is_some() { v.to_string() } else { String::new() }; }
     let ext_changed = match flag("ext_enabled") { Some(v) if v != s.ext_enabled => { s.ext_enabled = v; true } _ => false };
     if let Some(obj) = patch.get("ui").and_then(|v| v.as_object()) {
@@ -543,6 +557,11 @@ pub fn settings_json() -> Value {
         "tts_enabled": crate::tts::is_enabled(),
         "piper": crate::tts::piper_available(),
     });
+    // (kept out of the macro above: it is at the limit of the recursion of json!)
+    out["hotkey"] = json!(s.hotkey);
+    out["hotkey_status"] = json!(crate::hotkey::status());
+    out["hotkey_error"] = json!(HOTKEY_ERROR.lock().clone());
+    out["barge_in"] = json!(s.barge_in);
     // (apart from the macro above: it is too big for one more key)
     let shown = if s.assistant_name.is_empty() { "джарвис".to_string() } else { s.assistant_name.clone() };
     out["assistant_name"] = json!(s.assistant_name);

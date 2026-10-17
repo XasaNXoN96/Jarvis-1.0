@@ -31,6 +31,10 @@ pub enum UserEvent {
     ToggleWindowFullscreen,
     // the button of the page: minimise the window
     Minimize,
+    // the mini mode: a small strip over the other windows (true) <-> the window as it was (false)
+    Mini(bool),
+    // the mouse went down on the strip: the window is dragged
+    Drag,
     Menu(MenuEvent),
 }
 
@@ -105,6 +109,43 @@ fn open_in_browser(url: &str) {
     }
 }
 
+// "win:mini:on" / "win:mini:off" of the page
+fn mini_request(body: &str) -> Option<bool> {
+    match body {
+        "win:mini:on" => Some(true),
+        "win:mini:off" => Some(false),
+        _ => None,
+    }
+}
+
+// the size of the mini strip (logical pixels) and the gap to the corner of the work area
+const MINI_SIZE: (f64, f64) = (360.0, 92.0);
+const MINI_GAP: i32 = 16;
+
+// where the strip stands: the lower right corner of the work area. Pure, tested.
+pub fn mini_position(work: (i32, i32, i32, i32), size: (u32, u32)) -> (i32, i32) {
+    let (left, top, right, bottom) = work;
+    let x = (right - size.0 as i32 - MINI_GAP).max(left);
+    let y = (bottom - size.1 as i32 - MINI_GAP).max(top);
+    (x, y)
+}
+
+// what the window was before the mini mode, to put it back
+struct Before {
+    pos: tao::dpi::PhysicalPosition<i32>,
+    size: tao::dpi::PhysicalSize<u32>,
+    decorated: bool,
+    maximized: bool,
+}
+
+fn work_area() -> Option<(i32, i32, i32, i32)> {
+    use winapi::shared::windef::RECT;
+    use winapi::um::winuser::{SystemParametersInfoW, SPI_GETWORKAREA};
+    let mut work: RECT = unsafe { std::mem::zeroed() };
+    let ok = unsafe { SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut work as *mut RECT as *mut _, 0) };
+    (ok != 0 && work.right > work.left && work.bottom > work.top).then_some((work.left, work.top, work.right, work.bottom))
+}
+
 // the window over the work area of the screen (all of it but the taskbar), without a frame
 fn fit_work_area(window: &tao::window::Window) {
     use winapi::shared::windef::RECT;
@@ -149,6 +190,10 @@ fn make_window(target: &tao::event_loop::EventLoopWindowTarget<UserEvent>, h: &H
                 let _ = ipc_proxy.send_event(UserEvent::ToggleWindowFullscreen);
             } else if body == "win:min" {
                 let _ = ipc_proxy.send_event(UserEvent::Minimize);
+            } else if let Some(on) = mini_request(body) {
+                let _ = ipc_proxy.send_event(UserEvent::Mini(on));
+            } else if body == "win:drag" {
+                let _ = ipc_proxy.send_event(UserEvent::Drag);
             }
         })
         // the page of Jarvis stays in the window; any other address opens in the browser
@@ -252,6 +297,8 @@ pub fn run(h: Hooks) -> ! {
     let mut first_show_done = false;
     // the cross was pressed and the page has not answered yet
     let mut close_asked: Option<Instant> = None;
+    // the window as it was before the mini mode (None = not in the mini mode)
+    let mut mini_before: Option<Before> = None;
     let start_shown = start_visible(h.show_at_start, early);
 
     event_loop.run(move |event, target, control_flow| {
@@ -325,6 +372,42 @@ pub fn run(h: Hooks) -> ! {
                     w.window.set_fullscreen(if on { Some(tao::window::Fullscreen::Borderless(None)) } else { None });
                     if !on && !w.window.is_decorated() {
                         fit_work_area(&w.window);
+                    }
+                }
+            }
+            Event::UserEvent(UserEvent::Mini(on)) => {
+                if let Some(w) = &win {
+                    if on && mini_before.is_none() {
+                        mini_before = Some(Before { pos: w.window.outer_position().unwrap_or_default(), size: w.window.inner_size(), decorated: w.window.is_decorated(), maximized: w.window.is_maximized() });
+                        w.window.set_fullscreen(None);
+                        w.window.set_maximized(false);
+                        w.window.set_decorations(false);
+                        w.window.set_min_inner_size(Some(tao::dpi::LogicalSize::new(MINI_SIZE.0, MINI_SIZE.1)));
+                        w.window.set_inner_size(tao::dpi::LogicalSize::new(MINI_SIZE.0, MINI_SIZE.1));
+                        let size = w.window.outer_size();
+                        let (x, y) = mini_position(work_area().unwrap_or((0, 0, 1920, 1080)), (size.width, size.height));
+                        w.window.set_outer_position(tao::dpi::PhysicalPosition::new(x, y));
+                        w.window.set_always_on_top(true);
+                    } else if !on {
+                        if let Some(b) = mini_before.take() {
+                            w.window.set_always_on_top(false);
+                            w.window.set_min_inner_size(Some(tao::dpi::LogicalSize::new(380.0, 480.0)));
+                            w.window.set_decorations(b.decorated);
+                            w.window.set_inner_size(b.size);
+                            w.window.set_outer_position(b.pos);
+                            if b.maximized {
+                                w.window.set_maximized(true);
+                            } else if !b.decorated {
+                                fit_work_area(&w.window);
+                            }
+                        }
+                    }
+                }
+            }
+            Event::UserEvent(UserEvent::Drag) => {
+                if let Some(w) = &win {
+                    if mini_before.is_some() {
+                        let _ = w.window.drag_window();
                     }
                 }
             }
@@ -409,6 +492,20 @@ mod tests {
         assert!(!start_visible(false, None), "--background stays hidden");
         assert!(start_visible(false, Some(true)), "a second start during the start shows the window");
         assert!(!start_visible(true, Some(false)), "hidden to the tray during the start stays hidden");
+    }
+
+    #[test]
+    fn the_mini_strip_has_two_words_and_stands_in_the_lower_right_corner() {
+        assert_eq!(mini_request("win:mini:on"), Some(true));
+        assert_eq!(mini_request("win:mini:off"), Some(false));
+        assert_eq!(mini_request("win:mini"), None);
+        assert_eq!(mini_request("close:exit"), None);
+        // a 1920×1040 work area (taskbar below): the strip 360×92 is 16 pixels from the corner
+        assert_eq!(mini_position((0, 0, 1920, 1040), (360, 92)), (1544, 932));
+        // a second monitor to the left of the first (negative coordinates)
+        assert_eq!(mini_position((-1920, 0, 0, 1040), (360, 92)), (-376, 932));
+        // a work area smaller than the strip: the strip does not leave it at the top left
+        assert_eq!(mini_position((0, 0, 300, 50), (360, 92)), (0, 0));
     }
 
     #[test]

@@ -40,3 +40,5 @@ winresource = "0.1"
 [features]
 # Jarvis User: the customer's edition (paid commands need a license, no administrator functions)
 user-edition = ["jarvis-core/user-edition"]
+# the aim assist on the video card (DirectML): an experimental build, see docs/GAME-MODE.md
+directml = ["jarvis-core/directml"]

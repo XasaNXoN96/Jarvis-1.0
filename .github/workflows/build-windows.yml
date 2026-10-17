@@ -68,6 +68,14 @@ jobs:
           $env:JARVIS_BUILD_SHA = "${{ github.sha }}"
           cargo build --release -p jarvis-app
 
+      # Code signing (only when the owner has put the certificate into the secrets; see installer/sign.ps1 and docs/SIGNING.md)
+      - name: Sign jarvis-app.exe
+        shell: pwsh
+        env:
+          WINDOWS_CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: ./installer/sign.ps1 target\release\jarvis-app.exe
+
       - name: Assemble program folder
         shell: pwsh
         run: |
@@ -190,6 +198,13 @@ jobs:
         if: steps.piper.outcome != 'success'
         shell: pwsh
         run: Copy-Item dist\Jarvis-Setup-Lite.exe dist\Jarvis-Setup.exe
+
+      - name: Sign the installers
+        shell: pwsh
+        env:
+          WINDOWS_CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: ./installer/sign.ps1 (Get-ChildItem dist\*.exe | ForEach-Object { $_.FullName })
 
       # tiny update for already installed copies: new / changed commands only
       - name: Pack commands update
@@ -900,6 +915,12 @@ jobs:
           $env:JARVIS_BUILD_SHA = "${{ github.sha }}"
           if (-not $env:JARVIS_LICENSE_PUBKEY -or -not $env:JARVIS_LICENSE_URL) { Write-Output "::warning title=license::JARVIS_LICENSE_PUBKEY / JARVIS_LICENSE_URL are not set: this Jarvis User cannot activate Premium (a build for tests only)" }
           cargo build --release -p jarvis-app --features user-edition
+      - name: Sign jarvis-app.exe (user edition)
+        shell: pwsh
+        env:
+          WINDOWS_CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: ./installer/sign.ps1 target\release\jarvis-app.exe
       - name: The customer's program carries no secret and no administrator code
         shell: pwsh
         run: |
@@ -932,11 +953,96 @@ jobs:
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DUserEdition=1 /DSrcDir=build\JarvisUser /DOutName=Jarvis-User-Setup /DBuildSha=$($env:GITHUB_SHA.Substring(0,7)) /DBuildDate=$(Get-Date -Format 'yyyy-MM-dd') installer\jarvis.iss 2>&1 | Tee-Object -FilePath iscc-user.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-ChildItem dist | Format-Table Name, Length
+      - name: Sign the installer (user edition)
+        shell: pwsh
+        env:
+          WINDOWS_CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: ./installer/sign.ps1 dist\Jarvis-User-Setup.exe
       - name: Upload Jarvis User installer
         uses: actions/upload-artifact@v4
         with:
           name: Jarvis-User-${{ needs.stamp.outputs.label }}
           path: dist/Jarvis-User-Setup.exe
+          if-no-files-found: error
+
+  # The Docker image of the license server (deploy/docker): it builds, makes its database and keys at the first start, answers /health,
+  # keeps the keys in the volume, does not run as root. The image is not published anywhere; the deployment is the owner's step.
+  license-server-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -f deploy/docker/Dockerfile -t jarvis-license:ci .
+      - name: It starts, answers /health and survives a restart with the same key
+        run: |
+          set -e
+          docker volume create ls-ci >/dev/null
+          docker run -d --name ls -v ls-ci:/data jarvis-license:ci
+          for i in $(seq 1 30); do
+            if docker exec ls curl -fsS http://127.0.0.1:8787/health >/dev/null 2>&1; then ok=1; break; fi
+            sleep 1
+          done
+          [ "${ok:-0}" = 1 ] || { docker logs ls; echo "::error title=license-server-image::no answer on /health"; exit 1; }
+          key1=$(docker exec ls jarvis-license-server public-key)
+          [ -n "$key1" ]
+          docker exec ls jarvis-license-server admin-create ci | grep -q "jla_"
+          [ "$(docker exec ls id -u)" != 0 ] || { echo "::error title=license-server-image::the container runs as root"; exit 1; }
+          docker restart ls >/dev/null
+          for i in $(seq 1 30); do docker exec ls curl -fsS http://127.0.0.1:8787/health >/dev/null 2>&1 && break; sleep 1; done
+          key2=$(docker exec ls jarvis-license-server public-key)
+          [ "$key1" = "$key2" ] || { echo "::error title=license-server-image::the signing key changed after a restart"; exit 1; }
+          echo "image ok, public key stable: $key1"
+
+  # An experimental build of Jarvis with the aim assist on the video card (DirectML). It is NOT an installer: the program file and the
+  # libraries that go with it, to try on a computer with a video card (replace jarvis-app.exe in the folder of an installed Jarvis).
+  # The runner has no video card, so this job proves that the build compiles and links and that the model still runs (on the
+  # processor) with DirectML switched on; whether the video card is faster is for the owner to see on a real computer.
+  build-directml:
+    needs: stamp
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: directml
+      - name: Build jarvis-app with DirectML (release)
+        shell: pwsh
+        run: |
+          $env:LIB = "$PWD\lib\windows\amd64;$env:LIB"
+          $env:JARVIS_BUILD_SHA = "${{ github.sha }}"
+          cargo build --release -p jarvis-app --features directml
+      - name: Tests of the aim assist with DirectML switched on (informational)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $env:LIB = "$PWD\lib\windows\amd64;$env:LIB"
+          $env:PATH = "$PWD\lib\windows\amd64;$env:PATH"
+          cargo test -p jarvis-core --features directml -- aim --nocapture 2>&1 | Tee-Object -FilePath test-directml.log
+          exit $LASTEXITCODE
+      - name: Sign jarvis-app.exe (DirectML)
+        shell: pwsh
+        env:
+          WINDOWS_CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: ./installer/sign.ps1 target\release\jarvis-app.exe
+      - name: Collect the files
+        shell: pwsh
+        run: |
+          $out = "build\JarvisDirectML"
+          New-Item -ItemType Directory -Force $out | Out-Null
+          Copy-Item target\release\jarvis-app.exe $out
+          # the libraries that the build put beside the program (DirectML.dll and the like), if any
+          Get-ChildItem target\release\*.dll -ErrorAction SilentlyContinue | Copy-Item -Destination $out
+          Copy-Item lib\windows\amd64\*.dll $out -ErrorAction SilentlyContinue
+          Set-Content "$out\README.txt" "Jarvis with the aim assist on the video card (DirectML), build ${{ github.sha }}. Experimental: close Jarvis, copy these files over the ones in the folder of the installed Jarvis (a copy of the folder first), start it, choose Device = Video card in Games - Aim assist. If it does not start on the video card, Jarvis uses the processor and says so in the report."
+          Get-ChildItem $out | Format-Table Name, Length
+      - name: Upload DirectML build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jarvis-DirectML-${{ needs.stamp.outputs.label }}
+          path: build/JarvisDirectML
           if-no-files-found: error
 
   # The license server for Windows: a local test copy (127.0.0.1) to try the license manager of Jarvis Admin on the computer of the owner.

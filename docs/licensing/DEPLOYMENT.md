@@ -75,3 +75,15 @@ jarvis-license-server backup /var/backups/jarvis-license/ls-$(date +%F).sqlite  
 3. Задать переменные `JARVIS_LICENSE_URL` / `JARVIS_LICENSE_PUBKEY` в репозитории и собрать Jarvis User.
 4. Подключить приём оплаты (платёжный провайдер) — в программе и на сервере **оплата не реализована**; сейчас клиент платит вам вне программы и получает ключ продления.
 5. Настроить резервные копии (раздел 6) и проверить восстановление.
+
+
+## 9. Быстрый путь: Docker (папка `deploy/docker/`)
+Если у вас есть сервер с Docker и домен, направленный на него:
+```bash
+cd deploy/docker
+echo "LICENSE_DOMAIN=license.example.com" > .env
+docker compose up -d --build
+docker compose exec license jarvis-license-server public-key          # -> JARVIS_LICENSE_PUBKEY (переменная репозитория)
+docker compose exec license jarvis-license-server admin-create owner  # -> токен администратора (виден один раз)
+```
+Первый запуск сам делает `init` (база, тарифы, файлы секретов в томе `/data`). Наружу открыты только порты Caddy 80/443 (HTTPS выдаётся автоматически), сам сервер доступен только внутри сети compose. Резервная копия: `docker compose exec license jarvis-license-server backup /data/ls-$(date +%F).sqlite`, затем скопируйте файл **и** `signing.key`, `pepper.key` из тома с сервера. CI на каждый коммит собирает этот образ и проверяет, что он поднимается, создаёт базу и отвечает на `/health` (задача `license-server-image` в `build-windows.yml`). **Само развёртывание на вашем сервере — ваш шаг: ни сервера, ни домена в репозитории нет.**

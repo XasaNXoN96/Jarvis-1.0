@@ -1523,6 +1523,11 @@ fn note_said(text: &str) {
     q.push_back((std::time::Instant::now(), plain_words(text)));
 }
 
+// what Jarvis said in the last half minute, as plain words (the barge-in must not take his own words for the user)
+pub fn recent_said() -> Vec<String> {
+    SAID.lock().iter().filter(|(t, _)| t.elapsed().as_secs() < 30).map(|(_, s)| s.clone()).collect()
+}
+
 // milliseconds since the voice of Jarvis ended (0 while it speaks); None: it has not spoken in this run
 pub fn since_speech_ms() -> Option<u64> {
     if is_speaking() {

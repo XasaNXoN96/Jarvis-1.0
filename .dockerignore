@@ -1,0 +1,9 @@
+target
+.git
+**/target
+k.log
+k2.log
+resources/vosk
+resources/piper
+dist
+build
