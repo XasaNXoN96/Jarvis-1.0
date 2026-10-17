@@ -20,6 +20,11 @@ pub struct Found {
     pub store: String,
     pub exe: String,
     pub dir: PathBuf,
+    // the full path of the program, when it was found; `verified`: a manifest of the store named it (not guessed by the size of files)
+    pub path: Option<PathBuf>,
+    pub verified: bool,
+    // "steam:<number>", "epic:<AppName>", "gog:<id>"
+    pub store_id: String,
     pub genre: Genre,
     // why the scan did not add it (an online game, an anti-cheat in the folder, no program found)
     pub skipped: Option<String>,
@@ -72,13 +77,25 @@ pub fn parse_epic_item(text: &str) -> Option<(String, PathBuf, Option<String>)> 
     Some((name, PathBuf::from(dir), exe))
 }
 
+// the name of the application in an Epic manifest (it identifies the game in the store)
+pub fn parse_epic_app_name(text: &str) -> Option<String> {
+    let v: Value = serde_json::from_str(text).ok()?;
+    let n = v.get("AppName")?.as_str()?.trim().to_string();
+    (!n.is_empty() && n.len() <= 80 && n.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))).then_some(n)
+}
+
 // programs of a game folder that are not the game
 const NOT_THE_GAME: &[&str] = &["unins", "uninst", "crash", "report", "redist", "vcredist", "vc_redist", "dxsetup", "dotnet", "directx", "setup", "installer", "prereq", "easyanticheat", "beservice", "updater", "support", "helper", "ue4prereq", "launcher"];
 
 // the main program of a game: the biggest .exe of the folder (to a depth of four) that is not an installer, a crash reporter …
 pub fn find_main_exe(dir: &Path, depth: u32) -> Option<String> {
-    let mut best: Option<(u64, String)> = None;
-    fn walk(dir: &Path, depth: u32, best: &mut Option<(u64, String)>, seen: &mut usize) {
+    find_main_exe_path(dir, depth).and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase()))
+}
+
+// the same, with the whole path
+pub fn find_main_exe_path(dir: &Path, depth: u32) -> Option<PathBuf> {
+    let mut best: Option<(u64, PathBuf)> = None;
+    fn walk(dir: &Path, depth: u32, best: &mut Option<(u64, PathBuf)>, seen: &mut usize) {
         let Ok(rd) = std::fs::read_dir(dir) else { return };
         for e in rd.flatten() {
             *seen += 1;
@@ -98,7 +115,7 @@ pub fn find_main_exe(dir: &Path, depth: u32) -> Option<String> {
                 if name.ends_with(".exe") && !NOT_THE_GAME.iter().any(|w| name.contains(w)) {
                     let size = e.metadata().map(|m| m.len()).unwrap_or(0);
                     if best.as_ref().map(|(s, _)| size > *s).unwrap_or(true) {
-                        *best = Some((size, name));
+                        *best = Some((size, p.clone()));
                     }
                 }
             }
@@ -106,7 +123,40 @@ pub fn find_main_exe(dir: &Path, depth: u32) -> Option<String> {
     }
     let mut seen = 0;
     walk(dir, depth, &mut best, &mut seen);
-    best.map(|(_, n)| n)
+    best.map(|(_, p)| p)
+}
+
+// the file of this name in the folder of a game (the shallowest one), to a depth of four
+pub fn find_named_exe(dir: &Path, name: &str, depth: u32) -> Option<PathBuf> {
+    fn walk(dir: &Path, name: &str, depth: u32, seen: &mut usize) -> Option<PathBuf> {
+        let rd = std::fs::read_dir(dir).ok()?;
+        let mut subs = Vec::new();
+        for e in rd.flatten() {
+            *seen += 1;
+            if *seen > 20_000 {
+                return None;
+            }
+            let Ok(ft) = e.file_type() else { continue };
+            if ft.is_symlink() {
+                continue;
+            }
+            if ft.is_dir() {
+                subs.push(e.path());
+            } else if e.file_name().to_string_lossy().to_lowercase() == name {
+                return Some(e.path());
+            }
+        }
+        if depth > 0 {
+            for d in subs {
+                if let Some(f) = walk(&d, name, depth - 1, seen) {
+                    return Some(f);
+                }
+            }
+        }
+        None
+    }
+    let mut seen = 0;
+    walk(dir, name, depth, &mut seen)
 }
 
 // an anti-cheat in the game folder (a folder or a file of the usual names), to a depth of three
@@ -204,7 +254,11 @@ pub fn guess_genre(name: &str) -> Genre {
 
 // one game of a store -> the result of the scan (with the reason when it is not to be added)
 pub fn judge(name: &str, store: &str, dir: &Path, known_exe: Option<String>) -> Found {
-    let exe = known_exe.or_else(|| find_main_exe(dir, 4));
+    // a program that a manifest of the store names is found by its name in the folder (and is «verified»); else the biggest program is guessed
+    let named = known_exe.as_deref().and_then(|e| find_named_exe(dir, e, 4));
+    let verified = named.is_some();
+    let path = named.or_else(|| find_main_exe_path(dir, 4));
+    let exe = path.as_ref().and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase())).or(known_exe);
     let genre = exe.as_deref().and_then(known_game).map(|k| k.1).unwrap_or_else(|| guess_genre(name));
     let skipped = match &exe {
         None => Some("не нашёл программу игры в её папке".to_string()),
@@ -218,7 +272,7 @@ pub fn judge(name: &str, store: &str, dir: &Path, known_exe: Option<String>) -> 
             }
         }
     };
-    Found { name: name.to_string(), store: store.to_string(), exe: exe.unwrap_or_default(), dir: dir.to_path_buf(), genre, skipped }
+    Found { name: name.to_string(), store: store.to_string(), exe: exe.unwrap_or_default(), dir: dir.to_path_buf(), path, verified, store_id: String::new(), genre, skipped }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -254,7 +308,13 @@ pub fn steam_games(steam_root: &Path) -> Vec<Found> {
             if installdir.contains("..") || !dir.is_dir() {
                 continue;
             }
-            out.push(judge(&name, "Steam", &dir, None));
+            let mut f = judge(&name, "Steam", &dir, None);
+            // the number of the application is in the name of the manifest: appmanifest_<number>.acf
+            let app = fname.trim_start_matches("appmanifest_").trim_end_matches(".acf");
+            if !app.is_empty() && app.len() <= 12 && app.chars().all(|c| c.is_ascii_digit()) {
+                f.store_id = format!("steam:{}", app);
+            }
+            out.push(f);
         }
     }
     out
@@ -272,7 +332,11 @@ pub fn epic_games(manifests: &Path) -> Vec<Found> {
         if !dir.is_dir() {
             continue;
         }
-        out.push(judge(&name, "Epic", &dir, exe));
+        let mut f = judge(&name, "Epic", &dir, exe);
+        if let Some(app) = parse_epic_app_name(&text) {
+            f.store_id = format!("epic:{}", app);
+        }
+        out.push(f);
     }
     out
 }
@@ -327,7 +391,11 @@ pub fn gog_games() -> Vec<Found> {
                 let dir = PathBuf::from(path);
                 if dir.is_dir() {
                     let exe = exe.and_then(|e| e.rsplit(['\\', '/']).next().map(|x| x.to_lowercase())).filter(|e| e.ends_with(".exe"));
-                    out.push(judge(&game, "GOG", &dir, exe));
+                    let mut f = judge(&game, "GOG", &dir, exe);
+                    if !sub.is_empty() && sub.len() <= 20 && sub.chars().all(|c| c.is_ascii_digit()) {
+                        f.store_id = format!("gog:{}", sub);
+                    }
+                    out.push(f);
                 }
             }
         }
@@ -343,7 +411,7 @@ pub fn gog_games() -> Vec<Found> {
 
 // the Steam folder: the registry of the user, else the usual places
 #[cfg(target_os = "windows")]
-fn steam_root() -> Option<PathBuf> {
+pub fn steam_root() -> Option<PathBuf> {
     use winapi::shared::minwindef::HKEY;
     use winapi::um::winnt::KEY_READ;
     use winapi::um::winreg::{RegCloseKey, RegOpenKeyExW, HKEY_CURRENT_USER};
@@ -373,7 +441,7 @@ fn steam_root() -> Option<PathBuf> {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn steam_root() -> Option<PathBuf> {
+pub fn steam_root() -> Option<PathBuf> {
     None
 }
 
@@ -406,16 +474,19 @@ struct State {
 
 static STATE: Lazy<Mutex<State>> = Lazy::new(|| Mutex::new(State::default()));
 
-// adds the games of a scan that are fit; the number added (new ones)
+// adds the games of a scan that are fit (one write of the file); the number added (new ones)
 pub fn add_found(found: &[Found]) -> usize {
-    let mut n = 0;
-    for f in found.iter().filter(|f| f.skipped.is_none() && !f.exe.is_empty()) {
-        let e = Entry { exe: f.exe.clone(), name: f.name.clone(), genre: f.genre, source: "scan".into() };
-        if let Ok(gamelist::Added::New) = gamelist::add(e, false) {
-            n += 1;
-        }
-    }
-    n
+    let list: Vec<Entry> = found
+        .iter()
+        .filter(|f| f.skipped.is_none() && !f.exe.is_empty())
+        .map(|f| Entry {
+            path: f.path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
+            verified: f.verified,
+            store_id: f.store_id.clone(),
+            ..Entry::basic(&f.exe, &f.name, f.genre, "scan")
+        })
+        .collect();
+    gamelist::add_many(list)
 }
 
 // a scan in the background: the games found are added at once (the automatic way), the rest is shown with the reasons
@@ -440,7 +511,7 @@ pub fn start() -> Result<(), String> {
 
 pub fn status_json() -> Value {
     let s = STATE.lock().clone();
-    let items: Vec<Value> = s.found.iter().map(|f| json!({ "name": f.name, "store": f.store, "exe": f.exe, "genre": f.genre.name(), "skipped": f.skipped })).collect();
+    let items: Vec<Value> = s.found.iter().map(|f| json!({ "name": f.name, "store": f.store, "exe": f.exe, "path": f.path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(), "genre": f.genre.name(), "skipped": f.skipped })).collect();
     json!({ "running": s.running, "done": s.done, "added": s.added, "found": items })
 }
 

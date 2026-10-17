@@ -579,6 +579,67 @@
   #session-bar { display: none; align-items: center; gap: 12px; margin-bottom: 10px; padding: 9px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.233); background: #28282bcc; }
   #session-bar.on { display: flex; } #session-bar .sdot { width: 10px; height: 10px; border-radius: 50%; background: var(--err); animation: blink 1.2s infinite; flex-shrink: 0; }
   #session-bar .st2 { flex: 1; } @keyframes blink { 50% { opacity: .3; } }
+  /* ---- the library of games: icons like the desktop of Windows ---- */
+  .gp-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 14px; }
+  .gp-bar .grow { flex: 1 1 140px; }
+  .gp-bar input[type=text] { min-width: 0; width: 100%; max-width: 320px; }
+  .gp-all { display: inline-flex; align-items: center; gap: 8px; }
+  .gp-all b { background: #ffffff1a; border-radius: 10px; padding: 0 8px; font-size: 13px; font-weight: 600; }
+  .gp-h { display: flex; align-items: baseline; gap: 10px; margin: 6px 2px 4px; font-size: 12.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
+  .gp-h .sp { flex: 1; }
+  .gp-h button.link { background: none; border: 0; color: var(--dim); cursor: pointer; font: inherit; text-transform: none; letter-spacing: 0; text-decoration: underline; padding: 0; }
+  .gp-h button.link:hover { color: var(--text); }
+  .gg { --gi: 56px; --gc: 108px; display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--gc), 1fr)); gap: 4px; align-content: start; }
+  .gg.large { --gi: 92px; --gc: 148px; }
+  .gg.medium { --gi: 56px; --gc: 108px; }
+  .gg.small { --gi: 28px; --gc: 200px; gap: 1px 4px; }
+  .gg .gc { position: relative; display: flex; flex-direction: column; align-items: center; min-width: 0; padding: 10px 4px 8px; border-radius: 6px; text-align: center; cursor: default; outline: none; border: 1px solid transparent; }
+  .gg .gc:hover, .gg .gc:focus-within { background: #ffffff12; border-color: #ffffff12; }
+  .gg .gi { width: var(--gi); height: var(--gi); flex: none; display: grid; place-items: center; }
+  .gg .gi img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .gg .gi svg { width: 100%; height: 100%; display: block; }
+  .gg .gn { margin-top: 6px; font-size: 12.5px; line-height: 1.25; max-width: 100%; max-height: 2.5em; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; color: var(--text); }
+  .gg.large .gn { font-size: 13.5px; }
+  .gg.small .gc { flex-direction: row; gap: 8px; padding: 3px 8px; text-align: left; }
+  .gg.small .gn { margin: 0; -webkit-line-clamp: 1; max-height: 1.25em; min-width: 0; flex: 1; font-size: 12.5px; }
+  /* the actions: two small round buttons in the corner (they never cover the icon or the name); always there on a touch screen */
+  .gg .ga { position: absolute; top: 3px; right: 3px; display: flex; gap: 3px; opacity: 0; transition: opacity .12s; }
+  .gg.small .ga { top: 50%; transform: translateY(-50%); right: 4px; }
+  .gg .gc:hover .ga, .gg .gc:focus-within .ga { opacity: 1; }
+  .gg .gb { width: 24px; height: 24px; border-radius: 50%; border: 1px solid #ffffff26; background: #0c0c0ee6; color: var(--text); cursor: pointer; display: grid; place-items: center; padding: 0; font: inherit; }
+  .gg .gb svg { width: 13px; height: 13px; }
+  .gg .gb.run:hover { background: var(--ok); color: #06140c; border-color: var(--ok); }
+  .gg .gb.del:hover { background: var(--err); color: #1a0508; border-color: var(--err); }
+  .gg .gb:focus-visible { outline: none; box-shadow: var(--focus); }
+  /* a touch screen has no hover: the actions are always there, and bigger */
+  @media (hover: none), (pointer: coarse) { .gg .ga { opacity: 1; } .gg .gb { width: 32px; height: 32px; } .gg .gb svg { width: 15px; height: 15px; } .gg.small .gc { padding: 6px 8px; } }
+  .gg .gc.warn .gn::after { content: ' ⚠'; color: var(--warn); }
+  .vm { position: relative; display: inline-block; }
+  .vm .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 60; min-width: 190px; background: #16161a; border: 1px solid var(--line2); border-radius: 8px; padding: 4px; box-shadow: 0 10px 30px #000a; display: none; }
+  .vm.open .menu { display: block; }
+  .vm .menu button { display: flex; width: 100%; align-items: center; gap: 8px; border: 0; background: none; color: var(--text); padding: 7px 10px; border-radius: 6px; font: inherit; cursor: pointer; text-align: left; }
+  .vm .menu button:hover { background: #ffffff12; }
+  .vm .menu button i { width: 14px; font-style: normal; color: var(--accent); }
+  .gp-empty { color: var(--dim); padding: 18px 4px; }
+  .gp-skip { margin-top: 8px; }
+  .gp-skip summary { cursor: pointer; color: var(--dim); font-size: 13px; }
+  .gp-skip .row { display: flex; gap: 10px; align-items: center; padding: 5px 2px; border-top: 1px solid var(--row-line); font-size: 13px; }
+  .gp-skip .row .t { flex: 1; min-width: 0; } .gp-skip .row small { color: var(--dim); display: block; }
+  .gp-modal { position: fixed; inset: 0; z-index: 400; background: #000b; display: none; }
+  .gp-modal.on { display: flex; align-items: stretch; justify-content: center; padding: 22px; }
+  .gp-modal .box { flex: 1; max-width: 1280px; display: flex; flex-direction: column; min-height: 0; background: var(--bg2); border: 1px solid var(--line2); border-radius: 14px; overflow: hidden; }
+  .gp-modal .head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .gp-modal .head h2 { margin: 0 8px 0 2px; font-size: 18px; font-weight: 600; }
+  .gp-modal .head h2 span { color: var(--dim); font-weight: 400; }
+  .gp-modal .head .grow { flex: 1 1 180px; } .gp-modal .head input[type=text] { min-width: 0; width: 100%; max-width: 300px; }
+  .gp-modal .body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px 16px; scroll-behavior: smooth; overscroll-behavior: contain; }
+  .gp-modal .foot { padding: 6px 14px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--dim); }
+  .gp-modal.add .box { flex: none; align-self: center; width: min(560px, 100%); }
+  .gp-modal .form { padding: 14px; display: grid; gap: 10px; }
+  .gp-modal .form label { display: grid; gap: 4px; font-size: 13px; color: var(--dim); }
+  .gp-modal .form .r { display: flex; gap: 8px; } .gp-modal .form .r input { flex: 1; width: auto; max-width: none; min-width: 0; }
+  .gp-modal .form select { width: 100%; max-width: none; }
+  .gp-modal .form .acts { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 </style>
 </head>
 <body>
@@ -847,37 +908,70 @@
 
     <section class="page" id="page-games">
       <h1>Игры</h1>
-      <p class="lead">Только одиночные игры без защиты от читов. Известные онлайн-игры и программы, не относящиеся к играм, в список не попадают.</p>
-      <div class="card"><h3><span class="ei">🎮</span>Режим</h3>
+      <p class="lead">Библиотека ваших одиночных игр. Известные онлайн-игры и программы, не относящиеся к играм, в неё не попадают.</p>
+      <div class="gp-bar">
+        <button class="btn primary" id="gp-scan" type="button">Найти игры</button>
+        <button class="btn" id="gp-add" type="button">Добавить игру</button>
+        <button class="btn gp-all" id="gp-all" type="button">Все игры <b id="gp-total">0</b></button>
+        <div class="grow"><input type="text" id="gp-q" placeholder="Поиск по играм" maxlength="80" autocomplete="off"></div>
+        <select id="gp-genre" title="Жанр"><option value="">Все жанры</option><option value="shooter">Шутер</option><option value="racing">Гонки</option><option value="action">Экшен / приключения</option></select>
+        <div class="vm" id="gp-vm"><button class="btn" type="button" data-vm-btn>Вид ▾</button><div class="menu" role="menu"></div></div>
+      </div>
+      <div class="msgline" id="gp-msg" role="status"></div>
+      <div id="gp-relink" style="display:none;margin:2px 0 8px"><button class="btn small" id="gp-relink-btn" type="button">Выбрать файл игры…</button></div>
+      <div class="gp-h"><span id="gp-title">Недавние и новые</span><span class="sp"></span><button class="link" id="gp-more" type="button" hidden></button></div>
+      <div class="gg medium" id="gp-grid"><div class="gp-empty">Загружаю библиотеку…</div></div>
+      <details class="gp-skip" id="gp-skipbox" hidden><summary id="gp-skipsum"></summary><div id="gp-skipped"></div></details>
+
+      <div class="card" style="margin-top:22px"><h3><span class="ei">🎮</span>Игровой режим</h3>
         <div class="setrow"><div class="l">Голосовое управление игрой<small id="gp-state"></small></div>
           <div class="r"><button class="btn primary" id="gp-on" type="button">Включить</button> <button class="btn" id="gp-off" type="button">Выключить</button></div></div>
-        <div class="setrow"><div class="l">Метка на экране<small>маленькая надпись над игрой, пока режим включён («● ИГРОВОЙ РЕЖИМ · W · ПРИЦЕЛ»). Не ловит клики. В полноэкранном режиме игры может быть скрыта: выберите в игре «окно без рамки»</small></div>
+        <div class="setrow"><div class="l">Метка на экране<small>маленькая надпись над игрой, пока режим включён. Не ловит клики. В полноэкранном режиме игры может быть скрыта: выберите в игре «окно без рамки»</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="gp-overlay"><span></span></label></div></div>
         <div class="setrow"><div class="l">Звук подтверждения<small>короткий сигнал, когда фраза выполнена</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="gp-sound"><span></span></label></div></div>
-        <div class="msgline" id="gp-msg"></div>
         <div class="setrow"><div class="l">Отчёт по играм<small>состояние режима, список игр, последний поиск и последние события: чтобы прислать разработчику. Ключей и сказанных фраз в отчёте нет</small></div>
           <div class="r"><button class="btn" id="gp-report" type="button">Копировать отчёт по играм</button></div></div>
       </div>
-      <div class="card"><h3><span class="ei">🔎</span>Найти игры автоматически</h3>
-        <div class="setrow"><div class="l">Поиск на этом компьютере<small>Steam, Epic Games и GOG. Подходящие игры добавляются в список сами; остальные показываются с причиной (защита от читов, онлайн-игра). Файлы игр не изменяются и не читаются, смотрятся только имена папок и программ</small></div>
-          <div class="r"><button class="btn primary" id="gp-scan" type="button">Найти мои игры</button></div></div>
-        <div class="msgline" id="gp-scanmsg"></div>
-        <div id="gp-skipped"></div>
-      </div>
-      <div class="card"><h3><span class="ei">➕</span>Добавить игру вручную</h3>
-        <div class="setrow"><div class="l">Программа игры<small>имя файла или путь, например <b>game.exe</b> или C:\Games\Fallout\Fallout3.exe. Можно и голосом: откройте игру и скажите «добавь эту игру»</small></div>
-          <div class="r"><input type="text" id="gp-exe" placeholder="game.exe" maxlength="260"> <input type="text" id="gp-name" placeholder="название (можно пусто)" maxlength="80">
-            <select id="gp-genre"><option value="shooter">Шутер</option><option value="racing">Гонки</option><option value="action">Экшен / приключения</option></select>
-            <button class="btn primary" id="gp-add" type="button">Добавить</button></div></div>
-      </div>
-      <div class="card"><h3><span class="ei">📋</span>Мои игры</h3><div id="gp-list"><div class="empty">Пока пусто.</div></div></div>
       <div class="card"><h3><span class="ei">⏺</span>Макросы голосом</h3>
         <div id="gp-macros"><div class="empty">Макросов нет.</div></div>
         <small class="dim">Запись: в игре скажите «Джарвис, запиши макрос комбо», сделайте нужные нажатия, скажите «сохрани макрос». Потом фраза «комбо» повторит их. Записываются только игровые клавиши и кнопки мыши, движение мыши не записывается. «Удали макрос комбо» — убрать.</small></div>
       <div class="card"><h3><span class="ei">💡</span>Подсказки и чтение текста</h3>
         <small class="dim">В игре: «подскажи, что делать», «что мне делать дальше» — Джарвис посмотрит на экран и ответит вслух. «Прочитай текст», «переведи текст» — прочитает или переведёт надпись на экране. Нужно разрешение «Анализ экрана» в Настройках и модель, которая видит картинки. Снимок уходит выбранному провайдеру только по такой команде.</small></div>
     </section>
+
+    <div class="gp-modal" id="gp-allwin" role="dialog" aria-modal="true" aria-label="Все игры">
+      <div class="box">
+        <div class="head">
+          <h2>Все игры <span id="ga-count">— 0</span></h2>
+          <div class="grow"><input type="text" id="ga-q" placeholder="Поиск по названию" maxlength="80" autocomplete="off"></div>
+          <select id="ga-genre" title="Жанр"><option value="">Все жанры</option><option value="shooter">Шутер</option><option value="racing">Гонки</option><option value="action">Экшен / приключения</option></select>
+          <select id="ga-origin" title="Источник"><option value="">Все источники</option></select>
+          <select id="ga-sort" title="Сортировка"><option value="name">По названию</option><option value="added">Сначала новые</option><option value="recent">Недавно запущенные</option></select>
+          <div class="vm" id="ga-vm"><button class="btn" type="button" data-vm-btn>Вид ▾</button><div class="menu" role="menu"></div></div>
+          <button class="btn" id="ga-add" type="button">Добавить игру</button>
+          <button class="btn" id="ga-close" type="button" title="Закрыть (Esc)">✕ Закрыть</button>
+        </div>
+        <div class="body" id="ga-body"><div class="gg medium" id="ga-grid"></div><div class="gp-empty" id="ga-empty" hidden></div></div>
+        <div class="foot" id="ga-foot"></div>
+      </div>
+    </div>
+
+    <div class="gp-modal add" id="gp-addwin" role="dialog" aria-modal="true" aria-label="Добавить игру">
+      <div class="box">
+        <div class="head"><h2>Добавить игру</h2></div>
+        <div class="form">
+          <label>Файл игры (программа .exe)
+            <div class="r"><input type="text" id="gd-path" placeholder="D:\Games\Игра\game.exe" maxlength="520" autocomplete="off"><button class="btn" id="gd-browse" type="button">Обзор…</button></div></label>
+          <label>Название<input type="text" id="gd-name" placeholder="определится по имени файла или папки" maxlength="80" autocomplete="off"></label>
+          <label>Жанр<select id="gd-genre"><option value="shooter">Шутер</option><option value="racing">Гонки</option><option value="action">Экшен / приключения</option></select></label>
+          <div class="msgline" id="gd-msg" role="status"></div>
+          <div id="gd-dup" style="display:none"><span id="gd-dup-text"></span> <button class="btn small" id="gd-dup-renew" type="button">Обновить запись</button> <button class="btn small" id="gd-dup-show" type="button">Показать в библиотеке</button></div>
+          <small class="dim">Выбранный файл только проверяется и не запускается. Игра запускается кнопкой «Запустить». Игру можно взять из любого места: Steam, Epic Games и GOG для этого не нужны.</small>
+          <div class="acts"><button class="btn" id="gd-cancel" type="button">Отмена</button><button class="btn primary" id="gd-ok" type="button">Добавить</button></div>
+        </div>
+      </div>
+    </div>
 
     <section class="page ds" id="page-files">
       <h1>Файлы</h1>
@@ -1351,7 +1445,7 @@ function show(name) {
   if (name === 'diag') diagLoad();
   if (name === 'builder') builderLoad();
   if (name === 'apps') appsLoad();
-  if (name === 'games') gamesRefresh();
+  if (name === 'games') gpSummary();
   if (name === 'files') filesLoad();
   if (name === 'devices') devicesLoad();
   if (name === 'settings') { loadSettings(); refreshRemote(); tgLoad(); }
@@ -2550,41 +2644,266 @@ $('#aim-on').onclick = async () => { const r = await action('game_aim', { value:
 $('#aim-off').onclick = async () => { const r = await action('game_aim', { value: false }).catch(() => ({})); const m = $('#game-msg'); m.className = 'msgline ok'; m.textContent = (r && r.message) || ''; gameRefresh(); };
 gameRefresh(); setInterval(gameRefresh, 4000);
 
-// the Games page
-const gpGenres = { shooter: 'Шутер', racing: 'Гонки', action: 'Экшен / приключения' };
-const gpSrc = { manual: 'вручную', voice: 'голосом', scan: 'найдена поиском' };
-const gpEsc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-function gpMsg(t, ok) { const m = $('#gp-msg'); m.className = 'msgline' + (ok === false ? ' bad' : ' ok'); m.textContent = t || ''; }
-async function gamesRefresh() {
-  let g, st; try { g = await (await fetch('/games')).json(); st = await (await fetch('/game')).json(); } catch (e) { return; }
+// ---------- the library of games: icons like the desktop of Windows ----------
+// The data come from /games (the numbers and the recent games) and /games-list (a page of the catalog: search, filters, sorting).
+// «Удалить» removes only the entry of the library: the files of the game are never touched.
+const GP = { view: 'medium', sort: 'name', sum: null, sig: '', mode: 'recent', seq: 0, relinkId: '', dupId: '', noIcon: new Set(), all: { items: [], matched: 0, total: 0, loading: false, seq: 0, rev: '' } };
+const GP_VIEWS = [['large', 'Крупные значки'], ['medium', 'Обычные значки'], ['small', 'Мелкие значки']];
+const GP_SORTS = ['name', 'added', 'recent'];
+const GP_GENRES = { shooter: 'Шутер', racing: 'Гонки', action: 'Экшен / приключения' };
+const gpEsc = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function gpMsg(t, ok) { const m = $('#gp-msg'); m.className = 'msgline' + (ok === false ? ' bad' : (ok ? ' ok' : '')); m.textContent = t || ''; }
+try { const v = localStorage.getItem('games-view'); if (GP_VIEWS.some(x => x[0] === v)) GP.view = v; const s = localStorage.getItem('games-sort'); if (GP_SORTS.includes(s)) GP.sort = s; } catch (e) {}
+
+// the plain icon of a game that has no picture: a rounded square of a colour that depends on the name, with a game pad
+function gpDefIcon(name) {
+  let h = 0; for (const c of String(name)) h = (h * 31 + c.charCodeAt(0)) % 360;
+  return '<svg viewBox="0 0 64 64" aria-hidden="true"><rect x="2" y="2" width="60" height="60" rx="14" fill="hsl(' + h + ',42%,32%)"/><path d="M20 24h24a8 8 0 0 1 7.7 6l3 11a5 5 0 0 1-8.4 4.6L43 42H21l-3.3 3.6A5 5 0 0 1 9.3 41l3-11A8 8 0 0 1 20 24z" fill="#ffffffe0"/><path d="M22 29v8M18 33h8" stroke="#1d1d22" stroke-width="2.6" stroke-linecap="round"/><circle cx="42" cy="30" r="2.2" fill="#1d1d22"/><circle cx="47" cy="35" r="2.2" fill="#1d1d22"/></svg>';
+}
+const GP_RUN = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg>';
+const GP_DEL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+function gpCell(g) {
+  const warn = g.launch === 'unverified' || g.launch === 'nopath';
+  const key = g.id + g.icon_v;
+  const ico = GP.noIcon.has(key) ? gpDefIcon(g.name) : '<img src="' + gpEsc(withTok('/game-icon?id=' + encodeURIComponent(g.id) + '&v=' + g.icon_v)) + '" alt="" loading="lazy" decoding="async" data-k="' + gpEsc(key) + '">';
+  const tip = g.name + ' · ' + g.origin_label + (g.path ? '\n' + g.path : '') + (warn ? '\nЗапуск: нужно выбрать файл игры' : '');
+  return '<div class="gc' + (warn ? ' warn' : '') + '" data-id="' + gpEsc(g.id) + '" tabindex="0" title="' + gpEsc(tip) + '"><div class="gi" data-name="' + gpEsc(g.name) + '">' + ico + '</div><div class="gn">' + gpEsc(g.name) + '</div>' +
+    '<div class="ga"><button class="gb run" type="button" title="Запустить" aria-label="' + gpEsc('Запустить «' + g.name + '»') + '">' + GP_RUN + '</button><button class="gb del" type="button" title="Удалить из библиотеки" aria-label="' + gpEsc('Удалить «' + g.name + '» из библиотеки') + '">' + GP_DEL + '</button></div></div>';
+}
+function gpFillGrid(el, items, append) {
+  const html = items.map(gpCell).join('');
+  if (append) el.insertAdjacentHTML('beforeend', html); else el.innerHTML = html;
+}
+// a picture that did not come (a game without an icon): the plain icon instead, and the page does not ask for it again
+for (const id of ['gp-grid', 'ga-grid']) $('#' + id).addEventListener('error', e => {
+  const im = e.target; if (!im || im.tagName !== 'IMG') return;
+  GP.noIcon.add(im.dataset.k); const gi = im.closest('.gi'); if (gi) gi.innerHTML = gpDefIcon(gi.dataset.name);
+}, true);
+
+// ---- the menu «Вид» (like in the Explorer): large, normal, small icons; kept between starts ----
+function gpSetView(v, fromServer) {
+  if (!GP_VIEWS.some(x => x[0] === v)) return;
+  GP.view = v; try { localStorage.setItem('games-view', v); } catch (e) {}
+  if (!fromServer) saveSettings({ ui: { 'games-view': v } });
+  for (const id of ['gp-grid', 'ga-grid']) { const g = $('#' + id); g.classList.remove('large', 'medium', 'small'); g.classList.add(v); }
+  gpMenus();
+}
+function gpSetSort(s, fromServer) {
+  if (!GP_SORTS.includes(s)) return;
+  GP.sort = s; try { localStorage.setItem('games-sort', s); } catch (e) {}
+  if (!fromServer) saveSettings({ ui: { 'games-sort': s } });
+  $('#ga-sort').value = s;
+}
+function gpMenus() {
+  document.querySelectorAll('.vm .menu').forEach(m => { m.innerHTML = GP_VIEWS.map(([k, t]) => '<button type="button" role="menuitemradio" aria-checked="' + (k === GP.view) + '" data-v="' + k + '"><i>' + (k === GP.view ? '✓' : '') + '</i>' + t + '</button>').join(''); });
+}
+document.addEventListener('click', e => {
+  const vm = e.target.closest('.vm');
+  document.querySelectorAll('.vm.open').forEach(x => { if (x !== vm) x.classList.remove('open'); });
+  if (!vm) return;
+  if (e.target.closest('[data-vm-btn]')) vm.classList.toggle('open');
+  else { const b = e.target.closest('[data-v]'); if (b) { gpSetView(b.dataset.v); vm.classList.remove('open'); } }
+});
+// the settings that came from the program (a start after a restart)
+function gpHydrate(ui) { if (!ui) return; if (ui['games-view'] && ui['games-view'] !== GP.view) gpSetView(ui['games-view'], true); if (ui['games-sort'] && ui['games-sort'] !== GP.sort) gpSetSort(ui['games-sort'], true); }
+
+async function gpList(p) {
+  const u = new URLSearchParams(); for (const k in p) if (p[k] !== '' && p[k] != null) u.set(k, p[k]);
+  return (await fetch('/games-list?' + u.toString())).json();
+}
+
+// ---- the main page: the recent games, or what the search found (never the whole library) ----
+function gpDrawRecent() {
+  const s = GP.sum; if (!s) return;
+  $('#gp-title').textContent = s.recent.length && s.recent.some(g => g.last_launched) ? 'Недавние и новые' : 'Новые игры';
+  $('#gp-more').hidden = s.total <= s.recent.length; $('#gp-more').textContent = 'Все игры (' + s.total + ')'; $('#gp-more').dataset.mode = 'all';
+  if (!s.total) $('#gp-grid').innerHTML = '<div class="gp-empty">В библиотеке пока нет игр. Нажмите «Найти игры», чтобы Jarvis нашёл их в Steam, Epic Games и GOG, или «Добавить игру», чтобы выбрать файл самому.</div>';
+  else gpFillGrid($('#gp-grid'), s.recent);
+}
+async function gpSearch() {
+  const q = $('#gp-q').value.trim(), gn = $('#gp-genre').value;
+  if (!q && !gn) { GP.mode = 'recent'; gpDrawRecent(); return; }
+  GP.mode = 'search'; const seq = ++GP.seq;
+  let r; try { r = await gpList({ q, genre: gn, sort: GP.sort, limit: 24 }); } catch (e) { $('#gp-grid').innerHTML = '<div class="gp-empty">Не удалось выполнить поиск. <button class="btn small" id="gp-retry" type="button">Повторить</button></div>'; return; }
+  if (seq !== GP.seq) return;
+  $('#gp-title').textContent = 'Найдено: ' + r.matched;
+  $('#gp-more').hidden = r.matched <= r.items.length; $('#gp-more').textContent = 'Показать все найденные (' + r.matched + ')'; $('#gp-more').dataset.mode = 'search';
+  if (!r.items.length) $('#gp-grid').innerHTML = '<div class="gp-empty">Ничего не найдено.</div>'; else gpFillGrid($('#gp-grid'), r.items);
+}
+let gpTimer = 0; const gpSearchSoon = () => { clearTimeout(gpTimer); gpTimer = setTimeout(gpSearch, 200); };
+$('#gp-q').oninput = gpSearchSoon; $('#gp-genre').onchange = gpSearch;
+$('#gp-grid').addEventListener('click', e => { if (e.target.id === 'gp-retry') gpSearch(); });
+
+// ---- the summary: the numbers, the scan, the mode, the macros ----
+async function gpSummary() {
+  let g, st; try { g = await (await fetch('/games')).json(); st = await (await fetch('/game')).json(); } catch (e) {
+    if (!GP.sum) $('#gp-grid').innerHTML = '<div class="gp-empty">Не удалось загрузить библиотеку. <button class="btn small" id="gp-retry2" type="button">Повторить</button></div>';
+    return null;
+  }
+  const prev = GP.sum; GP.sum = g;
+  $('#gp-total').textContent = g.total;
   $('#gp-state').textContent = (st.active ? (st.in_game ? 'включён, игра в фокусе' : 'включён, окно игры не впереди') : 'выключен') + (st.anticheat ? ' · запущена защита от читов (' + st.anticheat + '): режим не работает' : '');
   const o = g.options || {}; $('#gp-overlay').checked = !!o.overlay; $('#gp-sound').checked = !!o.sound;
-  const list = $('#gp-list');
-  if (!g.games.length) list.innerHTML = '<div class="empty">Пока пусто. Нажмите «Найти мои игры» или добавьте игру вручную.</div>';
-  else list.innerHTML = g.games.map(e => '<div class="setrow"><div class="l">' + gpEsc(e.name) + '<small>' + gpEsc(e.exe) + ' · ' + (gpSrc[e.source] || e.source) + '</small></div><div class="r"><select data-exe="' + gpEsc(e.exe) + '" class="gp-g">' + Object.keys(gpGenres).map(k => '<option value="' + k + '"' + (k === e.genre ? ' selected' : '') + '>' + gpGenres[k] + '</option>').join('') + '</select> <button class="btn small gp-rm" data-exe="' + gpEsc(e.exe) + '" type="button">Убрать</button></div></div>').join('') + '<small class="dim">Встроенные: ' + gpEsc((g.builtin || []).join(', ')) + '</small>';
-  list.querySelectorAll('.gp-g').forEach(s => s.onchange = async () => { const r = await action('game_genre', { exe: s.dataset.exe, genre: s.value }).catch(() => ({})); gpMsg(r.ok === false ? r.message : 'Жанр изменён.', r.ok !== false); });
-  list.querySelectorAll('.gp-rm').forEach(b => b.onclick = async () => { const r = await action('game_remove', { exe: b.dataset.exe }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gamesRefresh(); });
+  // the recent games are drawn again only when they changed
+  const sig = JSON.stringify([g.recent.map(x => [x.id, x.icon_v, x.launch, x.name]), g.total]);
+  if (sig !== GP.sig) { GP.sig = sig; if (GP.mode === 'recent') gpDrawRecent(); }
+  // the scan
   const sc = g.scan || {};
   $('#gp-scan').disabled = !!sc.running;
-  $('#gp-scanmsg').className = 'msgline';
-  $('#gp-scanmsg').textContent = sc.running ? 'Ищу игры…' : (sc.done ? 'Найдено игр: ' + (sc.found || []).length + ', добавлено новых: ' + sc.added + '.' : '');
   const sk = (sc.found || []).filter(f => f.skipped || !f.exe);
-  $('#gp-skipped').innerHTML = sk.length ? '<small class="dim">Не добавлены:</small>' + sk.map(f => '<div class="setrow"><div class="l">' + gpEsc(f.name) + ' <small>' + gpEsc(f.store) + ' · ' + gpEsc(f.skipped || 'программа игры не найдена') + '</small></div></div>').join('') + '<small class="dim">Если игра нужна, добавьте её вручную (имя программы смотрите в папке игры). Игры с защитой от читов режим всё равно не запустит.</small>' : '';
+  $('#gp-skipbox').hidden = !sk.length; $('#gp-skipsum').textContent = 'Не добавлено при поиске: ' + sk.length;
+  $('#gp-skipped').innerHTML = sk.map((f, i) => '<div class="row"><div class="t">' + gpEsc(f.name) + '<small>' + gpEsc(f.store) + ' · ' + gpEsc(f.skipped || 'программа игры не найдена') + '</small></div>' + (f.path && /защит/.test(f.skipped || '') ? '<button class="btn small" data-flag="' + i + '" type="button" title="Если это одиночная игра">Добавить как одиночную</button>' : '') + '</div>').join('');
+  GP.skipped = sk;
+  // the macros
   const mc = $('#gp-macros');
-  mc.innerHTML = g.macros.length ? g.macros.map(m => '<div class="setrow"><div class="l">' + gpEsc(m.name) + '<small>' + gpEsc(m.steps.join(' → ')) + '</small></div><div class="r"><button class="btn small gp-md" data-name="' + gpEsc(m.name) + '" type="button">Удалить</button></div></div>').join('') : '<div class="empty">Макросов нет.</div>';
-  mc.querySelectorAll('.gp-md').forEach(b => b.onclick = async () => { const r = await action('macro_delete', { macro: b.dataset.name }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gamesRefresh(); });
+  mc.innerHTML = g.macros.length ? g.macros.map(m => '<div class="setrow"><div class="l">' + gpEsc(m.name) + '<small>' + gpEsc(m.steps.join(' → ')) + '</small></div><div class="r"><button class="btn small gp-md" data-macro="' + gpEsc(m.name) + '" type="button">Удалить</button></div></div>').join('') : '<div class="empty">Макросов нет.</div>';
+  // the open catalog is loaded again when the library changed behind it (a scan, the voice)
+  if ($('#gp-allwin').classList.contains('on') && prev && prev.rev !== g.rev && GP.all.rev !== g.rev) gaLoad(true);
+  GP.all.rev = g.rev;
+  return g;
 }
-$('#gp-report').onclick = async () => { try { const t = await (await fetch('/games-report')).text(); await copyText(t, $('#gp-report')); gpMsg('Отчёт скопирован', true); } catch (e) { gpMsg('Не удалось скопировать', false); } };
-$('#gp-on').onclick = async () => { const r = await action('game_mode', { value: true }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gamesRefresh(); };
-$('#gp-off').onclick = async () => { const r = await action('game_mode', { value: false }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gamesRefresh(); };
-$('#gp-overlay').onchange = e => action('game_opts', { overlay: e.target.checked });
-$('#gp-sound').onchange = e => action('game_opts', { sound: e.target.checked });
-$('#gp-scan').onclick = async () => { const r = await action('game_scan').catch(() => ({})); if (r.ok === false) gpMsg(r.message, false); gamesRefresh(); const t = setInterval(async () => { await gamesRefresh(); if (!$('#gp-scan').disabled) clearInterval(t); }, 1500); };
-$('#gp-add').onclick = async () => {
-  const r = await action('game_add', { exe: $('#gp-exe').value, title: $('#gp-name').value, genre: $('#gp-genre').value }).catch(() => ({}));
-  gpMsg(r.message, r.ok !== false); if (r.ok) { $('#gp-exe').value = ''; $('#gp-name').value = ''; } gamesRefresh();
+document.addEventListener('click', e => { if (e.target.id === 'gp-retry2') gpSummary(); });
+$('#gp-skipped').addEventListener('click', async e => {
+  const b = e.target.closest('[data-flag]'); if (!b) return;
+  const f = GP.skipped[+b.dataset.flag]; if (!f) return;
+  const r = await action('game_add_flagged', { path: f.path, title: f.name, genre: f.genre }).catch(() => ({}));
+  gpMsg(r.message, r.ok !== false); gpSummary();
+});
+document.addEventListener('click', async e => {
+  const b = e.target.closest('.gp-md'); if (!b) return;
+  const r = await action('macro_delete', { macro: b.dataset.macro }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gpSummary();
+});
+
+// ---- the actions of a game: start and remove from the library (a click on the cell itself does nothing) ----
+async function gpLaunch(id, name, btn) {
+  btn.disabled = true;
+  const r = await action('game_launch', { id }).catch(() => ({ ok: false, message: 'Не удалось связаться с программой.' }));
+  btn.disabled = false;
+  gpMsg(r.message, r.ok !== false); showToast(r.message || '');
+  GP.relinkId = r.relink ? id : ''; $('#gp-relink').style.display = r.relink ? '' : 'none';
+  if (r.ok) gpSummary();
+}
+async function gpRemove(id, name) {
+  if (!confirm('Убрать «' + name + '» из библиотеки Jarvis?\nФайлы игры останутся на компьютере.')) return;
+  const r = await action('game_remove', { id }).catch(() => ({ ok: false, message: 'Не удалось связаться с программой.' }));
+  gpMsg(r.message, r.ok !== false);
+  if (r.ok) {
+    document.querySelectorAll('.gc[data-id="' + CSS.escape(id) + '"]').forEach(c => c.remove());
+    GP.all.items = GP.all.items.filter(x => x.id !== id); GP.all.matched = Math.max(0, GP.all.matched - 1); GP.all.total = Math.max(0, GP.all.total - 1);
+    gaCount(); await gpSummary(); if (GP.mode === 'search') gpSearch();
+  }
+}
+function gpGridClick(e) {
+  const b = e.target.closest('.gb'); if (!b) return;
+  e.stopPropagation();
+  const cell = b.closest('.gc'), id = cell.dataset.id, name = cell.querySelector('.gn').textContent;
+  if (b.classList.contains('run')) gpLaunch(id, name, b); else gpRemove(id, name);
+}
+$('#gp-grid').addEventListener('click', gpGridClick); $('#ga-grid').addEventListener('click', gpGridClick);
+// a game whose file moved: the user chooses the file again
+$('#gp-relink-btn').onclick = async () => {
+  if (!GP.relinkId) return;
+  const p = await action('game_pick_file').catch(() => ({})); if (p.cancelled) return;
+  if (!p.path) { gpMsg(p.message || 'Файл не выбран.', false); return; }
+  const r = await action('game_set_path', { id: GP.relinkId, path: p.path }).catch(() => ({}));
+  gpMsg(r.message, r.ok !== false); if (r.ok) { GP.relinkId = ''; $('#gp-relink').style.display = 'none'; gpSummary(); }
 };
-gamesRefresh(); setInterval(() => { if ($('#page-games').classList.contains('active')) gamesRefresh(); }, 4000);
+
+// ---- the window «Все игры»: the whole library, one page at a time as the user scrolls ----
+function gaCount() { $('#ga-count').textContent = '— ' + GP.all.total; $('#gp-total').textContent = GP.all.total; $('#ga-foot').textContent = GP.all.matched ? 'Показано ' + $('#ga-grid').children.length + ' из ' + GP.all.matched + (GP.all.matched !== GP.all.total ? ' (всего в библиотеке ' + GP.all.total + ')' : '') : ''; }
+async function gaLoad(reset) {
+  const a = GP.all; if (a.loading && !reset) return;
+  const grid = $('#ga-grid'), body = $('#ga-body');
+  if (reset) { a.items = []; a.matched = 0; grid.innerHTML = ''; body.scrollTop = 0; } else if (a.items.length && a.items.length >= a.matched) return;
+  const seq = ++a.seq; a.loading = true;
+  try {
+    const r = await gpList({ q: $('#ga-q').value.trim(), genre: $('#ga-genre').value, origin: $('#ga-origin').value, sort: $('#ga-sort').value, offset: a.items.length, limit: 60 });
+    if (seq !== a.seq) return;
+    a.matched = r.matched; a.total = r.total; a.items = a.items.concat(r.items);
+    gpFillGrid(grid, r.items, true); gaCount();
+    const em = $('#ga-empty'); em.hidden = a.items.length > 0;
+    em.textContent = r.total ? 'Ничего не найдено. Измените поиск или фильтры.' : 'В библиотеке пока нет игр. Нажмите «Найти игры» или «Добавить игру».';
+  } catch (e) { $('#ga-foot').textContent = 'Не удалось загрузить список игр.'; }
+  finally { if (seq === a.seq) a.loading = false; }
+  // a short list that does not fill the window: the next page at once
+  if (seq === a.seq && body.scrollHeight <= body.clientHeight + 40 && a.items.length < a.matched) gaLoad(false);
+}
+$('#ga-body').addEventListener('scroll', () => { const b = $('#ga-body'); if (b.scrollTop + b.clientHeight > b.scrollHeight - 400) gaLoad(false); }, { passive: true });
+let gaTimer = 0; const gaSoon = () => { clearTimeout(gaTimer); gaTimer = setTimeout(() => gaLoad(true), 200); };
+$('#ga-q').oninput = gaSoon; $('#ga-genre').onchange = () => gaLoad(true); $('#ga-origin').onchange = () => gaLoad(true);
+$('#ga-sort').onchange = () => { gpSetSort($('#ga-sort').value); gaLoad(true); };
+async function gpOpenAll(f) {
+  f = f || {};
+  $('#ga-q').value = f.q || ''; $('#ga-genre').value = f.genre || ''; $('#ga-origin').value = ''; gpSetSort(GP.sort, true);
+  const s = GP.sum || await gpSummary();
+  $('#ga-origin').innerHTML = '<option value="">Все источники</option>' + ((s && s.origins) || []).map(o => '<option value="' + o.key + '">' + gpEsc(o.label) + ' (' + o.count + ')</option>').join('');
+  $('#gp-allwin').classList.add('on'); gpMenus(); gaLoad(true); setTimeout(() => $('#ga-q').focus(), 50);
+}
+function gpCloseAll() { $('#gp-allwin').classList.remove('on'); }
+$('#gp-all').onclick = () => gpOpenAll(); $('#ga-close').onclick = gpCloseAll;
+$('#gp-allwin').addEventListener('mousedown', e => { if (e.target.id === 'gp-allwin') gpCloseAll(); });
+$('#gp-more').onclick = () => gpOpenAll($('#gp-more').dataset.mode === 'search' ? { q: $('#gp-q').value.trim(), genre: $('#gp-genre').value } : {});
+
+// ---- «Добавить игру»: the system window of Windows for the file, the name from the file, the kind, a button ----
+let gdAuto = true;
+function gdMsg(t, ok) { const m = $('#gd-msg'); m.className = 'msgline' + (ok === false ? ' bad' : (ok ? ' ok' : '')); m.textContent = t || ''; }
+function gdOpen() { $('#gd-path').value = ''; $('#gd-name').value = ''; gdAuto = true; gdMsg(''); $('#gd-dup').style.display = 'none'; $('#gp-addwin').classList.add('on'); setTimeout(() => $('#gd-path').focus(), 50); }
+function gdClose() { $('#gp-addwin').classList.remove('on'); }
+$('#gp-add').onclick = gdOpen; $('#ga-add').onclick = gdOpen; $('#gd-cancel').onclick = gdClose;
+$('#gp-addwin').addEventListener('mousedown', e => { if (e.target.id === 'gp-addwin') gdClose(); });
+$('#gd-name').oninput = () => { gdAuto = false; };
+$('#gd-browse').onclick = async () => {
+  $('#gd-browse').disabled = true; gdMsg('Открываю окно выбора файла…');
+  const r = await action('game_pick_file').catch(() => ({ ok: false, message: 'Не удалось связаться с программой.' }));
+  $('#gd-browse').disabled = false;
+  if (r.cancelled) { gdMsg(''); return; }
+  if (r.path) $('#gd-path').value = r.path;
+  if (r.ok) { if (gdAuto || !$('#gd-name').value) { $('#gd-name').value = r.name || ''; gdAuto = true; } gdMsg('Выбран файл: ' + r.path, true); } else gdMsg(r.message, false);
+  $('#gd-dup').style.display = 'none';
+};
+async function gdSend(renew) {
+  const body = { path: $('#gd-path').value.trim(), title: $('#gd-name').value.trim(), genre: $('#gd-genre').value };
+  if (renew) body.renew = true;
+  const r = await action('game_add', body).catch(() => ({ ok: false, message: 'Не удалось связаться с программой.' }));
+  if (r.duplicate) { GP.dupId = r.id; GP.dupName = r.name; $('#gd-dup-text').textContent = r.message + ' Дубликат не создан.'; $('#gd-dup').style.display = ''; gdMsg(''); return; }
+  if (!r.ok) { gdMsg(r.message, false); return; }
+  gdClose(); gpMsg(r.message, true); showToast(r.message);
+  await gpSummary(); if (GP.mode === 'search') gpSearch(); if ($('#gp-allwin').classList.contains('on')) gaLoad(true);
+}
+$('#gd-ok').onclick = () => gdSend(false);
+$('#gd-path').addEventListener('keydown', e => { if (e.key === 'Enter') gdSend(false); });
+$('#gd-dup-renew').onclick = () => gdSend(true);
+$('#gd-dup-show').onclick = () => { gdClose(); gpOpenAll({ q: GP.dupName || '' }); };
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if ($('#gp-addwin').classList.contains('on')) gdClose(); else if ($('#gp-allwin').classList.contains('on')) gpCloseAll();
+  document.querySelectorAll('.vm.open').forEach(x => x.classList.remove('open'));
+});
+
+// ---- the scan of the computer ----
+let gpScanTimer = 0;
+async function gpScanWatch() {
+  clearInterval(gpScanTimer);
+  gpMsg('Ищу игры на этом компьютере…');
+  gpScanTimer = setInterval(async () => {
+    const g = await gpSummary(); if (!g) return;
+    if (!g.scan.running) {
+      clearInterval(gpScanTimer);
+      gpMsg('Поиск закончен: найдено ' + g.scan.found.length + ', добавлено новых ' + g.scan.added + '.', true);
+      if (GP.mode === 'search') gpSearch();
+    }
+  }, 1500);
+}
+$('#gp-scan').onclick = async () => { const r = await action('game_scan').catch(() => ({})); if (r.ok === false) { gpMsg(r.message, false); return; } $('#gp-scan').disabled = true; gpScanWatch(); };
+
+// ---- the mode, the label, the sound, the report ----
+$('#gp-report').onclick = async () => { try { const t = await (await fetch('/games-report')).text(); await copyText(t, $('#gp-report')); gpMsg('Отчёт скопирован', true); } catch (e) { gpMsg('Не удалось скопировать', false); } };
+$('#gp-on').onclick = async () => { const r = await action('game_mode', { value: true }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gpSummary(); };
+$('#gp-off').onclick = async () => { const r = await action('game_mode', { value: false }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gpSummary(); };
+$('#gp-overlay').onchange = async e => { const r = await action('game_opts', { overlay: e.target.checked }).catch(() => ({})); if (r.ok === false) { e.target.checked = !e.target.checked; gpMsg(r.message, false); } };
+$('#gp-sound').onchange = async e => { const r = await action('game_opts', { sound: e.target.checked }).catch(() => ({})); if (r.ok === false) { e.target.checked = !e.target.checked; gpMsg(r.message, false); } };
+gpSetView(GP.view, true); gpSetSort(GP.sort, true); gpMenus();
+gpSummary(); setInterval(() => { if ($('#page-games').classList.contains('active')) gpSummary(); }, 4000);
 
 async function aiOpen() { await aiRefreshList(); await pollNow(true); }
 $('#chat-new').onclick = async () => { await chatApi({ op: 'new' }); await pollNow(true); aiRefreshList(); curInput().focus(); };
@@ -2865,6 +3184,7 @@ function applyPrivacy(s) {
   renderSocial(s);
   if (s.ui && s.ui['jarvis-mode'] && s.ui['jarvis-mode'] !== mode) setMode(s.ui['jarvis-mode'], true);
   if (s.ui && s.ui['jarvis-perf']) setPerf(s.ui['jarvis-perf'] === 'low', true);
+  if (s.ui && typeof gpHydrate === 'function') gpHydrate(s.ui);
 }
 let extLists = { allowed: [], blocked: [], seen: [] };
 function chip(text, cls, onclick) { const b = document.createElement('button'); b.type = 'button'; b.className = 'c ' + (cls || ''); b.textContent = text; b.onclick = onclick; return b; }

@@ -235,6 +235,8 @@ fn paid_op_id(name: &str) -> Option<&'static str> {
         "file_open" | "file_reveal" => "ui_file_open",
         "remote_tunnel" => "ui_remote_tunnel",
         "screen_check" => "ui_screen_check",
+        // the library of games (adding, choosing a file, scanning, starting, a new path, the label and the sound): a paid part, like the mode
+        "game_add" | "game_add_flagged" | "game_pick_file" | "game_launch" | "game_set_path" | "game_scan" | "game_opts" => "ui_game_library",
         _ => return None,
     })
 }
@@ -512,50 +514,92 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         }
         // the Games page (gamelist.rs, gamescan.rs, gamemacro.rs)
         "game_add" | "game_add_flagged" => {
-            if let Err(d) = crate::access::check("game_mode") {
-                return json!({ "ok": false, "message": d.message });
-            }
-            let exe = crate::gamemode::exe_of_input(body.get("exe").and_then(|v| v.as_str()).unwrap_or(""));
-            if !exe.ends_with(".exe") {
-                return json!({ "ok": false, "message": "Нужно имя программы игры с .exe, например game.exe." });
-            }
+            let raw = body.get("path").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
             let genre_named = body.get("genre").and_then(|v| v.as_str()).and_then(crate::gamemode::Genre::from_name);
-            let name = body.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let e = crate::gamelist::Entry { exe: exe.clone(), name, genre: genre_named.unwrap_or_default(), source: "manual".into() };
-            match crate::gamelist::add(e, genre_named.is_some()) {
-                Ok(r) => {
+            let title = body.get("title").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+            // a full path (the button «Обзор…» or typed): the file is checked; only a name «game.exe» is still taken (it cannot be started)
+            let e = if raw.contains(['\\', '/']) || raw.contains(':') {
+                match crate::gamelaunch::check_path(&raw) {
+                    Ok(v) => crate::gamelist::Entry { path: v.path, verified: true, ..crate::gamelist::Entry::basic(&v.exe, if title.is_empty() { &v.name } else { &title }, genre_named.unwrap_or_default(), "manual") },
+                    Err(why) => return json!({ "ok": false, "message": why }),
+                }
+            } else {
+                let exe = crate::gamemode::exe_of_input(&raw);
+                if !exe.ends_with(".exe") {
+                    return json!({ "ok": false, "message": "Выберите файл игры кнопкой «Обзор…» или впишите путь, например D:\\Games\\Игра\\game.exe." });
+                }
+                crate::gamelist::Entry::basic(&exe, &title, genre_named.unwrap_or_default(), "manual")
+            };
+            // a game that is already there is not added twice: the page asks whether to renew its path and kind
+            if let Some(old) = crate::gamelist::find_duplicate(&e) {
+                if body.get("renew").and_then(|v| v.as_bool()) != Some(true) {
+                    return json!({ "ok": false, "duplicate": true, "id": old.id, "name": old.name, "message": format!("«{}» уже есть в библиотеке.", old.name) });
+                }
+            }
+            match crate::gamelist::add_entry(e.clone(), genre_named.is_some()) {
+                Ok((r, id)) => {
+                    crate::gameicon::forget(&id);
                     crate::gamemode::reload_list();
-                    json!({ "ok": true, "message": if r == crate::gamelist::Added::New { format!("Игра {} добавлена.", exe) } else { format!("Игра {} уже в списке.", exe) } })
+                    crate::gamemode::note_event(&format!("игра {} вручную: {}", if r == crate::gamelist::Added::New { "добавлена" } else { "обновлена" }, e.exe));
+                    json!({ "ok": true, "id": id, "new": r == crate::gamelist::Added::New, "message": if r == crate::gamelist::Added::New { format!("Игра «{}» добавлена в библиотеку.", crate::gamelist::get(&id).map(|g| g.name).unwrap_or_default()) } else { "Запись игры обновлена.".to_string() } })
                 }
                 Err(e) => json!({ "ok": false, "message": e }),
             }
         }
+        // the system window «Открыть файл» of Windows; only a path comes back (the file is checked, not opened or started)
+        "game_pick_file" => match crate::gamedialog::pick_exe() {
+            Ok(None) => json!({ "ok": true, "cancelled": true }),
+            Ok(Some(path)) => match crate::gamelaunch::check_path(&path) {
+                Ok(v) => json!({ "ok": true, "path": v.path, "exe": v.exe, "name": v.name }),
+                Err(why) => json!({ "ok": false, "path": path, "message": why }),
+            },
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        // «Запустить»: only the game the user pressed; the start does not wait for the end of the game
+        "game_launch" => match crate::gamelaunch::launch(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(m) => json!({ "ok": true, "message": m }),
+            Err(e) => json!({ "ok": false, "message": e, "relink": true }),
+        },
+        // «Удалить»: ONLY the entry of the library goes (and the picture that Jarvis kept for it). The files of the game are not touched.
         "game_remove" => {
-            let exe = body.get("exe").and_then(|v| v.as_str()).unwrap_or("");
-            let ok = crate::gamelist::remove(exe);
-            crate::gamemode::reload_list();
-            json!({ "ok": ok, "message": if ok { "Убрано из списка." } else { "Этой игры нет в списке." } })
+            let id = body.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let ok = crate::gamelist::remove_id(id);
+            if ok {
+                crate::gameicon::forget(id);
+                crate::gamemode::reload_list();
+                crate::gamemode::note_event("игра убрана из библиотеки");
+            }
+            json!({ "ok": ok, "message": if ok { "Игра убрана из библиотеки Jarvis. Файлы игры остались на компьютере." } else { "Этой игры нет в библиотеке." } })
         }
         "game_genre" => {
-            let exe = body.get("exe").and_then(|v| v.as_str()).unwrap_or("");
+            let id = body.get("id").and_then(|v| v.as_str()).unwrap_or("");
             match body.get("genre").and_then(|v| v.as_str()).and_then(crate::gamemode::Genre::from_name) {
-                Some(g) if crate::gamelist::set_genre(exe, g) => {
+                Some(g) if crate::gamelist::set_genre_id(id, g) => {
                     crate::gamemode::reload_list();
                     json!({ "ok": true })
                 }
                 _ => json!({ "ok": false, "message": "Не удалось сменить жанр." }),
             }
         }
-        "game_scan" if crate::access::check("game_mode").is_err() => {
-            json!({ "ok": false, "message": crate::access::check("game_mode").err().map(|d| d.message).unwrap_or_default() })
+        // a new path for a game whose file was moved (the id stays)
+        "game_set_path" => {
+            let id = body.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            match crate::gamelaunch::check_path(body.get("path").and_then(|v| v.as_str()).unwrap_or("")) {
+                Ok(v) => match crate::gamelist::set_path(id, &v.exe, &v.path) {
+                    Ok(()) => {
+                        crate::gameicon::forget(id);
+                        crate::gamemode::reload_list();
+                        json!({ "ok": true, "message": "Путь к игре обновлён." })
+                    }
+                    Err(e) => json!({ "ok": false, "message": e }),
+                },
+                Err(why) => json!({ "ok": false, "message": why }),
+            }
         }
         "game_scan" => match crate::gamescan::start() {
             Ok(()) => json!({ "ok": true }),
             Err(e) => json!({ "ok": false, "message": e }),
         },
-        "game_opts" if crate::access::check("game_mode").is_err() => {
-            json!({ "ok": false, "message": crate::access::check("game_mode").err().map(|d| d.message).unwrap_or_default() })
-        }
         "game_opts" => {
             let mut o = crate::gamelist::options();
             if let Some(b) = body.get("overlay").and_then(|v| v.as_bool()) {
@@ -965,6 +1009,31 @@ fn respond_bytes(stream: &mut TcpStream, status: &str, content_type: &str, body:
     let _ = stream.write_all(body);
 }
 
+// a picture that may stay in the cache of the window for an hour (the icons of the games: the address changes when the path does)
+fn respond_bytes_cached(stream: &mut TcpStream, content_type: &str, body: &[u8]) {
+    let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: private, max-age=3600\r\nConnection: close\r\n\r\n", content_type, body.len());
+    let _ = stream.write_all(body);
+}
+
+// «a=1&b=текст%20с%20пробелами» -> the value of one key, decoded ("" when there is none)
+fn query_param(query: &str, key: &str) -> String {
+    let raw = query.split('&').find_map(|kv| kv.split_once('=').filter(|(k, _)| *k == key).map(|(_, v)| v)).unwrap_or("");
+    let bytes = raw.as_bytes();
+    let (mut out, mut i) = (Vec::new(), 0);
+    while i < bytes.len() {
+        match bytes[i] {
+            b'+' => out.push(b' '),
+            b'%' if i + 2 < bytes.len() + 0 && bytes.get(i + 1).zip(bytes.get(i + 2)).map(|(a, b)| a.is_ascii_hexdigit() && b.is_ascii_hexdigit()).unwrap_or(false) => {
+                out.push(u8::from_str_radix(&raw[i + 1..i + 3], 16).unwrap_or(b'?'));
+                i += 2;
+            }
+            b => out.push(b),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).to_string()
+}
+
 fn sniff_image(data: &[u8]) -> Option<&'static str> {
     if data.starts_with(&[0xFF, 0xD8, 0xFF]) {
         Some("image/jpeg")
@@ -1128,6 +1197,18 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
             }
             browser_window_closed();
             respond(&mut stream, "200 OK", "application/json", "{\"ok\":true}");
+        }
+        ("GET", "/games-list") => {
+            let q = |k: &str| query_param(&req.query, k);
+            let n = |k: &str, d: usize| q(k).parse::<usize>().unwrap_or(d);
+            respond(&mut stream, "200 OK", "application/json", &crate::gamemode::games_list_json(&q("q"), &q("genre"), &q("origin"), &q("sort"), n("offset", 0), n("limit", 60)).to_string())
+        }
+        ("GET", "/game-icon") => {
+            // the picture is made once and kept; no picture = 404 and the page draws its own icon. The browser keeps it for an hour.
+            match crate::gameicon::icon_for(&query_param(&req.query, "id")) {
+                Some((data, kind)) => respond_bytes_cached(&mut stream, kind, &data),
+                None => respond(&mut stream, "404 Not Found", "text/plain", "no icon"),
+            }
         }
         ("GET", "/games-report") => respond(&mut stream, "200 OK", "text/plain", &crate::gamemode::report_text()),
         ("GET", "/games") => respond(&mut stream, "200 OK", "application/json", &crate::gamemode::games_json().to_string()),
@@ -1387,6 +1468,212 @@ pub fn open_browser_window() -> bool {
 
 #[cfg(test)]
 mod tests {
+    // ---- the library of games through the actions of the window (Admin edition: every action is allowed; the User edition is tested above) ----
+    #[cfg(not(feature = "user-edition"))]
+    mod library {
+        use super::*;
+        use crate::gamelist;
+
+        fn temp(tag: &str) -> std::path::PathBuf {
+            let d = std::env::temp_dir().join(format!("jarvis-ui-lib-{}-{}", tag, std::process::id()));
+            std::fs::create_dir_all(&d).unwrap();
+            d
+        }
+
+        fn exe_in(dir: &std::path::Path, folder: &str, file: &str) -> String {
+            let d = dir.join(folder);
+            std::fs::create_dir_all(&d).unwrap();
+            let p = d.join(file);
+            std::fs::write(&p, b"MZ game").unwrap();
+            p.to_string_lossy().to_string()
+        }
+
+        fn list(text: &str) -> serde_json::Value {
+            crate::gamemode::games_list_json(text, "", "", "name", 0, 200)
+        }
+
+        #[test]
+        fn a_game_chosen_by_path_enters_the_library_the_catalog_and_the_search_and_survives_a_restart() {
+            gamelist::test_reset();
+            let d = temp("add");
+            let path = exe_in(&d, "Моя игра с пробелами", "Супер Гонка.exe");
+            let r = run_action(&json!({ "name": "game_add", "path": path, "title": "", "genre": "racing" }));
+            assert_eq!(r["ok"], true, "{}", r);
+            assert_eq!(r["new"], true);
+            let id = r["id"].as_str().unwrap().to_string();
+            // the name comes from the file, the kind is the chosen one, the path is kept, the file was not started
+            let g = gamelist::get(&id).unwrap();
+            assert_eq!((g.name.as_str(), g.genre, g.exe.as_str(), g.source.as_str(), g.verified), ("Супер Гонка", crate::gamemode::Genre::Racing, "супер гонка.exe", "manual", true));
+            assert_eq!(g.launches, 0);
+            // the catalog and the search see it (a part of the name, other case)
+            assert_eq!(list("")["total"], 1);
+            assert_eq!(list("")["items"][0]["id"], id.as_str());
+            assert_eq!(list("ГОНКА")["matched"], 1);
+            assert_eq!(list("ничего")["matched"], 0);
+            assert_eq!(crate::gamemode::games_json()["total"], 1);
+            assert_eq!(crate::gamemode::games_json()["recent"][0]["launch"], "path");
+            // a restart: the file as it is written is read back to the same library
+            let written = gamelist::to_json(&gamelist::File { games: gamelist::load(), options: gamelist::options() });
+            assert_eq!(gamelist::parse_file(&written).games, gamelist::load());
+            std::fs::remove_dir_all(&d).ok();
+            gamelist::test_reset();
+        }
+
+        #[test]
+        fn a_repeated_add_is_asked_about_and_makes_no_duplicate_and_bad_files_are_refused() {
+            gamelist::test_reset();
+            let d = temp("dup");
+            let path = exe_in(&d, "Game", "game.exe");
+            let first = run_action(&json!({ "name": "game_add", "path": path, "title": "Игра", "genre": "action" }));
+            let id = first["id"].as_str().unwrap().to_string();
+            // the same file again: told, offered, nothing changed
+            let again = run_action(&json!({ "name": "game_add", "path": path, "title": "Другое имя" }));
+            assert_eq!((again["ok"].as_bool(), again["duplicate"].as_bool(), again["id"].as_str()), (Some(false), Some(true), Some(id.as_str())));
+            assert_eq!(gamelist::load().len(), 1);
+            assert_eq!(gamelist::get(&id).unwrap().name, "Игра");
+            // the same file in other writing is the same game
+            let other = run_action(&json!({ "name": "game_add", "path": path.to_uppercase().replace("\\", "/") }));
+            assert_ne!(other["ok"], true);
+            // renewed on the user's word
+            let renew = run_action(&json!({ "name": "game_add", "path": path, "title": "Новое имя", "renew": true }));
+            assert_eq!(renew["ok"], true);
+            assert_eq!(renew["new"], false);
+            assert_eq!(gamelist::load().len(), 1);
+            assert_eq!(gamelist::get(&id).unwrap().name, "Новое имя");
+            // not a game: a document, a picture, a missing file, a browser, an online game, a bare word
+            for (file, body) in [("отчёт.docx", "x"), ("фото.png", "x"), ("архив.zip", "x")] {
+                let p = d.join(file);
+                std::fs::write(&p, body).unwrap();
+                let r = run_action(&json!({ "name": "game_add", "path": p.to_string_lossy() }));
+                assert_eq!(r["ok"], false, "{}", file);
+                assert!(r["message"].as_str().unwrap().contains(".exe"), "{}", r);
+            }
+            assert_eq!(run_action(&json!({ "name": "game_add", "path": d.join("нет.exe").to_string_lossy() }))["message"], crate::gamelaunch::NOT_FOUND);
+            for bad in ["chrome.exe", "valorant.exe"] {
+                let p = exe_in(&d, "x", bad);
+                assert_eq!(run_action(&json!({ "name": "game_add", "path": p }))["ok"], false, "{}", bad);
+            }
+            assert_eq!(run_action(&json!({ "name": "game_add", "path": "просто слово" }))["ok"], false);
+            assert_eq!(gamelist::load().len(), 1);
+            std::fs::remove_dir_all(&d).ok();
+            gamelist::test_reset();
+        }
+
+        #[test]
+        fn removing_takes_only_the_entry_and_the_files_of_the_game_stay() {
+            gamelist::test_reset();
+            let d = temp("rm");
+            let path = exe_in(&d, "Game", "game.exe");
+            let save = d.join("Game").join("save1.sav");
+            let cfg = d.join("Game").join("settings.ini");
+            std::fs::write(&save, b"save").unwrap();
+            std::fs::write(&cfg, b"cfg").unwrap();
+            let id = run_action(&json!({ "name": "game_add", "path": path, "title": "Игра" }))["id"].as_str().unwrap().to_string();
+            // the user said «no» in the window: the page sends nothing; and a call with a wrong id changes nothing
+            assert_eq!(run_action(&json!({ "name": "game_remove", "id": "g-wrong" }))["ok"], false);
+            assert_eq!(gamelist::load().len(), 1);
+            // «yes»
+            let r = run_action(&json!({ "name": "game_remove", "id": id }));
+            assert_eq!(r["ok"], true);
+            assert!(r["message"].as_str().unwrap().contains("Файлы игры остались"));
+            assert!(gamelist::load().is_empty());
+            // every file of the game, its folder and its saves are as they were
+            assert!(std::path::Path::new(&path).is_file() && save.is_file() && cfg.is_file());
+            assert_eq!(std::fs::read(&save).unwrap(), b"save");
+            // it is in no result any more
+            assert_eq!(list("игра")["matched"], 0);
+            assert_eq!(list("")["total"], 0);
+            assert_eq!(crate::gamemode::games_json()["total"], 0);
+            std::fs::remove_dir_all(&d).ok();
+            gamelist::test_reset();
+        }
+
+        #[test]
+        fn the_launch_button_starts_the_chosen_game_and_a_moved_file_asks_for_a_new_path() {
+            gamelist::test_reset();
+            let d = temp("run");
+            let path = exe_in(&d, "Игра", "game.exe");
+            let id = run_action(&json!({ "name": "game_add", "path": path, "title": "Игра" }))["id"].as_str().unwrap().to_string();
+            // adding did not start it
+            assert_eq!(gamelist::get(&id).unwrap().launches, 0);
+            // the file is moved: the message of the task, and the page is told to offer the choice of a file
+            std::fs::remove_file(&path).unwrap();
+            let r = run_action(&json!({ "name": "game_launch", "id": id }));
+            assert_eq!((r["ok"].as_bool(), r["message"].as_str(), r["relink"].as_bool()), (Some(false), Some("Файл игры не найден. Выберите новый путь к игре"), Some(true)));
+            // a new path for the same game: the id stays, the library has one game
+            let new_path = exe_in(&d, "Новая папка", "game.exe");
+            let r = run_action(&json!({ "name": "game_set_path", "id": id, "path": new_path }));
+            assert_eq!(r["ok"], true, "{}", r);
+            assert_eq!(gamelist::load().len(), 1);
+            assert_eq!(gamelist::get(&id).unwrap().path, new_path);
+            // an unknown id and a path that is not a program
+            assert_eq!(run_action(&json!({ "name": "game_launch", "id": "nope" }))["ok"], false);
+            assert_eq!(run_action(&json!({ "name": "game_set_path", "id": id, "path": d.join("a.txt").to_string_lossy() }))["ok"], false);
+            std::fs::remove_dir_all(&d).ok();
+            gamelist::test_reset();
+        }
+
+        #[test]
+        fn the_genre_changes_by_id_and_the_catalog_filters_by_it() {
+            gamelist::test_reset();
+            let d = temp("genre");
+            let a = run_action(&json!({ "name": "game_add", "path": exe_in(&d, "a", "a.exe"), "title": "А", "genre": "shooter" }))["id"].as_str().unwrap().to_string();
+            run_action(&json!({ "name": "game_add", "path": exe_in(&d, "b", "b.exe"), "title": "Б", "genre": "shooter" }));
+            assert_eq!(run_action(&json!({ "name": "game_genre", "id": a, "genre": "racing" }))["ok"], true);
+            assert_eq!(crate::gamemode::games_list_json("", "racing", "", "name", 0, 50)["matched"], 1);
+            assert_eq!(crate::gamemode::games_list_json("", "shooter", "", "name", 0, 50)["matched"], 1);
+            assert_eq!(run_action(&json!({ "name": "game_genre", "id": a, "genre": "nonsense" }))["ok"], false);
+            std::fs::remove_dir_all(&d).ok();
+            gamelist::test_reset();
+        }
+
+        #[test]
+        fn a_library_of_a_hundred_and_of_two_hundred_games_is_paged_without_gaps_and_the_numbers_are_the_real_ones() {
+            for n in [100usize, 200] {
+                gamelist::test_reset();
+                let list: Vec<gamelist::Entry> = (0..n)
+                    .map(|i| gamelist::Entry { path: format!("D:\\Игры\\Игра {}\\g{}.exe", i, i), verified: true, store_id: if i % 2 == 0 { format!("steam:{}", i + 1) } else { String::new() }, ..gamelist::Entry::basic(&format!("g{}.exe", i), &format!("Игра {}", i), crate::gamemode::Genre::Action, if i % 2 == 0 { "scan" } else { "manual" }) })
+                    .collect();
+                assert_eq!(gamelist::add_many(list.clone()), n);
+                // the same scan again: nothing new, the count stays the real one
+                assert_eq!(gamelist::add_many(list), 0);
+                let s = crate::gamemode::games_json();
+                assert_eq!(s["total"], n);
+                assert_eq!(s["recent"].as_array().unwrap().len(), 12, "the main page shows a few games, not the library");
+                let mut seen = std::collections::HashSet::new();
+                let mut off = 0;
+                loop {
+                    let page = crate::gamemode::games_list_json("", "", "", "added", off, 60);
+                    assert_eq!(page["total"], n);
+                    let items = page["items"].as_array().unwrap();
+                    if items.is_empty() {
+                        break;
+                    }
+                    for g in items {
+                        assert!(seen.insert(g["id"].as_str().unwrap().to_string()), "no game twice in the pages");
+                    }
+                    off += items.len();
+                }
+                assert_eq!(seen.len(), n);
+                // the filter by the origin: half of them came by the scan of Steam
+                assert_eq!(crate::gamemode::games_list_json("", "", "steam", "name", 0, 200)["matched"], n / 2);
+                assert_eq!(crate::gamemode::games_list_json("", "", "manual", "name", 0, 200)["matched"], n / 2);
+            }
+            gamelist::test_reset();
+        }
+
+        #[test]
+        fn the_address_of_a_search_is_decoded_with_russian_letters_and_plus_and_a_broken_escape() {
+            assert_eq!(query_param("q=%D0%BC%D0%BE%D1%80+%D1%83%D1%82%D0%BE%D0%BF%D0%B8%D1%8F&sort=name", "q"), "мор утопия");
+            assert_eq!(query_param("q=a&sort=added", "sort"), "added");
+            assert_eq!(query_param("q=100%", "q"), "100%");
+            assert_eq!(query_param("q=%zz", "q"), "%zz");
+            assert_eq!(query_param("a=1", "q"), "");
+            assert_eq!(query_param("qq=1&q=2", "q"), "2");
+        }
+    }
+
+
     // Demo (no licence): the actions of the Games page that start or change the paid function are refused, the cleaning-up ones are not
     #[cfg(feature = "user-edition")]
     #[test]
@@ -1394,7 +1681,7 @@ mod tests {
         let _g = crate::licensing::test_lock();
         crate::licensing::test_reset();
         crate::gamelist::test_reset();
-        for (name, extra) in [("game_add", json!({ "exe": "game.exe" })), ("game_add_flagged", json!({ "exe": "game.exe" })), ("game_scan", json!({})), ("game_opts", json!({ "overlay": true })), ("game_mode", json!({ "value": true })), ("game_aim", json!({ "value": true }))] {
+        for (name, extra) in [("game_add", json!({ "path": "game.exe" })), ("game_add_flagged", json!({ "path": "game.exe" })), ("game_scan", json!({})), ("game_opts", json!({ "overlay": true })), ("game_mode", json!({ "value": true })), ("game_aim", json!({ "value": true })), ("game_launch", json!({ "id": "g1" })), ("game_pick_file", json!({})), ("game_set_path", json!({ "id": "g1", "path": "D:\\x.exe" }))] {
             let mut body = extra;
             body["name"] = json!(name);
             let r = run_action(&body);
@@ -1404,8 +1691,8 @@ mod tests {
         assert!(crate::gamelist::load().is_empty(), "nothing was added");
         assert!(!crate::gamelist::options().overlay);
         // removing, changing the kind and deleting a macro are cleaning up: they are never behind the paywall
-        let r = run_action(&json!({ "name": "game_remove", "exe": "nothing.exe" }));
-        assert_eq!(r["message"], "Этой игры нет в списке.");
+        let r = run_action(&json!({ "name": "game_remove", "id": "nothing" }));
+        assert_eq!(r["message"], "Этой игры нет в библиотеке.");
         let r = run_action(&json!({ "name": "macro_delete", "macro": "нет такого" }));
         assert_eq!(r["message"], "Такого макроса нет.");
     }
@@ -1545,7 +1832,7 @@ mod tests {
         answer.lines().next().unwrap_or("")
     }
 
-    const DATA: &[&str] = &["/state", "/remote", "/remote-qr", "/remote-qr-net", "/remote-qr-https", "/diag", "/diag-report", "/games", "/games-report", "/settings", "/voices", "/modules", "/chats", "/scenarios", "/tasks", "/messages", "/telegram", "/commands", "/apps", "/files", "/avatar", "/voice-install", "/reaction-voices", "/devices"];
+    const DATA: &[&str] = &["/state", "/remote", "/remote-qr", "/remote-qr-net", "/remote-qr-https", "/diag", "/diag-report", "/games", "/games-list", "/game-icon", "/games-report", "/settings", "/voices", "/modules", "/chats", "/scenarios", "/tasks", "/messages", "/telegram", "/commands", "/apps", "/files", "/avatar", "/voice-install", "/reaction-voices", "/devices"];
 
     // a program on this computer (a web page is stopped before, by the Host) sends any header it likes: without the secret of the
     // window nothing is read and nothing is done, whatever else the request says

@@ -997,6 +997,8 @@ const NOT_GAMES: &[&str] = &[
     "msedge.exe", "firefox.exe", "browser.exe", "opera.exe", "brave.exe", "vivaldi.exe", "code.exe", "devenv.exe", "notepad.exe", "winword.exe",
     "excel.exe", "outlook.exe", "powerpnt.exe", "telegram.exe", "discord.exe", "steam.exe", "jarvis-app.exe", "jarvis.exe", "applicationframehost.exe",
     "systemsettings.exe", "searchhost.exe", "shellexperiencehost.exe", "lockapp.exe", "mstsc.exe", "teamviewer.exe", "anydesk.exe",
+    // programs that run other programs or change the system: never «a game» that a button starts
+    "wscript.exe", "cscript.exe", "mshta.exe", "rundll32.exe", "regsvr32.exe", "msiexec.exe", "reg.exe", "taskkill.exe", "sc.exe", "schtasks.exe", "bitsadmin.exe", "certutil.exe", "wmic.exe", "conhost.exe", "python.exe", "pythonw.exe", "node.exe",
 ];
 // the helper programs of anti-cheat systems: while one of them runs, the game mode does not start (and stops)
 const ANTICHEAT: &[&str] = &["easyanticheat.exe", "easyanticheat_eos.exe", "beservice.exe", "bedaisy.exe", "vgc.exe", "faceitclient.exe", "faceit.exe", "esea.exe", "xigncode.exe", "gameguard.exe", "npggnt.exe", "punkbuster.exe", "pbsvc.exe"];
@@ -1378,12 +1380,41 @@ pub fn report_text() -> String {
     r
 }
 
-// everything the Games page shows: the list, the scan, the macros, the options
+// one game of the library for the page
+pub fn game_json(e: &crate::gamelist::Entry) -> Value {
+    json!({
+        "id": e.id, "name": e.name, "exe": e.exe, "genre": e.genre.name(), "origin": e.origin(), "origin_label": crate::gamelist::origin_label(e.origin()),
+        "path": e.path, "launch": crate::gamelaunch::kind_of(e), "added": e.added, "last_launched": e.last_launched, "launches": e.launches,
+        // changes when the path does: the page asks for a new picture then
+        "icon_v": crate::gamelist::id_for("", &e.path, "")
+    })
+}
+
+// everything the Games page shows at once: the numbers, the recent games, the scan, the macros, the options
 pub fn games_json() -> Value {
-    let games: Vec<Value> = crate::gamelist::load().iter().map(|e| json!({ "exe": e.exe, "name": e.name, "genre": e.genre.name(), "source": e.source })).collect();
+    let all = crate::gamelist::load();
+    let (_, recent) = crate::gamelist::query(&all, &crate::gamelist::Query { sort: crate::gamelist::Sort::Recent, limit: 12, ..Default::default() });
+    let count = |f: &dyn Fn(&crate::gamelist::Entry) -> bool| all.iter().filter(|e| f(e)).count();
     let macros: Vec<Value> = crate::gamemacro::load().iter().map(|(n, s)| json!({ "name": n, "steps": s.iter().filter_map(crate::gamemacro::step_text).collect::<Vec<_>>() })).collect();
     let o = crate::gamelist::options();
-    json!({ "games": games, "scan": crate::gamescan::status_json(), "macros": macros, "recording": crate::gamemacro::recording_name(), "options": { "overlay": o.overlay, "sound": o.sound }, "builtin": Profile::default().exes })
+    let origins: Vec<Value> = ["steam", "epic", "gog", "scan", "manual", "voice"].iter().filter(|k| count(&|e| e.origin() == **k) > 0).map(|k| json!({ "key": k, "label": crate::gamelist::origin_label(k), "count": count(&|e| e.origin() == *k) })).collect();
+    json!({
+        "total": all.len(),
+        "genres": { "shooter": count(&|e| e.genre == Genre::Shooter), "racing": count(&|e| e.genre == Genre::Racing), "action": count(&|e| e.genre == Genre::Action) },
+        "origins": origins,
+        "recent": recent.iter().map(game_json).collect::<Vec<_>>(),
+        // changes when the library changes: the open catalog is drawn again only then
+        "rev": crate::gamelist::id_for("", &crate::gamelist::to_json(&crate::gamelist::File { games: all.clone(), options: Default::default() }), ""),
+        "scan": crate::gamescan::status_json(), "macros": macros, "recording": crate::gamemacro::recording_name(), "options": { "overlay": o.overlay, "sound": o.sound }, "builtin": Profile::default().exes
+    })
+}
+
+// a page of the catalog: the search, the filters, the sorting (gamelist::query)
+pub fn games_list_json(text: &str, genre: &str, origin: &str, sort: &str, offset: usize, limit: usize) -> Value {
+    let all = crate::gamelist::load();
+    let q = crate::gamelist::Query { text: text.chars().take(80).collect(), genre: Genre::from_name(genre), origin: origin.chars().take(20).collect(), sort: crate::gamelist::Sort::from_name(sort), offset, limit: limit.clamp(1, 200) };
+    let (matched, page) = crate::gamelist::query(&all, &q);
+    json!({ "total": all.len(), "matched": matched, "offset": offset, "items": page.iter().map(game_json).collect::<Vec<_>>() })
 }
 
 // a program the user typed or picked: the file name only («C:\\Games\\x\\game.exe» -> «game.exe»)
@@ -1480,7 +1511,7 @@ pub fn handle(text: &str) -> Option<String> {
             }
             // a well-known game: its kind and name are taken from the table (the user may name another kind)
             let known = crate::gamescan::known_game(&exe);
-            let entry = crate::gamelist::Entry { exe: exe.clone(), name: known.map(|k| k.0.to_string()).unwrap_or_else(|| exe.clone()), genre: genre.or(known.map(|k| k.1)).unwrap_or_default(), source: "voice".into() };
+            let entry = crate::gamelist::Entry::basic(&exe, &known.map(|k| k.0.to_string()).unwrap_or_else(|| exe.clone()), genre.or(known.map(|k| k.1)).unwrap_or_default(), "voice");
             let outcome = crate::gamelist::add(entry, genre.is_some());
             apply_list(&mut g.profile);
             match outcome {
@@ -1683,7 +1714,7 @@ mod tests {
     fn the_report_of_the_games_has_the_state_the_list_the_scan_and_the_events_and_nothing_personal() {
         let _l = GLOBAL.lock();
         reset_global();
-        crate::gamelist::add(crate::gamelist::Entry { exe: "fallout3.exe".into(), name: "Fallout 3".into(), genre: Genre::Action, source: "scan".into() }, false).unwrap();
+        crate::gamelist::add(crate::gamelist::Entry::basic("fallout3.exe", "Fallout 3", Genre::Action, "scan"), false).unwrap();
         note_event("проверка отчёта");
         let r = report_text();
         for part in ["Отчёт по играм", "Режим включён: нет", "защита от читов: не найдена", "fallout3.exe · Fallout 3 · action · scan", "Игры в списке (1)", "Последний поиск игр", "проверка отчёта", "не входят: ключи"] {
