@@ -236,7 +236,7 @@ fn paid_op_id(name: &str) -> Option<&'static str> {
         "remote_tunnel" => "ui_remote_tunnel",
         "screen_check" => "ui_screen_check",
         // the library of games (adding, choosing a file, scanning, starting, a new path, the label and the sound): a paid part, like the mode
-        "game_add" | "game_add_flagged" | "game_pick_file" | "game_launch" | "game_set_path" | "game_scan" | "game_opts" | "aim_pick_model" | "aim_model_install" | "aim_model_check" | "aim_settings" => "ui_game_library",
+        "game_add" | "game_add_flagged" | "game_pick_file" | "game_launch" | "game_set_path" | "game_scan" | "game_opts" | "aim_pick_model" | "aim_model_install" | "aim_model_check" | "aim_settings" | "aim_snapshot" => "ui_game_library",
         _ => return None,
     })
 }
@@ -608,6 +608,19 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         "aim_model_install" => match crate::aimmodel::start_install(&crate::gamemode::profile_aim()) {
             Ok(()) => json!({ "ok": true, "message": format!("Загрузка модели началась (около {} МБ).", crate::aimmodel::download_size_mb()) }),
             Err(e) => json!({ "ok": false, "message": e }),
+        },
+        // the snapshot of the last frame with the marks: written to a file of the data folder (the user decides whom to show it)
+        "aim_snapshot" => match crate::aimassist::snapshot_png() {
+            Some(png) => {
+                let dir = crate::APP_DIR.join("aim");
+                let _ = std::fs::create_dir_all(&dir);
+                let file = dir.join("last_aim.png");
+                match crate::write_atomic(&file, &png) {
+                    Ok(()) => json!({ "ok": true, "message": format!("{} Снимок сохранён: {}", crate::aimassist::snapshot_text(), file.display()), "saved": file.display().to_string() }),
+                    Err(e) => json!({ "ok": false, "message": format!("снимок не сохранился: {}", e) }),
+                }
+            }
+            None => json!({ "ok": false, "message": crate::aimassist::snapshot_text() }),
         },
         "aim_model_cancel" => json!({ "ok": true, "message": if crate::aimmodel::cancel() { "Отменяю…" } else { "Сейчас ничего не устанавливается." } }),
         "aim_pick_model" => match crate::gamedialog::pick_model() {
@@ -1292,6 +1305,10 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
             v["run"] = crate::aimassist::status_json(&cfg);
             respond(&mut stream, "200 OK", "application/json", &v.to_string())
         }
+        ("GET", "/aim-snapshot") => match crate::aimassist::snapshot_png() {
+            Some(png) => respond_bytes(&mut stream, "200 OK", "image/png", &png),
+            None => respond(&mut stream, "404 Not Found", "text/plain", "no snapshot"),
+        },
         ("GET", "/aim-report") => respond(&mut stream, "200 OK", "text/plain", &crate::aimmodel::report_text(&crate::gamemode::aim_config())),
         ("GET", "/game") => respond(&mut stream, "200 OK", "application/json", &crate::gamemode::status_json().to_string()),
         ("GET", "/update") => respond(&mut stream, "200 OK", "application/json", &crate::updater::status_json().to_string()),
@@ -1788,7 +1805,7 @@ mod tests {
         let _g = crate::licensing::test_lock();
         crate::licensing::test_reset();
         crate::gamelist::test_reset();
-        for (name, extra) in [("game_add", json!({ "path": "game.exe" })), ("game_add_flagged", json!({ "path": "game.exe" })), ("game_scan", json!({})), ("game_opts", json!({ "overlay": true })), ("game_mode", json!({ "value": true })), ("game_aim", json!({ "value": true })), ("game_launch", json!({ "id": "g1" })), ("game_pick_file", json!({})), ("aim_model_install", json!({})), ("aim_pick_model", json!({})), ("aim_model_check", json!({})), ("aim_settings", json!({ "settings": { "fps": 20 } })), ("game_set_path", json!({ "id": "g1", "path": "D:\\x.exe" }))] {
+        for (name, extra) in [("game_add", json!({ "path": "game.exe" })), ("game_add_flagged", json!({ "path": "game.exe" })), ("game_scan", json!({})), ("game_opts", json!({ "overlay": true })), ("game_mode", json!({ "value": true })), ("game_aim", json!({ "value": true })), ("game_launch", json!({ "id": "g1" })), ("game_pick_file", json!({})), ("aim_model_install", json!({})), ("aim_pick_model", json!({})), ("aim_model_check", json!({})), ("aim_settings", json!({ "settings": { "fps": 20 } })), ("aim_snapshot", json!({})), ("game_set_path", json!({ "id": "g1", "path": "D:\\x.exe" }))] {
             let mut body = extra;
             body["name"] = json!(name);
             let r = run_action(&body);
@@ -1939,7 +1956,7 @@ mod tests {
         answer.lines().next().unwrap_or("")
     }
 
-    const DATA: &[&str] = &["/state", "/remote", "/remote-qr", "/remote-qr-net", "/remote-qr-https", "/diag", "/diag-report", "/games", "/games-list", "/game-icon", "/games-report", "/aim", "/aim-report", "/voiceprint", "/settings", "/voices", "/modules", "/chats", "/scenarios", "/tasks", "/messages", "/telegram", "/commands", "/apps", "/files", "/avatar", "/voice-install", "/reaction-voices", "/devices"];
+    const DATA: &[&str] = &["/state", "/remote", "/remote-qr", "/remote-qr-net", "/remote-qr-https", "/diag", "/diag-report", "/games", "/games-list", "/game-icon", "/games-report", "/aim", "/aim-report", "/aim-snapshot", "/voiceprint", "/settings", "/voices", "/modules", "/chats", "/scenarios", "/tasks", "/messages", "/telegram", "/commands", "/apps", "/files", "/avatar", "/voice-install", "/reaction-voices", "/devices"];
 
     // a program on this computer (a web page is stopped before, by the Host) sends any header it likes: without the secret of the
     // window nothing is read and nothing is done, whatever else the request says

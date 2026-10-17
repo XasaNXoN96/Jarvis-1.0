@@ -359,11 +359,14 @@ pub enum Outcome {
 // the crosshair is «on the target» when the step is no more than this (pixels, both axes together)
 pub const LOCK_PX: i32 = 10;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Frame {
     pub outcome: Outcome,
     // people found in the picture (after the score limit, NMS and the least size)
     pub objects: usize,
+    // the people themselves (the pixels of the picture), the one that was chosen and the point of it that is aimed at
+    pub dets: Vec<Det>,
+    pub picked: Option<(Det, (f32, f32))>,
 }
 
 // a picture with (almost) nothing in it: black (a protected window, a minimised game) or one flat colour
@@ -390,14 +393,15 @@ pub fn frame_outcome(bgra: &[u8], side: usize, cfg: &AimConfig, spec: &ModelSpec
     let tallest = side as f32 * cfg.max_size_pct as f32 / 100.0;
     let dets: Vec<Det> = dets.into_iter().filter(|d| (d.y2 - d.y1) >= cfg.min_size_px as f32 && (d.y2 - d.y1) <= tallest).collect();
     let centre = crosshair;
-    let outcome = match pick(&dets, centre, cfg) {
+    let picked = pick(&dets, centre, cfg);
+    let outcome = match picked {
         None => Outcome::NoTarget,
         Some((_, head)) => match step((head.0 - centre.0, head.1 - centre.1), cfg.strength_pct, 40.0) {
             (0, 0) => Outcome::OnTarget,
             (dx, dy) => Outcome::Step(dx, dy),
         },
     };
-    Ok(Frame { outcome, objects: dets.len() })
+    Ok(Frame { outcome, objects: dets.len(), dets, picked })
 }
 
 // ---- the point of the body that is aimed at, and «the target is caught» (for «целься в голову» and «прицельный огонь») ----
@@ -432,6 +436,116 @@ pub fn locked_within(ms: u64) -> bool {
 
 pub fn clear_locked() {
     LOCKED_MS.store(0, Ordering::SeqCst);
+}
+
+
+// ---------------------------------------------------------------------------------------------
+// the snapshot of the last frame with the marks: what the program saw and decided (to find out why the aim goes where it goes). It is kept in
+// the memory only, written to a file and shown only when the user asks for it.
+// ---------------------------------------------------------------------------------------------
+pub struct Snap {
+    pub bgra: Vec<u8>,
+    pub side: usize,
+    pub cross: (f32, f32),
+    pub frame: Frame,
+    pub auto: bool,
+}
+
+static SNAP: Lazy<Mutex<Option<Snap>>> = Lazy::new(|| Mutex::new(None));
+
+pub fn keep_snapshot(s: Snap) {
+    *SNAP.lock() = Some(s);
+}
+
+fn px(img: &mut [u8], side: usize, x: i32, y: i32, c: [u8; 3]) {
+    if x >= 0 && y >= 0 && (x as usize) < side && (y as usize) < side {
+        let i = (y as usize * side + x as usize) * 4;
+        img[i] = c[0];
+        img[i + 1] = c[1];
+        img[i + 2] = c[2];
+        img[i + 3] = 255;
+    }
+}
+
+fn line(img: &mut [u8], side: usize, a: (f32, f32), b: (f32, f32), c: [u8; 3], w: i32) {
+    let n = ((b.0 - a.0).abs().max((b.1 - a.1).abs())).ceil().max(1.0) as i32;
+    for i in 0..=n {
+        let t = i as f32 / n as f32;
+        let (x, y) = ((a.0 + (b.0 - a.0) * t).round() as i32, (a.1 + (b.1 - a.1) * t).round() as i32);
+        for dx in -(w / 2)..=(w / 2) {
+            for dy in -(w / 2)..=(w / 2) {
+                px(img, side, x + dx, y + dy, c);
+            }
+        }
+    }
+}
+
+fn rect(img: &mut [u8], side: usize, d: &Det, c: [u8; 3], w: i32) {
+    let (a, b, cc, dd) = ((d.x1, d.y1), (d.x2, d.y1), (d.x2, d.y2), (d.x1, d.y2));
+    for (p, q) in [(a, b), (b, cc), (cc, dd), (dd, a)] {
+        line(img, side, p, q, c, w);
+    }
+}
+
+fn disc(img: &mut [u8], side: usize, at: (f32, f32), r: i32, c: [u8; 3]) {
+    for dx in -r..=r {
+        for dy in -r..=r {
+            if dx * dx + dy * dy <= r * r {
+                px(img, side, at.0.round() as i32 + dx, at.1.round() as i32 + dy, c);
+            }
+        }
+    }
+}
+
+// RGBA of the picture with the marks: green boxes = people that were found, yellow thick box = the chosen one, red point = where it is aimed
+// at (the head of the box), red line = the way from the crosshair, cyan plus = the crosshair that the program used. Pure, tested.
+pub fn render_snapshot(bgra: &[u8], side: usize, cross: (f32, f32), frame: &Frame) -> Vec<u8> {
+    let mut img = vec![255u8; side * side * 4];
+    for i in 0..side * side {
+        img[i * 4] = bgra[i * 4 + 2];
+        img[i * 4 + 1] = bgra[i * 4 + 1];
+        img[i * 4 + 2] = bgra[i * 4];
+    }
+    for d in &frame.dets {
+        rect(&mut img, side, d, [60, 255, 90], 2);
+    }
+    if let Some((d, head)) = &frame.picked {
+        rect(&mut img, side, d, [255, 230, 40], 4);
+        line(&mut img, side, cross, *head, [255, 50, 50], 3);
+        disc(&mut img, side, *head, 6, [255, 50, 50]);
+    }
+    let c = [40, 240, 255];
+    line(&mut img, side, (cross.0 - 14.0, cross.1), (cross.0 + 14.0, cross.1), c, 3);
+    line(&mut img, side, (cross.0, cross.1 - 14.0), (cross.0, cross.1 + 14.0), c, 3);
+    img
+}
+
+// the PNG of the last frame with the marks (None: the aim assist has not looked at anything yet)
+pub fn snapshot_png() -> Option<Vec<u8>> {
+    let g = SNAP.lock();
+    let s = g.as_ref()?;
+    crate::gameicon::encode_png(s.side as u32, s.side as u32, &render_snapshot(&s.bgra, s.side, s.cross, &s.frame))
+}
+
+// the words about what the snapshot shows (for the card)
+pub fn snapshot_text() -> String {
+    match SNAP.lock().as_ref() {
+        None => "Снимка ещё нет: включите помощь прицела и зажмите правую кнопку мыши в игре.".into(),
+        Some(s) => format!(
+            "Кадр {}×{}, перекрестие ({:.0}, {:.0}){}, людей найдено {}, итог: {}",
+            s.side,
+            s.side,
+            s.cross.0,
+            s.cross.1,
+            if s.auto { " (найдено автоматически)" } else { "" },
+            s.frame.dets.len(),
+            match s.frame.outcome {
+                Outcome::NoTarget => "цели нет".to_string(),
+                Outcome::OnTarget => "перекрестие уже на цели".to_string(),
+                Outcome::Step(dx, dy) => format!("шаг мыши ({:+}, {:+}) пикселей", dx, dy),
+            }
+        ),
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -514,6 +628,7 @@ pub fn set_enabled(on: bool, cfg: &AimConfig) -> String {
         return format!("Помощь прицела не включена: {}.", why);
     }
     PROBLEM.lock().clear();
+    *SNAP.lock() = None;
     FRAMES.store(0, Ordering::SeqCst);
     LAST_MS.store(0, Ordering::SeqCst);
     OBJECTS.store(0, Ordering::SeqCst);
@@ -814,6 +929,7 @@ mod run {
             match res {
                 Ok(f) => {
                     OBJECTS.store(f.objects as u32, Ordering::SeqCst);
+                    keep_snapshot(Snap { bgra: frame.clone(), side, cross: cap.cross, frame: f.clone(), auto: auto_px.is_some() });
                     // the module may have been switched off while the model worked: no move of the mouse after that
                     if !alive(id) {
                         break;
@@ -1080,6 +1196,34 @@ mod tests {
         let big = AimConfig { max_size_pct: 65, ..cfg.clone() };
         let tall = frame_outcome(&frame, side, &big, &spec8(side), (32.0, 32.0), &mut one).unwrap();
         assert_eq!((tall.outcome, tall.objects), (Outcome::NoTarget, 0), "52 of 64 is 81% of the picture");
+    }
+
+    #[test]
+    fn the_snapshot_marks_the_people_the_choice_the_way_and_the_crosshair() {
+        let side = 64usize;
+        let bgra = vec![10u8; side * side * 4];
+        let cfg = AimConfig { min_size_px: 0, max_size_pct: 100, ..AimConfig::default() };
+        let mut one = |_: &[f32]| -> Result<RawOut, String> { Ok(out8(vec![20.0, 40.0, 16.0, 40.0, 0.9], 1)) };
+        let f = frame_outcome(&bgra, side, &cfg, &spec8(side), (32.0, 32.0), &mut one).unwrap();
+        assert_eq!(f.dets.len(), 1);
+        let (d, head) = f.picked.expect("a chosen person");
+        assert_eq!((d.x1, d.y1, d.x2, d.y2), (12.0, 20.0, 28.0, 60.0));
+        assert_eq!(head, (20.0, 24.8));
+        let img = render_snapshot(&bgra, side, (32.0, 32.0), &f);
+        assert_eq!(img.len(), side * side * 4);
+        let at = |x: usize, y: usize| [img[(y * side + x) * 4], img[(y * side + x) * 4 + 1], img[(y * side + x) * 4 + 2]];
+        assert_eq!(at(1, 1), [10, 10, 10], "the picture itself (grey: B, G, R are equal)");
+        assert_eq!(at(32, 32), [40, 240, 255], "the crosshair is cyan");
+        assert_eq!(at(20, 25), [255, 50, 50], "the head point is red");
+        assert_eq!(at(12, 40), [255, 230, 40], "the chosen box is yellow");
+        // the channels come in the right order: a pure blue pixel of the screen is blue in the picture
+        let mut b = vec![0u8; side * side * 4];
+        b[0] = 255;
+        let plain = Frame { outcome: Outcome::NoTarget, objects: 0, dets: vec![], picked: None };
+        let img2 = render_snapshot(&b, side, (50.0, 50.0), &plain);
+        assert_eq!(&img2[0..3], &[0, 0, 255]);
+        // a png can be made of it
+        assert!(crate::gameicon::encode_png(side as u32, side as u32, &img).map(|p| p.starts_with(&[0x89, b'P', b'N', b'G'])).unwrap_or(false));
     }
 
     #[test]

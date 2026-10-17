@@ -1005,6 +1005,9 @@
           <div class="r"><label class="sw"><input type="checkbox" id="gp-aim-auto"><span></span></label> <button class="btn" id="gp-aim-savegame" type="button" title="Числа «Где перекрестие» сохраняются для игры, которая была впереди последней">Запомнить числа для игры</button></div></div>
         <div class="setrow"><div class="l">Наибольший размер человека, % кадра<small>Выше этого не берутся в цель: ваш собственный персонаж и напарник у камеры очень крупные. Союзников той же модели от врагов отличить нельзя: стреляйте там, где их нет</small></div>
           <div class="r"><input type="number" id="gp-aim-max" min="20" max="100" step="5" style="width:76px"></div></div>
+        <div class="setrow"><div class="l">Что видит помощь прицела<small id="gp-aim-snaptext">Снимок последнего кадра с метками: зелёные рамки — найденные люди, жёлтая толстая — выбранная цель, красная точка — куда целимся, красная линия — путь от перекрестия, голубой плюс — перекрестие, которое использовала программа. Если прицел идёт не туда, этот снимок покажет почему</small>
+          <img id="gp-aim-snap" alt="" style="display:none;max-width:100%;max-height:420px;margin-top:8px;border-radius:8px;border:1px solid var(--line)"></div>
+          <div class="r"><button class="btn" id="gp-aim-snapbtn" type="button">Показать снимок последнего прицеливания</button></div></div>
         <div class="setrow"><div class="l">Диагностика<small>модель, источник и проверка целостности, среда выполнения, устройство, захват экрана, время кадра, ошибки. Ключей, снимков экрана и голоса в отчёте нет</small></div>
           <div class="r"><button class="btn" id="gp-aim-report" type="button">Копировать отчёт</button></div></div>
         <div class="msgline" id="gp-aim-msg" role="status" style="padding:6px 0"></div>
@@ -3114,6 +3117,11 @@ $('#gp-aim-save').onclick = async () => {
   if (r.ok) AIM.loaded = false;
 };
 $('#gp-aim-savegame').onclick = () => aimDo('aim_settings', { for_game: true, settings: { cx: +$('#gp-aim-cx').value, cy: +$('#gp-aim-cy').value } });
+$('#gp-aim-snapbtn').onclick = async () => {
+  const r = await aimDo('aim_snapshot');
+  const im = $('#gp-aim-snap');
+  if (r && r.ok) { im.src = '/aim-snapshot?t=' + Date.now(); im.style.display = 'block'; $('#gp-aim-snaptext').textContent = r.message; } else { im.style.display = 'none'; }
+};
 $('#gp-aim-report').onclick = async () => { try { const t = await (await fetch('/aim-report')).text(); await copyText(t, $('#gp-aim-report')); gpMsg('Отчёт по помощи прицела скопирован', true); } catch (e) { gpMsg('Не удалось скопировать', false); } };
 aimRefresh();
 gpSummary(); setInterval(() => { if ($('#page-games').classList.contains('active')) { gpSummary(); aimRefresh(); } }, 4000);
