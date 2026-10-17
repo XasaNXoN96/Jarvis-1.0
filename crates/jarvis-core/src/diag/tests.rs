@@ -222,3 +222,47 @@ fn the_game_card_tells_the_anti_cheat_the_unused_mode_and_the_working_one() {
     assert!(c.detail.contains("игр в списке 3") && c.detail.contains("найдено 5, добавлено 3, не добавлено 2"), "{}", c.detail);
     assert!(c.detail.contains("не подтверждает"), "an honest card: it does not claim that the game works");
 }
+
+#[test]
+fn the_aim_card_tells_each_state_of_the_model_honestly() {
+    use serde_json::json;
+    let run = json!({ "device_used": "", "capture": "не снимался", "last_frame_ms": 0, "objects": 0, "problem": "" });
+    let base = json!({ "runtime": true, "installed": false, "install_error": "", "checked": false, "check_ok": false, "check_error": "", "directml_build": false, "size_mb": 34, "meta": null, "summary": null });
+    // no runtime in the build
+    let c = aim_check(&json!({ "runtime": false }), &run);
+    assert_eq!(c.status, Status::Unchecked);
+    // not installed: says where to install, shows the last error
+    let c = aim_check(&base, &run);
+    assert_eq!(c.status, Status::Unchecked);
+    assert!(c.detail.contains("не установлена") && c.fix.contains("Установить модель автоматически"), "{}", c.detail);
+    let mut st = base.clone();
+    st["install_error"] = json!("SHA-256 не совпала");
+    assert!(aim_check(&st, &run).detail.contains("SHA-256 не совпала"));
+    // installed, not checked yet
+    st["installed"] = json!(true);
+    st["meta"] = json!({ "kind": "official", "name": "YOLOX-s" });
+    st["install_error"] = json!("");
+    assert_eq!(aim_check(&st, &run).status, Status::Warn);
+    // incompatible
+    st["checked"] = json!(true);
+    st["check_error"] = json!("выход не похож на детектор");
+    let c = aim_check(&st, &run);
+    assert_eq!(c.status, Status::Error);
+    assert!(c.detail.contains("не пройдена") && c.detail.contains("выход не похож"), "{}", c.detail);
+    // fine: the card says that the accuracy in a live game is not confirmed, and what runs on which device
+    st["check_ok"] = json!(true);
+    st["check_error"] = json!("");
+    st["summary"] = json!({ "layout": "YOLOX", "input": "640×640" });
+    let run_ok = json!({ "device_used": "Процессор (CPU)", "capture": "ок, 640×640", "last_frame_ms": 21, "objects": 2, "problem": "" });
+    let c = aim_check(&st, &run_ok);
+    assert_eq!(c.status, Status::Ok);
+    for want in ["SHA-256 и размер сверены", "Процессор (CPU)", "DirectML в сборке: нет", "21 мс", "не подтверждает"] {
+        assert!(c.detail.contains(want), "{}: {}", want, c.detail);
+    }
+    // a failure of the work wins
+    let mut bad = run_ok.clone();
+    bad["problem"] = json!("экран снимается чёрным");
+    let c = aim_check(&st, &bad);
+    assert_eq!(c.status, Status::Error);
+    assert!(c.detail.contains("чёрным"));
+}

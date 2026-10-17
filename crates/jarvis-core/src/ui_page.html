@@ -933,12 +933,25 @@
         <div class="setrow"><div class="l">Отчёт по играм<small>состояние режима, список игр, последний поиск и последние события: чтобы прислать разработчику. Ключей и сказанных фраз в отчёте нет</small></div>
           <div class="r"><button class="btn" id="gp-report" type="button">Копировать отчёт по играм</button></div></div>
       </div>
-      <div class="card"><h3><span class="ei">🎯</span>Помощь прицела (эксперимент, только офлайн-игры)</h3>
-        <div class="setrow"><div class="l">Состояние<small id="gp-aim-state"></small></div>
+      <div class="card" id="gp-aim-card"><h3><span class="ei">🎯</span>Помощь прицела (эксперимент, только офлайн-игры)</h3>
+        <div class="setrow"><div class="l">Состояние<small id="gp-aim-state"></small><small id="gp-aim-sub" class="dim"></small></div>
           <div class="r"><button class="btn" id="gp-aim-on" type="button">Включить</button> <button class="btn" id="gp-aim-off" type="button">Выключить</button></div></div>
-        <div class="setrow"><div class="l">Файл модели<small>Нужен детектор людей в формате ONNX (например, YOLOv8, класс 0 «человек»). Без него Jarvis не видит цель: «целься в голову» только поднимает прицел, а «прицельный огонь» честно скажет, что стрелять не в кого. Файл копируется в папку программы; прежний сохраняется рядом.</small></div>
-          <div class="r"><button class="btn" id="gp-aim-model" type="button">Выбрать файл модели…</button></div></div>
-        <small class="dim">Фразы: «целься в голову» / «целься в корпус», «прицельный огонь» / «выстрели в голову», «не целься», «огонь» (обычный выстрел). Помощь работает только пока удерживается правая кнопка мыши в окне игры и выключена при каждом запуске. Как получить модель: docs/GAME-MODE.md.</small>
+        <div class="setrow"><div class="l">Модель<small id="gp-aim-modelinfo">Нужен детектор людей в формате ONNX. Python, командная строка и Ultralytics не нужны: Jarvis сам скачивает официальную модель, проверяет её контрольную сумму и совместимость и ставит на место. Прежняя модель при неудаче не удаляется.</small>
+          <div id="gp-aim-progwrap" style="display:none;margin-top:8px"><div style="height:8px;border-radius:4px;background:rgba(127,127,127,.25);overflow:hidden"><div id="gp-aim-prog" style="height:100%;width:0;background:var(--accent,#4da3ff)"></div></div></div></div>
+          <div class="r"><button class="btn primary" id="gp-aim-install" type="button">Установить модель автоматически</button> <button class="btn" id="gp-aim-model" type="button">Выбрать файл модели…</button> <button class="btn" id="gp-aim-cancel" type="button" style="display:none">Отменить</button> <button class="btn" id="gp-aim-check" type="button">Проверить модель</button></div></div>
+        <div class="setrow"><div class="l">Устройство<small id="gp-aim-devnote">Авто и «Процессор» работают на процессоре — этого достаточно для модели такого размера. Видеокарта (DirectML) — только в сборке, где она подключена и проверена.</small></div>
+          <div class="r"><select id="gp-aim-device"><option value="auto">Авто</option><option value="cpu">Процессор (CPU)</option><option value="directml">Видеокарта (DirectML)</option></select></div></div>
+        <div class="setrow"><div class="l">Размер кадра у прицела<small>Квадрат вокруг центра окна игры. Меньше — быстрее, но видно меньше вокруг прицела</small></div>
+          <div class="r"><select id="gp-aim-side"><option value="320">320</option><option value="416">416</option><option value="512">512</option><option value="640">640</option><option value="800">800</option></select></div></div>
+        <div class="setrow"><div class="l">Кадров в секунду (не больше)<small>Если компьютер не успевает, Jarvis сам делает паузы между кадрами и не отнимает у игры процессор</small></div>
+          <div class="r"><input type="number" id="gp-aim-fps" min="1" max="60" step="1" style="width:76px"></div></div>
+        <div class="setrow"><div class="l">Порог уверенности, %<small>Ниже — больше ложных целей, выше — можно пропустить цель</small></div>
+          <div class="r"><input type="range" id="gp-aim-conf" min="10" max="95" step="5"><b id="gp-aim-conf-v" style="min-width:42px;text-align:right"></b></div></div>
+        <div class="setrow"><div class="l">Наименьший размер человека, пикселей<small>Рамки ниже этой высоты (далёкие или обрезанные) не берутся в цель</small></div>
+          <div class="r"><input type="number" id="gp-aim-min" min="0" max="400" step="2" style="width:76px"> <button class="btn" id="gp-aim-save" type="button">Сохранить настройки</button></div></div>
+        <div class="setrow"><div class="l">Диагностика<small>модель, источник и проверка целостности, среда выполнения, устройство, захват экрана, время кадра, ошибки. Ключей, снимков экрана и голоса в отчёте нет</small></div>
+          <div class="r"><button class="btn" id="gp-aim-report" type="button">Копировать отчёт</button></div></div>
+        <small class="dim">Модель находит человека целиком (не отдельно голову и корпус): «голова» и «корпус» — точки внутри рамки человека. Фразы: «целься в голову» / «целься в корпус», «прицельный огонь», «не целься», «стой» (выключает всё сразу). Помощь работает только пока удерживается правая кнопка мыши в окне игры, выключена при каждом запуске и не работает при защите от читов. Подробности и лицензия модели: docs/GAME-MODE.md.</small>
       </div>
       <div class="card"><h3><span class="ei">⏺</span>Макросы голосом</h3>
         <div id="gp-macros"><div class="empty">Макросов нет.</div></div>
@@ -2761,8 +2774,6 @@ async function gpSummary() {
   $('#gp-total').textContent = g.total;
   $('#gp-state').textContent = (st.active ? (st.in_game ? 'включён, игра в фокусе' : 'включён, окно игры не впереди') : 'выключен') + (st.anticheat ? ' · запущена защита от читов (' + st.anticheat + '): режим не работает' : '');
   const o = g.options || {}; $('#gp-overlay').checked = !!o.overlay; $('#gp-sound').checked = !!o.sound;
-  const a = st.aim || {};
-  $('#gp-aim-state').textContent = a.enabled ? 'включена (' + (a.frames || 0) + ' кадров' + (a.last_frame_ms ? ', ' + a.last_frame_ms + ' мс на кадр' : '') + ')' : (a.problem ? 'выключена: ' + a.problem : (a.model_found ? 'выключена, файл модели найден' : 'выключена: нет файла модели (выберите его кнопкой ниже)'));
   // the recent games are drawn again only when they changed
   const sig = JSON.stringify([g.recent.map(x => [x.id, x.icon_v, x.launch, x.name]), g.total]);
   if (sig !== GP.sig) { GP.sig = sig; if (GP.mode === 'recent') gpDrawRecent(); }
@@ -2917,9 +2928,8 @@ $('#gp-scan').onclick = async () => { const r = await action('game_scan').catch(
 
 // ---- the mode, the label, the sound, the report ----
 $('#gp-report').onclick = async () => { try { const t = await (await fetch('/games-report')).text(); await copyText(t, $('#gp-report')); gpMsg('Отчёт скопирован', true); } catch (e) { gpMsg('Не удалось скопировать', false); } };
-$('#gp-aim-on').onclick = async () => { const r = await action('game_aim', { value: true }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gpSummary(); };
-$('#gp-aim-off').onclick = async () => { const r = await action('game_aim', { value: false }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gpSummary(); };
-$('#gp-aim-model').onclick = async () => { $('#gp-aim-model').disabled = true; const r = await action('aim_pick_model').catch(() => ({ ok: false, message: 'Не удалось связаться с программой.' })); $('#gp-aim-model').disabled = false; if (!r.cancelled) gpMsg(r.message, r.ok !== false); gpSummary(); };
+$('#gp-aim-on').onclick = async () => { const r = await action('game_aim', { value: true }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gpSummary(); aimRefresh(); };
+$('#gp-aim-off').onclick = async () => { const r = await action('game_aim', { value: false }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gpSummary(); aimRefresh(); };
 $('#gp-on').onclick = async () => { const r = await action('game_mode', { value: true }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gpSummary(); };
 $('#gp-off').onclick = async () => { const r = await action('game_mode', { value: false }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gpSummary(); };
 $('#gp-overlay').onchange = async e => { const r = await action('game_opts', { overlay: e.target.checked }).catch(() => ({})); if (r.ok === false) { e.target.checked = !e.target.checked; gpMsg(r.message, false); } };
@@ -2945,7 +2955,53 @@ $('#vp-on').onchange = e => vpAct('voice_print_enable', { value: e.target.checke
 vpRefresh(); setInterval(() => { if (currentPage === 'settings') vpRefresh(); }, 1500);
 
 gpSetView(GP.view, true); gpSetSort(GP.sort, true); gpMenus();
-gpSummary(); setInterval(() => { if ($('#page-games').classList.contains('active')) gpSummary(); }, 4000);
+
+// ---- the card of the aim assist: the model (install / own file / check), the settings, the report ----
+const AIM = { loaded: false, busy: false, st: null };
+const AIM_STATES = { not_installed: 'Модель не установлена', downloading: 'Скачиваю модель…', verifying: 'Проверяю целостность (SHA-256)…', checking: 'Проверяю совместимость модели…', installing: 'Устанавливаю модель…', install_error: 'Ошибка установки', compat_error: 'Модель несовместима', unchecked: 'Модель найдена, проверяю…', ready: 'Модель готова, помощь прицела выключена', on: 'Помощь прицела включена' };
+async function aimRefresh() {
+  let a; try { a = await (await fetch('/aim')).json(); } catch (e) { return; }
+  AIM.st = a; const run = a.run || {}; const st = a.state;
+  let t = AIM_STATES[st] || st;
+  if (st === 'downloading') t += ' ' + a.percent + '% (' + a.got_mb + ' из ' + a.total_mb + ' МБ)';
+  if (st === 'install_error') t += ': ' + a.install_error;
+  if (st === 'compat_error') t += ': ' + a.check_error;
+  if (st === 'ready' && a.last_ok) t = a.last_ok;
+  $('#gp-aim-state').textContent = t + (run.problem ? ' · остановлена: ' + run.problem : '');
+  let sub = [];
+  if (a.installed && a.meta && a.meta.name) sub.push(a.meta.name + ' · ' + a.size_mb + ' МБ · ' + (a.meta.kind === 'official' ? 'официальная загрузка, SHA-256 совпал' : 'ваш файл') + (a.meta.license ? ' · лицензия: ' + a.meta.license : ''));
+  if (a.check_ok && a.summary) sub.push('формат ' + a.summary.layout + ', вход ' + a.summary.input + ', пробный запуск ' + a.summary.trial_ms + ' мс');
+  if (run.enabled) sub.push('захват: ' + run.capture + ' · кадров ' + run.frames + ' · ' + run.last_frame_ms + ' мс на кадр · людей в кадре ' + run.objects + (run.device_used ? ' · ' + run.device_used : ''));
+  $('#gp-aim-sub').textContent = sub.join(' | ');
+  const busy = ['downloading', 'verifying', 'checking', 'installing'].includes(st);
+  $('#gp-aim-progwrap').style.display = st === 'downloading' ? '' : 'none';
+  $('#gp-aim-prog').style.width = (a.percent || 0) + '%';
+  $('#gp-aim-install').disabled = busy || !a.network; $('#gp-aim-install').title = a.network ? '' : 'В этой сборке нет сетевого модуля: выберите файл вручную';
+  $('#gp-aim-install').textContent = a.installed ? 'Переустановить модель (≈' + a.official.download_mb + ' МБ)' : 'Установить модель автоматически (≈' + a.official.download_mb + ' МБ)';
+  $('#gp-aim-model').disabled = busy; $('#gp-aim-check').disabled = busy || !a.installed;
+  $('#gp-aim-cancel').style.display = st === 'downloading' ? '' : 'none';
+  $('#gp-aim-on').disabled = !(st === 'ready' || st === 'unchecked'); $('#gp-aim-off').disabled = !run.enabled;
+  $('#gp-aim-modelinfo').textContent = 'Официальная модель: ' + a.official.title + ', ' + a.official.license + ', ≈' + a.official.download_mb + ' МБ с GitHub (OpenCV Zoo). ' + a.official.note + ' Python, командная строка и Ultralytics не нужны. Прежняя модель при неудаче не удаляется.';
+  $('#gp-aim-devnote').textContent = (a.directml_build ? 'В этой сборке видеокарта (DirectML) подключена; если она не запустится, Jarvis сам перейдёт на процессор. ' : 'В этой сборке видеокарта (DirectML) не подключена: любой выбор работает на процессоре. ') + 'Видеокарта не обязательно быстрее для такой модели.';
+  if (!AIM.loaded && run.settings) {
+    AIM.loaded = true; const s = run.settings;
+    $('#gp-aim-device').value = s.device; $('#gp-aim-side').value = String(s.side); $('#gp-aim-fps').value = s.fps; $('#gp-aim-conf').value = s.conf; $('#gp-aim-conf-v').textContent = s.conf + '%'; $('#gp-aim-min').value = s.min_size;
+  }
+  clearTimeout(AIM.timer); if (busy) AIM.timer = setTimeout(aimRefresh, 700);
+}
+async function aimDo(name, extra) { const r = await action(name, extra || {}).catch(() => ({ ok: false, message: 'Не удалось связаться с программой.' })); if (!r.cancelled) gpMsg(r.message, r.ok !== false); aimRefresh(); return r; }
+$('#gp-aim-install').onclick = () => aimDo('aim_model_install');
+$('#gp-aim-model').onclick = () => aimDo('aim_pick_model');
+$('#gp-aim-cancel').onclick = () => aimDo('aim_model_cancel');
+$('#gp-aim-check').onclick = () => aimDo('aim_model_check');
+$('#gp-aim-conf').oninput = () => { $('#gp-aim-conf-v').textContent = $('#gp-aim-conf').value + '%'; };
+$('#gp-aim-save').onclick = async () => {
+  const r = await aimDo('aim_settings', { settings: { device: $('#gp-aim-device').value, side: +$('#gp-aim-side').value, fps: +$('#gp-aim-fps').value, conf: +$('#gp-aim-conf').value, min_size: +$('#gp-aim-min').value } });
+  if (r.ok) AIM.loaded = false;
+};
+$('#gp-aim-report').onclick = async () => { try { const t = await (await fetch('/aim-report')).text(); await copyText(t, $('#gp-aim-report')); gpMsg('Отчёт по помощи прицела скопирован', true); } catch (e) { gpMsg('Не удалось скопировать', false); } };
+aimRefresh();
+gpSummary(); setInterval(() => { if ($('#page-games').classList.contains('active')) { gpSummary(); aimRefresh(); } }, 4000);
 
 async function aiOpen() { await aiRefreshList(); await pollNow(true); }
 $('#chat-new').onclick = async () => { await chatApi({ op: 'new' }); await pollNow(true); aiRefreshList(); curInput().focus(); };

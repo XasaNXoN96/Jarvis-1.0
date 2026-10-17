@@ -250,6 +250,7 @@ pub mod ortrun {
     // a session of the model on the chosen device; a failure of DirectML is not fatal: the processor takes over, and the note says so
     pub fn session_for(path: &std::path::Path, wanted: Device) -> Result<(Session, Device, String), String> {
         let (device, mut note) = resolve_device(wanted);
+        let _ = device;
         // (the program shares the computer with a game: the model gets a few threads, not all of them)
         let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).clamp(1, 4);
         let base = || -> Result<ort::session::builder::SessionBuilder, String> {

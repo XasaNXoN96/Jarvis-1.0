@@ -356,6 +356,11 @@ pub fn notify_check(enabled: bool, state: &str, detail: &str) -> Check {
 }
 
 // the game mode (gamemode.rs): the state, the anti-cheat guard, the list, the last scan; nothing personal
+fn measure_aim() -> Check {
+    let cfg = crate::gamemode::aim_config();
+    aim_check(&crate::aimmodel::status_json(&cfg), &crate::aimassist::status_json(&cfg))
+}
+
 pub fn game_check(f: &crate::gamemode::Facts) -> Check {
     let (name, key) = ("Игровой режим", "game_mode");
     let facts = format!(
@@ -378,6 +383,39 @@ pub fn game_check(f: &crate::gamemode::Facts) -> Check {
         return check(key, name, Status::Unchecked, format!("Режим не использовался. {}", facts), "Откройте раздел «Игры» и нажмите «Найти мои игры» или добавьте игру вручную.");
     }
     check(key, name, Status::Ok, format!("{} Работу в живой игре эта проверка не подтверждает: проверяйте её в самой игре.", facts), "")
+}
+
+// the aim assist (aimmodel.rs, aimassist.rs): the model, its checks, the runtime, the device, the capture; `st` is aimmodel::status_json, `run` is aimassist::status_json
+pub fn aim_check(st: &serde_json::Value, run: &serde_json::Value) -> Check {
+    let (name, key) = ("Помощь прицела", "aim");
+    let s = |v: &serde_json::Value, k: &str| v[k].as_str().unwrap_or("").to_string();
+    if !st["runtime"].as_bool().unwrap_or(false) {
+        return check(key, name, Status::Unchecked, "В этой сборке нет ONNX Runtime: помощь прицела недоступна.", "Используйте полный установщик Jarvis для Windows.");
+    }
+    let facts = format!(
+        "Среда выполнения: ONNX Runtime встроен (Python не нужен) · устройство: {} · DirectML в сборке: {} · захват: {} · кадр {} мс · людей в кадре {}",
+        if s(run, "device_used").is_empty() { "модель ещё не запускалась".to_string() } else { s(run, "device_used") },
+        if st["directml_build"].as_bool().unwrap_or(false) { "да" } else { "нет" },
+        s(run, "capture"),
+        run["last_frame_ms"],
+        run["objects"]
+    );
+    if let Some(p) = Some(s(run, "problem")).filter(|p| !p.is_empty()) {
+        return check(key, name, Status::Error, format!("Помощь прицела остановилась: {}. {}", p, facts), "Исправьте причину и включите помощь прицела снова.");
+    }
+    if !st["installed"].as_bool().unwrap_or(false) {
+        let why = s(st, "install_error");
+        return check(key, name, Status::Unchecked, format!("Модель не установлена{}. {}", if why.is_empty() { String::new() } else { format!(" (последняя попытка: {})", why) }, facts), "Раздел «Игры» → «Помощь прицела» → «Установить модель автоматически» или «Выбрать файл модели…».");
+    }
+    let src = if st["meta"]["kind"] == "official" { "официальная загрузка, SHA-256 и размер сверены" } else { "файл пользователя, эталона для SHA-256 нет" };
+    let model = format!("Модель: {} ({} МБ), {}", st["meta"]["name"].as_str().unwrap_or("без описания"), st["size_mb"], src);
+    if st["checked"].as_bool().unwrap_or(false) && !st["check_ok"].as_bool().unwrap_or(false) {
+        return check(key, name, Status::Error, format!("{}. Проверка совместимости не пройдена: {}. {}", model, s(st, "check_error"), facts), "Установите другую модель или нажмите «Проверить модель» после замены файла.");
+    }
+    if !st["checked"].as_bool().unwrap_or(false) {
+        return check(key, name, Status::Warn, format!("{}. Совместимость ещё не проверена. {}", model, facts), "Нажмите «Проверить модель» в карточке.");
+    }
+    check(key, name, Status::Ok, format!("{}. Совместимость: пройдена ({}, вход {}). {}. Точность в живой игре эта проверка не подтверждает.", model, st["summary"]["layout"].as_str().unwrap_or(""), st["summary"]["input"].as_str().unwrap_or(""), facts), "")
 }
 
 // the life of the program: its folder of data can be written, autostart points to this copy
@@ -661,7 +699,7 @@ pub fn run() -> Vec<Check> {
     let remote = measure_remote();
     let st = crate::uistate::stats();
     let monitor = monitor_check(st.mem_total_gb, st.cpu, st.disk_total_gb);
-    let mut checks = vec![build, integrity_check(), mic, audio, piper, windows_voice, powershell, ai, latency, internet, remote, measure_tunnel(), measure_telegram(), measure_notify(), monitor, measure_resources(), measure_syscmds(), measure_lifecycle(), game_check(&crate::gamemode::facts())];
+    let mut checks = vec![build, integrity_check(), mic, audio, piper, windows_voice, powershell, ai, latency, internet, remote, measure_tunnel(), measure_telegram(), measure_notify(), monitor, measure_resources(), measure_syscmds(), measure_lifecycle(), game_check(&crate::gamemode::facts()), measure_aim()];
     if let Some(c) = piper_lang {
         // (right after the card of Piper)
         let at = checks.iter().position(|c| c.key == "piper").map(|i| i + 1).unwrap_or(checks.len());
