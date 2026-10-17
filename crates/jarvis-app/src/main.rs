@@ -482,12 +482,36 @@ pub fn request_stop() {
 #[cfg(target_os = "windows")]
 pub static TRAY_GONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+// the process is ended at once (everything Jarvis keeps is written already); the usual exit() would unload every library first
+fn end_process() -> ! {
+    ::log::logger().flush();
+    #[cfg(target_os = "windows")]
+    unsafe {
+        winapi::um::processthreadsapi::TerminateProcess(winapi::um::processthreadsapi::GetCurrentProcess(), 0);
+    }
+    std::process::exit(0)
+}
+
 pub fn shutdown_and_exit() -> ! {
+    // A HARD DEADLINE: whatever step below hangs (a microphone that does not let go, a thread that waits for another), the process is ended
+    // after a few seconds anyway. Without it a hung step left Jarvis in the memory with no window and no icon, and the installer could not
+    // replace its files.
+    static DEADLINE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if !DEADLINE.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        std::thread::spawn(|| {
+            std::thread::sleep(std::time::Duration::from_secs(6));
+            error!("Exit: a step did not finish in six seconds, the process is ended now (the last step is in the lines above)");
+            end_process()
+        });
+    }
     // Another thread (the page, the console, a command) asks for the exit: the thread that owns the tray icon removes it first, then comes
     // back here. (The icon of an ended process would stay in the notification area until the mouse passes over it.)
     #[cfg(target_os = "windows")]
     if !TRAY_GONE.load(std::sync::atomic::Ordering::SeqCst) && window::send(window::UserEvent::Exit) {
         for _ in 0..40 {
+            if TRAY_GONE.load(std::sync::atomic::Ordering::SeqCst) {
+                break;
+            }
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
         // the window thread did not answer in two seconds: the exit goes on without it
@@ -499,25 +523,23 @@ pub fn shutdown_and_exit() -> ! {
     if let Some(id) = jarvis_core::ai::store().active() {
         jarvis_core::ai::stop(&id);
     }
+    // (every step writes a line first: if one hangs, the log shows which)
+    info!("Exit: the game mode");
     jarvis_core::gamemode::release_all();
+    info!("Exit: the speech");
     jarvis_core::tts::shutdown();
     // released and never reopened by the background recovery
+    info!("Exit: the microphone");
     jarvis_core::recorder::shutdown();
+    info!("Exit: the phone remote");
     jarvis_core::remote::stop();
+    info!("Exit: the telegram bot");
     jarvis_core::telegram::stop();
     jarvis_core::uistate::log_event("start", "Jarvis закрыт пользователем");
     // the voice loop sees the stop flag; a short pause lets it leave the microphone alone
     std::thread::sleep(std::time::Duration::from_millis(300));
     info!("Exit: done");
-    ::log::logger().flush();
-    // Everything Jarvis keeps is written already (settings, chats, timers: synchronous writes). The usual exit()
-    // then unloads every library (the speech model, its thread pools, WebView2) after their threads are gone,
-    // which took about ten seconds; the process is ended at once instead, with the same exit code.
-    #[cfg(target_os = "windows")]
-    unsafe {
-        winapi::um::processthreadsapi::TerminateProcess(winapi::um::processthreadsapi::GetCurrentProcess(), 0);
-    }
-    std::process::exit(0)
+    end_process()
 }
 
 // a second start: the running Jarvis is asked (through its local page server) to show its window
