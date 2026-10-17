@@ -247,7 +247,8 @@ pub fn start(name: &str) -> Result<String, String> {
     }
     *g = Some(Recording { name: name.clone(), started: std::time::Instant::now(), events: Vec::new() });
     drop(g);
-    #[cfg(target_os = "windows")]
+    // (not in the tests: the reader looks at the real keyboard and throws the recording away when the mode is off)
+    #[cfg(all(target_os = "windows", not(test)))]
     reader::start();
     Ok(format!("Записываю макрос «{}»: делайте нажатия в игре, потом скажите «сохрани макрос» (запись остановится сама через минуту).", name))
 }
@@ -269,7 +270,7 @@ pub fn stop() -> Result<String, String> {
     Ok(format!("Макрос «{}» сохранён ({} шагов){}. Скажите «{}», и он повторится.", r.name, n, if cut { ", длинная запись обрезана до 30 шагов" } else { "" }, r.name))
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", not(test)))]
 mod reader {
     use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
