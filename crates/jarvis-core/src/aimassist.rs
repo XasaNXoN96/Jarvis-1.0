@@ -22,8 +22,8 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 // the default side of the square around the crosshair that the detector looks at
 pub const SIDE: usize = 640;
-// the side that is taken by default: 416 is about 2.4 times faster than 640 on a processor (a person at the crosshair is still large enough)
-pub const DEFAULT_SIDE: u32 = 416;
+// the side that is taken by default: 320 is about 4 times faster than 640 on a processor (a person at the crosshair is still large enough)
+pub const DEFAULT_SIDE: u32 = 320;
 
 // where the model runs: Auto = the video card when this build has DirectML and it works, else the processor
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -527,6 +527,77 @@ pub fn snapshot_png() -> Option<Vec<u8>> {
     crate::gameicon::encode_png(s.side as u32, s.side as u32, &render_snapshot(&s.bgra, s.side, s.cross, &s.frame))
 }
 
+// the side taken: the wished one, lowered by the governor while frames are slow
+fn governed_side(wanted: u32, now: &mut u32) -> u32 {
+    if *now == 0 || *now > wanted {
+        *now = wanted;
+    }
+    *now
+}
+
+pub const SLOW_MS: f32 = 140.0;
+pub const MIN_SIDE: u32 = 256;
+
+pub fn lower_side(side: u32, avg_ms: f32) -> u32 {
+    if avg_ms > SLOW_MS && side > MIN_SIDE {
+        (side - 32).max(MIN_SIDE)
+    } else {
+        side
+    }
+}
+
+static LAST_FRAME_AT: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+static PERIOD_MS: AtomicU64 = AtomicU64::new(0);
+
+// the time between frames is averaged for the stats line of the game overlay
+fn note_frame() {
+    let now = std::time::Instant::now();
+    let mut g = LAST_FRAME_AT.lock();
+    if let Some(prev) = *g {
+        let ms = now.duration_since(prev).as_millis() as u64;
+        let old = PERIOD_MS.load(Ordering::SeqCst);
+        PERIOD_MS.store(if old == 0 || ms > 3000 { ms } else { (old * 4 + ms) / 5 }, Ordering::SeqCst);
+    }
+    *g = Some(now);
+}
+
+// (frames per second, ms of the last frame) while the aim works, else None
+pub fn aim_rate() -> Option<(u32, u64)> {
+    if !ENABLED.load(Ordering::SeqCst) {
+        return None;
+    }
+    let at = (*LAST_FRAME_AT.lock())?;
+    let period = PERIOD_MS.load(Ordering::SeqCst);
+    if at.elapsed().as_millis() > 1500 || period == 0 {
+        return None;
+    }
+    Some(((1000 / period.max(1)) as u32, LAST_MS.load(Ordering::SeqCst)))
+}
+
+// the numbers of the last frame for the report (boxes in the pixels of the square, the chosen one, the point aimed at, the step): with them the
+// report alone shows where the aim goes and why, without a picture
+pub fn snapshot_details() -> String {
+    let g = SNAP.lock();
+    let Some(s) = g.as_ref() else { return "последний кадр: ещё не было".into() };
+    let mut t = format!("Последний кадр {}×{}, перекрестие ({:.0}, {:.0}){}\n", s.side, s.side, s.cross.0, s.cross.1, if s.auto { " найдено автоматически" } else { "" });
+    for (i, d) in s.frame.dets.iter().enumerate() {
+        let chosen = s.frame.picked.map(|(p, _)| p == *d).unwrap_or(false);
+        t.push_str(&format!("  человек {}: рамка ({:.0},{:.0})–({:.0},{:.0}), высота {:.0} пикс., уверенность {:.0}%{}\n", i + 1, d.x1, d.y1, d.x2, d.y2, d.y2 - d.y1, d.score * 100.0, if chosen { "  <- ЦЕЛЬ" } else { "" }));
+    }
+    if s.frame.dets.is_empty() {
+        t.push_str("  людей в кадре нет (после порога уверенности, размера и отбора)\n");
+    }
+    if let Some((_, head)) = s.frame.picked {
+        t.push_str(&format!("  целимся в точку ({:.0}, {:.0}); от перекрестия: {:+.0}, {:+.0} пикс.\n", head.0, head.1, head.0 - s.cross.0, head.1 - s.cross.1));
+    }
+    t.push_str(&format!("  итог: {}", match s.frame.outcome {
+        Outcome::NoTarget => "цели нет".to_string(),
+        Outcome::OnTarget => "перекрестие уже на цели".to_string(),
+        Outcome::Step(dx, dy) => format!("шаг мыши ({:+}, {:+}) пикс.", dx, dy),
+    }));
+    t
+}
+
 // the words about what the snapshot shows (for the card)
 pub fn snapshot_text() -> String {
     match SNAP.lock().as_ref() {
@@ -855,6 +926,9 @@ mod run {
         let mut tracker = crate::aimcross::CrossTracker::default();
         let mut auto_px: Option<(i32, i32)> = None;
         let mut frame_no = 0u32;
+        // the side that is really taken: lowered by itself when the frame is slow, so the game keeps its processor
+        let mut side_now = 0u32;
+        let mut avg_ms = 0.0f32;
         while alive(id) {
             let cfg = crate::gamemode::aim_config();
             let game = crate::gamemode::front_game_exe();
@@ -880,7 +954,7 @@ mod run {
             }
             let started = std::time::Instant::now();
             let moved_before = *MOVED.lock();
-            let cap = match unsafe { capture(cfg.side as i32, auto_px, cfg.cx_pct, cfg.cy_pct) } {
+            let cap = match unsafe { capture(governed_side(cfg.side, &mut side_now) as i32, auto_px, cfg.cx_pct, cfg.cy_pct) } {
                 Ok(f) => f,
                 Err(e) => {
                     cap_fail += 1;
@@ -911,9 +985,15 @@ mod run {
             // several equal frames and then the square is cut around it
             frame_no = frame_no.wrapping_add(1);
             if cfg.auto_cross {
-                let reach = if tracker.is_locked() { 14 } else { 120.min(side / 2 - crate::aimcross::MARGIN.min(side / 2 - 1)) };
-                let found = if !tracker.is_locked() || frame_no % 12 == 0 { crate::aimcross::find(frame, side, cap.cross, reach).map(|f| ((cap.origin.0 as f32 + f.x) - cap.win.0 as f32 / 2.0, (cap.origin.1 as f32 + f.y) - cap.win.1 as f32 / 2.0)) } else { Some((cap.origin.0 as f32 + cap.cross.0 - cap.win.0 as f32 / 2.0, cap.origin.1 as f32 + cap.cross.1 - cap.win.1 as f32 / 2.0)) };
-                auto_px = tracker.feed(found);
+                // a locked place is checked every few frames over the wide area, so a switch first/third person is noticed
+                let verify = !tracker.is_locked() || frame_no % 4 == 0;
+                let reach = 120.min(side / 2 - crate::aimcross::MARGIN.min(side / 2 - 1));
+                if verify {
+                    let found = crate::aimcross::find(frame, side, cap.cross, reach).map(|f| ((cap.origin.0 as f32 + f.x) - cap.win.0 as f32 / 2.0, (cap.origin.1 as f32 + f.y) - cap.win.1 as f32 / 2.0));
+                    auto_px = tracker.feed(found);
+                } else {
+                    auto_px = tracker.current();
+                }
             } else {
                 tracker.reset();
                 auto_px = None;
@@ -958,6 +1038,9 @@ mod run {
             FRAMES.fetch_add(1, Ordering::SeqCst);
             let spent = started.elapsed();
             LAST_MS.store(spent.as_millis() as u64, Ordering::SeqCst);
+            note_frame();
+            avg_ms = if avg_ms == 0.0 { spent.as_millis() as f32 } else { avg_ms * 0.8 + spent.as_millis() as f32 * 0.2 };
+            side_now = lower_side(side_now, avg_ms);
             std::thread::sleep(rest_after(spent, cfg.fps));
         }
         set_state(if ENABLED.load(Ordering::SeqCst) { "loading" } else { "off" });
@@ -1224,6 +1307,36 @@ mod tests {
         assert_eq!(&img2[0..3], &[0, 0, 255]);
         // a png can be made of it
         assert!(crate::gameicon::encode_png(side as u32, side as u32, &img).map(|p| p.starts_with(&[0x89, b'P', b'N', b'G'])).unwrap_or(false));
+    }
+
+    #[test]
+    fn a_slow_frame_lowers_the_side_down_to_a_floor() {
+        assert_eq!(lower_side(320, 200.0), 288);
+        assert_eq!(lower_side(264, 200.0), 256);
+        assert_eq!(lower_side(256, 400.0), 256);
+        assert_eq!(lower_side(320, 90.0), 320);
+        let mut n = 0;
+        assert_eq!(governed_side(320, &mut n), 320);
+        n = 288;
+        assert_eq!(governed_side(320, &mut n), 288);
+        assert_eq!(governed_side(256, &mut n), 256);
+    }
+
+    #[test]
+    fn the_report_of_the_last_frame_has_the_boxes_the_choice_and_the_step() {
+        let side = 64usize;
+        let bgra = vec![10u8; side * side * 4];
+        let cfg = AimConfig { min_size_px: 0, max_size_pct: 100, ..AimConfig::default() };
+        let mut one = |_: &[f32]| -> Result<RawOut, String> { Ok(out8(vec![20.0, 40.0, 16.0, 40.0, 0.9], 1)) };
+        let f = frame_outcome(&bgra, side, &cfg, &spec8(side), (32.0, 32.0), &mut one).unwrap();
+        keep_snapshot(Snap { bgra: bgra.clone(), side, cross: (32.0, 32.0), frame: f, auto: true });
+        let t = snapshot_details();
+        for want in ["64×64", "найдено автоматически", "человек 1: рамка (12,20)–(28,60)", "высота 40", "уверенность 90%", "ЦЕЛЬ", "целимся в точку (20, 25)", "-12, -7", "итог: шаг мыши"] {
+            assert!(t.contains(want), "{}\n{}", want, t);
+        }
+        // no frame yet
+        *SNAP.lock() = None;
+        assert!(snapshot_details().contains("ещё не было"));
     }
 
     #[test]

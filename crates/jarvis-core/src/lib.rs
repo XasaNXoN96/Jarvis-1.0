@@ -99,6 +99,7 @@ pub mod voiceprint;
 pub mod aimassist;
 pub mod aimdetect;
 pub mod aimcross;
+pub mod sysstat;
 pub mod aimmodel;
 pub mod hotkey;
 pub mod barge;

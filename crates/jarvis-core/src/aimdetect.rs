@@ -252,9 +252,9 @@ pub mod ortrun {
         let (device, mut note) = resolve_device(wanted);
         let _ = device;
         // (the program shares the computer with a game: the model gets a few threads, not all of them)
-        let threads = (std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4) / 2).clamp(2, 6);
+        let threads = (std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4) / 3).clamp(2, 4);
         let base = || -> Result<ort::session::builder::SessionBuilder, String> {
-            Session::builder().map_err(|e| format!("ONNX Runtime: {}", e))?.with_intra_threads(threads).map_err(|e| format!("ONNX Runtime: {}", e))
+            Session::builder().map_err(|e| format!("ONNX Runtime: {}", e))?.with_intra_threads(threads).map_err(|e| format!("ONNX Runtime: {}", e))?.with_intra_op_spinning(false).map_err(|e| format!("ONNX Runtime: {}", e))?.with_inter_op_spinning(false).map_err(|e| format!("ONNX Runtime: {}", e))
         };
         #[cfg(feature = "directml")]
         if device == Device::DirectMl || device == Device::Auto {

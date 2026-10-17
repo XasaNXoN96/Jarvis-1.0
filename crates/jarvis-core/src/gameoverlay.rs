@@ -92,14 +92,28 @@ mod win {
                 GetClientRect(hwnd, &mut rc);
                 // black is the transparent colour of the window: the text floats over the game
                 FillRect(hdc, &rc, GetStockObject(BLACK_BRUSH as i32) as _);
+                SetBkMode(hdc, TRANSPARENT as i32);
+                let full = TEXT.lock().clone();
+                let (head, stats) = full.split_once('\n').unwrap_or((full.as_str(), ""));
+                // the label, and under it a small dim line with the load of the computer
                 let font = CreateFontW(22, 0, 0, 0, 700, 0, 0, 0, DEFAULT_CHARSET as u32, 0, 0, CLEARTYPE_QUALITY as u32, 0, wide("Segoe UI").as_ptr());
                 let old = SelectObject(hdc, font as _);
-                SetBkMode(hdc, TRANSPARENT as i32);
                 SetTextColor(hdc, 0x0080FF00); // a light green (BGR)
-                let text = wide(&TEXT.lock());
-                DrawTextW(hdc, text.as_ptr(), -1, &mut rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+                let mut top = RECT { left: 0, top: 0, right: rc.right, bottom: 34 };
+                let text = wide(head);
+                DrawTextW(hdc, text.as_ptr(), -1, &mut top, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
                 SelectObject(hdc, old);
                 DeleteObject(font as _);
+                if !stats.is_empty() {
+                    let small = CreateFontW(16, 0, 0, 0, 600, 0, 0, 0, DEFAULT_CHARSET as u32, 0, 0, CLEARTYPE_QUALITY as u32, 0, wide("Segoe UI").as_ptr());
+                    let old = SelectObject(hdc, small as _);
+                    SetTextColor(hdc, 0x00C8C8C8);
+                    let mut low = RECT { left: 0, top: 34, right: rc.right, bottom: 58 };
+                    let text = wide(stats);
+                    DrawTextW(hdc, text.as_ptr(), -1, &mut low, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+                    SelectObject(hdc, old);
+                    DeleteObject(small as _);
+                }
                 EndPaint(hwnd, &ps);
                 0
             }
@@ -117,21 +131,27 @@ mod win {
             let wc = WNDCLASSEXW { cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32, style: 0, lpfnWndProc: Some(proc_), cbClsExtra: 0, cbWndExtra: 0, hInstance: hinst, hIcon: std::ptr::null_mut(), hCursor: std::ptr::null_mut(), hbrBackground: std::ptr::null_mut(), lpszMenuName: std::ptr::null(), lpszClassName: class.as_ptr(), hIconSm: std::ptr::null_mut() };
             RegisterClassExW(&wc);
             // always on top, passes the mouse through, never takes the focus, not in the task bar
-            let hwnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, class.as_ptr(), wide("Jarvis game").as_ptr(), WS_POPUP, 24, 24, 860, 34, std::ptr::null_mut(), std::ptr::null_mut(), hinst, std::ptr::null_mut());
+            let hwnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, class.as_ptr(), wide("Jarvis game").as_ptr(), WS_POPUP, 24, 24, 860, 58, std::ptr::null_mut(), std::ptr::null_mut(), hinst, std::ptr::null_mut());
             if hwnd.is_null() {
                 return;
             }
             SetLayeredWindowAttributes(hwnd, 0, 255, LWA_COLORKEY);
             let mut shown = false;
             let mut last = String::new();
+            let mut stats = String::new();
+            let mut stats_at = std::time::Instant::now() - std::time::Duration::from_secs(5);
             loop {
                 let want = crate::gamelist::options().overlay && gamemode::is_active() && gamemode::in_game_now();
-                let text = if want { current_label() } else { String::new() };
+                if want && stats_at.elapsed() >= std::time::Duration::from_secs(1) {
+                    stats = crate::sysstat::line(&crate::sysstat::sample(), crate::aimassist::aim_rate());
+                    stats_at = std::time::Instant::now();
+                }
+                let text = if want { format!("{}\n{}", current_label(), stats) } else { String::new() };
                 if want != shown {
                     ShowWindow(hwnd, if want { SW_SHOWNOACTIVATE } else { SW_HIDE });
                     shown = want;
                     if want {
-                        SetWindowPos(hwnd, HWND_TOPMOST, 24, 24, 860, 34, SWP_NOACTIVATE);
+                        SetWindowPos(hwnd, HWND_TOPMOST, 24, 24, 860, 58, SWP_NOACTIVATE);
                     }
                 }
                 if want && text != last {

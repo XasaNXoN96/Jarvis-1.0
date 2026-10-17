@@ -133,9 +133,26 @@ impl CrossTracker {
                 // a slow follow of a small drift
                 self.locked = Some((l.0 * 0.8 + p.0 * 0.2, l.1 * 0.8 + p.1 * 0.2));
             }
-            (Some(_), Some(_)) | (None, Some(_)) => {
+            (Some(p), Some(_)) => {
+                // found elsewhere: a new place counts when it repeats (the game was switched between first and third person)
                 self.misses += 1;
-                if self.misses >= 8 {
+                self.seen.push(p);
+                if self.seen.len() > 2 {
+                    self.seen.remove(0);
+                }
+                if self.seen.len() == 2 && self.seen.iter().all(|s| (s.0 - p.0).abs() <= 3.0 && (s.1 - p.1).abs() <= 3.0) {
+                    self.locked = Some(p);
+                    self.seen.clear();
+                    self.misses = 0;
+                } else if self.misses >= 4 {
+                    self.locked = None;
+                    self.seen.clear();
+                    self.misses = 0;
+                }
+            }
+            (None, Some(_)) => {
+                self.misses += 1;
+                if self.misses >= 4 {
                     self.locked = None;
                     self.seen.clear();
                     self.misses = 0;
@@ -149,6 +166,7 @@ impl CrossTracker {
                 if self.seen.len() == 3 && self.seen.iter().all(|s| (s.0 - p.0).abs() <= 3.0 && (s.1 - p.1).abs() <= 3.0) {
                     let n = self.seen.len() as f32;
                     self.locked = Some((self.seen.iter().map(|s| s.0).sum::<f32>() / n, self.seen.iter().map(|s| s.1).sum::<f32>() / n));
+                    self.seen.clear();
                     self.misses = 0;
                 }
             }
@@ -162,6 +180,15 @@ impl CrossTracker {
 
     pub fn reset(&mut self) {
         *self = CrossTracker::default();
+    }
+
+    // the lock is let go (a new press of the aim button): it is found again at once
+    pub fn release(&mut self) {
+        self.reset();
+    }
+
+    pub fn current(&self) -> Option<(i32, i32)> {
+        self.locked.map(|l| (l.0.round() as i32, l.1.round() as i32))
     }
 
     pub fn is_locked(&self) -> bool {
@@ -271,8 +298,8 @@ mod tests {
         // a single miss does not let it go
         assert_eq!(t.feed(None), Some((1, -92)));
         assert_eq!(t.feed(Some((1.0, -92.0))), Some((1, -92)));
-        // eight misses do
-        for _ in 0..7 {
+        // four misses do
+        for _ in 0..3 {
             assert!(t.feed(None).is_some());
         }
         assert_eq!(t.feed(None), None);
@@ -307,5 +334,26 @@ mod tests {
             }
             Err(_) => assert!(found.is_none(), "a picture without a crosshair gave {:?}", found),
         }
+    }
+
+    #[test]
+    fn a_lock_without_confirmation_expires_and_a_new_place_replaces_it() {
+        let mut t = CrossTracker::default();
+        for _ in 0..3 {
+            t.feed(Some((100.0, 100.0)));
+        }
+        assert!(t.is_locked());
+        // nothing is found any more: the lock expires
+        for _ in 0..4 {
+            t.feed(None);
+        }
+        assert!(!t.is_locked());
+        // a lock, then the same new place twice: moved
+        for _ in 0..3 {
+            t.feed(Some((100.0, 100.0)));
+        }
+        t.feed(Some((150.0, 90.0)));
+        let r = t.feed(Some((151.0, 90.0)));
+        assert_eq!(r, Some((151, 90)));
     }
 }
