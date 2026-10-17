@@ -31,6 +31,90 @@ pub struct Keys {
     pub grenade: u16,
     pub melee: u16,
     pub use_key: u16,
+    // racing
+    pub handbrake: u16,
+    pub nitro: u16,
+    pub horn: u16,
+    pub camera: u16,
+    // action / adventure
+    pub dodge: u16,
+    pub inventory: u16,
+    pub map: u16,
+    pub heal: u16,
+}
+
+// the kind of a game: the phrases that are understood besides the common ones (walk, look, jump, stop ...)
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Genre {
+    // shooters (the default, and the one that knows the most phrases)
+    #[default]
+    Shooter,
+    // racing: gas, brake, steering, handbrake, nitro, horn, camera
+    Racing,
+    // action / adventure / RPG / platformers: attack, block, dodge, inventory, map, heal
+    Action,
+}
+
+impl Genre {
+    pub fn from_name(n: &str) -> Option<Genre> {
+        match n.trim().to_lowercase().as_str() {
+            "shooter" | "fps" => Some(Genre::Shooter),
+            "racing" | "race" => Some(Genre::Racing),
+            "action" | "adventure" | "rpg" => Some(Genre::Action),
+            _ => None,
+        }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            Genre::Shooter => "shooter",
+            Genre::Racing => "racing",
+            Genre::Action => "action",
+        }
+    }
+    pub fn title(self) -> &'static str {
+        match self {
+            Genre::Shooter => "шутер",
+            Genre::Racing => "гонки",
+            Genre::Action => "экшен / приключения",
+        }
+    }
+}
+
+// a step of a phrase of the user's own («газуй»: hold w, wait, tap space ...): any game, any genre
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Step {
+    Tap(u16),
+    Hold(u16),
+    Release(u16),
+    Click(bool),
+    Wait(u64),
+    Move(i32, i32),
+}
+
+// "tap:space" | "hold:w" | "release:w" | "click:left" | "click:right" | "wait:300" | "move:30,0"
+pub fn parse_step(text: &str) -> Result<Step, String> {
+    let (kind, arg) = text.split_once(':').ok_or_else(|| format!("шаг «{}» неверный: нужно вид:значение, например tap:space", text))?;
+    let key = |a: &str| crate::input::vk(a).filter(|c| allowed_key(*c)).ok_or_else(|| format!("клавиша «{}» не разрешена (можно буквы, цифры, space, shift, ctrl, tab)", a));
+    match kind.trim() {
+        "tap" => Ok(Step::Tap(key(arg.trim())?)),
+        "hold" => Ok(Step::Hold(key(arg.trim())?)),
+        "release" => Ok(Step::Release(key(arg.trim())?)),
+        "click" => match arg.trim() {
+            "left" => Ok(Step::Click(false)),
+            "right" => Ok(Step::Click(true)),
+            _ => Err("click: left или right".into()),
+        },
+        "wait" => arg.trim().parse::<u64>().ok().filter(|n| (1..=2000).contains(n)).map(Step::Wait).ok_or_else(|| "wait: от 1 до 2000 миллисекунд".to_string()),
+        "move" => {
+            let (a, b) = arg.split_once(',').ok_or("move: dx,dy")?;
+            let (dx, dy) = (a.trim().parse::<i32>().map_err(|_| "move: dx,dy числа")?, b.trim().parse::<i32>().map_err(|_| "move: dx,dy числа")?);
+            if dx.abs() > 1500 || dy.abs() > 1500 {
+                return Err("move: не больше 1500 по каждой оси".into());
+            }
+            Ok(Step::Move(dx, dy))
+        }
+        other => Err(format!("шаг «{}» неизвестен (tap, hold, release, click, wait, move)", other)),
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -47,12 +131,20 @@ pub struct Profile {
     pub extra: Vec<String>,
     // other keys / sensitivity for one program
     pub games: std::collections::BTreeMap<String, GameOverride>,
+    // the kind of the game (the phrases beyond the common ones)
+    pub genre: Genre,
+    // the kinds of the games the user added («добавь эту игру как гонку»)
+    pub genres: std::collections::BTreeMap<String, Genre>,
+    // the user's own phrases (any genre): the words of the phrase -> steps
+    pub phrases: Vec<(String, Vec<Step>)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GameOverride {
     pub keys: Keys,
     pub px_per_90: i32,
+    pub genre: Option<Genre>,
+    pub phrases: Vec<(String, Vec<Step>)>,
 }
 
 impl Default for Profile {
@@ -62,11 +154,15 @@ impl Default for Profile {
         Profile {
             title: "Call of Duty (одиночная кампания)".into(),
             exes: vec!["iw3sp.exe".into(), "iw4sp.exe".into(), "iw5sp.exe".into()],
-            keys: Keys { forward: v("w"), back: v("s"), left: v("a"), right: v("d"), jump: v("space"), crouch: v("c"), sprint: v("shift"), reload: v("r"), grenade: v("g"), melee: v("v"), use_key: v("f") },
+            keys: Keys { forward: v("w"), back: v("s"), left: v("a"), right: v("d"), jump: v("space"), crouch: v("c"), sprint: v("shift"), reload: v("r"), grenade: v("g"), melee: v("v"), use_key: v("f"),
+                handbrake: v("space"), nitro: v("shift"), horn: v("h"), camera: v("c"), dodge: v("ctrl"), inventory: v("i"), map: v("m"), heal: v("x") },
             px_per_90: 450,
             aim: crate::aimassist::AimConfig::default(),
             extra: Vec::new(),
             games: Default::default(),
+            genre: Genre::Shooter,
+            genres: Default::default(),
+            phrases: Vec::new(),
         }
     }
 }
@@ -74,6 +170,29 @@ impl Default for Profile {
 // plain game keys only: letters, digits, space, shift, ctrl, tab
 pub fn allowed_key(vk: u16) -> bool {
     matches!(vk, 0x30..=0x39 | 0x41..=0x5A | 0x20 | 0x10 | 0x11 | 0x09)
+}
+
+// "phrases": { "газуй": ["hold:w", "wait:300", "tap:space"] }
+fn phrases_from_json(v: &Value) -> Result<Vec<(String, Vec<Step>)>, String> {
+    let map = v.as_object().ok_or("phrases должно быть объектом: «фраза»: [шаги]")?;
+    let mut out = Vec::new();
+    for (phrase, steps) in map.iter().take(60) {
+        let words = normalize(phrase);
+        if words.is_empty() || words.chars().count() > 40 {
+            return Err(format!("фраза «{}» пустая или длиннее 40 знаков", phrase));
+        }
+        // a phrase of the user must not take the place of the words that stop everything
+        if has(&words, &["стой", "стоп", "остановис", "замри", "выключ", "отключ", "хватит"]) {
+            return Err(format!("фраза «{}» не может содержать слова остановки и выключения", phrase));
+        }
+        let list = steps.as_array().filter(|a| !a.is_empty() && a.len() <= 30).ok_or_else(|| format!("для «{}» нужен список из 1–30 шагов", phrase))?;
+        let mut parsed = Vec::new();
+        for st in list {
+            parsed.push(parse_step(st.as_str().unwrap_or("")).map_err(|e| format!("«{}»: {}", phrase, e))?);
+        }
+        out.push((words, parsed));
+    }
+    Ok(out)
 }
 
 fn valid_exe_name(name: &str) -> bool {
@@ -95,6 +214,14 @@ fn apply_keys(keys: &mut Keys, map: &serde_json::Map<String, Value>) -> Result<(
             "grenade" => keys.grenade = code,
             "melee" => keys.melee = code,
             "use" => keys.use_key = code,
+            "handbrake" => keys.handbrake = code,
+            "nitro" => keys.nitro = code,
+            "horn" => keys.horn = code,
+            "camera" => keys.camera = code,
+            "dodge" => keys.dodge = code,
+            "inventory" => keys.inventory = code,
+            "map" => keys.map = code,
+            "heal" => keys.heal = code,
             other => return Err(format!("в game_profile.json неизвестное действие «{}»", other)),
         }
     }
@@ -116,9 +243,18 @@ impl Profile {
     // the profile for the window in front (its own keys and sensitivity when `games` names it)
     pub fn effective(&self, exe: &str) -> Profile {
         let mut p = self.clone();
+        let mut own_genre = None;
         if let Some(o) = self.games.get(exe) {
             p.keys = o.keys.clone();
             p.px_per_90 = o.px_per_90;
+            own_genre = o.genre;
+            // the phrases of the game come first, then the common ones
+            let mut list = o.phrases.clone();
+            list.extend(self.phrases.iter().cloned());
+            p.phrases = list;
+        }
+        if let Some(g) = own_genre.or_else(|| self.genres.get(exe).copied()) {
+            p.genre = g;
         }
         p
     }
@@ -157,6 +293,12 @@ pub fn profile_from_json(text: &str) -> Result<Profile, String> {
     if let Some(keys) = v.get("keys").and_then(|k| k.as_object()) {
         apply_keys(&mut p.keys, keys)?;
     }
+    if let Some(g) = v.get("genre").and_then(|g| g.as_str()) {
+        p.genre = Genre::from_name(g).ok_or_else(|| format!("в game_profile.json неизвестный жанр «{}» (shooter, racing, action)", g))?;
+    }
+    if let Some(ph) = v.get("phrases") {
+        p.phrases = phrases_from_json(ph)?;
+    }
     // other keys / sensitivity for one program: "games": { "mygame.exe": { "px_per_90": 300, "keys": { "forward": "w" } } }
     if let Some(games) = v.get("games").and_then(|g| g.as_object()) {
         for (exe, spec) in games.iter().take(30) {
@@ -164,7 +306,13 @@ pub fn profile_from_json(text: &str) -> Result<Profile, String> {
             if !valid_exe_name(&exe) {
                 return Err(format!("в game_profile.json неверное имя программы «{}» в games", exe));
             }
-            let mut o = GameOverride { keys: p.keys.clone(), px_per_90: p.px_per_90 };
+            let mut o = GameOverride { keys: p.keys.clone(), px_per_90: p.px_per_90, genre: None, phrases: Vec::new() };
+            if let Some(g) = spec.get("genre").and_then(|g| g.as_str()) {
+                o.genre = Some(Genre::from_name(g).ok_or_else(|| format!("в game_profile.json неизвестный жанр «{}» (shooter, racing, action)", g))?);
+            }
+            if let Some(ph) = spec.get("phrases") {
+                o.phrases = phrases_from_json(ph)?;
+            }
             if let Some(n) = spec.get("px_per_90").and_then(|n| n.as_i64()) {
                 if !(50..=3000).contains(&n) {
                     return Err(format!("px_per_90 для {} должно быть от 50 до 3000", exe));
@@ -199,6 +347,14 @@ pub enum Tap {
     Grenade,
     Melee,
     Use,
+    Handbrake,
+    Nitro,
+    Horn,
+    Camera,
+    Dodge,
+    Inventory,
+    Map,
+    Heal,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -223,8 +379,13 @@ pub enum Action {
     // the experimental aim assist on / off (aimassist.rs)
     AimAssist(bool),
     // «добавь эту игру» / «забудь эту игру»: the program of the window in front joins the list of games (or leaves it)
-    AddGame,
+    // the kind of the game may be named: «как гонку», «как экшен»
+    AddGame(Option<Genre>),
     ForgetGame,
+    // the steps of a phrase of the user's own
+    Custom(Vec<Step>),
+    // racing: the wheel straight (both steering keys are released)
+    Straight,
 }
 
 fn normalize(text: &str) -> String {
@@ -257,6 +418,76 @@ fn degrees(t: &str) -> Option<i32> {
     None
 }
 
+// «как гонку», «как экшен»: the kind of the game named in a phrase
+fn genre_named(t: &str) -> Option<Genre> {
+    if has(t, &["гонк", "гоночн", "автосим", "машин"]) {
+        Some(Genre::Racing)
+    } else if has(t, &["экшен", "экшн", "приключен", "адвенчур", "рпг", "платформер", "action"]) {
+        Some(Genre::Action)
+    } else if has(t, &["шутер", "стрелялк", "фпс", "fps"]) {
+        Some(Genre::Shooter)
+    } else {
+        None
+    }
+}
+
+// the phrases of a kind of game (besides the common ones of `parse`); they come first, because some words mean other things there:
+// «газ» is walking forward, «прямо» in racing is a straight wheel, «блок» in action is the right button held
+pub fn genre_parse(text: &str, genre: Genre) -> Option<Action> {
+    let t = normalize(text);
+    match genre {
+        Genre::Shooter => None,
+        Genre::Racing => {
+            if has(&t, &["газ", "гони", "поехали", "разгоняйс", "жми"]) {
+                Some(Action::Walk(Dir::Forward))
+            } else if has(&t, &["тормоз", "притормоз"]) || t.contains("задний ход") {
+                Some(Action::Walk(Dir::Back))
+            } else if has(&t, &["прямо", "выровняй"]) || t.contains("не поворачивай") {
+                Some(Action::Straight)
+            } else if has(&t, &["ручник", "дрифт", "занос"]) {
+                Some(Action::Tap(Tap::Handbrake))
+            } else if has(&t, &["нитро", "турбо", "закис", "ускорени"]) {
+                Some(Action::Tap(Tap::Nitro))
+            } else if has(&t, &["сигнал", "бибикни", "посигналь", "гудок"]) {
+                Some(Action::Tap(Tap::Horn))
+            } else if has(&t, &["камер"]) {
+                Some(Action::Tap(Tap::Camera))
+            } else {
+                None
+            }
+        }
+        Genre::Action => {
+            if t.contains("сними блок") || t.contains("опусти блок") || t.contains("отпусти блок") || t.contains("не блокируй") {
+                Some(Action::AimOff)
+            } else if has(&t, &["блок", "защит", "закройся"]) {
+                Some(Action::AimOn)
+            } else if t.contains("тяжел") || t.contains("сильный удар") || t.contains("мощный удар") {
+                Some(Action::Fire(700))
+            } else if has(&t, &["атакуй", "бей", "руби", "режь", "ударь", "удар"]) {
+                Some(Action::Fire(150))
+            } else if has(&t, &["перекат", "уворот", "увернис", "уклонис", "кувырок"]) {
+                Some(Action::Tap(Tap::Dodge))
+            } else if has(&t, &["инвентар", "рюкзак", "сумк"]) {
+                Some(Action::Tap(Tap::Inventory))
+            } else if has(&t, &["карту", "карта", "карты"]) {
+                Some(Action::Tap(Tap::Map))
+            } else if has(&t, &["лечис", "аптечк", "хил", "исцел", "полечис"]) {
+                Some(Action::Tap(Tap::Heal))
+            } else if has(&t, &["садис", "вылезай", "вылези", "залезай", "залезь", "лезь"]) {
+                Some(Action::Tap(Tap::Use))
+            } else {
+                None
+            }
+        }
+    }
+}
+
+// the user's own phrase: its words stand in the sentence as whole words
+pub fn custom_match(text: &str, phrases: &[(String, Vec<Step>)]) -> Option<Action> {
+    let padded = format!(" {} ", normalize(text));
+    phrases.iter().find(|(words, _)| padded.contains(&format!(" {} ", words))).map(|(_, steps)| Action::Custom(steps.clone()))
+}
+
 // the phrase of the user -> the action (None: not a game phrase). The first question is whether the mode is on: switching it ON is
 // understood always, everything else only while it is on.
 pub fn parse(text: &str, active: bool) -> Option<Action> {
@@ -279,7 +510,7 @@ pub fn parse(text: &str, active: bool) -> Option<Action> {
     // the list of games: the window in front joins it (or leaves it)
     if game && has(&t, &["эту", "этот", "эта", "текущ", "сейчас"]) {
         if has(&t, &["добав", "запомн", "внеси", "занеси"]) {
-            return Some(Action::AddGame);
+            return Some(Action::AddGame(genre_named(&t)));
         }
         if has(&t, &["забуд", "удали", "убери", "исключи"]) {
             return Some(Action::ForgetGame);
@@ -442,7 +673,7 @@ impl Game {
                 crate::aimassist::set_enabled(false, &self.profile.aim);
                 "Игровой режим выключен, все клавиши отпущены.".into()
             }
-            Action::Help => "Фразы: иди вперёд / назад / влево / вправо, беги, стой; смотри налево / направо / вверх / вниз (можно «на 45 градусов», «чуть», «разворот»); стреляй, очередью, прекрати огонь; целься, не целься; перезаряди, граната, нож, прыгай, присядь, используй. Помощь прицела (эксперимент): «включи помощь прицела» / «выключи помощь прицела».".into(),
+            Action::Help => "Фразы: иди вперёд / назад / влево / вправо, беги, стой; смотри налево / направо / вверх / вниз (можно «на 45 градусов», «чуть», «разворот»); стреляй, очередью, прекрати огонь; целься, не целься; перезаряди, граната, нож, прыгай, присядь, используй. Помощь прицела (эксперимент): «включи помощь прицела» / «выключи помощь прицела». Своя игра: «добавь эту игру» (можно «как гонку» или «как экшен»). Гонки: газ, тормоз, прямо, ручник, нитро, сигнал. Экшен: атакуй, блок, перекат, инвентарь, карта, полечись.".into(),
             Action::ReleaseAll => {
                 self.release_all(b);
                 String::new()
@@ -512,7 +743,43 @@ impl Game {
             }
             Action::AimAssist(on) => crate::aimassist::set_enabled(*on, &self.profile.aim),
             // done by `handle` (it needs the window in front and the file of the list)
-            Action::AddGame | Action::ForgetGame => String::new(),
+            Action::AddGame(_) | Action::ForgetGame => String::new(),
+            Action::Straight => {
+                self.release(k.left, b);
+                self.release(k.right, b);
+                String::new()
+            }
+            Action::Custom(steps) => {
+                for st in steps {
+                    match st {
+                        Step::Tap(vk) => {
+                            b.key(*vk, true);
+                            b.pause(40);
+                            b.key(*vk, false);
+                        }
+                        Step::Hold(vk) => self.press(*vk, b),
+                        Step::Release(vk) => self.release(*vk, b),
+                        Step::Click(right) => {
+                            b.button(*right, true);
+                            b.pause(60);
+                            b.button(*right, false);
+                        }
+                        Step::Wait(ms) => b.pause(*ms),
+                        Step::Move(dx, dy) => {
+                            let n = (dx.abs().max(dy.abs()) / 25).clamp(1, 60);
+                            let (mut sx, mut sy) = (0, 0);
+                            for i in 1..=n {
+                                let (tx, ty) = (dx * i / n, dy * i / n);
+                                b.mouse_move(tx - sx, ty - sy);
+                                sx = tx;
+                                sy = ty;
+                                b.pause(6);
+                            }
+                        }
+                    }
+                }
+                String::new()
+            }
             Action::Tap(t) => {
                 let vk = match t {
                     Tap::Jump => k.jump,
@@ -521,6 +788,14 @@ impl Game {
                     Tap::Grenade => k.grenade,
                     Tap::Melee => k.melee,
                     Tap::Use => k.use_key,
+                    Tap::Handbrake => k.handbrake,
+                    Tap::Nitro => k.nitro,
+                    Tap::Horn => k.horn,
+                    Tap::Camera => k.camera,
+                    Tap::Dodge => k.dodge,
+                    Tap::Inventory => k.inventory,
+                    Tap::Map => k.map,
+                    Tap::Heal => k.heal,
                 };
                 if vk != 0 {
                     b.key(vk, true);
@@ -754,33 +1029,45 @@ fn list_path() -> std::path::PathBuf {
     crate::APP_DIR.join("game_list.json")
 }
 
-fn load_extra() -> Vec<String> {
+type Extra = (Vec<String>, std::collections::BTreeMap<String, Genre>);
+
+fn load_extra() -> Extra {
     #[cfg(test)]
     {
         return TEST_EXTRA.with(|t| t.borrow().clone());
     }
     #[cfg(not(test))]
     {
-        let Ok(text) = std::fs::read_to_string(list_path()) else { return Vec::new() };
-        let Ok(v) = serde_json::from_str::<Value>(&text) else { return Vec::new() };
-        v.get("exes").and_then(|e| e.as_array()).map(|a| a.iter().filter_map(|x| x.as_str()).map(|x| x.trim().to_lowercase()).filter(|x| refuse_reason(x).is_none()).take(30).collect()).unwrap_or_default()
+        let Ok(text) = std::fs::read_to_string(list_path()) else { return Default::default() };
+        let Ok(v) = serde_json::from_str::<Value>(&text) else { return Default::default() };
+        let exes: Vec<String> = v.get("exes").and_then(|e| e.as_array()).map(|a| a.iter().filter_map(|x| x.as_str()).map(|x| x.trim().to_lowercase()).filter(|x| refuse_reason(x).is_none()).take(30).collect()).unwrap_or_default();
+        let mut genres = std::collections::BTreeMap::new();
+        if let Some(m) = v.get("genres").and_then(|g| g.as_object()) {
+            for (exe, g) in m {
+                if let (true, Some(g)) = (exes.contains(exe), g.as_str().and_then(Genre::from_name)) {
+                    genres.insert(exe.clone(), g);
+                }
+            }
+        }
+        (exes, genres)
     }
 }
 
-fn save_extra(list: &[String]) {
+fn save_extra(list: &[String], genres: &std::collections::BTreeMap<String, Genre>) {
     #[cfg(test)]
     {
-        TEST_EXTRA.with(|t| *t.borrow_mut() = list.to_vec());
+        TEST_EXTRA.with(|t| *t.borrow_mut() = (list.to_vec(), genres.clone()));
     }
     #[cfg(not(test))]
     {
-        let _ = crate::write_atomic(&list_path(), serde_json::to_string_pretty(&json!({ "exes": list })).unwrap_or_default());
+        let g: serde_json::Map<String, Value> = genres.iter().map(|(e, g)| (e.clone(), json!(g.name()))).collect();
+        let _ = crate::write_atomic(&list_path(), serde_json::to_string_pretty(&json!({ "exes": list, "genres": g })).unwrap_or_default());
     }
 }
 
 #[cfg(test)]
 thread_local! {
-    static TEST_EXTRA: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
+    static TEST_EXTRA: std::cell::RefCell<(Vec<String>, std::collections::BTreeMap<String, Genre>)> = std::cell::RefCell::new(Default::default());
 }
 
 // the watchdog: a key must never stay pressed when the user leaves the game window (alt-tab to Jarvis, a crash of the game)
@@ -808,9 +1095,27 @@ fn start_watchdog() {
     });
 }
 
+// what a phrase means in the game mode right now: the user's own phrases first, then the phrases of the kind of the game in front,
+// then the common ones. The words that control the mode itself (on, off, stop, add a game ...) are never taken by the first two.
+pub fn decide(text: &str) -> Option<Action> {
+    let active = is_active();
+    let builtin = parse(text, active);
+    if !active || matches!(builtin, Some(Action::On | Action::Off | Action::Help | Action::ReleaseAll | Action::AddGame(_) | Action::ForgetGame | Action::AimAssist(_))) {
+        return builtin;
+    }
+    let profile = {
+        let g = GAME.lock();
+        match front_exe().filter(|e| g.profile.all_exes().contains(e)) {
+            Some(exe) => g.profile.effective(&exe),
+            None => g.profile.clone(),
+        }
+    };
+    custom_match(text, &profile.phrases).or_else(|| genre_parse(text, profile.genre)).or(builtin)
+}
+
 // is this phrase for the game mode (so that the caller can ask for the right before it is carried out)
 pub fn would_handle(text: &str) -> bool {
-    parse(text, is_active()).is_some()
+    decide(text).is_some()
 }
 
 // the window in front is a game of the profile (the aim assist asks it in every frame)
@@ -838,13 +1143,12 @@ pub fn release_all() {
 
 pub fn status_json() -> Value {
     let g = GAME.lock();
-    json!({ "active": g.active, "game": g.profile.title, "exes": g.profile.all_exes(), "in_game": g.active && in_game(&g.profile), "held": g.anything_held(), "added": g.profile.extra, "anticheat": anticheat_running(), "aim": crate::aimassist::status_json(&g.profile.aim) })
+    json!({ "active": g.active, "game": g.profile.title, "exes": g.profile.all_exes(), "in_game": g.active && in_game(&g.profile), "held": g.anything_held(), "added": g.profile.extra, "genres": g.profile.genres.iter().map(|(e, gn)| (e.clone(), gn.name())).collect::<std::collections::BTreeMap<_, _>>(), "anticheat": anticheat_running(), "aim": crate::aimassist::status_json(&g.profile.aim) })
 }
 
 // A phrase of the user: Some(the answer to show) when it belonged to the game mode (the caller stops there), None otherwise.
 pub fn handle(text: &str) -> Option<String> {
-    let active = is_active();
-    let action = parse(text, active)?;
+    let action = decide(text)?;
     let mut g = GAME.lock();
     // an anti-cheat program is running: the mode is not started and is switched off (the keys are released first)
     if let Some(name) = anticheat_running() {
@@ -863,7 +1167,9 @@ pub fn handle(text: &str) -> Option<String> {
                 Err(e) => (Profile::default(), format!(" Файл game_profile.json не применён: {}.", e)),
             };
             g.profile = profile;
-            g.profile.extra = load_extra();
+            let (extra, genres) = load_extra();
+            g.profile.extra = extra;
+            g.profile.genres = genres;
             let mut reply = with_backend(|b| g.apply(&action, b));
             reply.push_str(&problem);
             if !g.profile.extra.is_empty() {
@@ -875,23 +1181,37 @@ pub fn handle(text: &str) -> Option<String> {
             Some(reply)
         }
         Action::Off | Action::Help | Action::ReleaseAll => Some(with_backend(|b| g.apply(&action, b))),
-        Action::AddGame => {
+        Action::AddGame(genre) => {
             let Some(exe) = front_exe() else {
                 return Some("Не вижу окна игры: откройте игру (она должна быть впереди) и повторите.".into());
             };
             if let Some(why) = refuse_reason(&exe) {
                 return Some(format!("Не добавил: {}.", why));
             }
-            if g.profile.all_exes().contains(&exe) {
-                return Some(format!("{} уже в списке игр.", exe));
+            let known = g.profile.all_exes().contains(&exe);
+            if known {
+                // already there: a kind named now changes the kind of a game the user added
+                match (genre, g.profile.extra.contains(&exe)) {
+                    (Some(gn), true) => {
+                        g.profile.genres.insert(exe.clone(), *gn);
+                        let (list, genres) = (g.profile.extra.clone(), g.profile.genres.clone());
+                        save_extra(&list, &genres);
+                        return Some(format!("Жанр игры {}: {}.", exe, gn.title()));
+                    }
+                    _ => return Some(format!("{} уже в списке игр.", exe)),
+                }
             }
             if g.profile.extra.len() >= 30 {
                 return Some("В списке уже 30 игр: уберите ненужные («забудь эту игру»).".into());
             }
             g.profile.extra.push(exe.clone());
-            let list = g.profile.extra.clone();
-            save_extra(&list);
-            Some(format!("Добавил игру {}. Она тоже работает в игровом режиме с обычными клавишами (WASD, пробел, C, Shift, R, G, V, F). Только одиночные игры! Другие клавиши: game_profile.json.", exe))
+            if let Some(gn) = genre {
+                g.profile.genres.insert(exe.clone(), *gn);
+            }
+            let (list, genres) = (g.profile.extra.clone(), g.profile.genres.clone());
+            save_extra(&list, &genres);
+            let kind = genre.map(|gn| format!(" Жанр: {}.", gn.title())).unwrap_or_else(|| " Жанр не назван: понимаю общие фразы и фразы шутера; для гонки или экшена скажите «добавь эту игру как гонку» / «как экшен».".to_string());
+            Some(format!("Добавил игру {}. Обычные клавиши (WASD, пробел, C, Shift, R, G, V, F); другие клавиши — game_profile.json. Только одиночные игры!{}", exe, kind))
         }
         Action::ForgetGame => {
             let Some(exe) = front_exe() else {
@@ -901,8 +1221,9 @@ pub fn handle(text: &str) -> Option<String> {
                 return Some(format!("{} нет среди добавленных вами игр.", exe));
             }
             g.profile.extra.retain(|e| *e != exe);
-            let list = g.profile.extra.clone();
-            save_extra(&list);
+            g.profile.genres.remove(&exe);
+            let (list, genres) = (g.profile.extra.clone(), g.profile.genres.clone());
+            save_extra(&list, &genres);
             with_backend(|b| g.release_all(b));
             Some(format!("Игра {} убрана из списка.", exe))
         }
@@ -954,7 +1275,7 @@ mod tests {
         g.left_button = false;
         g.right_button = false;
         g.held.clear();
-        TEST_EXTRA.with(|t| t.borrow_mut().clear());
+        TEST_EXTRA.with(|t| *t.borrow_mut() = Default::default());
         TEST_PROCS.with(|t| *t.borrow_mut() = Some(vec!["explorer.exe".into()]));
     }
 
@@ -1030,8 +1351,12 @@ mod tests {
 
     #[test]
     fn the_phrases_that_add_and_forget_a_game() {
-        assert_eq!(p("добавь эту игру"), Some(Action::AddGame));
-        assert_eq!(p("запомни эту игру"), Some(Action::AddGame));
+        assert_eq!(p("добавь эту игру"), Some(Action::AddGame(None)));
+        assert_eq!(p("запомни эту игру"), Some(Action::AddGame(None)));
+        assert_eq!(p("добавь эту игру как гонку"), Some(Action::AddGame(Some(Genre::Racing))));
+        assert_eq!(p("добавь эту игру как экшен"), Some(Action::AddGame(Some(Genre::Action))));
+        assert_eq!(p("запомни эту игру как приключение"), Some(Action::AddGame(Some(Genre::Action))));
+        assert_eq!(p("добавь эту игру как шутер"), Some(Action::AddGame(Some(Genre::Shooter))));
         assert_eq!(p("забудь эту игру"), Some(Action::ForgetGame));
         assert_eq!(p("удали эту игру из списка"), Some(Action::ForgetGame));
         // only inside the mode, and only «this» game: a normal request about games is not taken
@@ -1056,7 +1381,7 @@ mod tests {
         assert!(GAME.lock().held.contains(&0x57), "W is held in the added game");
         handle("стой");
         // remembered for the next time
-        assert_eq!(TEST_EXTRA.with(|t| t.borrow().clone()), vec!["mygame.exe".to_string()]);
+        assert_eq!(TEST_EXTRA.with(|t| t.borrow().0.clone()), vec!["mygame.exe".to_string()]);
         // an online game and a program that is not a game are refused
         for (exe, word) in [("valorant.exe", "сетевая игра"), ("cs2.exe", "сетевая игра"), ("chrome.exe", "не игра"), ("cmd.exe", "не игра")] {
             TEST_FRONT.with(|t| *t.borrow_mut() = Some(Some(exe.into())));
@@ -1074,6 +1399,119 @@ mod tests {
         // a game of the default list cannot be «forgotten» (it is not the user's addition)
         TEST_FRONT.with(|t| *t.borrow_mut() = Some(Some("iw4sp.exe".into())));
         assert!(handle("забудь эту игру").unwrap().contains("нет среди добавленных"));
+        handle("выключи игровой режим");
+        TEST_FRONT.with(|t| *t.borrow_mut() = None);
+        reset_global();
+    }
+
+    #[test]
+    fn racing_phrases() {
+        let r = |t: &str| genre_parse(t, Genre::Racing);
+        assert_eq!(r("газ"), Some(Action::Walk(Dir::Forward)));
+        assert_eq!(r("гони"), Some(Action::Walk(Dir::Forward)));
+        assert_eq!(r("тормози"), Some(Action::Walk(Dir::Back)));
+        assert_eq!(r("задний ход"), Some(Action::Walk(Dir::Back)));
+        assert_eq!(r("прямо"), Some(Action::Straight), "in racing «прямо» is a straight wheel, not walking");
+        assert_eq!(r("ручник"), Some(Action::Tap(Tap::Handbrake)));
+        assert_eq!(r("включи нитро"), Some(Action::Tap(Tap::Nitro)));
+        assert_eq!(r("посигналь"), Some(Action::Tap(Tap::Horn)));
+        assert_eq!(r("смени камеру"), Some(Action::Tap(Tap::Camera)));
+        // steering is the common «влево / вправо»
+        assert_eq!(r("влево"), None);
+        assert_eq!(p("влево"), Some(Action::Walk(Dir::Left)));
+        assert_eq!(genre_parse("газ", Genre::Shooter), None);
+    }
+
+    #[test]
+    fn action_adventure_phrases() {
+        let a = |t: &str| genre_parse(t, Genre::Action);
+        assert_eq!(a("атакуй"), Some(Action::Fire(150)));
+        assert_eq!(a("тяжёлый удар"), Some(Action::Fire(700)));
+        assert_eq!(a("блок"), Some(Action::AimOn));
+        assert_eq!(a("сними блок"), Some(Action::AimOff));
+        assert_eq!(a("перекат"), Some(Action::Tap(Tap::Dodge)));
+        assert_eq!(a("открой инвентарь"), Some(Action::Tap(Tap::Inventory)));
+        assert_eq!(a("покажи карту"), Some(Action::Tap(Tap::Map)));
+        assert_eq!(a("полечись"), Some(Action::Tap(Tap::Heal)));
+        assert_eq!(a("садись в машину"), Some(Action::Tap(Tap::Use)));
+        assert_eq!(a("иди вперёд"), None);
+    }
+
+    #[test]
+    fn a_phrase_of_the_user_is_any_list_of_steps_in_any_genre() {
+        let p = profile_from_json(r#"{"genre":"racing","phrases":{"Газуй!":["hold:w","wait:300","tap:space"],"прицельный выстрел":["click:right","wait:50","click:left"],"поверни":["move:50,-20"]}}"#).unwrap();
+        assert_eq!(p.genre, Genre::Racing);
+        assert_eq!(p.phrases.len(), 3);
+        assert_eq!(p.phrases.iter().find(|(w, _)| w == "газуй").unwrap().1, vec![Step::Hold(0x57), Step::Wait(300), Step::Tap(0x20)]);
+        // the words stand in a sentence as whole words
+        assert!(matches!(custom_match("давай газуй сейчас", &p.phrases), Some(Action::Custom(_))));
+        assert_eq!(custom_match("газуйте", &p.phrases), None);
+        // run: every step is carried out, held keys are tracked and released by «стой»
+        let mut g = Game { profile: Profile::default(), active: true, ..Default::default() };
+        let mut r = Rec::default();
+        let Some(Action::Custom(steps)) = custom_match("газуй", &p.phrases) else { panic!() };
+        g.apply(&Action::Custom(steps), &mut r);
+        assert_eq!(r.0, vec!["0x57↓".to_string(), "0x20↓".into(), "0x20↑".into()]);
+        assert!(g.held.contains(&0x57));
+        g.apply(&Action::ReleaseAll, &mut r);
+        assert!(!g.anything_held());
+        // wrong things are refused with a reason
+        for bad in [
+            r#"{"phrases":{"стой тут":["tap:w"]}}"#,
+            r#"{"phrases":{"выключи":["tap:w"]}}"#,
+            r#"{"phrases":{"a":["tap:alt"]}}"#,
+            r#"{"phrases":{"a":["tap:f4"]}}"#,
+            r#"{"phrases":{"a":["fly:w"]}}"#,
+            r#"{"phrases":{"a":["wait:99999"]}}"#,
+            r#"{"phrases":{"a":["move:9999,0"]}}"#,
+            r#"{"phrases":{"a":[]}}"#,
+            r#"{"phrases":{"":["tap:w"]}}"#,
+            r#"{"phrases":["tap:w"]}"#,
+            r#"{"genre":"puzzle"}"#,
+        ] {
+            assert!(profile_from_json(bad).is_err(), "{}", bad);
+        }
+    }
+
+    #[test]
+    fn a_game_added_as_racing_or_action_understands_the_phrases_of_that_kind() {
+        let _lock = GLOBAL.lock();
+        reset_global();
+        TEST_FRONT.with(|t| *t.borrow_mut() = Some(Some("racer.exe".into())));
+        handle("включи игровой режим");
+        // no kind named: the common and shooter phrases only («газ» is nothing for a shooter, the phrase goes on to the usual commands)
+        assert!(handle("добавь эту игру").unwrap().contains("Жанр не назван"));
+        assert_eq!(handle("газ"), None);
+        // the kind is named later: changed (the game stays in the list)
+        assert!(handle("добавь эту игру как гонку").unwrap().contains("Жанр игры racer.exe: гонки"));
+        assert!(would_handle("газ"));
+        handle("газ");
+        assert!(GAME.lock().held.contains(&0x57), "gas holds W");
+        handle("тормоз");
+        assert!(GAME.lock().held.contains(&0x53) && !GAME.lock().held.contains(&0x57), "the brake releases the gas");
+        handle("влево");
+        assert!(GAME.lock().held.contains(&0x41));
+        handle("прямо");
+        assert!(!GAME.lock().held.contains(&0x41), "straight releases the steering");
+        handle("стой");
+        assert!(!GAME.lock().anything_held());
+        assert_eq!(TEST_EXTRA.with(|t| t.borrow().1.get("racer.exe").copied()), Some(Genre::Racing), "the kind is remembered");
+        // an action game added at once with its kind
+        TEST_FRONT.with(|t| *t.borrow_mut() = Some(Some("adventure.exe".into())));
+        assert!(handle("запомни эту игру как приключение").unwrap().contains("экшен / приключения"));
+        handle("блок");
+        assert!(GAME.lock().right_button, "block holds the right button");
+        handle("сними блок");
+        assert!(!GAME.lock().right_button);
+        // the phrases of a kind do not leak to another game
+        TEST_FRONT.with(|t| *t.borrow_mut() = Some(Some("racer.exe".into())));
+        assert_eq!(decide("блок"), parse("блок", true));
+        // the user's own phrases of the profile work in the game in front
+        GAME.lock().profile.phrases = vec![("на ура".to_string(), vec![Step::Tap(0x45)])];
+        assert!(matches!(decide("давай на ура"), Some(Action::Custom(_))));
+        // forgotten: the kind goes with the game
+        handle("забудь эту игру");
+        assert!(!TEST_EXTRA.with(|t| t.borrow().1.contains_key("racer.exe")));
         handle("выключи игровой режим");
         TEST_FRONT.with(|t| *t.borrow_mut() = None);
         reset_global();
