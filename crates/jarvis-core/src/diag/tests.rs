@@ -204,3 +204,21 @@ fn a_russian_phrase_must_not_be_read_by_an_english_voice() {
     assert!(piper_language_check("ru", Some(("ru.onnx".into(), true))).is_none());
     assert!(piper_language_check("ru", None).is_none(), "no Piper: the card of Piper says so");
 }
+
+fn game_facts() -> crate::gamemode::Facts {
+    crate::gamemode::Facts { active: false, in_game: false, anticheat: None, games: 0, macros: 0, recording: false, playing: false, overlay: false, sound: false, scan_running: false, scan: None }
+}
+
+#[test]
+fn the_game_card_tells_the_anti_cheat_the_unused_mode_and_the_working_one() {
+    let c = game_check(&game_facts());
+    assert_eq!(c.status, Status::Unchecked);
+    assert!(c.fix.contains("Найти мои игры"), "{}", c.fix);
+    let c = game_check(&crate::gamemode::Facts { anticheat: Some("easyanticheat.exe".into()), active: true, ..game_facts() });
+    assert_eq!(c.status, Status::Warn);
+    assert!(c.detail.contains("easyanticheat.exe") && c.detail.contains("не включается"), "{}", c.detail);
+    let c = game_check(&crate::gamemode::Facts { active: true, in_game: true, games: 3, macros: 2, scan: Some((5, 3, 2)), ..game_facts() });
+    assert_eq!(c.status, Status::Ok);
+    assert!(c.detail.contains("игр в списке 3") && c.detail.contains("найдено 5, добавлено 3, не добавлено 2"), "{}", c.detail);
+    assert!(c.detail.contains("не подтверждает"), "an honest card: it does not claim that the game works");
+}

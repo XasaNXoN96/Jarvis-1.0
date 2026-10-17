@@ -1122,6 +1122,99 @@ fn ask_screen(question: String, shown: String) {
     });
 }
 
+// A phrase of several steps (a macro, a phrase of game_profile.json) is played in a thread of its own, step by step: the lock of the game is
+// taken for one step only, the pauses are waited outside it. So «стой», any other phrase, the watchdog and the anti-cheat guard reach the
+// program while it plays. Every new action (or «стой») makes the number below bigger, and a macro that sees another number stops.
+static PLAY_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+// the macro that plays (if any) is told to stop after its current step
+pub fn cancel_playing() {
+    PLAY_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
+// Is a macro playing now (the Games page and the report show it)
+static PLAYING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn is_playing() -> bool {
+    PLAYING.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+// plays the steps; `wait` waits outside the lock (and returns early when the macro is cancelled)
+fn play_steps(exe: &str, steps: &[Step], gen: u64, wait: &dyn Fn(u64)) {
+    use std::sync::atomic::Ordering::SeqCst;
+    for st in steps {
+        if PLAY_GEN.load(SeqCst) != gen {
+            return;
+        }
+        if let Step::Wait(ms) = st {
+            wait(*ms);
+            continue;
+        }
+        let mut g = GAME.lock();
+        if !g.active || PLAY_GEN.load(SeqCst) != gen {
+            return;
+        }
+        let base = g.profile.clone();
+        g.profile = base.effective(exe);
+        let go = with_backend(|b| {
+            if b.may_continue(&g.profile) {
+                g.apply(&Action::Custom(vec![st.clone()]), b);
+                true
+            } else {
+                g.release_all(b);
+                false
+            }
+        });
+        g.profile = base;
+        if !go {
+            note_event(&format!("макрос остановлен: игра {} не впереди, защита от читов или Esc", exe));
+            return;
+        }
+    }
+}
+
+fn play(exe: String, steps: Vec<Step>) {
+    use std::sync::atomic::Ordering::SeqCst;
+    let gen = PLAY_GEN.fetch_add(1, SeqCst) + 1;
+    #[cfg(test)]
+    {
+        play_steps(&exe, &steps, gen, &|_| {});
+    }
+    #[cfg(not(test))]
+    {
+        std::thread::spawn(move || {
+            PLAYING.store(true, SeqCst);
+            let wait = |ms: u64| {
+                let end = std::time::Instant::now() + std::time::Duration::from_millis(ms);
+                while std::time::Instant::now() < end && PLAY_GEN.load(SeqCst) == gen {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+            };
+            play_steps(&exe, &steps, gen, &wait);
+            // only the newest macro puts the flag down
+            if PLAY_GEN.load(SeqCst) == gen {
+                PLAYING.store(false, SeqCst);
+            }
+        });
+    }
+}
+
+// the last things the game mode did (for the report of the Games page): a time and a short text, no phrases of the user
+static EVENTS: Lazy<Mutex<std::collections::VecDeque<(u64, String)>>> = Lazy::new(|| Mutex::new(std::collections::VecDeque::new()));
+
+pub fn note_event(text: &str) {
+    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let mut e = EVENTS.lock();
+    if e.len() >= 40 {
+        e.pop_front();
+    }
+    e.push_back((t, text.chars().take(200).collect()));
+}
+
+pub fn recent_events() -> Vec<(u64, String)> {
+    EVENTS.lock().iter().cloned().collect()
+}
+
 // the watchdog: a key must never stay pressed when the user leaves the game window (alt-tab to Jarvis, a crash of the game)
 static WATCHDOG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -1140,6 +1233,7 @@ fn start_watchdog() {
             crate::aimassist::set_enabled(false, &g.profile.aim);
             crate::gamemacro::cancel();
             log::warn!("Game mode: an anti-cheat program is running, the mode is switched off");
+            note_event("режим выключен: запущена защита от читов");
             continue;
         }
         if g.active && g.anything_held() && !in_game(&g.profile) {
@@ -1199,8 +1293,89 @@ pub fn is_active() -> bool {
 }
 
 pub fn release_all() {
+    cancel_playing();
     let mut g = GAME.lock();
     with_backend(|b| g.release_all(b));
+}
+
+// what the diagnostics (and the report of the Games page) need to know, without anything personal
+pub struct Facts {
+    pub active: bool,
+    pub in_game: bool,
+    pub anticheat: Option<String>,
+    pub games: usize,
+    pub macros: usize,
+    pub recording: bool,
+    pub playing: bool,
+    pub overlay: bool,
+    pub sound: bool,
+    pub scan_running: bool,
+    // (found, added, skipped)
+    pub scan: Option<(usize, usize, usize)>,
+}
+
+pub fn facts() -> Facts {
+    let (active, in_game_now) = {
+        let g = GAME.lock();
+        (g.active, g.active && in_game(&g.profile))
+    };
+    let o = crate::gamelist::options();
+    let sc = crate::gamescan::status_json();
+    let found = sc["found"].as_array().cloned().unwrap_or_default();
+    Facts {
+        active,
+        in_game: in_game_now,
+        anticheat: anticheat_running(),
+        games: crate::gamelist::load().len(),
+        macros: crate::gamemacro::load().len(),
+        recording: crate::gamemacro::is_recording(),
+        playing: is_playing(),
+        overlay: o.overlay,
+        sound: o.sound,
+        scan_running: sc["running"].as_bool().unwrap_or(false),
+        scan: if sc["done"].as_bool().unwrap_or(false) { Some((found.len(), sc["added"].as_u64().unwrap_or(0) as usize, found.iter().filter(|f| !f["skipped"].is_null()).count())) } else { None },
+    }
+}
+
+// the text of the button «Копировать отчёт по играм»: the state, the list, the last scan, the last events. No keys, no phrases.
+pub fn report_text() -> String {
+    let f = facts();
+    let yn = |b: bool| if b { "да" } else { "нет" };
+    let mut r = String::from("=== Отчёт по играм Jarvis ===\n");
+    r.push_str(&format!("Версия Jarvis: {}\n", crate::config::APP_VERSION.unwrap_or("?")));
+    r.push_str(&format!("Режим включён: {} · окно игры впереди: {} · защита от читов: {}\n", yn(f.active), yn(f.in_game), f.anticheat.clone().unwrap_or_else(|| "не найдена".into())));
+    r.push_str(&format!("Метка на экране: {} · звук подтверждения: {} · запись макроса идёт: {} · макрос играет: {}\n", yn(f.overlay), yn(f.sound), yn(f.recording), yn(f.playing)));
+    r.push_str(&format!("Помощь прицела: {}\n", if crate::aimassist::is_enabled() { "включена" } else { "выключена" }));
+    r.push_str(&format!("\nИгры в списке ({}):\n", f.games));
+    for e in crate::gamelist::load() {
+        r.push_str(&format!("  {} · {} · {} · {}\n", e.exe, e.name, e.genre.name(), e.source));
+    }
+    r.push_str(&format!("\nМакросы ({}):\n", f.macros));
+    for (n, steps) in crate::gamemacro::load() {
+        r.push_str(&format!("  {} · шагов: {}\n", n, steps.len()));
+    }
+    let sc = crate::gamescan::status_json();
+    r.push_str("\nПоследний поиск игр: ");
+    if f.scan_running {
+        r.push_str("идёт\n");
+    } else if let Some((found, added, skipped)) = f.scan {
+        r.push_str(&format!("найдено {}, добавлено новых {}, не добавлено {}\n", found, added, skipped));
+        for it in sc["found"].as_array().into_iter().flatten().filter(|i| !i["skipped"].is_null()) {
+            r.push_str(&format!("  не добавлена: {} ({}) — {}\n", it["name"].as_str().unwrap_or(""), it["store"].as_str().unwrap_or(""), it["skipped"].as_str().unwrap_or("")));
+        }
+    } else {
+        r.push_str("ещё не запускался\n");
+    }
+    let ev = recent_events();
+    r.push_str("\nПоследние события режима:\n");
+    if ev.is_empty() {
+        r.push_str("  пока нет\n");
+    }
+    for (t, text) in ev.iter().rev().take(20) {
+        r.push_str(&format!("  unix {} · {}\n", t, text));
+    }
+    r.push_str("\nВ отчёт не входят: ключи, токены, сказанные фразы и снимки экрана. Проверено только тестами разбора, если в этом отчёте нет событий из живой игры.\n");
+    r
 }
 
 // everything the Games page shows: the list, the scan, the macros, the options
@@ -1224,6 +1399,10 @@ pub fn status_json() -> Value {
 // A phrase of the user: Some(the answer to show) when it belonged to the game mode (the caller stops there), None otherwise.
 pub fn handle(text: &str) -> Option<String> {
     let action = decide(text)?;
+    // a new action of the game (or «стой») ends the macro that plays; the answers about the screen, the list and the macros do not
+    if !matches!(action, Action::Hint | Action::ReadText(_) | Action::MacroStart(_) | Action::MacroStop | Action::MacroDelete(_) | Action::AddGame(_) | Action::ForgetGame | Action::Help | Action::AimAssist(_)) {
+        cancel_playing();
+    }
     let mut g = GAME.lock();
     // an anti-cheat program is running: the mode is not started and is switched off (the keys are released first)
     if let Some(name) = anticheat_running() {
@@ -1232,6 +1411,7 @@ pub fn handle(text: &str) -> Option<String> {
             g.active = false;
             crate::aimassist::set_enabled(false, &g.profile.aim);
             crate::gamemacro::cancel();
+            note_event(&format!("режим не включён или выключен: защита от читов ({})", name));
             return Some(format!("Игровой режим не включён: запущена защита от читов ({}). Режим только для одиночных игр без неё: закройте игру с защитой.", name));
         }
     }
@@ -1252,19 +1432,29 @@ pub fn handle(text: &str) -> Option<String> {
             reply.push_str(" Своя игра: откройте её и скажите «добавь эту игру».");
             drop(g);
             start_watchdog();
+            note_event("режим включён");
             Some(reply)
         }
         Action::Off | Action::Help | Action::ReleaseAll => {
             if matches!(action, Action::Off) {
                 crate::gamemacro::cancel();
+                note_event("режим выключен");
             }
             Some(with_backend(|b| g.apply(&action, b)))
         }
         Action::MacroStart(name) => Some(match crate::gamemacro::start(name) {
-            Ok(m) | Err(m) => m,
+            Ok(m) => {
+                note_event("запись макроса началась");
+                m
+            }
+            Err(m) => m,
         }),
         Action::MacroStop => Some(match crate::gamemacro::stop() {
-            Ok(m) | Err(m) => m,
+            Ok(m) => {
+                note_event("макрос сохранён");
+                m
+            }
+            Err(m) => m,
         }),
         Action::MacroDelete(name) => Some(if crate::gamemacro::delete(name) { format!("Макрос «{}» удалён.", name) } else { format!("Макроса «{}» нет.", name) }),
         Action::Hint | Action::ReadText(_) => {
@@ -1300,6 +1490,7 @@ pub fn handle(text: &str) -> Option<String> {
                     None => Some(format!("{} уже в списке игр.", exe)),
                 },
                 Ok(crate::gamelist::Added::New) => {
+                    note_event(&format!("игра добавлена голосом: {}", exe));
                     let kind = genre.or(known.map(|k| k.1)).map(|gn| format!(" Жанр: {}.", gn.title())).unwrap_or_else(|| " Жанр не назван: понимаю общие фразы и фразы шутера; для гонки или экшена скажите «добавь эту игру как гонку» / «как экшен».".to_string());
                     Some(format!("Добавил игру {}. Обычные клавиши (WASD, пробел, C, Shift, R, G, V, F); другие клавиши — game_profile.json. Только одиночные игры!{}", exe, kind))
                 }
@@ -1313,6 +1504,7 @@ pub fn handle(text: &str) -> Option<String> {
                 return Some(format!("{} нет среди добавленных вами игр.", exe));
             }
             crate::gamelist::remove(&exe);
+            note_event(&format!("игра убрана голосом: {}", exe));
             apply_list(&mut g.profile);
             with_backend(|b| g.release_all(b));
             Some(format!("Игра {} убрана из списка.", exe))
@@ -1323,6 +1515,14 @@ pub fn handle(text: &str) -> Option<String> {
                 with_backend(|b| g.release_all(b));
                 return Some(format!("Игра не в фокусе: откройте окно игры ({}) или добавьте её («добавь эту игру»), и я продолжу.", g.profile.all_exes().join(", ")));
             };
+            // a phrase with steps plays in its own thread (the lock is let go first), the rest is a matter of a moment
+            if let Action::Custom(steps) = &action {
+                let steps = steps.clone();
+                drop(g);
+                play(exe, steps);
+                crate::gameoverlay::confirm();
+                return Some(String::new());
+            }
             let base = g.profile.clone();
             g.profile = base.effective(&exe);
             let reply = with_backend(|b| g.apply(&action, b));
@@ -1445,6 +1645,50 @@ mod tests {
         assert!(!crate::gamemacro::is_recording(), "anti-cheat: the recording is gone");
         crate::gamemacro::cancel();
         TEST_FRONT.with(|t| *t.borrow_mut() = None);
+        reset_global();
+    }
+
+    #[test]
+    fn a_stop_during_a_macro_ends_it_after_the_current_step_and_stop_lets_go_of_the_keys() {
+        let _l = GLOBAL.lock();
+        reset_global();
+        {
+            let mut g = GAME.lock();
+            g.active = true;
+        }
+        let steps = vec![Step::Hold(0x57), Step::Wait(500), Step::Tap(0x20), Step::Hold(0x10)];
+        let gen = PLAY_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        // «стой» arrives while the macro waits: the wait returns, the macro sees the new number and does nothing more
+        play_steps("iw4sp.exe", &steps, gen, &|_| cancel_playing());
+        {
+            let g = GAME.lock();
+            assert!(g.held.contains(&0x57), "the step before the wait was done");
+            assert!(!g.held.contains(&0x10), "the steps after the stop were not");
+        }
+        // the phrase «стой» itself: it bumps the number and lets go of everything
+        TEST_FRONT.with(|t| *t.borrow_mut() = Some(Some("iw4sp.exe".into())));
+        let before = PLAY_GEN.load(std::sync::atomic::Ordering::SeqCst);
+        handle("стой").unwrap();
+        assert!(PLAY_GEN.load(std::sync::atomic::Ordering::SeqCst) > before);
+        assert!(GAME.lock().held.is_empty());
+        // a macro whose number is old does not start a step at all
+        let old = PLAY_GEN.load(std::sync::atomic::Ordering::SeqCst) - 1;
+        play_steps("iw4sp.exe", &[Step::Hold(0x57)], old, &|_| {});
+        assert!(GAME.lock().held.is_empty());
+        TEST_FRONT.with(|t| *t.borrow_mut() = None);
+        reset_global();
+    }
+
+    #[test]
+    fn the_report_of_the_games_has_the_state_the_list_the_scan_and_the_events_and_nothing_personal() {
+        let _l = GLOBAL.lock();
+        reset_global();
+        crate::gamelist::add(crate::gamelist::Entry { exe: "fallout3.exe".into(), name: "Fallout 3".into(), genre: Genre::Action, source: "scan".into() }, false).unwrap();
+        note_event("проверка отчёта");
+        let r = report_text();
+        for part in ["Отчёт по играм", "Режим включён: нет", "защита от читов: не найдена", "fallout3.exe · Fallout 3 · action · scan", "Игры в списке (1)", "Последний поиск игр", "проверка отчёта", "не входят: ключи"] {
+            assert!(r.contains(part), "{}: {}", part, r);
+        }
         reset_global();
     }
 

@@ -856,6 +856,8 @@
         <div class="setrow"><div class="l">Звук подтверждения<small>короткий сигнал, когда фраза выполнена</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="gp-sound"><span></span></label></div></div>
         <div class="msgline" id="gp-msg"></div>
+        <div class="setrow"><div class="l">Отчёт по играм<small>состояние режима, список игр, последний поиск и последние события: чтобы прислать разработчику. Ключей и сказанных фраз в отчёте нет</small></div>
+          <div class="r"><button class="btn" id="gp-report" type="button">Копировать отчёт по играм</button></div></div>
       </div>
       <div class="card"><h3><span class="ei">🔎</span>Найти игры автоматически</h3>
         <div class="setrow"><div class="l">Поиск на этом компьютере<small>Steam, Epic Games и GOG. Подходящие игры добавляются в список сами; остальные показываются с причиной (защита от читов, онлайн-игра). Файлы игр не изменяются и не читаются, смотрятся только имена папок и программ</small></div>
@@ -896,7 +898,7 @@
     <section class="page ds" id="page-diag">
       <h1>Диагностика</h1>
       <p class="lead">Реальное состояние частей Джарвиса. Проверка ничего не меняет на компьютере, не запускает опасных команд и не отправляет запросов к ИИ. «Не проверено» значит, что подтвердить работу пока нечем — это не догадка.</p>
-      <div class="diag-acts"><button class="btn primary" id="diag-run" type="button">Проверить всё</button><button class="btn" id="diag-copy" type="button">Копировать диагностический отчёт</button><span class="msgline" id="diag-msg"></span></div>
+      <div class="diag-acts"><button class="btn primary" id="diag-run" type="button">Проверить всё</button><button class="btn" id="diag-copy" type="button">Копировать диагностический отчёт</button><button class="btn" id="diag-games" type="button">Копировать отчёт по играм</button><span class="msgline" id="diag-msg"></span></div>
       <div class="diag-grid" id="diag-list"><div class="empty">Нажмите «Проверить всё».</div></div>
       <div class="card" style="margin-top:14px"><h3><span class="ei">📜</span>Последние события программы</h3><div id="diag-events"><div class="empty">Событий пока нет.</div></div>
         <small class="dim">Без личных данных: фразы, диалоги и тексты уведомлений сюда не попадают. Отчёт не содержит ключей, токенов и паролей.</small></div>
@@ -2572,6 +2574,7 @@ async function gamesRefresh() {
   mc.innerHTML = g.macros.length ? g.macros.map(m => '<div class="setrow"><div class="l">' + gpEsc(m.name) + '<small>' + gpEsc(m.steps.join(' → ')) + '</small></div><div class="r"><button class="btn small gp-md" data-name="' + gpEsc(m.name) + '" type="button">Удалить</button></div></div>').join('') : '<div class="empty">Макросов нет.</div>';
   mc.querySelectorAll('.gp-md').forEach(b => b.onclick = async () => { const r = await action('macro_delete', { macro: b.dataset.name }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gamesRefresh(); });
 }
+$('#gp-report').onclick = async () => { try { const t = await (await fetch('/games-report')).text(); await copyText(t, $('#gp-report')); gpMsg('Отчёт скопирован', true); } catch (e) { gpMsg('Не удалось скопировать', false); } };
 $('#gp-on').onclick = async () => { const r = await action('game_mode', { value: true }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gamesRefresh(); };
 $('#gp-off').onclick = async () => { const r = await action('game_mode', { value: false }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gamesRefresh(); };
 $('#gp-overlay').onchange = e => action('game_opts', { overlay: e.target.checked });
@@ -3183,6 +3186,11 @@ $('#diag-run').onclick = async () => { $('#diag-run').disabled = true; try { awa
 $('#diag-copy').onclick = async () => {
   // the report of the last check: copying runs nothing, sends nothing and changes nothing
   try { const t = await (await fetch('/diag-report')).text(); await copyText(t, $('#diag-copy')); $('#diag-msg').className = 'msgline ok'; $('#diag-msg').textContent = 'Отчёт скопирован (без ключей, токенов и личных сообщений)'; }
+  catch (e) { $('#diag-msg').className = 'msgline bad'; $('#diag-msg').textContent = 'Не удалось скопировать'; }
+};
+
+$('#diag-games').onclick = async () => {
+  try { const t = await (await fetch('/games-report')).text(); await copyText(t, $('#diag-games')); $('#diag-msg').className = 'msgline ok'; $('#diag-msg').textContent = 'Отчёт по играм скопирован'; }
   catch (e) { $('#diag-msg').className = 'msgline bad'; $('#diag-msg').textContent = 'Не удалось скопировать'; }
 };
 

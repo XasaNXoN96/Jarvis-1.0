@@ -431,6 +431,7 @@ pub fn start() -> Result<(), String> {
         let found = scan_all();
         let added = add_found(&found);
         crate::gamemode::reload_list();
+        crate::gamemode::note_event(&format!("поиск игр закончен: найдено {}, добавлено новых {}", found.len(), added));
         let mut s = STATE.lock();
         *s = State { running: false, done: true, found, added };
     });

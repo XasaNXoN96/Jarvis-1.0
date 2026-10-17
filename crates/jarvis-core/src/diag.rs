@@ -355,6 +355,31 @@ pub fn notify_check(enabled: bool, state: &str, detail: &str) -> Check {
     }
 }
 
+// the game mode (gamemode.rs): the state, the anti-cheat guard, the list, the last scan; nothing personal
+pub fn game_check(f: &crate::gamemode::Facts) -> Check {
+    let (name, key) = ("Игровой режим", "game_mode");
+    let facts = format!(
+        "Режим {} · игр в списке {} · макросов {} · метка {} · звук {}{}.",
+        if f.active { if f.in_game { "включён, окно игры впереди" } else { "включён, окно игры не впереди" } } else { "выключен" },
+        f.games,
+        f.macros,
+        onoff(f.overlay),
+        onoff(f.sound),
+        match (f.scan_running, f.scan) {
+            (true, _) => " · поиск игр идёт".to_string(),
+            (_, Some((found, added, skipped))) => format!(" · последний поиск: найдено {}, добавлено {}, не добавлено {}", found, added, skipped),
+            _ => " · поиск игр ещё не запускали".to_string(),
+        }
+    );
+    if let Some(ac) = &f.anticheat {
+        return check(key, name, Status::Warn, format!("Запущена защита от читов ({}): режим не включается и не работает, это защита от случайного вреда. {}", ac, facts), "Закройте игру с защитой от читов. Режим только для одиночных игр без неё.");
+    }
+    if !f.active && f.games == 0 && f.scan.is_none() {
+        return check(key, name, Status::Unchecked, format!("Режим не использовался. {}", facts), "Откройте раздел «Игры» и нажмите «Найти мои игры» или добавьте игру вручную.");
+    }
+    check(key, name, Status::Ok, format!("{} Работу в живой игре эта проверка не подтверждает: проверяйте её в самой игре.", facts), "")
+}
+
 // the life of the program: its folder of data can be written, autostart points to this copy
 pub fn lifecycle_check(data_dir: Result<(), String>, autostart_on: bool, autostart_other_copy: bool, mem_mb: Option<f64>) -> Check {
     let (name, key) = ("Жизненный цикл программы", "lifecycle");
@@ -636,7 +661,7 @@ pub fn run() -> Vec<Check> {
     let remote = measure_remote();
     let st = crate::uistate::stats();
     let monitor = monitor_check(st.mem_total_gb, st.cpu, st.disk_total_gb);
-    let mut checks = vec![build, integrity_check(), mic, audio, piper, windows_voice, powershell, ai, latency, internet, remote, measure_tunnel(), measure_telegram(), measure_notify(), monitor, measure_resources(), measure_syscmds(), measure_lifecycle()];
+    let mut checks = vec![build, integrity_check(), mic, audio, piper, windows_voice, powershell, ai, latency, internet, remote, measure_tunnel(), measure_telegram(), measure_notify(), monitor, measure_resources(), measure_syscmds(), measure_lifecycle(), game_check(&crate::gamemode::facts())];
     if let Some(c) = piper_lang {
         // (right after the card of Piper)
         let at = checks.iter().position(|c| c.key == "piper").map(|i| i + 1).unwrap_or(checks.len());
