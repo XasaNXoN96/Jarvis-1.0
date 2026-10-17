@@ -2,7 +2,7 @@
 
 Нужен, чтобы попробовать менеджер лицензий в Jarvis Admin, пока боевой сервер с доменом и HTTPS не развёрнут.
 
-* **Где взять:** CI собирает артефакт **`jarvis-license-server-local`** (GitHub → Actions → запуск → Artifacts). Внутри `jarvis-license-server.exe`, `local-license-server.ps1` и `LOCAL-SERVER-README.txt`.
+* **Где взять:** CI собирает артефакт **`LicenseServer-<дата>_<время>_<коммит>`** (раньше `jarvis-license-server-local`) (GitHub → Actions → запуск → Artifacts). Внутри `jarvis-license-server.exe`, `local-license-server.ps1` и `LOCAL-SERVER-README.txt`.
 * **Запуск и шаги:** см. `LOCAL-SERVER-README.txt` (распаковать, запустить скрипт, скопировать токен администратора, вписать в «Лицензии» адрес `http://127.0.0.1:8787` и токен).
 * **Что проверено:** то же, что делает скрипт (init, повторный init без сброса, создание токена, `/health`, `/tariffs`, создание ключа и список с токеном, отказ 401 без токена), я выполнил на Linux с той же программой. Само окно скрипта и работу на Windows я не запускал.
 * **Ограничение:** установщик Jarvis User из CI не сможет активироваться на этом сервере: адрес и открытый ключ сервера вшиваются в программу при сборке (`JARVIS_LICENSE_URL`, `JARVIS_LICENSE_PUBKEY`), подмену на ходу мы намеренно не разрешаем. Для проверки активации нужна сборка User с этими значениями.

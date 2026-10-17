@@ -12,6 +12,17 @@ permissions:
   contents: write
 
 jobs:
+  # The name of every file package (artifact) of this run carries the date and the time of the run (Tashkent, UTC+5) and the commit,
+  # so that the page of the run shows which package is the new one: «Jarvis-17.10.2026_12-09_b928e59».
+  stamp:
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.s.outputs.label }}
+    steps:
+      - id: s
+        shell: bash
+        run: echo "label=$(TZ=Asia/Tashkent date +%d.%m.%Y_%H-%M)_${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
   # automated tests of jarvis-core on Windows; the installers are built meanwhile, but a failure stops the publication
   test:
     runs-on: windows-latest
@@ -40,6 +51,7 @@ jobs:
           }
 
   build:
+    needs: stamp
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -234,14 +246,14 @@ jobs:
       - name: Upload dist folder
         uses: actions/upload-artifact@v4
         with:
-          name: dist
+          name: Jarvis-${{ needs.stamp.outputs.label }}
           path: dist/
 
       # the program alone, for the release (the publish job runs on another machine)
       - name: Upload jarvis-app.exe
         uses: actions/upload-artifact@v4
         with:
-          name: jarvis-app
+          name: jarvis-app-${{ needs.stamp.outputs.label }}
           path: build/Jarvis/jarvis-app.exe
 
       # the checks run after the upload: the installers stay downloadable even when a check fails
@@ -853,6 +865,7 @@ jobs:
   # and the address of the license server (repository variables JARVIS_LICENSE_PUBKEY and JARVIS_LICENSE_URL); no secret is needed
   # or used here. The installer is a separate artifact: it is NOT put on the release of the owner's build.
   build-user:
+    needs: stamp
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -922,13 +935,14 @@ jobs:
       - name: Upload Jarvis User installer
         uses: actions/upload-artifact@v4
         with:
-          name: jarvis-user-installer
+          name: Jarvis-User-${{ needs.stamp.outputs.label }}
           path: dist/Jarvis-User-Setup.exe
           if-no-files-found: error
 
   # The license server for Windows: a local test copy (127.0.0.1) to try the license manager of Jarvis Admin on the computer of the owner.
   # Not a production server (no HTTPS): see docs/licensing/DEPLOYMENT.md.
   license-server-windows:
+    needs: stamp
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -950,7 +964,7 @@ jobs:
       - name: Upload the license server (local test)
         uses: actions/upload-artifact@v4
         with:
-          name: jarvis-license-server-local
+          name: LicenseServer-${{ needs.stamp.outputs.label }}
           path: license-server-local
           if-no-files-found: error
 
@@ -976,7 +990,7 @@ jobs:
           if ($code -ne 0) { Write-Output "::warning title=jarvis-gui::the crate does not build (informational, not part of the shipped program)"; exit 1 }
 
   publish:
-    needs: [test, build]
+    needs: [test, build, stamp]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # one publication at a time; a newer run waits for the one in progress
@@ -988,12 +1002,12 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: dist
+          name: Jarvis-${{ needs.stamp.outputs.label }}
           path: dist
 
       - uses: actions/download-artifact@v4
         with:
-          name: jarvis-app
+          name: jarvis-app-${{ needs.stamp.outputs.label }}
           path: build/Jarvis
 
       # main moved on while this run was building: the newer commit is published by its own run,
