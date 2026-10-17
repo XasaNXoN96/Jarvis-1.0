@@ -594,6 +594,7 @@
     <button data-page="commands" title="Команды"><span class="ei" data-ico="list"></span><span>Команды</span></button>
     <button data-page="builder" title="Конструктор"><span class="ei" data-ico="flow"></span><span>Конструктор</span></button>
     <button data-page="apps" title="Программы"><span class="ei" data-ico="apps"></span><span>Программы</span></button>
+    <button data-page="games" title="Игры"><span class="ei">🎮</span><span>Игры</span></button>
     <button data-page="files" title="Файлы"><span class="ei" data-ico="folder"></span><span>Файлы</span></button>
     <button data-page="devices" title="Мои устройства"><span class="ei" data-ico="phone"></span><span>Устройства</span></button>
     <button data-page="system" title="Система"><span class="ei" data-ico="cpu"></span><span>Система</span></button>
@@ -842,6 +843,38 @@
       <div class="ap-tools"><input type="text" id="ap-search" placeholder="Поиск программы, например: commander"><button class="btn" id="ap-rescan" type="button">Обновить список</button></div>
       <div class="msgline" id="ap-status"></div>
       <div class="ap-list" id="ap-list"><div class="empty">Загрузка…</div></div>
+    </section>
+
+    <section class="page" id="page-games">
+      <h1>Игры</h1>
+      <p class="lead">Только одиночные игры без защиты от читов. Известные онлайн-игры и программы, не относящиеся к играм, в список не попадают.</p>
+      <div class="card"><h3><span class="ei">🎮</span>Режим</h3>
+        <div class="setrow"><div class="l">Голосовое управление игрой<small id="gp-state"></small></div>
+          <div class="r"><button class="btn primary" id="gp-on" type="button">Включить</button> <button class="btn" id="gp-off" type="button">Выключить</button></div></div>
+        <div class="setrow"><div class="l">Метка на экране<small>маленькая надпись над игрой, пока режим включён («● ИГРОВОЙ РЕЖИМ · W · ПРИЦЕЛ»). Не ловит клики. В полноэкранном режиме игры может быть скрыта: выберите в игре «окно без рамки»</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="gp-overlay"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Звук подтверждения<small>короткий сигнал, когда фраза выполнена</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="gp-sound"><span></span></label></div></div>
+        <div class="msgline" id="gp-msg"></div>
+      </div>
+      <div class="card"><h3><span class="ei">🔎</span>Найти игры автоматически</h3>
+        <div class="setrow"><div class="l">Поиск на этом компьютере<small>Steam, Epic Games и GOG. Подходящие игры добавляются в список сами; остальные показываются с причиной (защита от читов, онлайн-игра). Файлы игр не изменяются и не читаются, смотрятся только имена папок и программ</small></div>
+          <div class="r"><button class="btn primary" id="gp-scan" type="button">Найти мои игры</button></div></div>
+        <div class="msgline" id="gp-scanmsg"></div>
+        <div id="gp-skipped"></div>
+      </div>
+      <div class="card"><h3><span class="ei">➕</span>Добавить игру вручную</h3>
+        <div class="setrow"><div class="l">Программа игры<small>имя файла или путь, например <b>game.exe</b> или C:\Games\Fallout\Fallout3.exe. Можно и голосом: откройте игру и скажите «добавь эту игру»</small></div>
+          <div class="r"><input type="text" id="gp-exe" placeholder="game.exe" maxlength="260"> <input type="text" id="gp-name" placeholder="название (можно пусто)" maxlength="80">
+            <select id="gp-genre"><option value="shooter">Шутер</option><option value="racing">Гонки</option><option value="action">Экшен / приключения</option></select>
+            <button class="btn primary" id="gp-add" type="button">Добавить</button></div></div>
+      </div>
+      <div class="card"><h3><span class="ei">📋</span>Мои игры</h3><div id="gp-list"><div class="empty">Пока пусто.</div></div></div>
+      <div class="card"><h3><span class="ei">⏺</span>Макросы голосом</h3>
+        <div id="gp-macros"><div class="empty">Макросов нет.</div></div>
+        <small class="dim">Запись: в игре скажите «Джарвис, запиши макрос комбо», сделайте нужные нажатия, скажите «сохрани макрос». Потом фраза «комбо» повторит их. Записываются только игровые клавиши и кнопки мыши, движение мыши не записывается. «Удали макрос комбо» — убрать.</small></div>
+      <div class="card"><h3><span class="ei">💡</span>Подсказки и чтение текста</h3>
+        <small class="dim">В игре: «подскажи, что делать», «что мне делать дальше» — Джарвис посмотрит на экран и ответит вслух. «Прочитай текст», «переведи текст» — прочитает или переведёт надпись на экране. Нужно разрешение «Анализ экрана» в Настройках и модель, которая видит картинки. Снимок уходит выбранному провайдеру только по такой команде.</small></div>
     </section>
 
     <section class="page ds" id="page-files">
@@ -1299,8 +1332,8 @@ function ico(name) { return '<svg viewBox="0 0 24 24" fill="none" stroke="curren
 document.querySelectorAll('[data-ico]').forEach(el => { el.innerHTML = ico(el.dataset.ico); });
 
 // ---------- navigation ----------
-const PAGES = ['home', 'chat', 'tasks', 'messages', 'commands', 'builder', 'apps', 'files', 'devices', 'system', 'diag', 'settings', 'licmgr'];
-const TITLES = { home: ['Главная', 'Neural Interface'], chat: ['Диалоги', 'Conversations'], tasks: ['Задачи', 'Tasks'], messages: ['Сообщения', 'Messages'], devices: ['Мои устройства', 'My Devices'], system: ['Система', 'System'], commands: ['Команды', 'Command Library'], diag: ['Диагностика', 'Diagnostics'], builder: ['Конструктор', 'Scenario Builder'], apps: ['Программы', 'Applications'], files: ['Файлы', 'File Search'], settings: ['Настройки', 'Settings'], licmgr: ['Лицензии', 'License Manager'] };
+const PAGES = ['home', 'chat', 'tasks', 'messages', 'commands', 'builder', 'apps', 'games', 'files', 'devices', 'system', 'diag', 'settings', 'licmgr'];
+const TITLES = { home: ['Главная', 'Neural Interface'], chat: ['Диалоги', 'Conversations'], tasks: ['Задачи', 'Tasks'], messages: ['Сообщения', 'Messages'], devices: ['Мои устройства', 'My Devices'], system: ['Система', 'System'], commands: ['Команды', 'Command Library'], diag: ['Диагностика', 'Diagnostics'], builder: ['Конструктор', 'Scenario Builder'], apps: ['Программы', 'Applications'], games: ['Игры', 'Games'], files: ['Файлы', 'File Search'], settings: ['Настройки', 'Settings'], licmgr: ['Лицензии', 'License Manager'] };
 let currentPage = 'home';
 const curInput = () => currentPage === 'home' ? $('#h-input') : $('#input');
 function show(name) {
@@ -1316,6 +1349,7 @@ function show(name) {
   if (name === 'diag') diagLoad();
   if (name === 'builder') builderLoad();
   if (name === 'apps') appsLoad();
+  if (name === 'games') gamesRefresh();
   if (name === 'files') filesLoad();
   if (name === 'devices') devicesLoad();
   if (name === 'settings') { loadSettings(); refreshRemote(); tgLoad(); }
@@ -2513,6 +2547,41 @@ $('#game-on').onclick = () => gameSet(true); $('#game-off').onclick = () => game
 $('#aim-on').onclick = async () => { const r = await action('game_aim', { value: true }).catch(() => ({})); const m = $('#game-msg'); m.className = 'msgline ok'; m.textContent = (r && r.message) || ''; gameRefresh(); };
 $('#aim-off').onclick = async () => { const r = await action('game_aim', { value: false }).catch(() => ({})); const m = $('#game-msg'); m.className = 'msgline ok'; m.textContent = (r && r.message) || ''; gameRefresh(); };
 gameRefresh(); setInterval(gameRefresh, 4000);
+
+// the Games page
+const gpGenres = { shooter: 'Шутер', racing: 'Гонки', action: 'Экшен / приключения' };
+const gpSrc = { manual: 'вручную', voice: 'голосом', scan: 'найдена поиском' };
+const gpEsc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function gpMsg(t, ok) { const m = $('#gp-msg'); m.className = 'msgline' + (ok === false ? ' bad' : ' ok'); m.textContent = t || ''; }
+async function gamesRefresh() {
+  let g, st; try { g = await (await fetch('/games')).json(); st = await (await fetch('/game')).json(); } catch (e) { return; }
+  $('#gp-state').textContent = (st.active ? (st.in_game ? 'включён, игра в фокусе' : 'включён, окно игры не впереди') : 'выключен') + (st.anticheat ? ' · запущена защита от читов (' + st.anticheat + '): режим не работает' : '');
+  const o = g.options || {}; $('#gp-overlay').checked = !!o.overlay; $('#gp-sound').checked = !!o.sound;
+  const list = $('#gp-list');
+  if (!g.games.length) list.innerHTML = '<div class="empty">Пока пусто. Нажмите «Найти мои игры» или добавьте игру вручную.</div>';
+  else list.innerHTML = g.games.map(e => '<div class="setrow"><div class="l">' + gpEsc(e.name) + '<small>' + gpEsc(e.exe) + ' · ' + (gpSrc[e.source] || e.source) + '</small></div><div class="r"><select data-exe="' + gpEsc(e.exe) + '" class="gp-g">' + Object.keys(gpGenres).map(k => '<option value="' + k + '"' + (k === e.genre ? ' selected' : '') + '>' + gpGenres[k] + '</option>').join('') + '</select> <button class="btn small gp-rm" data-exe="' + gpEsc(e.exe) + '" type="button">Убрать</button></div></div>').join('') + '<small class="dim">Встроенные: ' + gpEsc((g.builtin || []).join(', ')) + '</small>';
+  list.querySelectorAll('.gp-g').forEach(s => s.onchange = async () => { const r = await action('game_genre', { exe: s.dataset.exe, genre: s.value }).catch(() => ({})); gpMsg(r.ok === false ? r.message : 'Жанр изменён.', r.ok !== false); });
+  list.querySelectorAll('.gp-rm').forEach(b => b.onclick = async () => { const r = await action('game_remove', { exe: b.dataset.exe }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gamesRefresh(); });
+  const sc = g.scan || {};
+  $('#gp-scan').disabled = !!sc.running;
+  $('#gp-scanmsg').className = 'msgline';
+  $('#gp-scanmsg').textContent = sc.running ? 'Ищу игры…' : (sc.done ? 'Найдено игр: ' + (sc.found || []).length + ', добавлено новых: ' + sc.added + '.' : '');
+  const sk = (sc.found || []).filter(f => f.skipped || !f.exe);
+  $('#gp-skipped').innerHTML = sk.length ? '<small class="dim">Не добавлены:</small>' + sk.map(f => '<div class="setrow"><div class="l">' + gpEsc(f.name) + ' <small>' + gpEsc(f.store) + ' · ' + gpEsc(f.skipped || 'программа игры не найдена') + '</small></div></div>').join('') + '<small class="dim">Если игра нужна, добавьте её вручную (имя программы смотрите в папке игры). Игры с защитой от читов режим всё равно не запустит.</small>' : '';
+  const mc = $('#gp-macros');
+  mc.innerHTML = g.macros.length ? g.macros.map(m => '<div class="setrow"><div class="l">' + gpEsc(m.name) + '<small>' + gpEsc(m.steps.join(' → ')) + '</small></div><div class="r"><button class="btn small gp-md" data-name="' + gpEsc(m.name) + '" type="button">Удалить</button></div></div>').join('') : '<div class="empty">Макросов нет.</div>';
+  mc.querySelectorAll('.gp-md').forEach(b => b.onclick = async () => { const r = await action('macro_delete', { macro: b.dataset.name }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gamesRefresh(); });
+}
+$('#gp-on').onclick = async () => { const r = await action('game_mode', { value: true }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gamesRefresh(); };
+$('#gp-off').onclick = async () => { const r = await action('game_mode', { value: false }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gamesRefresh(); };
+$('#gp-overlay').onchange = e => action('game_opts', { overlay: e.target.checked });
+$('#gp-sound').onchange = e => action('game_opts', { sound: e.target.checked });
+$('#gp-scan').onclick = async () => { const r = await action('game_scan').catch(() => ({})); if (r.ok === false) gpMsg(r.message, false); gamesRefresh(); const t = setInterval(async () => { await gamesRefresh(); if (!$('#gp-scan').disabled) clearInterval(t); }, 1500); };
+$('#gp-add').onclick = async () => {
+  const r = await action('game_add', { exe: $('#gp-exe').value, title: $('#gp-name').value, genre: $('#gp-genre').value }).catch(() => ({}));
+  gpMsg(r.message, r.ok !== false); if (r.ok) { $('#gp-exe').value = ''; $('#gp-name').value = ''; } gamesRefresh();
+};
+gamesRefresh(); setInterval(() => { if ($('#page-games').classList.contains('active')) gamesRefresh(); }, 4000);
 
 async function aiOpen() { await aiRefreshList(); await pollNow(true); }
 $('#chat-new').onclick = async () => { await chatApi({ op: 'new' }); await pollNow(true); aiRefreshList(); curInput().focus(); };

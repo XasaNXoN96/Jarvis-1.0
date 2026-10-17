@@ -172,19 +172,25 @@ pub fn allowed_key(vk: u16) -> bool {
     matches!(vk, 0x30..=0x39 | 0x41..=0x5A | 0x20 | 0x10 | 0x11 | 0x09)
 }
 
+// the words of a phrase of the user (or the name of a macro) as they are compared: not empty, not long, and never the words that stop
+// everything or switch the mode off (a phrase of the user must not take their place)
+pub(crate) fn valid_phrase_words(phrase: &str) -> Result<String, String> {
+    let words = normalize(phrase);
+    if words.is_empty() || words.chars().count() > 40 {
+        return Err(format!("фраза «{}» пустая или длиннее 40 знаков", phrase));
+    }
+    if has(&words, &["стой", "стоп", "остановис", "остановк", "замри", "выключ", "отключ", "хватит", "макрос", "запис", "сохран"]) {
+        return Err(format!("фраза «{}» не может содержать слова остановки, выключения и записи", phrase));
+    }
+    Ok(words)
+}
+
 // "phrases": { "газуй": ["hold:w", "wait:300", "tap:space"] }
 fn phrases_from_json(v: &Value) -> Result<Vec<(String, Vec<Step>)>, String> {
     let map = v.as_object().ok_or("phrases должно быть объектом: «фраза»: [шаги]")?;
     let mut out = Vec::new();
     for (phrase, steps) in map.iter().take(60) {
-        let words = normalize(phrase);
-        if words.is_empty() || words.chars().count() > 40 {
-            return Err(format!("фраза «{}» пустая или длиннее 40 знаков", phrase));
-        }
-        // a phrase of the user must not take the place of the words that stop everything
-        if has(&words, &["стой", "стоп", "остановис", "замри", "выключ", "отключ", "хватит"]) {
-            return Err(format!("фраза «{}» не может содержать слова остановки и выключения", phrase));
-        }
+        let words = valid_phrase_words(phrase)?;
         let list = steps.as_array().filter(|a| !a.is_empty() && a.len() <= 30).ok_or_else(|| format!("для «{}» нужен список из 1–30 шагов", phrase))?;
         let mut parsed = Vec::new();
         for st in list {
@@ -386,6 +392,13 @@ pub enum Action {
     Custom(Vec<Step>),
     // racing: the wheel straight (both steering keys are released)
     Straight,
+    // macros: «запиши макрос комбо» … «сохрани макрос»; «удали макрос комбо»
+    MacroStart(String),
+    MacroStop,
+    MacroDelete(String),
+    // a question about the screen of the game: a hint / the text read aloud (and translated)
+    Hint,
+    ReadText(bool),
 }
 
 fn normalize(text: &str) -> String {
@@ -518,6 +531,29 @@ pub fn parse(text: &str, active: bool) -> Option<Action> {
     }
     if has(&t, &["помощь", "подсказк"]) && game {
         return Some(Action::Help);
+    }
+    // macros: «запиши макрос комбо», «сохрани макрос», «удали макрос комбо»
+    if has(&t, &["макрос"]) || t.contains("останови запись") || t.contains("закончи запись") || t.contains("хватит записывать") || t.contains("сохрани запись") {
+        let name = t.split(' ').skip_while(|w| !w.starts_with("макрос")).skip(1).collect::<Vec<_>>().join(" ");
+        if has(&t, &["удали", "удалить", "забудь"]) && has(&t, &["макрос"]) {
+            return Some(Action::MacroDelete(name));
+        }
+        if has(&t, &["сохран", "останов", "законч", "хватит", "стоп"]) && (has(&t, &["макрос"]) || has(&t, &["запис"])) {
+            return Some(Action::MacroStop);
+        }
+        if has(&t, &["запиш", "записыв", "начни", "начать"]) && has(&t, &["макрос"]) {
+            return Some(Action::MacroStart(name));
+        }
+    }
+    // a question about the screen of the game
+    if has(&t, &["прочитай", "прочти", "перескажи", "озвучь"]) && has(&t, &["текст", "субтитр", "диалог", "задани", "надпис", "письм"]) {
+        return Some(Action::ReadText(false));
+    }
+    if has(&t, &["переведи", "перевод"]) && has(&t, &["текст", "субтитр", "диалог", "задани", "надпис"]) {
+        return Some(Action::ReadText(true));
+    }
+    if has(&t, &["подскаж", "подсказк"]) || t.contains("что делать") || t.contains("куда идти") || t.contains("как пройти") || t.contains("куда мне") {
+        return Some(Action::Hint);
     }
     // stop and cease fire come before everything: they must work even inside a longer phrase
     if t.contains("прекрати огонь") || t.contains("не стреляй") || t.contains("отставить огонь") {
@@ -743,7 +779,7 @@ impl Game {
             }
             Action::AimAssist(on) => crate::aimassist::set_enabled(*on, &self.profile.aim),
             // done by `handle` (it needs the window in front and the file of the list)
-            Action::AddGame(_) | Action::ForgetGame => String::new(),
+            Action::AddGame(_) | Action::ForgetGame | Action::MacroStart(_) | Action::MacroStop | Action::MacroDelete(_) | Action::Hint | Action::ReadText(_) => String::new(),
             Action::Straight => {
                 self.release(k.left, b);
                 self.release(k.right, b);
@@ -1024,50 +1060,51 @@ pub fn anticheat_running() -> Option<String> {
     found
 }
 
-// the list of games the user added: game_list.json of the data folder
-fn list_path() -> std::path::PathBuf {
-    crate::APP_DIR.join("game_list.json")
+// the list of games (gamelist.rs) -> the profile: the programs and the kinds of the games the user has
+fn apply_list(p: &mut Profile) {
+    let list = crate::gamelist::load();
+    p.extra = list.iter().map(|e| e.exe.clone()).collect();
+    p.genres = list.iter().map(|e| (e.exe.clone(), e.genre)).collect();
 }
 
-type Extra = (Vec<String>, std::collections::BTreeMap<String, Genre>);
+// the Games page changed the list: the mode that runs takes it at once
+pub fn reload_list() {
+    let mut g = GAME.lock();
+    apply_list(&mut g.profile);
+}
 
-fn load_extra() -> Extra {
-    #[cfg(test)]
-    {
-        return TEST_EXTRA.with(|t| t.borrow().clone());
+// the questions about the screen of a game
+pub fn hint_question(game: &str) -> String {
+    format!("Я играю в одиночную игру ({}). Посмотри на снимок экрана и коротко, в два-три предложения, подскажи, что можно сделать дальше или как пройти эту ситуацию. Не придумывай то, чего не видно на картинке.", game)
+}
+
+pub fn read_question(translate: bool) -> String {
+    if translate {
+        "Найди на снимке экрана игры текст (диалог, субтитры, задание, подсказку, надпись) и переведи его на русский. Ответь только переводом, без пояснений. Если текста не видно, скажи об этом.".to_string()
+    } else {
+        "Найди на снимке экрана игры текст (диалог, субтитры, задание, подсказку, надпись) и перескажи его по-русски коротко и точно. Если текст уже на русском, просто прочитай его. Если текста не видно, скажи об этом.".to_string()
     }
-    #[cfg(not(test))]
-    {
-        let Ok(text) = std::fs::read_to_string(list_path()) else { return Default::default() };
-        let Ok(v) = serde_json::from_str::<Value>(&text) else { return Default::default() };
-        let exes: Vec<String> = v.get("exes").and_then(|e| e.as_array()).map(|a| a.iter().filter_map(|x| x.as_str()).map(|x| x.trim().to_lowercase()).filter(|x| refuse_reason(x).is_none()).take(30).collect()).unwrap_or_default();
-        let mut genres = std::collections::BTreeMap::new();
-        if let Some(m) = v.get("genres").and_then(|g| g.as_object()) {
-            for (exe, g) in m {
-                if let (true, Some(g)) = (exes.contains(exe), g.as_str().and_then(Genre::from_name)) {
-                    genres.insert(exe.clone(), g);
+}
+
+// the question goes to the AI with a picture of the screen (only when «Анализ экрана» is allowed in the settings); the answer is shown in
+// the conversation and said aloud. In the background: the game must not wait for it.
+fn ask_screen(question: String, shown: String) {
+    std::thread::spawn(move || {
+        crate::dialog::begin(&shown, "command");
+        match crate::ai::ask_about_screen(&question) {
+            Ok(answer) => {
+                crate::dialog::reply(&answer, "local");
+                crate::dialog::end(true);
+                if crate::tts::is_enabled() {
+                    crate::tts::speak(&crate::ai::speakable(&answer));
                 }
             }
+            Err(e) => {
+                crate::dialog::reply(&e.user_text(), "local");
+                crate::dialog::end(false);
+            }
         }
-        (exes, genres)
-    }
-}
-
-fn save_extra(list: &[String], genres: &std::collections::BTreeMap<String, Genre>) {
-    #[cfg(test)]
-    {
-        TEST_EXTRA.with(|t| *t.borrow_mut() = (list.to_vec(), genres.clone()));
-    }
-    #[cfg(not(test))]
-    {
-        let g: serde_json::Map<String, Value> = genres.iter().map(|(e, g)| (e.clone(), json!(g.name()))).collect();
-        let _ = crate::write_atomic(&list_path(), serde_json::to_string_pretty(&json!({ "exes": list, "genres": g })).unwrap_or_default());
-    }
-}
-
-#[cfg(test)]
-thread_local! {
-    static TEST_EXTRA: std::cell::RefCell<(Vec<String>, std::collections::BTreeMap<String, Genre>)> = std::cell::RefCell::new(Default::default());
+    });
 }
 
 // the watchdog: a key must never stay pressed when the user leaves the game window (alt-tab to Jarvis, a crash of the game)
@@ -1078,6 +1115,7 @@ fn start_watchdog() {
     if WATCHDOG.swap(true, SeqCst) {
         return;
     }
+    crate::gameoverlay::start();
     std::thread::spawn(|| loop {
         std::thread::sleep(std::time::Duration::from_millis(500));
         let mut g = GAME.lock();
@@ -1100,7 +1138,7 @@ fn start_watchdog() {
 pub fn decide(text: &str) -> Option<Action> {
     let active = is_active();
     let builtin = parse(text, active);
-    if !active || matches!(builtin, Some(Action::On | Action::Off | Action::Help | Action::ReleaseAll | Action::AddGame(_) | Action::ForgetGame | Action::AimAssist(_))) {
+    if !active || matches!(builtin, Some(Action::On | Action::Off | Action::Help | Action::ReleaseAll | Action::AddGame(_) | Action::ForgetGame | Action::AimAssist(_) | Action::MacroStart(_) | Action::MacroStop | Action::MacroDelete(_))) {
         return builtin;
     }
     let profile = {
@@ -1110,7 +1148,10 @@ pub fn decide(text: &str) -> Option<Action> {
             None => g.profile.clone(),
         }
     };
-    custom_match(text, &profile.phrases).or_else(|| genre_parse(text, profile.genre)).or(builtin)
+    // the phrases of the game, then the macros the user recorded (for every game), then the kind of the game, then the common ones
+    let mut phrases = profile.phrases.clone();
+    phrases.extend(crate::gamemacro::load());
+    custom_match(text, &phrases).or_else(|| genre_parse(text, profile.genre)).or(builtin)
 }
 
 // is this phrase for the game mode (so that the caller can ask for the right before it is carried out)
@@ -1132,6 +1173,11 @@ pub fn mouse_rel(dx: i32, dy: i32) {
     with_backend(|b| b.mouse_move(dx, dy));
 }
 
+// the keys that are held now, by name (for the label over the game)
+pub fn held_names() -> Vec<String> {
+    GAME.lock().held.iter().filter_map(|k| crate::gamemacro::key_name(*k)).map(|n| n.to_uppercase()).collect()
+}
+
 pub fn is_active() -> bool {
     GAME.lock().active
 }
@@ -1139,6 +1185,19 @@ pub fn is_active() -> bool {
 pub fn release_all() {
     let mut g = GAME.lock();
     with_backend(|b| g.release_all(b));
+}
+
+// everything the Games page shows: the list, the scan, the macros, the options
+pub fn games_json() -> Value {
+    let games: Vec<Value> = crate::gamelist::load().iter().map(|e| json!({ "exe": e.exe, "name": e.name, "genre": e.genre.name(), "source": e.source })).collect();
+    let macros: Vec<Value> = crate::gamemacro::load().iter().map(|(n, s)| json!({ "name": n, "steps": s.iter().filter_map(crate::gamemacro::step_text).collect::<Vec<_>>() })).collect();
+    let o = crate::gamelist::options();
+    json!({ "games": games, "scan": crate::gamescan::status_json(), "macros": macros, "recording": crate::gamemacro::recording_name(), "options": { "overlay": o.overlay, "sound": o.sound }, "builtin": Profile::default().exes })
+}
+
+// a program the user typed or picked: the file name only («C:\\Games\\x\\game.exe» -> «game.exe»)
+pub fn exe_of_input(raw: &str) -> String {
+    raw.trim().trim_matches('"').rsplit(|c| c == '\\' || c == '/').next().unwrap_or("").trim().to_lowercase()
 }
 
 pub fn status_json() -> Value {
@@ -1167,9 +1226,7 @@ pub fn handle(text: &str) -> Option<String> {
                 Err(e) => (Profile::default(), format!(" Файл game_profile.json не применён: {}.", e)),
             };
             g.profile = profile;
-            let (extra, genres) = load_extra();
-            g.profile.extra = extra;
-            g.profile.genres = genres;
+            apply_list(&mut g.profile);
             let mut reply = with_backend(|b| g.apply(&action, b));
             reply.push_str(&problem);
             if !g.profile.extra.is_empty() {
@@ -1181,6 +1238,23 @@ pub fn handle(text: &str) -> Option<String> {
             Some(reply)
         }
         Action::Off | Action::Help | Action::ReleaseAll => Some(with_backend(|b| g.apply(&action, b))),
+        Action::MacroStart(name) => Some(match crate::gamemacro::start(name) {
+            Ok(m) | Err(m) => m,
+        }),
+        Action::MacroStop => Some(match crate::gamemacro::stop() {
+            Ok(m) | Err(m) => m,
+        }),
+        Action::MacroDelete(name) => Some(if crate::gamemacro::delete(name) { format!("Макрос «{}» удалён.", name) } else { format!("Макроса «{}» нет.", name) }),
+        Action::Hint | Action::ReadText(_) => {
+            let title = front_exe().filter(|e| g.profile.all_exes().contains(e)).unwrap_or_else(|| g.profile.title.clone());
+            let (question, shown) = match &action {
+                Action::ReadText(tr) => (read_question(*tr), if *tr { "Переведи текст на экране игры" } else { "Прочитай текст на экране игры" }),
+                _ => (hint_question(&title), "Подсказка по игре"),
+            };
+            drop(g);
+            ask_screen(question, shown.to_string());
+            Some("Смотрю на экран игры…".to_string())
+        }
         Action::AddGame(genre) => {
             let Some(exe) = front_exe() else {
                 return Some("Не вижу окна игры: откройте игру (она должна быть впереди) и повторите.".into());
@@ -1188,30 +1262,26 @@ pub fn handle(text: &str) -> Option<String> {
             if let Some(why) = refuse_reason(&exe) {
                 return Some(format!("Не добавил: {}.", why));
             }
-            let known = g.profile.all_exes().contains(&exe);
-            if known {
-                // already there: a kind named now changes the kind of a game the user added
-                match (genre, g.profile.extra.contains(&exe)) {
-                    (Some(gn), true) => {
-                        g.profile.genres.insert(exe.clone(), *gn);
-                        let (list, genres) = (g.profile.extra.clone(), g.profile.genres.clone());
-                        save_extra(&list, &genres);
-                        return Some(format!("Жанр игры {}: {}.", exe, gn.title()));
-                    }
-                    _ => return Some(format!("{} уже в списке игр.", exe)),
+            let in_extra = g.profile.extra.contains(&exe);
+            if g.profile.all_exes().contains(&exe) && !in_extra {
+                return Some(format!("{} уже в списке игр (он в списке по умолчанию).", exe));
+            }
+            // a well-known game: its kind and name are taken from the table (the user may name another kind)
+            let known = crate::gamescan::known_game(&exe);
+            let entry = crate::gamelist::Entry { exe: exe.clone(), name: known.map(|k| k.0.to_string()).unwrap_or_else(|| exe.clone()), genre: genre.or(known.map(|k| k.1)).unwrap_or_default(), source: "voice".into() };
+            let outcome = crate::gamelist::add(entry, genre.is_some());
+            apply_list(&mut g.profile);
+            match outcome {
+                Err(why) => Some(format!("Не добавил: {}.", why)),
+                Ok(crate::gamelist::Added::Known) => match genre {
+                    Some(gn) => Some(format!("Жанр игры {}: {}.", exe, gn.title())),
+                    None => Some(format!("{} уже в списке игр.", exe)),
+                },
+                Ok(crate::gamelist::Added::New) => {
+                    let kind = genre.or(known.map(|k| k.1)).map(|gn| format!(" Жанр: {}.", gn.title())).unwrap_or_else(|| " Жанр не назван: понимаю общие фразы и фразы шутера; для гонки или экшена скажите «добавь эту игру как гонку» / «как экшен».".to_string());
+                    Some(format!("Добавил игру {}. Обычные клавиши (WASD, пробел, C, Shift, R, G, V, F); другие клавиши — game_profile.json. Только одиночные игры!{}", exe, kind))
                 }
             }
-            if g.profile.extra.len() >= 30 {
-                return Some("В списке уже 30 игр: уберите ненужные («забудь эту игру»).".into());
-            }
-            g.profile.extra.push(exe.clone());
-            if let Some(gn) = genre {
-                g.profile.genres.insert(exe.clone(), *gn);
-            }
-            let (list, genres) = (g.profile.extra.clone(), g.profile.genres.clone());
-            save_extra(&list, &genres);
-            let kind = genre.map(|gn| format!(" Жанр: {}.", gn.title())).unwrap_or_else(|| " Жанр не назван: понимаю общие фразы и фразы шутера; для гонки или экшена скажите «добавь эту игру как гонку» / «как экшен».".to_string());
-            Some(format!("Добавил игру {}. Обычные клавиши (WASD, пробел, C, Shift, R, G, V, F); другие клавиши — game_profile.json. Только одиночные игры!{}", exe, kind))
         }
         Action::ForgetGame => {
             let Some(exe) = front_exe() else {
@@ -1220,10 +1290,8 @@ pub fn handle(text: &str) -> Option<String> {
             if !g.profile.extra.contains(&exe) {
                 return Some(format!("{} нет среди добавленных вами игр.", exe));
             }
-            g.profile.extra.retain(|e| *e != exe);
-            g.profile.genres.remove(&exe);
-            let (list, genres) = (g.profile.extra.clone(), g.profile.genres.clone());
-            save_extra(&list, &genres);
+            crate::gamelist::remove(&exe);
+            apply_list(&mut g.profile);
             with_backend(|b| g.release_all(b));
             Some(format!("Игра {} убрана из списка.", exe))
         }
@@ -1237,6 +1305,8 @@ pub fn handle(text: &str) -> Option<String> {
             g.profile = base.effective(&exe);
             let reply = with_backend(|b| g.apply(&action, b));
             g.profile = base;
+            // a short sound says «done» (if it is switched on)
+            crate::gameoverlay::confirm();
             Some(reply)
         }
     }
@@ -1275,8 +1345,31 @@ mod tests {
         g.left_button = false;
         g.right_button = false;
         g.held.clear();
-        TEST_EXTRA.with(|t| *t.borrow_mut() = Default::default());
+        crate::gamelist::test_reset();
         TEST_PROCS.with(|t| *t.borrow_mut() = Some(vec!["explorer.exe".into()]));
+    }
+
+    #[test]
+    fn macros_hints_and_reading_have_their_own_phrases() {
+        assert_eq!(parse("запиши макрос комбо", true), Some(Action::MacroStart("комбо".into())));
+        assert_eq!(parse("сохрани макрос", true), Some(Action::MacroStop));
+        assert_eq!(parse("удали макрос комбо", true), Some(Action::MacroDelete("комбо".into())));
+        assert_eq!(parse("прочитай текст", true), Some(Action::ReadText(false)));
+        assert_eq!(parse("переведи текст", true), Some(Action::ReadText(true)));
+        for t in ["подскажи что делать", "куда идти", "как пройти дальше"] {
+            assert_eq!(parse(t, true), Some(Action::Hint), "{}", t);
+        }
+        // with the mode off none of them is a game phrase
+        for t in ["запиши макрос комбо", "прочитай текст", "подскажи что делать"] {
+            assert_eq!(parse(t, false), None, "{}", t);
+        }
+    }
+
+    #[test]
+    fn what_the_games_page_types_becomes_a_program_name() {
+        assert_eq!(exe_of_input("C:\\Games\\Fallout 3\\Fallout3.EXE"), "fallout3.exe");
+        assert_eq!(exe_of_input("  \"D:/x/y/Game.exe\" "), "game.exe");
+        assert_eq!(exe_of_input("game.exe"), "game.exe");
     }
 
     #[test]
@@ -1381,7 +1474,7 @@ mod tests {
         assert!(GAME.lock().held.contains(&0x57), "W is held in the added game");
         handle("стой");
         // remembered for the next time
-        assert_eq!(TEST_EXTRA.with(|t| t.borrow().0.clone()), vec!["mygame.exe".to_string()]);
+        assert_eq!(crate::gamelist::load().iter().map(|e| e.exe.clone()).collect::<Vec<_>>(), vec!["mygame.exe".to_string()]);
         // an online game and a program that is not a game are refused
         for (exe, word) in [("valorant.exe", "сетевая игра"), ("cs2.exe", "сетевая игра"), ("chrome.exe", "не игра"), ("cmd.exe", "не игра")] {
             TEST_FRONT.with(|t| *t.borrow_mut() = Some(Some(exe.into())));
@@ -1495,7 +1588,7 @@ mod tests {
         assert!(!GAME.lock().held.contains(&0x41), "straight releases the steering");
         handle("стой");
         assert!(!GAME.lock().anything_held());
-        assert_eq!(TEST_EXTRA.with(|t| t.borrow().1.get("racer.exe").copied()), Some(Genre::Racing), "the kind is remembered");
+        assert_eq!(crate::gamelist::load().iter().find(|e| e.exe == "racer.exe").map(|e| e.genre), Some(Genre::Racing), "the kind is remembered");
         // an action game added at once with its kind
         TEST_FRONT.with(|t| *t.borrow_mut() = Some(Some("adventure.exe".into())));
         assert!(handle("запомни эту игру как приключение").unwrap().contains("экшен / приключения"));
@@ -1511,7 +1604,7 @@ mod tests {
         assert!(matches!(decide("давай на ура"), Some(Action::Custom(_))));
         // forgotten: the kind goes with the game
         handle("забудь эту игру");
-        assert!(!TEST_EXTRA.with(|t| t.borrow().1.contains_key("racer.exe")));
+        assert!(!crate::gamelist::load().iter().any(|e| e.exe == "racer.exe"));
         handle("выключи игровой режим");
         TEST_FRONT.with(|t| *t.borrow_mut() = None);
         reset_global();

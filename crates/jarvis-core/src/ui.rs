@@ -505,6 +505,58 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             let msg = crate::gamemode::handle(if on { "включи помощь прицела" } else { "выключи помощь прицела" }).unwrap_or_else(|| "Сначала включите игровой режим.".into());
             json!({ "ok": true, "message": msg })
         }
+        // the Games page (gamelist.rs, gamescan.rs, gamemacro.rs)
+        "game_add" | "game_add_flagged" => {
+            let exe = crate::gamemode::exe_of_input(body.get("exe").and_then(|v| v.as_str()).unwrap_or(""));
+            if !exe.ends_with(".exe") {
+                return json!({ "ok": false, "message": "Нужно имя программы игры с .exe, например game.exe." });
+            }
+            let genre_named = body.get("genre").and_then(|v| v.as_str()).and_then(crate::gamemode::Genre::from_name);
+            let name = body.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let e = crate::gamelist::Entry { exe: exe.clone(), name, genre: genre_named.unwrap_or_default(), source: "manual".into() };
+            match crate::gamelist::add(e, genre_named.is_some()) {
+                Ok(r) => {
+                    crate::gamemode::reload_list();
+                    json!({ "ok": true, "message": if r == crate::gamelist::Added::New { format!("Игра {} добавлена.", exe) } else { format!("Игра {} уже в списке.", exe) } })
+                }
+                Err(e) => json!({ "ok": false, "message": e }),
+            }
+        }
+        "game_remove" => {
+            let exe = body.get("exe").and_then(|v| v.as_str()).unwrap_or("");
+            let ok = crate::gamelist::remove(exe);
+            crate::gamemode::reload_list();
+            json!({ "ok": ok, "message": if ok { "Убрано из списка." } else { "Этой игры нет в списке." } })
+        }
+        "game_genre" => {
+            let exe = body.get("exe").and_then(|v| v.as_str()).unwrap_or("");
+            match body.get("genre").and_then(|v| v.as_str()).and_then(crate::gamemode::Genre::from_name) {
+                Some(g) if crate::gamelist::set_genre(exe, g) => {
+                    crate::gamemode::reload_list();
+                    json!({ "ok": true })
+                }
+                _ => json!({ "ok": false, "message": "Не удалось сменить жанр." }),
+            }
+        }
+        "game_scan" => match crate::gamescan::start() {
+            Ok(()) => json!({ "ok": true }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "game_opts" => {
+            let mut o = crate::gamelist::options();
+            if let Some(b) = body.get("overlay").and_then(|v| v.as_bool()) {
+                o.overlay = b;
+            }
+            if let Some(b) = body.get("sound").and_then(|v| v.as_bool()) {
+                o.sound = b;
+            }
+            crate::gamelist::set_options(o);
+            json!({ "ok": true })
+        }
+        "macro_delete" => {
+            let ok = crate::gamemacro::delete(body.get("macro").and_then(|v| v.as_str()).unwrap_or(""));
+            json!({ "ok": ok, "message": if ok { "Макрос удалён." } else { "Такого макроса нет." } })
+        }
         // updates: check, download, install — each one on a button (see updater.rs)
         "update_check" => match crate::updater::check() {
             Ok(()) => json!({ "ok": true }),
@@ -1063,6 +1115,7 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
             browser_window_closed();
             respond(&mut stream, "200 OK", "application/json", "{\"ok\":true}");
         }
+        ("GET", "/games") => respond(&mut stream, "200 OK", "application/json", &crate::gamemode::games_json().to_string()),
         ("GET", "/game") => respond(&mut stream, "200 OK", "application/json", &crate::gamemode::status_json().to_string()),
         ("GET", "/update") => respond(&mut stream, "200 OK", "application/json", &crate::updater::status_json().to_string()),
         ("GET", "/voice-install") => respond(&mut stream, "200 OK", "application/json", &crate::voice_install::status_json().to_string()),
