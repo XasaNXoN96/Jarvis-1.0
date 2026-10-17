@@ -42,7 +42,7 @@ Compression=lzma2
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64compatible
 WizardStyle=modern
-UninstallDisplayIcon={app}\jarvis-app.exe
+UninstallDisplayIcon={app}\jarvis-phoenix.ico
 SetupIconFile=..\resources\icons\icon.ico
 ; the language is always asked, even when Windows has one of them as its own language
 ShowLanguageDialog=yes
@@ -104,11 +104,14 @@ Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM jarvis-app.exe"; Flags: runh
 
 [Files]
 Source: "..\{#SrcDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+; the icon of the shortcuts lies in its own file under a new name: Windows keeps the pictures of shortcuts and programs in a cache by path, and
+; an old picture (the blue ring, the helmet) stayed on the desktop after an update; a new path is read again
+Source: "..\resources\icons\icon.ico"; DestDir: "{app}"; DestName: "jarvis-phoenix.ico"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\{#EditionName}"; Filename: "{app}\jarvis-app.exe"; WorkingDir: "{app}"
-Name: "{group}\{cm:ShortcutText}"; Filename: "{app}\jarvis-app.exe"; Parameters: "--text"; WorkingDir: "{app}"
-Name: "{autodesktop}\{#EditionName}"; Filename: "{app}\jarvis-app.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{group}\{#EditionName}"; Filename: "{app}\jarvis-app.exe"; WorkingDir: "{app}"; IconFilename: "{app}\jarvis-phoenix.ico"
+Name: "{group}\{cm:ShortcutText}"; Filename: "{app}\jarvis-app.exe"; Parameters: "--text"; WorkingDir: "{app}"; IconFilename: "{app}\jarvis-phoenix.ico"
+Name: "{autodesktop}\{#EditionName}"; Filename: "{app}\jarvis-app.exe"; WorkingDir: "{app}"; IconFilename: "{app}\jarvis-phoenix.ico"; Tasks: desktopicon
 
 [Run]
 ; the last page: the normal Jarvis (window, voice) is the main choice and is checked; the text mode is a second,
