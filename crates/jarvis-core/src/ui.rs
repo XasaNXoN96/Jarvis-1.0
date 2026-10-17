@@ -299,8 +299,16 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         }
         // Esc of the window: the voice stops at once (the phrase that is read and the ones waiting in the queue)
         "tts_stop" => {
+            // asked before the stop: did the voice really speak (the page lets Esc do its other things when it did not)
+            let was_speaking = crate::tts::is_speaking() || crate::tts::is_playing();
+            if was_speaking {
+                // (an AI answer still arriving stops too, or its next sentence would start the voice again)
+                if let Some(id) = crate::ai::store().active() {
+                    crate::ai::stop(&id);
+                }
+            }
             crate::tts::stop();
-            json!({ "ok": true })
+            json!({ "ok": true, "was_speaking": was_speaking })
         }
         "tts_toggle" => {
             let on = body.get("value").and_then(|v| v.as_bool()).unwrap_or(true);

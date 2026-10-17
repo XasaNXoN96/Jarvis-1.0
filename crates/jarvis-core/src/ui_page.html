@@ -665,6 +665,11 @@
   nav button:hover { background: #ff7a2f12; }
   .topbar { background: #0b090dae; border-bottom-color: #ff7a2f26; }
   nav { background: #07060acc; border-right-color: #ff7a2f22; }
+
+  /* the home page is clean: only the sphere and the line of input under it (the texts stay in the page for the scripts, they are just not shown) */
+  #page-home .h-top, #page-home .rail, #page-home .h-sum, #page-home .herotext, #page-home #state { display: none !important; }
+  #page-home .orbwrap, #page-home.big .orbwrap { width: min(100%, 640px, 68vh); }
+  #page-home .hero { justify-content: center; }
   /* the mini mode: a small strip over the other windows (window.rs makes the window small and puts it on top) */
   #mini { display: none; }
   body.mini .shell, body.mini #wincap, body.mini #wincap-zone { display: none !important; }
@@ -2686,13 +2691,18 @@ function winFullToggle() {
 $('#full-btn').onclick = () => setFull(!isFull);
 $('#full-exit').onclick = () => setFull(false);
 // one key handler: Esc does ONE thing — closes the dialog, else folds the big sphere, else leaves the full screen
-document.addEventListener('keydown', e => {
+document.addEventListener('keydown', async e => {
   // Alt+Enter: the window over the whole screen without its title bar <-> the usual window
   if (e.altKey && e.key === 'Enter') { e.preventDefault(); winFullToggle(); return; }
   if (e.key === 'F11') { e.preventDefault(); setFull(!isFull); return; }
   if (e.key !== 'Escape') return;
   // while Jarvis reads aloud, Esc stops the voice first (the other things Esc does wait for the next press)
   if (state === 'speaking' && !$('#close-dlg').classList.contains('on') && !pal.isOpen()) { e.preventDefault(); action('tts_stop').catch(() => {}); setState('idle'); return; }
+  // (the page state «speaking» lasts only a few seconds, but a long answer is read for much longer: the program itself says whether it speaks)
+  if (!$('#close-dlg').classList.contains('on') && !pal.isOpen()) {
+    const r = await action('tts_stop').catch(() => ({}));
+    if (r && r.was_speaking) { setState('idle'); return; }
+  }
   if ($('#close-dlg').classList.contains('on')) closeAnswer('cancel');
   else if (currentPage === 'home' && home().classList.contains('big')) setBig(false);
   else if (isFull) setFull(false);
