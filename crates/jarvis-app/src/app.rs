@@ -170,7 +170,7 @@ fn main_loop(text_cmd_rx: &Receiver<Incoming>, rt: &tokio::runtime::Runtime) -> 
 
         // a session is open (dictation, a question about a file): keep listening without the wake word,
         // but never while Jarvis itself is speaking
-        if jarvis_core::session::kind().is_some() && !jarvis_core::tts::is_speaking() {
+        if jarvis_core::session::kind().is_some() && !jarvis_core::tts::is_speaking() && jarvis_core::tts::since_speech_ms().map(|ms| ms >= 700).unwrap_or(true) {
             jarvis_core::LISTEN_NOW.store(true, std::sync::atomic::Ordering::SeqCst);
         }
 
@@ -304,11 +304,11 @@ impl Drop for ListeningGuard {
 // the pauses after which listening for commands ends: normal ones, and long ones while the game mode is on (the game mode itself
 // ends the listening: «выключи игровой режим»)
 fn silence_limit(normal: u32) -> u32 {
-    if jarvis_core::gamemode::keep_listening() { normal.saturating_mul(120) } else { normal }
+    if jarvis_core::gamemode::keep_listening() || jarvis_core::voiceprint::capturing() { normal.saturating_mul(120) } else { normal }
 }
 
 fn game_wait(normal: std::time::Duration) -> std::time::Duration {
-    if jarvis_core::gamemode::keep_listening() { std::time::Duration::from_secs(3600) } else { normal }
+    if jarvis_core::gamemode::keep_listening() || jarvis_core::voiceprint::capturing() { std::time::Duration::from_secs(3600) } else { normal }
 }
 
 fn recognize_command(
@@ -329,6 +329,9 @@ fn recognize_command(
     let mut start = SystemTime::now();
     let mut first_recognition = prefed_audio;
     let mut heard_own_voice = false;
+    // the audio of the phrase being said (for «Мой голос»: whose voice it is); it is cut at twenty seconds
+    let mut utt: Vec<i16> = Vec::new();
+    let utt_limit = sample_rate * 20;
     
     // longer silence threshold for commands (user might pause to think)
     // 5 seconds
@@ -347,7 +350,8 @@ fn recognize_command(
         recorder::read_microphone(frame_buffer);
         // Jarvis is speaking (an AI answer, a reply, a prompt of a session): the microphone hears that voice, so it
         // is not recognized as the user's next words; listening goes on with a fresh start when the voice is silent
-        if jarvis_core::tts::is_speaking() {
+        // (and for a moment after it: the room still rings with his last words)
+        if jarvis_core::tts::is_speaking() || jarvis_core::tts::since_speech_ms().map(|ms| ms < 700).unwrap_or(false) {
             heard_own_voice = true;
             continue;
         }
@@ -356,6 +360,7 @@ fn recognize_command(
             stt::reset_speech_recognizer();
             audio_processing::reset();
             audio_buffer.clear();
+            utt.clear();
             vad_state = VadState::WaitingForVoice;
             silence_frames = 0;
             start = SystemTime::now();
@@ -369,6 +374,9 @@ fn recognize_command(
                 if processed.is_voice {
                     // flush buffer to STT
                     for buffered_frame in audio_buffer.drain_all() {
+                        if utt.len() < utt_limit {
+                            utt.extend_from_slice(&buffered_frame);
+                        }
                         stt::recognize(&buffered_frame, false);
                     }
                     vad_state = VadState::VoiceActive;
@@ -386,7 +394,12 @@ fn recognize_command(
             
             VadState::VoiceActive => {
                 // feed to STT
+                if utt.len() < utt_limit {
+                    utt.extend_from_slice(frame_buffer);
+                }
                 if let Some(mut recognized_voice) = stt::recognize(frame_buffer, false) {
+                    // the audio of this phrase (the next phrase starts a new one)
+                    let phrase_audio = std::mem::take(&mut utt);
                     // what was said can be private (a message, a note): only its size goes to the log, the window shows the text
                     info!("Recognized voice: {} chars", recognized_voice.chars().count());
                     
@@ -395,6 +408,45 @@ fn recognize_command(
                     });
                     
                     recognized_voice = recognized_voice.to_lowercase();
+
+                    // the words of Jarvis himself that the microphone caught (his answer, a message read aloud): not a command, not a question
+                    // for the AI. Without this the voice that answers is heard, answered, heard again.
+                    if jarvis_core::tts::is_own_echo(&recognized_voice) {
+                        info!("Ignoring the own voice of Jarvis heard by the microphone ({} chars)", recognized_voice.chars().count());
+                        jarvis_core::uistate::log_event("info", "Эхо собственного голоса проигнорировано");
+                        stt::reset_speech_recognizer();
+                        vad_state = VadState::WaitingForVoice;
+                        silence_frames = 0;
+                        audio_buffer.clear();
+                        continue;
+                    }
+
+                    // «Мой голос»: recording the voice or testing it takes this phrase (it does not run as a command)
+                    if jarvis_core::voiceprint::capturing() {
+                        let msg = jarvis_core::voiceprint::take_capture(&phrase_audio, sample_rate as u32);
+                        info!("Voiceprint: {}", msg);
+                        stt::reset_speech_recognizer();
+                        vad_state = VadState::WaitingForVoice;
+                        silence_frames = 0;
+                        start = SystemTime::now();
+                        audio_buffer.clear();
+                        continue;
+                    }
+                    // «Слушать только мой голос»: another voice (a game, a film, a guest, Jarvis himself) is not a command
+                    if jarvis_core::voiceprint::is_active() {
+                        if let jarvis_core::voiceprint::Verdict::Refused { distance, threshold } = jarvis_core::voiceprint::check(&phrase_audio, sample_rate as u32) {
+                            info!("Voiceprint: a voice that is not the owner's was ignored (distance {:.2}, threshold {:.2})", distance, threshold);
+                            jarvis_core::uistate::log_event("info", &format!("Голос не распознан как ваш (расстояние {:.2}, порог {:.2}): фраза проигнорирована", distance, threshold));
+                            if jarvis_core::voiceprint::refusals_in_a_row() == 3 {
+                                ipc::send(IpcEvent::Output { text: "Jarvis три раза подряд не узнал ваш голос. Если это были вы: Настройки → Мой голос → «Мягче» или «Записать заново».".to_string() });
+                            }
+                            stt::reset_speech_recognizer();
+                            vad_state = VadState::WaitingForVoice;
+                            silence_frames = 0;
+                            audio_buffer.clear();
+                            continue;
+                        }
+                    }
                     
                     // check if wake word repeated (reactivate)
                     let wake_phrases = config::wake_phrases_now(&i18n::get_language());

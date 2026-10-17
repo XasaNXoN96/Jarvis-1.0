@@ -1506,9 +1506,67 @@ fn speak_inner(text: &str, dedupe: bool) {
     });
 }
 
+// ---- Jarvis' own voice must not be taken for the user: what was said lately and when the voice ended ----
+static SAID: Lazy<Mutex<std::collections::VecDeque<(std::time::Instant, String)>>> = Lazy::new(|| Mutex::new(std::collections::VecDeque::new()));
+static SPEECH_ENDED: Lazy<Mutex<Option<std::time::Instant>>> = Lazy::new(|| Mutex::new(None));
+
+// the words of a text for comparing: small letters, no punctuation, «ё» as «е»
+fn plain_words(text: &str) -> String {
+    text.to_lowercase().chars().map(|c| if c == 'ё' { 'е' } else if c.is_alphanumeric() { c } else { ' ' }).collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn note_said(text: &str) {
+    let mut q = SAID.lock();
+    if q.len() >= 8 {
+        q.pop_front();
+    }
+    q.push_back((std::time::Instant::now(), plain_words(text)));
+}
+
+// milliseconds since the voice of Jarvis ended (0 while it speaks); None: it has not spoken in this run
+pub fn since_speech_ms() -> Option<u64> {
+    if is_speaking() {
+        return Some(0);
+    }
+    SPEECH_ENDED.lock().map(|t| t.elapsed().as_millis() as u64)
+}
+
+// «what was heard» against «what was said»: the words that Jarvis said himself (the speakers are heard by the microphone, the room
+// repeats them). At least two words, and nearly all of them are among the words said lately.
+pub fn echo_of(heard: &str, said: &[String]) -> bool {
+    let words: Vec<String> = plain_words(heard).split_whitespace().map(|w| w.to_string()).collect();
+    if words.len() < 2 || words.iter().map(|w| w.chars().count()).sum::<usize>() < 8 {
+        return false;
+    }
+    let known: std::collections::HashSet<&str> = said.iter().flat_map(|t| t.split_whitespace()).collect();
+    let hits = words.iter().filter(|w| known.contains(w.as_str())).count();
+    hits * 100 >= words.len() * 85
+}
+
+// the heard phrase is Jarvis' own voice: while he speaks, and for a few seconds after, when what was heard consists of words that he said
+pub fn is_own_echo(heard: &str) -> bool {
+    let recent = match since_speech_ms() {
+        Some(ms) => ms < 6_000,
+        None => false,
+    };
+    if !recent {
+        return false;
+    }
+    let said: Vec<String> = SAID.lock().iter().filter(|(t, _)| t.elapsed().as_secs() < 30).map(|(_, s)| s.clone()).collect();
+    echo_of(heard, &said)
+}
+
 // says the phrase and returns when it is finished (or interrupted)
 fn speak_blocking(text: &str, lang: &str, generation: u64) {
     *SPEECH_STARTED.lock() = Some(std::time::Instant::now());
+    note_said(text);
+    struct Ended;
+    impl Drop for Ended {
+        fn drop(&mut self) {
+            *SPEECH_ENDED.lock() = Some(std::time::Instant::now());
+        }
+    }
+    let _ended = Ended;
     let text = text.to_string();
     let lang = lang.to_string();
     // voice choice from the settings: "" = automatic, "piper", "win:<name>".
@@ -1608,6 +1666,30 @@ pub fn list_voices() -> Vec<(String, String)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_own_words_of_jarvis_are_recognised_and_the_words_of_the_user_are_not() {
+        let said = vec![plain_words("Я не понял команду. Скажите, например: иди вперёд, стой, смени оружие.")];
+        // what the microphone caught of that: the same words
+        assert!(echo_of("не понял команду скажите например", &said));
+        assert!(echo_of("Скажите, например: иди вперёд", &said));
+        // the user's own phrase, even with a word or two in common
+        assert!(!echo_of("открой браузер", &said));
+        assert!(!echo_of("иди вперёд и смени оружие потом стреляй в голову", &said), "a longer new phrase");
+        // one word is never an echo (a command may be one word), and very short pieces are not either
+        assert!(!echo_of("стой", &said));
+        assert!(!echo_of("я не", &said));
+        assert!(!echo_of("", &said));
+        // nothing was said: nothing is an echo
+        assert!(!echo_of("не понял команду", &[]));
+    }
+
+    #[test]
+    fn the_time_since_the_voice_ended_is_known_and_an_echo_is_only_looked_for_soon_after_it() {
+        // (the voice never spoke in this test run or spoke in another test: the answer is a number or None, never a panic)
+        let _ = since_speech_ms();
+        assert!(!is_own_echo("") && !is_own_echo("стой"));
+    }
+
     use super::*;
 
     #[test]

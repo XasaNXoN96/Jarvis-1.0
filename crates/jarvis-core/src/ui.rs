@@ -236,7 +236,7 @@ fn paid_op_id(name: &str) -> Option<&'static str> {
         "remote_tunnel" => "ui_remote_tunnel",
         "screen_check" => "ui_screen_check",
         // the library of games (adding, choosing a file, scanning, starting, a new path, the label and the sound): a paid part, like the mode
-        "game_add" | "game_add_flagged" | "game_pick_file" | "game_launch" | "game_set_path" | "game_scan" | "game_opts" => "ui_game_library",
+        "game_add" | "game_add_flagged" | "game_pick_file" | "game_launch" | "game_set_path" | "game_scan" | "game_opts" | "aim_pick_model" => "ui_game_library",
         _ => return None,
     })
 }
@@ -595,6 +595,45 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
                 },
                 Err(why) => json!({ "ok": false, "message": why }),
             }
+        }
+        // the file of the detector model for the aim assist: chosen in the system window, copied to the folder of the program
+        "aim_pick_model" => match crate::gamedialog::pick_model() {
+            Ok(None) => json!({ "ok": true, "cancelled": true }),
+            Ok(Some(path)) => match crate::aimassist::install_model(std::path::Path::new(&path)) {
+                Ok(m) => json!({ "ok": true, "message": m }),
+                Err(e) => json!({ "ok": false, "message": e }),
+            },
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        // «Мой голос» (voiceprint.rs): recording the voice, testing it, the lock on / off, the strictness, deleting
+        "voice_enroll_start" | "voice_test_start" => {
+            if crate::MIC_MUTED.load(std::sync::atomic::Ordering::SeqCst) {
+                return json!({ "ok": false, "message": "Микрофон выключен: включите его, чтобы записать голос." });
+            }
+            if name == "voice_enroll_start" {
+                crate::voiceprint::start_enrollment();
+            } else {
+                crate::voiceprint::start_test();
+            }
+            // listen at once, without the wake word (like a click on the orb)
+            crate::LISTEN_NOW.store(true, std::sync::atomic::Ordering::SeqCst);
+            json!({ "ok": true })
+        }
+        "voice_enroll_cancel" => {
+            crate::voiceprint::cancel_enrollment();
+            json!({ "ok": true })
+        }
+        "voice_print_delete" => {
+            crate::voiceprint::delete();
+            json!({ "ok": true })
+        }
+        "voice_print_enable" => match crate::voiceprint::set_enabled(body.get("value").and_then(|v| v.as_bool()).unwrap_or(false)) {
+            Ok(()) => json!({ "ok": true }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "voice_print_strict" => {
+            crate::voiceprint::set_strictness(body.get("level").and_then(|v| v.as_u64()).unwrap_or(1).min(2) as u8);
+            json!({ "ok": true })
         }
         "game_scan" => match crate::gamescan::start() {
             Ok(()) => json!({ "ok": true }),
@@ -1198,6 +1237,7 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
             browser_window_closed();
             respond(&mut stream, "200 OK", "application/json", "{\"ok\":true}");
         }
+        ("GET", "/voiceprint") => respond(&mut stream, "200 OK", "application/json", &crate::voiceprint::status_json().to_string()),
         ("GET", "/games-list") => {
             let q = |k: &str| query_param(&req.query, k);
             let n = |k: &str, d: usize| q(k).parse::<usize>().unwrap_or(d);
@@ -1468,6 +1508,32 @@ pub fn open_browser_window() -> bool {
 
 #[cfg(test)]
 mod tests {
+    // «Мой голос» through the window: the buttons start the recording at once (without the wake word) and the lock cannot be on without a print
+    #[test]
+    fn the_voice_buttons_start_the_recording_the_listening_and_refuse_the_lock_without_a_print() {
+        let _l = crate::voiceprint::TEST_LOCK.lock();
+        crate::voiceprint::delete();
+        crate::MIC_MUTED.store(false, std::sync::atomic::Ordering::SeqCst);
+        crate::LISTEN_NOW.store(false, std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(run_action(&json!({ "name": "voice_print_enable", "value": true }))["ok"], false);
+        let r = run_action(&json!({ "name": "voice_enroll_start" }));
+        assert_eq!(r["ok"], true);
+        assert!(crate::voiceprint::capturing() && crate::LISTEN_NOW.load(std::sync::atomic::Ordering::SeqCst));
+        let st = crate::voiceprint::status_json();
+        assert_eq!((st["enrolling"].as_bool(), st["step"].as_u64(), st["total"].as_u64()), (Some(true), Some(0), Some(5)));
+        assert!(st["prompt"].as_str().unwrap().contains("Джарвис"));
+        run_action(&json!({ "name": "voice_enroll_cancel" }));
+        assert!(!crate::voiceprint::capturing());
+        // a muted microphone cannot record
+        crate::MIC_MUTED.store(true, std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(run_action(&json!({ "name": "voice_enroll_start" }))["ok"], false);
+        crate::MIC_MUTED.store(false, std::sync::atomic::Ordering::SeqCst);
+        crate::LISTEN_NOW.store(false, std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(run_action(&json!({ "name": "voice_print_strict", "level": 9 }))["ok"], true);
+        assert_eq!(crate::voiceprint::status_json()["strictness"], 2, "the level is kept in its range");
+        crate::voiceprint::delete();
+    }
+
     // ---- the library of games through the actions of the window (Admin edition: every action is allowed; the User edition is tested above) ----
     #[cfg(not(feature = "user-edition"))]
     mod library {
@@ -1832,7 +1898,7 @@ mod tests {
         answer.lines().next().unwrap_or("")
     }
 
-    const DATA: &[&str] = &["/state", "/remote", "/remote-qr", "/remote-qr-net", "/remote-qr-https", "/diag", "/diag-report", "/games", "/games-list", "/game-icon", "/games-report", "/settings", "/voices", "/modules", "/chats", "/scenarios", "/tasks", "/messages", "/telegram", "/commands", "/apps", "/files", "/avatar", "/voice-install", "/reaction-voices", "/devices"];
+    const DATA: &[&str] = &["/state", "/remote", "/remote-qr", "/remote-qr-net", "/remote-qr-https", "/diag", "/diag-report", "/games", "/games-list", "/game-icon", "/games-report", "/voiceprint", "/settings", "/voices", "/modules", "/chats", "/scenarios", "/tasks", "/messages", "/telegram", "/commands", "/apps", "/files", "/avatar", "/voice-install", "/reaction-voices", "/devices"];
 
     // a program on this computer (a web page is stopped before, by the Host) sends any header it likes: without the secret of the
     // window nothing is read and nothing is done, whatever else the request says

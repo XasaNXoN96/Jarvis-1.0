@@ -95,6 +95,7 @@ pub mod gameoverlay;
 pub mod gamelaunch;
 pub mod gamedialog;
 pub mod gameicon;
+pub mod voiceprint;
 pub mod aimassist;
 pub mod scenario;
 pub mod tasks;

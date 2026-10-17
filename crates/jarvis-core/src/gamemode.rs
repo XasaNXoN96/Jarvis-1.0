@@ -368,6 +368,29 @@ pub enum Tap {
     Weapon,
 }
 
+// the part of a person that the aim assist leads the crosshair to
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AimPoint {
+    Head,
+    Body,
+}
+
+impl AimPoint {
+    // the part of the height of the box of a person from the top (percent); None = the head of the configuration
+    pub fn pct(self) -> Option<u32> {
+        match self {
+            AimPoint::Head => None,
+            AimPoint::Body => Some(38),
+        }
+    }
+    pub fn title(self) -> &'static str {
+        match self {
+            AimPoint::Head => "в голову",
+            AimPoint::Body => "в корпус",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Action {
     On,
@@ -386,6 +409,10 @@ pub enum Action {
     CeaseFire,
     AimOn,
     AimOff,
+    // «целься в голову / в корпус»: aim down the sights and switch the aim assist on for this part of the body
+    AimOnAt(AimPoint),
+    // «прицельный огонь», «выстрели в голову»: aim, wait until the crosshair is on the target, one burst, aim off
+    AimShot(AimPoint),
     Tap(Tap),
     // «следующее / предыдущее оружие»: a notch of the mouse wheel (+1 up, -1 down)
     Wheel(i32),
@@ -581,10 +608,22 @@ pub fn parse(text: &str, active: bool) -> Option<Action> {
     if t.contains("не целься") || t.contains("опусти оружие") || t.contains("отставить прицел") || t.contains("не прицеливайся") {
         return Some(Action::AimOff);
     }
+    // aiming and firing: «целься в голову», «прицельный огонь», «выстрели в голову», «стреляй прицельно»
+    let aim_word = has(&t, &["целься", "цельс", "целис", "прицел", "нацел", "наведи", "наведис"]) || t.contains("на прицел");
+    let fire_word = has(&t, &["стрел", "огон", "огн", "пли", "выстрел", "стрельни", "пальни", "пали"]);
+    let body_word = has(&t, &["тело", "тела", "телу", "телом", "корпус", "груд", "туловищ"]);
+    let point = if body_word && !has(&t, &["голов", "башк", "череп"]) { AimPoint::Body } else { AimPoint::Head };
+    let names_point = body_word || has(&t, &["голов", "башк", "череп"]);
+    if (aim_word && fire_word) || (fire_word && names_point) {
+        return Some(Action::AimShot(point));
+    }
+    if aim_word && names_point {
+        return Some(Action::AimOnAt(point));
+    }
     if has(&t, &["целься", "прицел", "прицелис"]) {
         return Some(Action::AimOn);
     }
-    if has(&t, &["стреляй", "огонь", "пли", "выстрел", "стрельни", "пальни"]) {
+    if fire_word {
         let long = has(&t, &["очеред", "долго", "непрерывн", "много"]);
         return Some(Action::Fire(if long { 1200 } else { 250 }));
     }
@@ -910,6 +949,21 @@ impl Game {
                 }
                 String::new()
             }
+            Action::AimOnAt(point) => {
+                if !self.right_button {
+                    self.right_button = true;
+                    b.button(true, true);
+                }
+                crate::aimassist::set_point(point.pct());
+                // the aim assist leads the crosshair; without its model only the sights go up, and the user is told why
+                if crate::aimassist::is_enabled() {
+                    format!("Целюсь {}.", point.title())
+                } else {
+                    let why = crate::aimassist::set_enabled(true, &self.profile.aim);
+                    if crate::aimassist::is_enabled() { format!("Целюсь {}. {}", point.title(), why) } else { format!("Прицел поднят, но цель я не вижу: {}", why) }
+                }
+            }
+            Action::AimShot(_) => String::new(),
             Action::AimAssist(on) => crate::aimassist::set_enabled(*on, &self.profile.aim),
             // done by `handle` (it needs the window in front and the file of the list)
             Action::AddGame(_) | Action::ForgetGame | Action::MacroStart(_) | Action::MacroStop | Action::MacroDelete(_) | Action::Hint | Action::ReadText(_) => String::new(),
@@ -1338,6 +1392,83 @@ fn play_steps(exe: &str, steps: &[Step], gen: u64, wait: &dyn Fn(u64)) {
     }
 }
 
+// «прицельный огонь»: the sights up, the crosshair is led to the target by the aim assist, and when it is on the target — one burst. When
+// the target is not caught in time nothing is fired (a blind shot is what «огонь» is for), and the user is told.
+fn play_aimed_shot(exe: &str, point: AimPoint, gen: u64) {
+    use std::sync::atomic::Ordering::SeqCst;
+    let said = |text: &str| {
+        note_event(text);
+        if crate::tts::is_enabled() {
+            crate::tts::speak(text);
+        }
+    };
+    // the aim assist must be on (its model must be there): otherwise the program does not know what to shoot at
+    let on = {
+        let mut g = GAME.lock();
+        if !g.active || PLAY_GEN.load(SeqCst) != gen {
+            return;
+        }
+        crate::aimassist::set_point(point.pct());
+        if !crate::aimassist::is_enabled() {
+            let why = crate::aimassist::set_enabled(true, &g.profile.aim);
+            if !crate::aimassist::is_enabled() {
+                drop(g);
+                said(&format!("Не вижу, в кого стрелять: {}", why));
+                return;
+            }
+        }
+        let base = g.profile.clone();
+        g.profile = base.effective(exe);
+        with_backend(|b| g.apply(&Action::AimOn, b));
+        g.profile = base;
+        crate::aimassist::clear_locked();
+        true
+    };
+    if !on {
+        return;
+    }
+    // wait (up to a second and a half) until the crosshair is on the target
+    let mut caught = false;
+    for _ in 0..50 {
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        if PLAY_GEN.load(SeqCst) != gen {
+            return;
+        }
+        if crate::aimassist::locked_within(120) {
+            caught = true;
+            break;
+        }
+    }
+    let mut g = GAME.lock();
+    if !g.active || PLAY_GEN.load(SeqCst) != gen {
+        return;
+    }
+    if caught && may_fire(&g) {
+        with_backend(|b| g.apply(&Action::Fire(250), b));
+    }
+    with_backend(|b| g.apply(&Action::AimOff, b));
+    drop(g);
+    if !caught {
+        said("Цель не вижу.");
+    }
+}
+
+// the game is still in front and no anti-cheat program runs: the last look before a shot
+fn may_fire(g: &Game) -> bool {
+    in_game(&g.profile) && anticheat_running().is_none()
+}
+
+fn play_aimed(exe: String, point: AimPoint) {
+    use std::sync::atomic::Ordering::SeqCst;
+    let gen = PLAY_GEN.fetch_add(1, SeqCst) + 1;
+    #[cfg(test)]
+    {
+        let _ = (exe, point, gen);
+    }
+    #[cfg(not(test))]
+    std::thread::spawn(move || play_aimed_shot(&exe, point, gen));
+}
+
 fn play(exe: String, steps: Vec<Step>) {
     use std::sync::atomic::Ordering::SeqCst;
     let gen = PLAY_GEN.fetch_add(1, SeqCst) + 1;
@@ -1500,7 +1631,12 @@ pub fn in_game_now() -> bool {
 }
 
 pub fn aim_config() -> crate::aimassist::AimConfig {
-    GAME.lock().profile.aim.clone()
+    let mut c = GAME.lock().profile.aim.clone();
+    // «целься в корпус»: another part of the body than the head
+    if let Some(p) = crate::aimassist::point_override() {
+        c.head_pct = p;
+    }
+    c
 }
 
 // a relative move of the mouse for the aim assist
@@ -1777,6 +1913,13 @@ pub fn handle(text: &str) -> Option<String> {
                 let steps = steps.clone();
                 drop(g);
                 play(exe, steps);
+                crate::gameoverlay::confirm();
+                return Some(String::new());
+            }
+            if let Action::AimShot(point) = &action {
+                let point = *point;
+                drop(g);
+                play_aimed(exe, point);
                 crate::gameoverlay::confirm();
                 return Some(String::new());
             }
@@ -2113,6 +2256,98 @@ mod tests {
         assert!(unrecognised("иди в пёрет").is_none() && !keep_listening());
         TEST_FRONT.with(|t| *t.borrow_mut() = None);
         reset_global();
+    }
+
+    #[test]
+    fn aiming_and_firing_phrases_are_understood_in_all_the_ways_a_player_says_them() {
+        // plain fire is still fire
+        for t in ["огонь", "стреляй", "стрелять", "выстрели", "пли", "пали", "стрельни", "стрельба"] {
+            assert_eq!(p(t), Some(Action::Fire(250)), "{}", t);
+        }
+        assert_eq!(p("огонь очередью"), Some(Action::Fire(1200)));
+        assert_eq!(p("прекрати огонь"), Some(Action::CeaseFire));
+        assert_eq!(p("не стреляй"), Some(Action::CeaseFire));
+        // aimed fire: the sights, the target, one burst
+        for t in ["прицельный огонь", "стреляй прицельно", "целься и стреляй", "выстрели в голову", "стреляй в голову", "огонь по голове", "прицельный выстрел", "нацелься и пали"] {
+            assert_eq!(p(t), Some(Action::AimShot(AimPoint::Head)), "{}", t);
+        }
+        for t in ["стреляй в корпус", "выстрели в тело", "прицельный огонь в грудь"] {
+            assert_eq!(p(t), Some(Action::AimShot(AimPoint::Body)), "{}", t);
+        }
+        // aim without firing
+        for t in ["целься в голову", "прицелься в голову", "возьми на прицел голову", "нацелься в голову"] {
+            assert_eq!(p(t), Some(Action::AimOnAt(AimPoint::Head)), "{}", t);
+        }
+        assert_eq!(p("целься в корпус"), Some(Action::AimOnAt(AimPoint::Body)));
+        assert_eq!(p("целься"), Some(Action::AimOn));
+        assert_eq!(p("прицелься"), Some(Action::AimOn));
+        assert_eq!(p("не целься"), Some(Action::AimOff));
+        // the words of the aim assist are still its own
+        assert_eq!(p("включи помощь прицела"), Some(Action::AimAssist(true)));
+        assert_eq!(p("выключи помощь прицела"), Some(Action::AimAssist(false)));
+        // other talk with a «body» word is not a shot
+        assert_eq!(p("включи телевизор"), None);
+    }
+
+    #[test]
+    fn aiming_at_a_part_of_the_body_says_plainly_when_the_model_is_missing_and_the_shot_needs_a_target() {
+        let _l = GLOBAL.lock();
+        reset_global();
+        crate::aimassist::set_point(None);
+        let mut g = walking_game();
+        let mut r = Rec::default();
+        let answer = g.apply(&Action::AimOnAt(AimPoint::Body), &mut r);
+        // the sights went up (the right button is held), the part of the body is set, and the user is told that nothing leads the crosshair
+        assert!(g.right_button);
+        assert_eq!(crate::aimassist::point_override(), Some(38));
+        assert!(answer.starts_with("Прицел поднят, но цель я не вижу"), "{}", answer);
+        assert!(answer.contains("модели"), "{}", answer);
+        assert_eq!(aim_config().head_pct, 38, "the aim assist reads the part of the body that was asked for");
+        g.apply(&Action::AimOnAt(AimPoint::Head), &mut r);
+        assert_eq!(crate::aimassist::point_override(), None);
+        assert_eq!(aim_config().head_pct, Profile::default().aim.head_pct);
+        crate::aimassist::set_point(None);
+        reset_global();
+    }
+
+    #[test]
+    fn the_target_is_caught_when_the_crosshair_is_on_it_and_a_model_file_is_installed_without_losing_the_old_one() {
+        use crate::aimassist::*;
+        clear_locked();
+        assert!(!locked_within(10_000));
+        mark_locked_for_test();
+        assert!(locked_within(10_000));
+        clear_locked();
+        // the outcome of a frame: nobody / on the target / a step
+        let cfg = AimConfig::default();
+        let side = SIDE;
+        let frame = vec![0u8; side * side * 4];
+        let mut nobody = |_: &[f32], _: usize| -> Result<(Vec<f32>, usize, usize), String> { Ok((vec![0.0; 5 * 10], 5, 10)) };
+        assert_eq!(frame_outcome(&frame, side, &cfg, &mut nobody).unwrap(), Outcome::NoTarget);
+        // the file of a model
+        let dir = std::env::temp_dir().join(format!("jarvis-aim-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("мой детектор.onnx");
+        std::fs::write(&src, vec![1u8; 20_000]).unwrap();
+        let dest = dir.join("aim");
+        assert!(install_model_to(&src, &dest).unwrap().contains("Модель установлена"));
+        assert_eq!(std::fs::read(dest.join("player.onnx")).unwrap().len(), 20_000);
+        // a second one: the first is kept beside, not lost
+        std::fs::write(&src, vec![2u8; 30_000]).unwrap();
+        install_model_to(&src, &dest).unwrap();
+        assert_eq!(std::fs::read(dest.join("player.onnx")).unwrap().len(), 30_000);
+        let kept: Vec<_> = std::fs::read_dir(&dest).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().starts_with("player.onnx.bak-")).collect();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(std::fs::read(kept[0].path()).unwrap().len(), 20_000);
+        // not a model: a wrong name, a tiny file, a missing file
+        let txt = dir.join("a.txt");
+        std::fs::write(&txt, vec![1u8; 20_000]).unwrap();
+        assert!(install_model_to(&txt, &dest).is_err());
+        let tiny = dir.join("tiny.onnx");
+        std::fs::write(&tiny, b"x").unwrap();
+        assert!(install_model_to(&tiny, &dest).is_err());
+        assert!(install_model_to(&dir.join("нет.onnx"), &dest).is_err());
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

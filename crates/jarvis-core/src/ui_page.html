@@ -933,6 +933,13 @@
         <div class="setrow"><div class="l">Отчёт по играм<small>состояние режима, список игр, последний поиск и последние события: чтобы прислать разработчику. Ключей и сказанных фраз в отчёте нет</small></div>
           <div class="r"><button class="btn" id="gp-report" type="button">Копировать отчёт по играм</button></div></div>
       </div>
+      <div class="card"><h3><span class="ei">🎯</span>Помощь прицела (эксперимент, только офлайн-игры)</h3>
+        <div class="setrow"><div class="l">Состояние<small id="gp-aim-state"></small></div>
+          <div class="r"><button class="btn" id="gp-aim-on" type="button">Включить</button> <button class="btn" id="gp-aim-off" type="button">Выключить</button></div></div>
+        <div class="setrow"><div class="l">Файл модели<small>Нужен детектор людей в формате ONNX (например, YOLOv8, класс 0 «человек»). Без него Jarvis не видит цель: «целься в голову» только поднимает прицел, а «прицельный огонь» честно скажет, что стрелять не в кого. Файл копируется в папку программы; прежний сохраняется рядом.</small></div>
+          <div class="r"><button class="btn" id="gp-aim-model" type="button">Выбрать файл модели…</button></div></div>
+        <small class="dim">Фразы: «целься в голову» / «целься в корпус», «прицельный огонь» / «выстрели в голову», «не целься», «огонь» (обычный выстрел). Помощь работает только пока удерживается правая кнопка мыши в окне игры и выключена при каждом запуске. Как получить модель: docs/GAME-MODE.md.</small>
+      </div>
       <div class="card"><h3><span class="ei">⏺</span>Макросы голосом</h3>
         <div id="gp-macros"><div class="empty">Макросов нет.</div></div>
         <small class="dim">Запись: в игре скажите «Джарвис, запиши макрос комбо», сделайте нужные нажатия, скажите «сохрани макрос». Потом фраза «комбо» повторит их. Записываются только игровые клавиши и кнопки мыши, движение мыши не записывается. «Удали макрос комбо» — убрать.</small></div>
@@ -1215,6 +1222,16 @@
         <small class="dim" id="game-list"></small>
         <div class="msgline" id="game-msg"></div>
         <small class="dim">Фразы: иди вперёд / назад / влево / вправо, беги, стой · смотри налево / направо / вверх / вниз (можно «на 45 градусов», «чуть», «разворот») · стреляй, огонь очередью, прекрати огонь · целься, не целься · перезаряди, гранату, нож, прыгай, присядь, используй. «Стой» отпускает все клавиши. Работает только если окно игры впереди.<br>Гонки: газ, тормоз, влево, вправо, прямо, ручник, нитро, сигнал, смени камеру · Экшен/приключения: атакуй, тяжёлый удар, блок, перекат, инвентарь, карта, полечись, садись в машину · свои фразы для любого жанра — в game_profile.json (docs/GAME-MODE.md).</small>
+      </div>
+      <div class="card" data-cat="general" id="vp-card"><h3><span class="ei">🗣</span>Мой голос</h3>
+        <div class="setrow"><div class="l">Слушать только мой голос<small id="vp-hint">Jarvis будет игнорировать чужие голоса, игру, фильм и свой собственный голос. Сначала запишите образец своего голоса. По умолчанию выключено.</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="vp-on"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Образец голоса<small id="vp-note"></small></div>
+          <div class="r"><button class="btn primary" id="vp-rec" type="button">Записать мой голос</button> <button class="btn" id="vp-cancel" type="button" hidden>Отмена</button> <button class="btn" id="vp-test" type="button">Проверить</button> <button class="btn" id="vp-del" type="button">Удалить мой голос</button></div></div>
+        <div class="setrow"><div class="l">Строгость<small>«Мягче» реже отказывает вам, но легче пропускает похожие голоса</small></div>
+          <div class="r"><select id="vp-strict"><option value="0">Мягче</option><option value="1">Обычная</option><option value="2">Строже</option></select></div></div>
+        <small class="dim" id="vp-stat"></small>
+        <small class="dim">Это простая защита (экспериментально): голос различается по тембру и высоте. Она может ошибаться на похожих голосах и в шумной комнате и не защищает от записи вашего голоса. Хранятся только числа (без звука), на этом компьютере. Очень короткие команды из одного слова пропускаются без проверки. Отказы видны в «Диагностике» с расстоянием и порогом.</small>
       </div>
       <div class="card" data-cat="general" id="upd-card"><h3><span class="ei">⟳</span>Обновления</h3>
         <div class="setrow"><div class="l">Версия программы<small id="upd-hint">Проверка и установка обновлений только по вашей кнопке</small></div>
@@ -2744,6 +2761,8 @@ async function gpSummary() {
   $('#gp-total').textContent = g.total;
   $('#gp-state').textContent = (st.active ? (st.in_game ? 'включён, игра в фокусе' : 'включён, окно игры не впереди') : 'выключен') + (st.anticheat ? ' · запущена защита от читов (' + st.anticheat + '): режим не работает' : '');
   const o = g.options || {}; $('#gp-overlay').checked = !!o.overlay; $('#gp-sound').checked = !!o.sound;
+  const a = st.aim || {};
+  $('#gp-aim-state').textContent = a.enabled ? 'включена (' + (a.frames || 0) + ' кадров' + (a.last_frame_ms ? ', ' + a.last_frame_ms + ' мс на кадр' : '') + ')' : (a.problem ? 'выключена: ' + a.problem : (a.model_found ? 'выключена, файл модели найден' : 'выключена: нет файла модели (выберите его кнопкой ниже)'));
   // the recent games are drawn again only when they changed
   const sig = JSON.stringify([g.recent.map(x => [x.id, x.icon_v, x.launch, x.name]), g.total]);
   if (sig !== GP.sig) { GP.sig = sig; if (GP.mode === 'recent') gpDrawRecent(); }
@@ -2898,10 +2917,30 @@ $('#gp-scan').onclick = async () => { const r = await action('game_scan').catch(
 
 // ---- the mode, the label, the sound, the report ----
 $('#gp-report').onclick = async () => { try { const t = await (await fetch('/games-report')).text(); await copyText(t, $('#gp-report')); gpMsg('Отчёт скопирован', true); } catch (e) { gpMsg('Не удалось скопировать', false); } };
+$('#gp-aim-on').onclick = async () => { const r = await action('game_aim', { value: true }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gpSummary(); };
+$('#gp-aim-off').onclick = async () => { const r = await action('game_aim', { value: false }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gpSummary(); };
+$('#gp-aim-model').onclick = async () => { $('#gp-aim-model').disabled = true; const r = await action('aim_pick_model').catch(() => ({ ok: false, message: 'Не удалось связаться с программой.' })); $('#gp-aim-model').disabled = false; if (!r.cancelled) gpMsg(r.message, r.ok !== false); gpSummary(); };
 $('#gp-on').onclick = async () => { const r = await action('game_mode', { value: true }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gpSummary(); };
 $('#gp-off').onclick = async () => { const r = await action('game_mode', { value: false }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gpSummary(); };
 $('#gp-overlay').onchange = async e => { const r = await action('game_opts', { overlay: e.target.checked }).catch(() => ({})); if (r.ok === false) { e.target.checked = !e.target.checked; gpMsg(r.message, false); } };
 $('#gp-sound').onchange = async e => { const r = await action('game_opts', { sound: e.target.checked }).catch(() => ({})); if (r.ok === false) { e.target.checked = !e.target.checked; gpMsg(r.message, false); } };
+// ---- «Мой голос» (settings) ----
+async function vpRefresh() {
+  let v; try { v = await (await fetch('/voiceprint')).json(); } catch (e) { return; }
+  $('#vp-on').checked = !!v.enabled; $('#vp-on').disabled = !v.enrolled;
+  $('#vp-strict').value = String(v.strictness);
+  $('#vp-rec').textContent = v.enrolled ? 'Записать заново' : 'Записать мой голос';
+  $('#vp-rec').hidden = !!v.enrolling; $('#vp-cancel').hidden = !v.enrolling;
+  $('#vp-test').disabled = !v.enrolled || !!v.enrolling; $('#vp-del').disabled = !v.enrolled && !v.enrolling;
+  $('#vp-note').textContent = v.note || (v.enrolled ? 'Образец записан.' : 'Образец не записан.');
+  $('#vp-stat').textContent = v.enrolled ? 'Принято фраз: ' + v.accepted + ', отклонено: ' + v.rejected + (v.last ? ' · последняя: ' + (v.last.ok ? 'принята' : 'отклонена') + ' (расстояние ' + v.last.distance.toFixed(2) + ', порог ' + v.last.threshold.toFixed(2) + ')' : '') : '';
+}
+async function vpAct(name, extra) { const r = await action(name, extra).catch(() => ({})); if (r.ok === false) $('#vp-note').textContent = r.message || 'Не получилось.'; vpRefresh(); }
+$('#vp-rec').onclick = () => vpAct('voice_enroll_start'); $('#vp-cancel').onclick = () => vpAct('voice_enroll_cancel'); $('#vp-test').onclick = () => vpAct('voice_test_start');
+$('#vp-del').onclick = () => { if (confirm('Удалить записанный образец голоса? Jarvis снова будет слушать всех.')) vpAct('voice_print_delete'); };
+$('#vp-on').onchange = e => vpAct('voice_print_enable', { value: e.target.checked }); $('#vp-strict').onchange = e => vpAct('voice_print_strict', { level: +e.target.value });
+vpRefresh(); setInterval(() => { if (currentPage === 'settings') vpRefresh(); }, 1500);
+
 gpSetView(GP.view, true); gpSetSort(GP.sort, true); gpMenus();
 gpSummary(); setInterval(() => { if ($('#page-games').classList.contains('active')) gpSummary(); }, 4000);
 

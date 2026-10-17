@@ -214,6 +214,24 @@ pub fn status_json(cfg: &AimConfig) -> Value {
 // one frame: a picture (BGRA, `side`×`side`) -> the step of the mouse (None: no target). The session is a closure, so that the
 // tests can put a fake detector in its place.
 pub fn frame_step(bgra: &[u8], side: usize, cfg: &AimConfig, detect: &mut dyn FnMut(&[f32], usize) -> Result<(Vec<f32>, usize, usize), String>) -> Result<Option<(i32, i32)>, String> {
+    Ok(match frame_outcome(bgra, side, cfg, detect)? {
+        Outcome::Step(dx, dy) => Some((dx, dy)),
+        _ => None,
+    })
+}
+
+// what one frame showed: nobody in reach, the crosshair is on the target already, or a step of the mouse towards it
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Outcome {
+    NoTarget,
+    OnTarget,
+    Step(i32, i32),
+}
+
+// the crosshair is «on the target» when the step is no more than this (pixels, both axes together)
+pub const LOCK_PX: i32 = 10;
+
+pub fn frame_outcome(bgra: &[u8], side: usize, cfg: &AimConfig, detect: &mut dyn FnMut(&[f32], usize) -> Result<(Vec<f32>, usize, usize), String>) -> Result<Outcome, String> {
     if bgra.len() != side * side * 4 {
         return Err("кадр неверного размера".into());
     }
@@ -229,7 +247,75 @@ pub fn frame_step(bgra: &[u8], side: usize, cfg: &AimConfig, detect: &mut dyn Fn
     let dets = decode(&out, channels, anchors, cfg.class, cfg.conf_pct as f32 / 100.0).ok_or("ответ модели не подходит по форме")?;
     let dets = nms(dets, 0.5);
     let centre = (side as f32 / 2.0, side as f32 / 2.0);
-    Ok(pick(&dets, centre, cfg).map(|(_, head)| step((head.0 - centre.0, head.1 - centre.1), cfg.strength_pct, 40.0)).filter(|s| *s != (0, 0)))
+    Ok(match pick(&dets, centre, cfg) {
+        None => Outcome::NoTarget,
+        Some((_, head)) => match step((head.0 - centre.0, head.1 - centre.1), cfg.strength_pct, 40.0) {
+            (0, 0) => Outcome::OnTarget,
+            (dx, dy) => Outcome::Step(dx, dy),
+        },
+    })
+}
+
+// ---- the point of the body that is aimed at, and «the target is caught» (for «целься в голову» and «прицельный огонь») ----
+static POINT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+static LOCKED_MS: AtomicU64 = AtomicU64::new(0);
+static CLOCK: Lazy<std::time::Instant> = Lazy::new(std::time::Instant::now);
+
+// the part of the height (from the top, percent) that is aimed at instead of the head of the configuration; None = the head
+pub fn set_point(pct: Option<u32>) {
+    POINT.store(pct.unwrap_or(0).min(90), Ordering::SeqCst);
+}
+
+pub fn point_override() -> Option<u32> {
+    Some(POINT.load(Ordering::SeqCst)).filter(|p| *p != 0)
+}
+
+#[cfg(test)]
+pub fn mark_locked_for_test() {
+    mark_locked();
+}
+
+#[allow(dead_code)]
+fn mark_locked() {
+    LOCKED_MS.store(CLOCK.elapsed().as_millis() as u64 + 1, Ordering::SeqCst);
+}
+
+// the crosshair was on a target within the last `ms` milliseconds
+pub fn locked_within(ms: u64) -> bool {
+    let at = LOCKED_MS.load(Ordering::SeqCst);
+    at != 0 && (CLOCK.elapsed().as_millis() as u64).saturating_sub(at) <= ms
+}
+
+pub fn clear_locked() {
+    LOCKED_MS.store(0, Ordering::SeqCst);
+}
+
+// the file of a model that the user chose is put into the folder of the program under the name the aim assist reads. An older file
+// is not overwritten: it is kept beside as player.onnx.bak-<time>.
+pub fn install_model_to(src: &std::path::Path, dir: &std::path::Path) -> Result<String, String> {
+    let name = src.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase();
+    if !name.ends_with(".onnx") {
+        return Err("Нужен файл модели с расширением .onnx.".into());
+    }
+    let size = std::fs::metadata(src).map_err(|_| "Файл модели не найден.".to_string())?.len();
+    if !(10_000..=1_500_000_000).contains(&size) {
+        return Err("Файл не похож на модель: он слишком маленький или слишком большой.".into());
+    }
+    std::fs::create_dir_all(dir).map_err(|e| format!("Не удалось создать папку модели: {}.", e))?;
+    let target = dir.join("player.onnx");
+    if target.exists() {
+        let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let kept = dir.join(format!("player.onnx.bak-{}", secs));
+        if !kept.exists() {
+            std::fs::rename(&target, &kept).map_err(|e| format!("Не удалось сохранить прежнюю модель: {}.", e))?;
+        }
+    }
+    std::fs::copy(src, &target).map_err(|e| format!("Не удалось скопировать модель: {}.", e))?;
+    Ok(format!("Модель установлена: {} ({} МБ). Включите помощь прицела.", target.display(), size / 1_048_576 + 1))
+}
+
+pub fn install_model(src: &std::path::Path) -> Result<String, String> {
+    install_model_to(src, &crate::APP_DIR.join("aim"))
 }
 
 #[cfg(all(target_os = "windows", feature = "ort"))]
@@ -328,9 +414,15 @@ mod run {
                     continue;
                 };
                 let s = session.as_mut().unwrap();
-                match frame_step(&frame, SIDE, &cfg, &mut |rgb, side| detect(s, rgb, side)) {
-                    Ok(Some((dx, dy))) => crate::gamemode::mouse_rel(dx, dy),
-                    Ok(None) => {}
+                match frame_outcome(&frame, SIDE, &cfg, &mut |rgb, side| detect(s, rgb, side)) {
+                    Ok(Outcome::Step(dx, dy)) => {
+                        crate::gamemode::mouse_rel(dx, dy);
+                        if dx.abs() + dy.abs() <= LOCK_PX {
+                            mark_locked();
+                        }
+                    }
+                    Ok(Outcome::OnTarget) => mark_locked(),
+                    Ok(Outcome::NoTarget) => {}
                     Err(e) => {
                         *PROBLEM.lock() = e;
                         ENABLED.store(false, Ordering::SeqCst);

@@ -2,8 +2,17 @@
 //! chooses the program of a game and confirms. Only the path comes back; nothing is opened, read or started by this module.
 //! (A shortcut that the user chooses is resolved by Windows to the program it points to.) Not Windows: there is no such window.
 
-#[cfg(target_os = "windows")]
 pub fn pick_exe() -> Result<Option<String>, String> {
+    pick("Программы игр (*.exe)\0*.exe\0\0", "Выберите программу игры")
+}
+
+// the file of a detector model for the aim assist
+pub fn pick_model() -> Result<Option<String>, String> {
+    pick("Модели ONNX (*.onnx)\0*.onnx\0\0", "Выберите файл модели (.onnx)")
+}
+
+#[cfg(target_os = "windows")]
+fn pick(filter: &str, title: &str) -> Result<Option<String>, String> {
     use winapi::um::combaseapi::{CoInitializeEx, CoUninitialize};
     use winapi::um::commdlg::{CommDlgExtendedError, GetOpenFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_HIDEREADONLY, OFN_NOCHANGEDIR, OFN_PATHMUSTEXIST, OPENFILENAMEW};
     use winapi::um::objbase::COINIT_APARTMENTTHREADED;
@@ -11,8 +20,8 @@ pub fn pick_exe() -> Result<Option<String>, String> {
     let wide = |s: &str| -> Vec<u16> { s.encode_utf16().chain(std::iter::once(0)).collect() };
     let mut buf = vec![0u16; 32768];
     // «text\0pattern\0 … \0\0»
-    let filter: Vec<u16> = "Программы игр (*.exe)\0*.exe\0\0".encode_utf16().collect();
-    let title = wide("Выберите программу игры");
+    let filter: Vec<u16> = filter.encode_utf16().collect();
+    let title = wide(title);
     unsafe {
         let mut ofn: OPENFILENAMEW = std::mem::zeroed();
         ofn.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
@@ -40,7 +49,7 @@ pub fn pick_exe() -> Result<Option<String>, String> {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn pick_exe() -> Result<Option<String>, String> {
+fn pick(_filter: &str, _title: &str) -> Result<Option<String>, String> {
     Err("Выбор файла через окно Windows работает только в Windows. Впишите полный путь вручную.".into())
 }
 
