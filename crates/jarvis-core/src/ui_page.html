@@ -681,7 +681,7 @@
 </style>
 </head>
 <body>
-<div id="bgfx" aria-hidden="true"><div class="wm"></div><canvas id="embers"></canvas></div>
+<div id="bgfx" aria-hidden="true"><canvas id="embers"></canvas></div>
 <div id="wincap-zone"></div>
 <div id="wincap" role="toolbar" aria-label="Окно"><span>ДЖАРВИС</span><span class="grow"></span><button type="button" id="wc-mini" title="Мини-режим: маленькое окно поверх других">&#9645;</button><button type="button" id="wc-min" title="Свернуть">&#8212;</button><button type="button" id="wc-full" title="Окно / весь экран (Alt+Enter)">&#10064;</button><button type="button" id="wc-close" title="Закрыть">&#10005;</button></div>
 <div id="mini" data-s="idle" role="region" aria-label="Мини-режим Джарвиса">
@@ -994,6 +994,10 @@
           <div class="r"><input type="range" id="gp-aim-conf" min="10" max="95" step="5"><b id="gp-aim-conf-v" style="min-width:42px;text-align:right"></b></div></div>
         <div class="setrow"><div class="l">Наименьший размер человека, пикселей<small>Рамки ниже этой высоты (далёкие или обрезанные) не берутся в цель</small></div>
           <div class="r"><input type="number" id="gp-aim-min" min="0" max="400" step="2" style="width:76px"> <button class="btn" id="gp-aim-save" type="button">Сохранить настройки</button></div></div>
+        <div class="setrow"><div class="l">Где перекрестие в игре, %<small>от середины окна: по горизонтали (вправо +) и по вертикали (вверх −). От первого лица оба 0. От третьего лица перекрестие обычно выше середины: попробуйте по вертикали −9. Квадрат кадра берётся вокруг этой точки</small></div>
+          <div class="r"><input type="number" id="gp-aim-cx" min="-40" max="40" step="1" style="width:64px" title="по горизонтали"> <input type="number" id="gp-aim-cy" min="-40" max="40" step="1" style="width:64px" title="по вертикали"></div></div>
+        <div class="setrow"><div class="l">Наибольший размер человека, % кадра<small>Выше этого не берутся в цель: ваш собственный персонаж и напарник у камеры очень крупные. Союзников той же модели от врагов отличить нельзя: стреляйте там, где их нет</small></div>
+          <div class="r"><input type="number" id="gp-aim-max" min="20" max="100" step="5" style="width:76px"></div></div>
         <div class="setrow"><div class="l">Диагностика<small>модель, источник и проверка целостности, среда выполнения, устройство, захват экрана, время кадра, ошибки. Ключей, снимков экрана и голоса в отчёте нет</small></div>
           <div class="r"><button class="btn" id="gp-aim-report" type="button">Копировать отчёт</button></div></div>
         <div class="msgline" id="gp-aim-msg" role="status" style="padding:6px 0"></div>
@@ -2633,8 +2637,8 @@ window.addEventListener('resize', syncNativeFull); syncNativeFull(); setTimeout(
   if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const g = cv.getContext('2d'); let w = 0, h = 0, parts = [], last = 0;
   const fit = () => { const d = Math.min(window.devicePixelRatio || 1, 1.5); w = cv.width = Math.floor(innerWidth * d); h = cv.height = Math.floor(innerHeight * d); };
-  const mk = (init) => ({ x: Math.random() * w, y: init ? Math.random() * h : h + 10, r: (0.6 + Math.random() * 1.8) * (w / 1600 + .6), v: 0.25 + Math.random() * 0.8, dx: (Math.random() - .5) * 0.35, ph: Math.random() * 6.28, hue: 18 + Math.random() * 28 });
-  fit(); const N = Math.max(24, Math.min(70, Math.floor(innerWidth / 24))); parts = Array.from({ length: N }, () => mk(true));
+  const mk = (init) => ({ x: Math.random() * w, y: init ? Math.random() * h : h + 10, r: (0.7 + Math.random() * 2.2) * (w / 1600 + .6), v: 0.25 + Math.random() * 0.8, dx: (Math.random() - .5) * 0.35, ph: Math.random() * 6.28, hue: 18 + Math.random() * 28 });
+  fit(); const N = Math.max(70, Math.min(170, Math.floor(innerWidth / 11))); parts = Array.from({ length: N }, () => mk(true));
   addEventListener('resize', fit);
   const tick = t => {
     requestAnimationFrame(tick);
@@ -2642,7 +2646,7 @@ window.addEventListener('resize', syncNativeFull); syncNativeFull(); setTimeout(
     g.clearRect(0, 0, w, h);
     for (const p of parts) {
       p.y -= p.v; p.x += p.dx + Math.sin(t / 900 + p.ph) * 0.25;
-      const life = Math.max(0, p.y / h), a = (0.15 + 0.55 * life) * (0.65 + 0.35 * Math.sin(t / 220 + p.ph));
+      const life = Math.max(0, p.y / h), a = (0.2 + 0.6 * life) * (0.65 + 0.35 * Math.sin(t / 220 + p.ph));
       if (p.y < -10) Object.assign(p, mk(false));
       g.beginPath(); g.fillStyle = 'hsla(' + p.hue + ',100%,' + (55 + 20 * (1 - life)) + '%,' + a.toFixed(3) + ')';
       g.shadowColor = 'hsla(' + p.hue + ',100%,55%,.9)'; g.shadowBlur = 8; g.arc(p.x, p.y, p.r, 0, 6.2832); g.fill();
@@ -3082,7 +3086,7 @@ async function aimRefresh() {
   $('#gp-aim-devnote').textContent = (a.directml_build ? 'В этой сборке видеокарта (DirectML) подключена; если она не запустится, Jarvis сам перейдёт на процессор. ' : 'В этой сборке видеокарта (DirectML) не подключена: любой выбор работает на процессоре. ') + 'Видеокарта не обязательно быстрее для такой модели.';
   if (!AIM.loaded && run.settings) {
     AIM.loaded = true; const s = run.settings;
-    $('#gp-aim-device').value = s.device; $('#gp-aim-side').value = String(s.side); $('#gp-aim-fps').value = s.fps; $('#gp-aim-conf').value = s.conf; $('#gp-aim-conf-v').textContent = s.conf + '%'; $('#gp-aim-min').value = s.min_size;
+    $('#gp-aim-device').value = s.device; $('#gp-aim-side').value = String(s.side); $('#gp-aim-fps').value = s.fps; $('#gp-aim-conf').value = s.conf; $('#gp-aim-conf-v').textContent = s.conf + '%'; $('#gp-aim-min').value = s.min_size; $('#gp-aim-cx').value = s.cx; $('#gp-aim-cy').value = s.cy; $('#gp-aim-max').value = s.max_size;
   }
   clearTimeout(AIM.timer); if (busy) AIM.timer = setTimeout(aimRefresh, 700);
 }
@@ -3093,7 +3097,7 @@ $('#gp-aim-cancel').onclick = () => aimDo('aim_model_cancel');
 $('#gp-aim-check').onclick = () => aimDo('aim_model_check');
 $('#gp-aim-conf').oninput = () => { $('#gp-aim-conf-v').textContent = $('#gp-aim-conf').value + '%'; };
 $('#gp-aim-save').onclick = async () => {
-  const r = await aimDo('aim_settings', { settings: { device: $('#gp-aim-device').value, side: +$('#gp-aim-side').value, fps: +$('#gp-aim-fps').value, conf: +$('#gp-aim-conf').value, min_size: +$('#gp-aim-min').value } });
+  const r = await aimDo('aim_settings', { settings: { device: $('#gp-aim-device').value, side: +$('#gp-aim-side').value, fps: +$('#gp-aim-fps').value, conf: +$('#gp-aim-conf').value, min_size: +$('#gp-aim-min').value, max_size: +$('#gp-aim-max').value, cx: +$('#gp-aim-cx').value, cy: +$('#gp-aim-cy').value } });
   if (r.ok) AIM.loaded = false;
 };
 $('#gp-aim-report').onclick = async () => { try { const t = await (await fetch('/aim-report')).text(); await copyText(t, $('#gp-aim-report')); gpMsg('Отчёт по помощи прицела скопирован', true); } catch (e) { gpMsg('Не удалось скопировать', false); } };

@@ -2351,7 +2351,7 @@ mod tests {
         let frame = vec![0u8; side * side * 4];
         let spec = crate::aimdetect::ModelSpec { layout: crate::aimdetect::Layout::ChannelsFirst, input_w: side, input_h: side, classes: 1, anchors: 10 };
         let mut nobody = |_: &[f32]| -> Result<crate::aimdetect::RawOut, String> { Ok(crate::aimdetect::RawOut { data: vec![0.0; 5 * 10], dims: vec![1, 5, 10] }) };
-        assert_eq!(frame_outcome(&frame, side, &cfg, &spec, &mut nobody).unwrap().outcome, Outcome::NoTarget);
+        assert_eq!(frame_outcome(&frame, side, &cfg, &spec, (32.0, 32.0), &mut nobody).unwrap().outcome, Outcome::NoTarget);
     }
 
     #[test]

@@ -528,7 +528,7 @@ pub fn report_text(cfg: &AimConfig) -> String {
     r.push_str(&format!("Среда выполнения: ONNX Runtime {} (Python не нужен)\n", if st["runtime"].as_bool().unwrap_or(false) { "встроен в программу" } else { "НЕ встроен в эту сборку" }));
     r.push_str(&format!("Устройство: выбрано «{}»; сейчас: {}\n", eff.device.title(), aim["device_used"].as_str().filter(|d| !d.is_empty()).unwrap_or("модель ещё не запускалась")));
     r.push_str(&format!("DirectML в сборке: {}\n", yn(cfg!(feature = "directml"))));
-    r.push_str(&format!("Настройки: кадр {}×{}, до {} кадров/с, порог {}%, мин. размер человека {} пикс.\n", eff.side, eff.side, eff.fps, eff.conf_pct, eff.min_size_px));
+    r.push_str(&format!("Настройки: кадр {}×{}, до {} кадров/с, порог {}%, размер человека {}…{}% кадра (мин. {} пикс.), перекрестие {}/{} % от середины\n", eff.side, eff.side, eff.fps, eff.conf_pct, 0, eff.max_size_pct, eff.min_size_px, eff.cx_pct, eff.cy_pct));
     r.push_str(&format!("Помощь прицела: {} (состояние: {}, поток: {})\n", if aim["enabled"].as_bool().unwrap_or(false) { "включена" } else { "выключена" }, aim["state"].as_str().unwrap_or(""), yn(aim["thread"].as_bool().unwrap_or(false))));
     r.push_str(&format!("Захват экрана: {}\n", aim["capture"].as_str().unwrap_or("")));
     r.push_str(&format!("Время кадра: {} мс; найдено людей: {}; кадров обработано: {}\n", aim["last_frame_ms"], aim["objects"], aim["frames"]));

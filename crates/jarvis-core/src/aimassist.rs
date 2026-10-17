@@ -80,11 +80,17 @@ pub struct AimConfig {
     pub fps: u32,
     // a person whose box is lower than this (pixels of the screen) is not taken: far away or a part of something
     pub min_size_px: u32,
+    // where the crosshair is in the window of the game, percent of its width / height from the middle (a game from the third person keeps it
+    // higher than the middle, about -9 for the height); the square that is looked at is taken around that point
+    pub cx_pct: i32,
+    pub cy_pct: i32,
+    // a person higher than this part of the picture is not taken (the character of the player himself, a companion at the camera): percent
+    pub max_size_pct: u32,
 }
 
 impl Default for AimConfig {
     fn default() -> Self {
-        AimConfig { model: None, strength_pct: 25, head_pct: 12, radius_px: 260, conf_pct: 45, class: 0, device: Device::Auto, side: DEFAULT_SIDE, fps: 30, min_size_px: 24 }
+        AimConfig { model: None, strength_pct: 40, head_pct: 12, radius_px: 260, conf_pct: 45, class: 0, device: Device::Auto, side: DEFAULT_SIDE, fps: 30, min_size_px: 24, cx_pct: 0, cy_pct: 0, max_size_pct: 65 }
     }
 }
 
@@ -122,6 +128,17 @@ pub fn apply_json(c: &mut AimConfig, v: &Value) -> Result<(), String> {
     }
     if let Some(n) = num("min_size", 0, 400)? {
         c.min_size_px = n;
+    }
+    if let Some(n) = num("max_size", 20, 100)? {
+        c.max_size_pct = n;
+    }
+    for (k, slot) in [("cx", &mut c.cx_pct), ("cy", &mut c.cy_pct)] {
+        if let Some(x) = v.get(k) {
+            match x.as_i64() {
+                Some(n) if (-40..=40).contains(&n) => *slot = n as i32,
+                _ => return Err(format!("aim.{} должно быть числом от -40 до 40", k)),
+            }
+        }
     }
     if let Some(d) = v.get("device") {
         c.device = d.as_str().and_then(Device::from_name).ok_or("aim.device: auto, cpu или directml")?;
@@ -165,7 +182,7 @@ fn read_overlay() -> Value {
 pub fn save_settings(patch: &Value, base: &AimConfig) -> Result<AimConfig, String> {
     let Some(obj) = patch.as_object() else { return Err("настройки должны быть объектом".into()) };
     // only the keys of the page (the path of a model is chosen with the file window, not typed here)
-    let allowed = ["device", "side", "fps", "conf", "min_size", "strength", "head", "radius"];
+    let allowed = ["device", "side", "fps", "conf", "min_size", "max_size", "cx", "cy", "strength", "head", "radius"];
     if obj.keys().any(|k| !allowed.contains(&k.as_str())) {
         return Err("неизвестная настройка".into());
     }
@@ -314,7 +331,7 @@ pub fn frame_is_blank(bgra: &[u8]) -> bool {
 
 // A picture (BGRA, `side`×`side`) -> what to do with the mouse. The model is a closure, so that the tests can put a fake one in its place;
 // the picture is prepared for the model, the answer is read by the layout of the model, the boxes are scaled back to the picture.
-pub fn frame_outcome(bgra: &[u8], side: usize, cfg: &AimConfig, spec: &ModelSpec, detect: &mut dyn FnMut(&[f32]) -> Result<RawOut, String>) -> Result<Frame, String> {
+pub fn frame_outcome(bgra: &[u8], side: usize, cfg: &AimConfig, spec: &ModelSpec, crosshair: (f32, f32), detect: &mut dyn FnMut(&[f32]) -> Result<RawOut, String>) -> Result<Frame, String> {
     if side == 0 || bgra.len() != side * side * 4 {
         return Err("кадр неверного размера".into());
     }
@@ -322,8 +339,9 @@ pub fn frame_outcome(bgra: &[u8], side: usize, cfg: &AimConfig, spec: &ModelSpec
     let out = detect(&rgb)?;
     let dets = decode_output(&out, spec, cfg.class, cfg.conf_pct as f32 / 100.0).ok_or("ответ модели не подходит по форме")?;
     let dets = scale_back(nms(dets, 0.5), side, spec.input_w, spec.input_h);
-    let dets: Vec<Det> = dets.into_iter().filter(|d| (d.y2 - d.y1) >= cfg.min_size_px as f32).collect();
-    let centre = (side as f32 / 2.0, side as f32 / 2.0);
+    let tallest = side as f32 * cfg.max_size_pct as f32 / 100.0;
+    let dets: Vec<Det> = dets.into_iter().filter(|d| (d.y2 - d.y1) >= cfg.min_size_px as f32 && (d.y2 - d.y1) <= tallest).collect();
+    let centre = crosshair;
     let outcome = match pick(&dets, centre, cfg) {
         None => Outcome::NoTarget,
         Some((_, head)) => match step((head.0 - centre.0, head.1 - centre.1), cfg.strength_pct, 40.0) {
@@ -461,18 +479,46 @@ pub fn status_json(cfg: &AimConfig) -> Value {
     json!({ "enabled": is_enabled(), "state": STATE.lock().clone(), "model": model_path(cfg).display().to_string(), "model_found": model_path(cfg).is_file(),
         "frames": FRAMES.load(Ordering::SeqCst), "last_frame_ms": LAST_MS.load(Ordering::SeqCst), "objects": OBJECTS.load(Ordering::SeqCst),
         "capture": CAPTURE.lock().clone(), "device_used": DEVICE.lock().clone(), "thread": thread_running(), "problem": PROBLEM.lock().clone(),
-        "settings": { "device": eff.device.name(), "side": eff.side, "fps": eff.fps, "conf": eff.conf_pct, "min_size": eff.min_size_px } })
+        "settings": { "device": eff.device.name(), "side": eff.side, "fps": eff.fps, "conf": eff.conf_pct, "min_size": eff.min_size_px, "max_size": eff.max_size_pct, "cx": eff.cx_pct, "cy": eff.cy_pct } })
 }
 
 // how long to rest after a frame: the frame rate that was asked for, and when the computer is slow (a frame takes more than the budget) the
-// rest is at least half of the time of the frame, so that the program never takes more than two thirds of a core from the game
+// rest is a quarter of the time of the frame, so that the program never takes more than four fifths of a core from the game (a longer
+// pause would only make the aim later; the mouse itself is moved smoothly by the mover, see below)
 pub fn rest_after(spent: std::time::Duration, fps: u32) -> std::time::Duration {
     let budget = std::time::Duration::from_millis(1000 / fps.clamp(1, 60) as u64);
     if spent < budget {
         budget - spent
     } else {
-        spent / 2
+        spent / 4
     }
+}
+
+// ---- the smooth move of the mouse: the detector gives a place about six times a second, the mouse is moved many times a second ----
+// `pending` is the way that is left to the target (pixels); every tick of the mover takes a part of it. Pure, tested.
+pub const MOVER_GAIN: f32 = 0.30;
+
+pub fn mover_tick(pending: &mut (f32, f32), carry: &mut (f32, f32)) -> (i32, i32) {
+    let take = (pending.0 * MOVER_GAIN, pending.1 * MOVER_GAIN);
+    pending.0 -= take.0;
+    pending.1 -= take.1;
+    carry.0 += take.0;
+    carry.1 += take.1;
+    let send = (carry.0.trunc(), carry.1.trunc());
+    carry.0 -= send.0;
+    carry.1 -= send.1;
+    // what is left under a pixel is let go (it would never be sent)
+    if pending.0.abs() < 0.4 && pending.1.abs() < 0.4 {
+        *pending = (0.0, 0.0);
+    }
+    (send.0 as i32, send.1 as i32)
+}
+
+// a new place came from the detector: the way to it, less what the mouse has already moved since the picture was taken
+pub fn pending_after(step: (i32, i32), moved_since_capture: (f32, f32)) -> (f32, f32) {
+    let left = (step.0 as f32 - moved_since_capture.0, step.1 as f32 - moved_since_capture.1);
+    // (never turn back because of the delay: a way that has changed its sign is finished)
+    (if left.0 * step.0 as f32 > 0.0 { left.0 } else { 0.0 }, if left.1 * step.1 as f32 > 0.0 { left.1 } else { 0.0 })
 }
 
 #[cfg(all(target_os = "windows", feature = "ort"))]
@@ -503,7 +549,7 @@ mod run {
     }
 
     // the picture of the square around the middle of the game window (the crosshair); BGRA. `side` is cut down to the window.
-    unsafe fn capture(want: i32) -> Result<(Vec<u8>, usize), String> {
+    unsafe fn capture(want: i32, cx_pct: i32, cy_pct: i32) -> Result<(Vec<u8>, usize, (f32, f32)), String> {
         use winapi::um::wingdi::*;
         use winapi::um::winuser::*;
         let (wx, wy, ww, wh) = window_area()?;
@@ -511,7 +557,11 @@ mod run {
         if side < 64 {
             return Err(format!("окно игры слишком маленькое ({}×{})", ww, wh));
         }
-        let (x, y) = (wx + (ww - side) / 2, wy + (wh - side) / 2);
+        // the crosshair: the middle of the window moved by the settings; the square is taken around it and kept inside the window
+        let (px, py) = (ww / 2 + ww * cx_pct / 100, wh / 2 + wh * cy_pct / 100);
+        let (ox, oy) = ((px - side / 2).clamp(0, ww - side), (py - side / 2).clamp(0, wh - side));
+        let cross = ((px - ox) as f32, (py - oy) as f32);
+        let (x, y) = (wx + ox, wy + oy);
         let hdc = GetDC(std::ptr::null_mut());
         if hdc.is_null() {
             return Err("экран не открывается для снимка".into());
@@ -530,7 +580,35 @@ mod run {
         DeleteObject(bmp as _);
         DeleteDC(mem);
         ReleaseDC(std::ptr::null_mut(), hdc);
-        if ok { Ok((buf, side as usize)) } else { Err("снимок экрана не получился".into()) }
+        if ok { Ok((buf, side as usize, cross)) } else { Err("снимок экрана не получился".into()) }
+    }
+
+    // the way to the target that is left, and what the mouse has moved in all (the detector subtracts it for the delay of its picture)
+    static PENDING: Mutex<(f32, f32)> = parking_lot::const_mutex((0.0, 0.0));
+    static MOVED: Mutex<(f32, f32)> = parking_lot::const_mutex((0.0, 0.0));
+
+    // sends small moves of the mouse about 200 times a second while the right button is held; it ends with the run
+    fn mover(id: u64) {
+        let mut carry = (0.0f32, 0.0f32);
+        while alive(id) {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            if !right_button_down() {
+                *PENDING.lock() = (0.0, 0.0);
+                carry = (0.0, 0.0);
+                continue;
+            }
+            let (dx, dy) = {
+                let mut p = PENDING.lock();
+                mover_tick(&mut p, &mut carry)
+            };
+            if dx != 0 || dy != 0 {
+                crate::gamemode::mouse_rel(dx, dy);
+                let mut m = MOVED.lock();
+                m.0 += dx as f32;
+                m.1 += dy as f32;
+            }
+        }
+        *PENDING.lock() = (0.0, 0.0);
     }
 
     fn right_button_down() -> bool {
@@ -583,6 +661,8 @@ mod run {
                 return;
             }
         };
+        *PENDING.lock() = (0.0, 0.0);
+        std::thread::spawn(move || mover(id));
         let (mut cap_fail, mut blank) = (0u32, 0u32);
         while alive(id) {
             let cfg = crate::gamemode::aim_config();
@@ -599,7 +679,8 @@ mod run {
                 continue;
             }
             let started = std::time::Instant::now();
-            let (frame, side) = match unsafe { capture(cfg.side as i32) } {
+            let moved_before = *MOVED.lock();
+            let (frame, side, cross) = match unsafe { capture(cfg.side as i32, cfg.cx_pct, cfg.cy_pct) } {
                 Ok(f) => f,
                 Err(e) => {
                     cap_fail += 1;
@@ -627,7 +708,7 @@ mod run {
             blank = 0;
             *CAPTURE.lock() = format!("ок, {}×{}", side, side);
             set_state("working");
-            let res = frame_outcome(&frame, side, &cfg, &info.spec, &mut |rgb| ortrun::run(&mut session, &info.input_name, rgb, info.spec.input_w, info.spec.input_h));
+            let res = frame_outcome(&frame, side, &cfg, &info.spec, cross, &mut |rgb| ortrun::run(&mut session, &info.input_name, rgb, info.spec.input_w, info.spec.input_h));
             match res {
                 Ok(f) => {
                     OBJECTS.store(f.objects as u32, Ordering::SeqCst);
@@ -637,13 +718,18 @@ mod run {
                     }
                     match f.outcome {
                         Outcome::Step(dx, dy) => {
-                            crate::gamemode::mouse_rel(dx, dy);
+                            // the mover makes the way in small steps; what it has moved since the picture was taken is taken off
+                            let now = *MOVED.lock();
+                            *PENDING.lock() = pending_after((dx, dy), (now.0 - moved_before.0, now.1 - moved_before.1));
                             if dx.abs() + dy.abs() <= LOCK_PX {
                                 mark_locked();
                             }
                         }
-                        Outcome::OnTarget => mark_locked(),
-                        Outcome::NoTarget => {}
+                        Outcome::OnTarget => {
+                            *PENDING.lock() = (0.0, 0.0);
+                            mark_locked()
+                        }
+                        Outcome::NoTarget => *PENDING.lock() = (0.0, 0.0),
                     }
                 }
                 Err(e) => {
@@ -746,7 +832,7 @@ mod tests {
 
     #[test]
     fn a_frame_with_a_target_gives_a_step_towards_its_head_and_without_a_target_none() {
-        let cfg = AimConfig { min_size_px: 0, ..AimConfig::default() };
+        let cfg = AimConfig { min_size_px: 0, max_size_pct: 100, ..AimConfig::default() };
         let side = 64usize;
         let frame = vec![0u8; side * side * 4];
         let spec = spec8(side);
@@ -756,7 +842,7 @@ mod tests {
             // cx=20, cy=40, w=16, h=60 -> the box 12..28 × 10..70, the head at (20, 10 + 60*0.12 = 17.2)
             Ok(out8(vec![20.0, 40.0, 16.0, 60.0, 0.9], 1))
         };
-        let f = frame_outcome(&frame, side, &cfg, &spec, &mut one).unwrap();
+        let f = frame_outcome(&frame, side, &cfg, &spec, ((side) as f32 / 2.0, (side) as f32 / 2.0), &mut one).unwrap();
         assert_eq!(seen_len, 3 * side * side, "RGB planes");
         assert_eq!(f.objects, 1);
         match f.outcome {
@@ -764,28 +850,28 @@ mod tests {
             o => panic!("{:?}", o),
         }
         let mut nobody = |_: &[f32]| -> Result<RawOut, String> { Ok(out8(vec![0.0; 5], 1)) };
-        let f = frame_outcome(&frame, side, &cfg, &spec, &mut nobody).unwrap();
+        let f = frame_outcome(&frame, side, &cfg, &spec, ((side) as f32 / 2.0, (side) as f32 / 2.0), &mut nobody).unwrap();
         assert_eq!((f.outcome, f.objects), (Outcome::NoTarget, 0));
         // a failing detector and a frame of a wrong size are errors, not a move of the mouse
         let mut broken = |_: &[f32]| -> Result<RawOut, String> { Err("нет".into()) };
-        assert!(frame_outcome(&frame, side, &cfg, &spec, &mut broken).is_err());
-        assert!(frame_outcome(&frame[..100], side, &cfg, &spec, &mut nobody).is_err());
+        assert!(frame_outcome(&frame, side, &cfg, &spec, ((side) as f32 / 2.0, (side) as f32 / 2.0), &mut broken).is_err());
+        assert!(frame_outcome(&frame[..100], side, &cfg, &spec, ((side) as f32 / 2.0, (side) as f32 / 2.0), &mut nobody).is_err());
         // an answer of a wrong shape is an error too
         let mut wrong = |_: &[f32]| -> Result<RawOut, String> { Ok(RawOut { data: vec![0.0; 6], dims: vec![1, 5, 2] }) };
-        assert!(frame_outcome(&frame, side, &cfg, &spec, &mut wrong).is_err());
+        assert!(frame_outcome(&frame, side, &cfg, &spec, ((side) as f32 / 2.0, (side) as f32 / 2.0), &mut wrong).is_err());
     }
 
     #[test]
     fn the_boxes_are_scaled_back_to_the_picture_when_the_model_takes_another_size() {
         // the picture is 128×128, the model takes 64×64: a box 12..28 × 10..70 of the model is 24..56 × 20..140 on the screen,
         // the head at (40, 20 + 120*0.12 = 34.4): up-left of the centre (64, 64)
-        let cfg = AimConfig { min_size_px: 0, ..AimConfig::default() };
+        let cfg = AimConfig { min_size_px: 0, max_size_pct: 100, ..AimConfig::default() };
         let frame = vec![9u8; 128 * 128 * 4];
         let mut one = |rgb: &[f32]| -> Result<RawOut, String> {
             assert_eq!(rgb.len(), 3 * 64 * 64, "the model gets its own size");
             Ok(out8(vec![20.0, 40.0, 16.0, 60.0, 0.9], 1))
         };
-        let f = frame_outcome(&frame, 128, &cfg, &spec8(64), &mut one).unwrap();
+        let f = frame_outcome(&frame, 128, &cfg, &spec8(64), ((128) as f32 / 2.0, (128) as f32 / 2.0), &mut one).unwrap();
         // delta = (40-64, 34.4-64) = (-24, -29.6); 25% of 38.1 = 9.5 pixels
         match f.outcome {
             Outcome::Step(dx, dy) => assert!(dx < 0 && dy < 0 && dx.abs() + dy.abs() >= 8, "{:?}", (dx, dy)),
@@ -797,11 +883,11 @@ mod tests {
     fn a_small_object_is_not_taken_and_a_far_one_neither() {
         let frame = vec![9u8; 64 * 64 * 4];
         let mut tiny = |_: &[f32]| -> Result<RawOut, String> { Ok(out8(vec![32.0, 32.0, 6.0, 20.0, 0.9], 1)) };
-        let cfg = AimConfig { min_size_px: 40, ..AimConfig::default() };
-        let f = frame_outcome(&frame, 64, &cfg, &spec8(64), &mut tiny).unwrap();
+        let cfg = AimConfig { min_size_px: 40, max_size_pct: 100, ..AimConfig::default() };
+        let f = frame_outcome(&frame, 64, &cfg, &spec8(64), ((64) as f32 / 2.0, (64) as f32 / 2.0), &mut tiny).unwrap();
         assert_eq!((f.outcome, f.objects), (Outcome::NoTarget, 0), "a box 20 pixels high is below the least size");
-        let cfg = AimConfig { min_size_px: 10, ..AimConfig::default() };
-        assert_eq!(frame_outcome(&frame, 64, &cfg, &spec8(64), &mut tiny).unwrap().objects, 1);
+        let cfg = AimConfig { min_size_px: 10, max_size_pct: 100, ..AimConfig::default() };
+        assert_eq!(frame_outcome(&frame, 64, &cfg, &spec8(64), ((64) as f32 / 2.0, (64) as f32 / 2.0), &mut tiny).unwrap().objects, 1);
     }
 
     #[test]
@@ -815,7 +901,7 @@ mod tests {
             got = rgb.to_vec();
             Ok(out8(vec![0.0; 5], 1))
         };
-        frame_outcome(&frame, side, &cfg, &spec8(2), &mut spy).unwrap();
+        frame_outcome(&frame, side, &cfg, &spec8(2), ((side) as f32 / 2.0, (side) as f32 / 2.0), &mut spy).unwrap();
         assert!(got[0] == 1.0 && (got[3] - 30.0 / 255.0).abs() < 1e-6, "the red plane");
         assert!(got[5] == 1.0 && (got[7] - 20.0 / 255.0).abs() < 1e-6, "the green plane");
         assert!(got[10] == 1.0 && (got[11] - 10.0 / 255.0).abs() < 1e-6, "the blue plane");
@@ -837,9 +923,61 @@ mod tests {
     fn a_slow_computer_gets_a_rest_and_the_frame_rate_is_kept_otherwise() {
         use std::time::Duration;
         assert_eq!(rest_after(Duration::from_millis(10), 30), Duration::from_millis(23));
-        // slower than the budget: half of the time of the frame is rest (never a busy loop)
-        assert_eq!(rest_after(Duration::from_millis(100), 30), Duration::from_millis(50));
+        // slower than the budget: a quarter of the time of the frame is rest (never a busy loop)
+        assert_eq!(rest_after(Duration::from_millis(100), 30), Duration::from_millis(25));
         assert!(rest_after(Duration::from_millis(1), 0) >= Duration::from_millis(16), "a nonsense frame rate is cut to 1..60");
+    }
+
+    #[test]
+    fn the_mover_makes_the_way_in_small_steps_without_overshooting_and_loses_nothing() {
+        let (mut pending, mut carry) = ((100.0f32, -60.0f32), (0.0f32, 0.0f32));
+        let (mut sx, mut sy, mut ticks) = (0i32, 0i32, 0);
+        let mut biggest = 0;
+        while pending != (0.0, 0.0) && ticks < 200 {
+            let (dx, dy) = mover_tick(&mut pending, &mut carry);
+            biggest = biggest.max(dx.abs()).max(dy.abs());
+            sx += dx;
+            sy += dy;
+            ticks += 1;
+            assert!(sx <= 100 && sy >= -60, "never beyond the target: {:?}", (sx, sy));
+        }
+        assert!(ticks < 60, "it arrives in a fraction of a second at 200 ticks a second: {}", ticks);
+        assert!((100 - sx).abs() <= 1 && (-60 - sy).abs() <= 1, "arrived: {:?}", (sx, sy));
+        assert!(biggest <= 30, "no jump: the biggest step is {} pixels", biggest);
+        // nothing to do, nothing sent
+        assert_eq!(mover_tick(&mut (0.0, 0.0), &mut (0.0, 0.0)), (0, 0));
+    }
+
+    #[test]
+    fn a_new_place_takes_off_what_the_mouse_moved_since_the_picture_and_never_turns_back() {
+        assert_eq!(pending_after((20, -10), (0.0, 0.0)), (20.0, -10.0));
+        assert_eq!(pending_after((20, -10), (8.0, -4.0)), (12.0, -6.0));
+        // the mouse has already gone further than the new step: nothing is left, and it does not go back
+        assert_eq!(pending_after((20, -10), (30.0, -2.0)), (0.0, -8.0));
+        assert_eq!(pending_after((0, 5), (3.0, 1.0)), (0.0, 4.0));
+    }
+
+    #[test]
+    fn the_crosshair_offset_and_the_biggest_person_are_checked_and_used() {
+        let ok = config_from_json(&json!({ "cx": 0, "cy": -9, "max_size": 70 })).unwrap();
+        assert_eq!((ok.cx_pct, ok.cy_pct, ok.max_size_pct), (0, -9, 70));
+        for bad in [json!({ "cy": 60 }), json!({ "cx": -41 }), json!({ "cy": "up" }), json!({ "max_size": 5 }), json!({ "max_size": 150 })] {
+            assert!(config_from_json(&bad).is_err(), "{}", bad);
+        }
+        // the aim goes to the crosshair that is given, not to the middle: a person right on a crosshair that is above the middle is «on target»
+        let side = 64usize;
+        let cfg = AimConfig { min_size_px: 0, max_size_pct: 100, strength_pct: 25, ..AimConfig::default() };
+        let frame = vec![9u8; side * side * 4];
+        // the box 20..44 × 8..60 (cx 32, cy 34, w 24, h 52): head at y = 8 + 52 × 0.12 = 14.2
+        let mut one = |_: &[f32]| -> Result<RawOut, String> { Ok(out8(vec![32.0, 34.0, 24.0, 52.0, 0.9], 1)) };
+        let from_middle = frame_outcome(&frame, side, &cfg, &spec8(side), (32.0, 32.0), &mut one).unwrap();
+        assert!(matches!(from_middle.outcome, Outcome::Step(0, dy) if dy < 0), "{:?}", from_middle);
+        let from_crosshair = frame_outcome(&frame, side, &cfg, &spec8(side), (32.0, 14.0), &mut one).unwrap();
+        assert_eq!(from_crosshair.outcome, Outcome::OnTarget);
+        // a person taller than the allowed part of the picture (the player himself at the camera) is not taken
+        let big = AimConfig { max_size_pct: 65, ..cfg.clone() };
+        let tall = frame_outcome(&frame, side, &big, &spec8(side), (32.0, 32.0), &mut one).unwrap();
+        assert_eq!((tall.outcome, tall.objects), (Outcome::NoTarget, 0), "52 of 64 is 81% of the picture");
     }
 
     #[test]
@@ -885,7 +1023,7 @@ mod tests {
     fn real_onnx_sessions_run_the_whole_way_with_fake_detectors_of_every_family() {
         use crate::aimdetect::ortrun;
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/testdata");
-        let cfg = AimConfig { device: Device::Cpu, min_size_px: 0, side: SIDE as u32, ..AimConfig::default() };
+        let cfg = AimConfig { device: Device::Cpu, min_size_px: 0, side: SIDE as u32, strength_pct: 25, ..AimConfig::default() };
         // YOLOv8 fixture: a person (320, 300), 100×200; the head is at y = 200 + 200 × 0.12 = 224, the crosshair is at (320, 320):
         // 96 pixels up, a quarter of the way = 24. YOLOX fixture: the box 270..370 × 140..340, the head at y = 164: 156 up, a quarter = 39.
         for (file, want) in [("aim_dummy.onnx", -24), ("aim_yolox_dummy.onnx", -39)] {
@@ -893,7 +1031,7 @@ mod tests {
             let info = ortrun::probe(&path, &cfg).unwrap_or_else(|e| panic!("{}: {}", file, e));
             let (mut session, _, _) = ortrun::session_for(&path, cfg.device).unwrap();
             let frame = vec![7u8; SIDE * SIDE * 4];
-            let f = frame_outcome(&frame, SIDE, &cfg, &info.spec, &mut |rgb| ortrun::run(&mut session, &info.input_name, rgb, info.spec.input_w, info.spec.input_h)).unwrap();
+            let f = frame_outcome(&frame, SIDE, &cfg, &info.spec, ((SIDE) as f32 / 2.0, (SIDE) as f32 / 2.0), &mut |rgb| ortrun::run(&mut session, &info.input_name, rgb, info.spec.input_w, info.spec.input_h)).unwrap();
             assert_eq!(f.outcome, Outcome::Step(0, want), "{}", file);
         }
         // a classifier and a file that is not a model are refused with a reason
@@ -902,5 +1040,31 @@ mod tests {
         std::fs::write(&junk, vec![5u8; 5000]).unwrap();
         assert!(ortrun::probe(&junk, &cfg).is_err());
         std::fs::remove_file(&junk).ok();
+    }
+}
+
+// A check against a REAL model and a REAL screenshot (not run in the normal tests: the files are not in the repository).
+// AIM_REAL_MODEL = the .onnx file, AIM_REAL_BGRA = a square picture in raw BGRA, AIM_REAL_SIDE = its side.
+#[cfg(all(test, feature = "ort"))]
+mod real_screenshot {
+    use super::*;
+
+    #[test]
+    fn a_real_model_on_a_real_screenshot_gives_the_right_places() {
+        let (Ok(model), Ok(raw), Ok(side)) = (std::env::var("AIM_REAL_MODEL"), std::env::var("AIM_REAL_BGRA"), std::env::var("AIM_REAL_SIDE")) else { return };
+        let side: usize = side.parse().unwrap();
+        let frame = std::fs::read(raw).unwrap();
+        let cfg = AimConfig { device: Device::Cpu, side: side as u32, ..AimConfig::default() };
+        let info = crate::aimdetect::ortrun::probe(std::path::Path::new(&model), &cfg).unwrap();
+        let (mut session, _, _) = crate::aimdetect::ortrun::session_for(std::path::Path::new(&model), cfg.device).unwrap();
+        let out = crate::aimdetect::ortrun::run(&mut session, &info.input_name, &crate::aimdetect::preprocess(&frame, side, info.spec.input_w, info.spec.input_h, info.spec.layout.norm()), info.spec.input_w, info.spec.input_h).unwrap();
+        let dets = crate::aimdetect::decode_output(&out, &info.spec, cfg.class, cfg.conf_pct as f32 / 100.0).unwrap();
+        let dets = crate::aimdetect::scale_back(nms(dets, 0.5), side, info.spec.input_w, info.spec.input_h);
+        for d in &dets {
+            let head = head_of(d, cfg.head_pct);
+            eprintln!("REAL box ({:.1},{:.1})-({:.1},{:.1}) score {:.2} head ({:.1},{:.1}) delta ({:.1},{:.1})", d.x1, d.y1, d.x2, d.y2, d.score, head.0, head.1, head.0 - side as f32 / 2.0, head.1 - side as f32 / 2.0);
+        }
+        let f = frame_outcome(&frame, side, &cfg, &info.spec, ((side) as f32 / 2.0, (side) as f32 / 2.0), &mut |rgb| crate::aimdetect::ortrun::run(&mut session, &info.input_name, rgb, info.spec.input_w, info.spec.input_h)).unwrap();
+        eprintln!("REAL outcome {:?} objects {}", f.outcome, f.objects);
     }
 }
