@@ -1640,7 +1640,14 @@ pub fn profile_aim() -> crate::aimassist::AimConfig {
 pub fn aim_config() -> crate::aimassist::AimConfig {
     // the profile, the settings of the page over it and «целься в корпус» (another part of the body than the head)
     let profile = GAME.lock().profile.aim.clone();
-    crate::aimassist::effective(&profile)
+    // (the crosshair that was kept for the game in front, if there is one)
+    crate::aimassist::effective_for(&profile, front_exe().as_deref())
+}
+
+// the file name of the game in front, when it is a game of the list (the aim assist keeps its crosshair under this name)
+pub fn front_game_exe() -> Option<String> {
+    let g = GAME.lock();
+    front_exe().filter(|e| g.profile.all_exes().contains(e))
 }
 
 // a relative move of the mouse for the aim assist

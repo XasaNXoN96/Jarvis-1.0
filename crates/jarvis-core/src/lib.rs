@@ -98,6 +98,7 @@ pub mod gameicon;
 pub mod voiceprint;
 pub mod aimassist;
 pub mod aimdetect;
+pub mod aimcross;
 pub mod aimmodel;
 pub mod hotkey;
 pub mod barge;

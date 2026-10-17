@@ -622,6 +622,18 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             Ok(()) => json!({ "ok": true, "message": "Проверяю модель…" }),
             Err(e) => json!({ "ok": false, "message": e }),
         },
+        "aim_settings" if body.get("for_game").and_then(|v| v.as_bool()) == Some(true) => {
+            // the crosshair is kept for the game that the aim assist saw last in front (the Jarvis window is in front now)
+            let s = body.get("settings").unwrap_or(&json!(null)).clone();
+            let game = crate::aimassist::last_game();
+            match (s.get("cx").and_then(|v| v.as_i64()), s.get("cy").and_then(|v| v.as_i64())) {
+                (Some(cx), Some(cy)) => match crate::aimassist::save_game_cross(&game, cx, cy) {
+                    Ok(()) => json!({ "ok": true, "message": format!("Положение перекрестия ({:+}%, {:+}%) запомнено для игры {}: оно подставляется само при её запуске.", cx, cy, game) }),
+                    Err(e) => json!({ "ok": false, "message": e }),
+                },
+                _ => json!({ "ok": false, "message": "укажите положение перекрестия числами" }),
+            }
+        }
         "aim_settings" => match crate::aimassist::save_settings(body.get("settings").unwrap_or(&json!(null)), &crate::gamemode::profile_aim()) {
             Ok(_) => json!({ "ok": true, "message": "Настройки сохранены. Устройство и размер кадра применяются при следующем включении помощи прицела." }),
             Err(e) => json!({ "ok": false, "message": e }),

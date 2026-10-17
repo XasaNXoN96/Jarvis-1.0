@@ -531,6 +531,7 @@ pub fn report_text(cfg: &AimConfig) -> String {
     r.push_str(&format!("Настройки: кадр {}×{}, до {} кадров/с, порог {}%, размер человека {}…{}% кадра (мин. {} пикс.), перекрестие {}/{} % от середины\n", eff.side, eff.side, eff.fps, eff.conf_pct, 0, eff.max_size_pct, eff.min_size_px, eff.cx_pct, eff.cy_pct));
     r.push_str(&format!("Помощь прицела: {} (состояние: {}, поток: {})\n", if aim["enabled"].as_bool().unwrap_or(false) { "включена" } else { "выключена" }, aim["state"].as_str().unwrap_or(""), yn(aim["thread"].as_bool().unwrap_or(false))));
     r.push_str(&format!("Захват экрана: {}\n", aim["capture"].as_str().unwrap_or("")));
+    r.push_str(&format!("Игра: {}; перекрестие: {}; поиск перекрестия: {}\n", aim["last_game"].as_str().filter(|g| !g.is_empty()).unwrap_or("ещё не видели"), aim["cross"].as_str().unwrap_or(""), if eff.auto_cross { "включён" } else { "выключен" }));
     r.push_str(&format!("Время кадра: {} мс; найдено людей: {}; кадров обработано: {}\n", aim["last_frame_ms"], aim["objects"], aim["frames"]));
     if let Some(p) = aim["problem"].as_str().filter(|p| !p.is_empty()) {
         r.push_str(&format!("Последняя ошибка работы: {}\n", p));

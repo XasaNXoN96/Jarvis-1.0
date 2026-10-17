@@ -1001,6 +1001,8 @@
           <div class="r"><input type="number" id="gp-aim-min" min="0" max="400" step="2" style="width:76px"> <button class="btn" id="gp-aim-save" type="button">Сохранить настройки</button></div></div>
         <div class="setrow"><div class="l">Где перекрестие в игре, %<small>от середины окна: по горизонтали (вправо +) и по вертикали (вверх −). От первого лица оба 0. От третьего лица перекрестие обычно выше середины: попробуйте по вертикали −9. Квадрат кадра берётся вокруг этой точки</small></div>
           <div class="r"><input type="number" id="gp-aim-cx" min="-40" max="40" step="1" style="width:64px" title="по горизонтали"> <input type="number" id="gp-aim-cy" min="-40" max="40" step="1" style="width:64px" title="по вертикали"></div></div>
+        <div class="setrow"><div class="l">Искать перекрестие на экране автоматически<small id="gp-aim-crosssrc">Jarvis ищет в кадре перекрестие из четырёх чёрточек и целится от него: от первого и от третьего лица само. Если оно не найдено (точка, кружок), берутся числа выше</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="gp-aim-auto"><span></span></label> <button class="btn" id="gp-aim-savegame" type="button" title="Числа «Где перекрестие» сохраняются для игры, которая была впереди последней">Запомнить числа для игры</button></div></div>
         <div class="setrow"><div class="l">Наибольший размер человека, % кадра<small>Выше этого не берутся в цель: ваш собственный персонаж и напарник у камеры очень крупные. Союзников той же модели от врагов отличить нельзя: стреляйте там, где их нет</small></div>
           <div class="r"><input type="number" id="gp-aim-max" min="20" max="100" step="5" style="width:76px"></div></div>
         <div class="setrow"><div class="l">Диагностика<small>модель, источник и проверка целостности, среда выполнения, устройство, захват экрана, время кадра, ошибки. Ключей, снимков экрана и голоса в отчёте нет</small></div>
@@ -3082,6 +3084,7 @@ async function aimRefresh() {
   let sub = [];
   if (a.installed && a.meta && a.meta.name) sub.push(a.meta.name + ' · ' + a.size_mb + ' МБ · ' + (a.meta.kind === 'official' ? 'официальная загрузка, SHA-256 совпал' : 'ваш файл') + (a.meta.license ? ' · лицензия: ' + a.meta.license : ''));
   if (a.check_ok && a.summary) sub.push('формат ' + a.summary.layout + ', вход ' + a.summary.input + ', пробный запуск ' + a.summary.trial_ms + ' мс');
+  if (run.last_game) sub.push('игра: ' + run.last_game + ' · перекрестие: ' + run.cross);
   if (run.enabled) sub.push('захват: ' + run.capture + ' · кадров ' + run.frames + ' · ' + run.last_frame_ms + ' мс на кадр · людей в кадре ' + run.objects + (run.device_used ? ' · ' + run.device_used : ''));
   $('#gp-aim-sub').textContent = sub.join(' | ');
   const busy = ['downloading', 'verifying', 'checking', 'installing'].includes(st);
@@ -3096,7 +3099,7 @@ async function aimRefresh() {
   $('#gp-aim-devnote').textContent = (a.directml_build ? 'В этой сборке видеокарта (DirectML) подключена; если она не запустится, Jarvis сам перейдёт на процессор. ' : 'В этой сборке видеокарта (DirectML) не подключена: любой выбор работает на процессоре. ') + 'Видеокарта не обязательно быстрее для такой модели.';
   if (!AIM.loaded && run.settings) {
     AIM.loaded = true; const s = run.settings;
-    $('#gp-aim-device').value = s.device; $('#gp-aim-side').value = String(s.side); $('#gp-aim-fps').value = s.fps; $('#gp-aim-conf').value = s.conf; $('#gp-aim-conf-v').textContent = s.conf + '%'; $('#gp-aim-min').value = s.min_size; $('#gp-aim-cx').value = s.cx; $('#gp-aim-cy').value = s.cy; $('#gp-aim-max').value = s.max_size;
+    $('#gp-aim-device').value = s.device; $('#gp-aim-side').value = String(s.side); $('#gp-aim-fps').value = s.fps; $('#gp-aim-conf').value = s.conf; $('#gp-aim-conf-v').textContent = s.conf + '%'; $('#gp-aim-min').value = s.min_size; $('#gp-aim-cx').value = s.cx; $('#gp-aim-cy').value = s.cy; $('#gp-aim-auto').checked = s.auto_cross !== false; $('#gp-aim-max').value = s.max_size;
   }
   clearTimeout(AIM.timer); if (busy) AIM.timer = setTimeout(aimRefresh, 700);
 }
@@ -3107,9 +3110,10 @@ $('#gp-aim-cancel').onclick = () => aimDo('aim_model_cancel');
 $('#gp-aim-check').onclick = () => aimDo('aim_model_check');
 $('#gp-aim-conf').oninput = () => { $('#gp-aim-conf-v').textContent = $('#gp-aim-conf').value + '%'; };
 $('#gp-aim-save').onclick = async () => {
-  const r = await aimDo('aim_settings', { settings: { device: $('#gp-aim-device').value, side: +$('#gp-aim-side').value, fps: +$('#gp-aim-fps').value, conf: +$('#gp-aim-conf').value, min_size: +$('#gp-aim-min').value, max_size: +$('#gp-aim-max').value, cx: +$('#gp-aim-cx').value, cy: +$('#gp-aim-cy').value } });
+  const r = await aimDo('aim_settings', { settings: { device: $('#gp-aim-device').value, side: +$('#gp-aim-side').value, fps: +$('#gp-aim-fps').value, conf: +$('#gp-aim-conf').value, min_size: +$('#gp-aim-min').value, max_size: +$('#gp-aim-max').value, cx: +$('#gp-aim-cx').value, cy: +$('#gp-aim-cy').value, auto_cross: $('#gp-aim-auto').checked } });
   if (r.ok) AIM.loaded = false;
 };
+$('#gp-aim-savegame').onclick = () => aimDo('aim_settings', { for_game: true, settings: { cx: +$('#gp-aim-cx').value, cy: +$('#gp-aim-cy').value } });
 $('#gp-aim-report').onclick = async () => { try { const t = await (await fetch('/aim-report')).text(); await copyText(t, $('#gp-aim-report')); gpMsg('Отчёт по помощи прицела скопирован', true); } catch (e) { gpMsg('Не удалось скопировать', false); } };
 aimRefresh();
 gpSummary(); setInterval(() => { if ($('#page-games').classList.contains('active')) { gpSummary(); aimRefresh(); } }, 4000);

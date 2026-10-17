@@ -86,11 +86,13 @@ pub struct AimConfig {
     pub cy_pct: i32,
     // a person higher than this part of the picture is not taken (the character of the player himself, a companion at the camera): percent
     pub max_size_pct: u32,
+    // look for the crosshair on the picture by itself (aimcross.rs); the numbers above are used while it is not found
+    pub auto_cross: bool,
 }
 
 impl Default for AimConfig {
     fn default() -> Self {
-        AimConfig { model: None, strength_pct: 40, head_pct: 12, radius_px: 260, conf_pct: 45, class: 0, device: Device::Auto, side: DEFAULT_SIDE, fps: 30, min_size_px: 24, cx_pct: 0, cy_pct: 0, max_size_pct: 65 }
+        AimConfig { model: None, strength_pct: 40, head_pct: 12, radius_px: 260, conf_pct: 45, class: 0, device: Device::Auto, side: DEFAULT_SIDE, fps: 30, min_size_px: 24, cx_pct: 0, cy_pct: 0, max_size_pct: 65, auto_cross: true }
     }
 }
 
@@ -131,6 +133,9 @@ pub fn apply_json(c: &mut AimConfig, v: &Value) -> Result<(), String> {
     }
     if let Some(n) = num("max_size", 20, 100)? {
         c.max_size_pct = n;
+    }
+    if let Some(x) = v.get("auto_cross") {
+        c.auto_cross = x.as_bool().ok_or("aim.auto_cross: true или false")?;
     }
     for (k, slot) in [("cx", &mut c.cx_pct), ("cy", &mut c.cy_pct)] {
         if let Some(x) = v.get(k) {
@@ -182,7 +187,7 @@ fn read_overlay() -> Value {
 pub fn save_settings(patch: &Value, base: &AimConfig) -> Result<AimConfig, String> {
     let Some(obj) = patch.as_object() else { return Err("настройки должны быть объектом".into()) };
     // only the keys of the page (the path of a model is chosen with the file window, not typed here)
-    let allowed = ["device", "side", "fps", "conf", "min_size", "max_size", "cx", "cy", "strength", "head", "radius"];
+    let allowed = ["device", "side", "fps", "conf", "min_size", "max_size", "cx", "cy", "auto_cross", "strength", "head", "radius"];
     if obj.keys().any(|k| !allowed.contains(&k.as_str())) {
         return Err("неизвестная настройка".into());
     }
@@ -196,6 +201,49 @@ pub fn save_settings(patch: &Value, base: &AimConfig) -> Result<AimConfig, Strin
     let text = serde_json::to_string_pretty(&now).unwrap_or_default();
     crate::write_atomic(&path, text).map_err(|e| format!("не удалось сохранить настройки: {}", e))?;
     Ok(effective(base))
+}
+
+// the name of a game for the table of the games: the file name in small letters, nothing else
+fn game_key(exe: &str) -> Option<String> {
+    let e = exe.trim().to_lowercase();
+    (e.ends_with(".exe") && e.len() <= 80 && !e.contains(['/', '\\', ':', '"', '\0'])).then_some(e)
+}
+
+// the crosshair that was kept for this game (percent from the middle of the window), if any
+pub fn game_cross(exe: &str) -> Option<(i32, i32)> {
+    let key = game_key(exe)?;
+    let g = read_overlay();
+    let e = g.get("games")?.get(&key)?;
+    let (cx, cy) = (e.get("cx")?.as_i64()?, e.get("cy")?.as_i64()?);
+    ((-40..=40).contains(&cx) && (-40..=40).contains(&cy)).then_some((cx as i32, cy as i32))
+}
+
+// keeps the crosshair for ONE game (the others and the general numbers are not touched)
+pub fn save_game_cross(exe: &str, cx: i64, cy: i64) -> Result<(), String> {
+    let key = game_key(exe).ok_or("игра не выбрана: включите помощь прицела и зажмите правую кнопку мыши в окне игры один раз")?;
+    if !(-40..=40).contains(&cx) || !(-40..=40).contains(&cy) {
+        return Err("положение перекрестия: числа от -40 до 40".into());
+    }
+    let mut now = read_overlay();
+    if !now.get("games").map(|g| g.is_object()).unwrap_or(false) {
+        now["games"] = json!({});
+    }
+    // (a table of a hundred games is more than enough; an older entry of the same game is replaced)
+    if now["games"].as_object().map(|m| m.len()).unwrap_or(0) >= 100 && now["games"].get(&key).is_none() {
+        return Err("слишком много игр в таблице".into());
+    }
+    now["games"][&key] = json!({ "cx": cx, "cy": cy });
+    crate::write_atomic(&settings_file(), serde_json::to_string_pretty(&now).unwrap_or_default()).map_err(|e| format!("не удалось сохранить: {}", e))
+}
+
+// the configuration for the game that is in front: the numbers of that game laid over `effective`
+pub fn effective_for(profile: &AimConfig, exe: Option<&str>) -> AimConfig {
+    let mut c = effective(profile);
+    if let Some((cx, cy)) = exe.and_then(game_cross) {
+        c.cx_pct = cx;
+        c.cy_pct = cy;
+    }
+    c
 }
 
 // the configuration that is used now: the profile, the settings of the page over it, the part of the body that was asked for by voice
@@ -400,6 +448,17 @@ static PROBLEM: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(String::new()));
 static STATE: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new("off".into()));
 static CAPTURE: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new("не снимался".into()));
 static DEVICE: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(String::new()));
+// the game that the aim assist saw last in front, and where it takes the crosshair from now
+static LAST_GAME: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(String::new()));
+static CROSS_SRC: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new("ещё не определялось".into()));
+
+pub fn last_game() -> String {
+    LAST_GAME.lock().clone()
+}
+
+pub fn cross_source() -> String {
+    CROSS_SRC.lock().clone()
+}
 
 fn set_state(s: &str) {
     *STATE.lock() = s.to_string();
@@ -478,8 +537,8 @@ pub fn status_json(cfg: &AimConfig) -> Value {
     let eff = effective(cfg);
     json!({ "enabled": is_enabled(), "state": STATE.lock().clone(), "model": model_path(cfg).display().to_string(), "model_found": model_path(cfg).is_file(),
         "frames": FRAMES.load(Ordering::SeqCst), "last_frame_ms": LAST_MS.load(Ordering::SeqCst), "objects": OBJECTS.load(Ordering::SeqCst),
-        "capture": CAPTURE.lock().clone(), "device_used": DEVICE.lock().clone(), "thread": thread_running(), "problem": PROBLEM.lock().clone(),
-        "settings": { "device": eff.device.name(), "side": eff.side, "fps": eff.fps, "conf": eff.conf_pct, "min_size": eff.min_size_px, "max_size": eff.max_size_pct, "cx": eff.cx_pct, "cy": eff.cy_pct } })
+        "capture": CAPTURE.lock().clone(), "last_game": last_game(), "cross": cross_source(), "device_used": DEVICE.lock().clone(), "thread": thread_running(), "problem": PROBLEM.lock().clone(),
+        "settings": { "device": eff.device.name(), "side": eff.side, "fps": eff.fps, "conf": eff.conf_pct, "min_size": eff.min_size_px, "max_size": eff.max_size_pct, "cx": eff.cx_pct, "cy": eff.cy_pct, "auto_cross": eff.auto_cross } })
 }
 
 // how long to rest after a frame: the frame rate that was asked for, and when the computer is slow (a frame takes more than the budget) the
@@ -549,7 +608,18 @@ mod run {
     }
 
     // the picture of the square around the middle of the game window (the crosshair); BGRA. `side` is cut down to the window.
-    unsafe fn capture(want: i32, cx_pct: i32, cy_pct: i32) -> Result<(Vec<u8>, usize, (f32, f32)), String> {
+    struct Cap {
+        buf: Vec<u8>,
+        side: usize,
+        // where the crosshair is in the square
+        cross: (f32, f32),
+        // the square in the window, and the size of the window
+        origin: (i32, i32),
+        win: (i32, i32),
+    }
+
+    // `auto`: the crosshair that was found on the pictures, pixels from the middle of the window; without it the numbers of the settings (percent)
+    unsafe fn capture(want: i32, auto: Option<(i32, i32)>, cx_pct: i32, cy_pct: i32) -> Result<Cap, String> {
         use winapi::um::wingdi::*;
         use winapi::um::winuser::*;
         let (wx, wy, ww, wh) = window_area()?;
@@ -558,7 +628,10 @@ mod run {
             return Err(format!("окно игры слишком маленькое ({}×{})", ww, wh));
         }
         // the crosshair: the middle of the window moved by the settings; the square is taken around it and kept inside the window
-        let (px, py) = (ww / 2 + ww * cx_pct / 100, wh / 2 + wh * cy_pct / 100);
+        let (px, py) = match auto {
+            Some((ax, ay)) => (ww / 2 + ax, wh / 2 + ay),
+            None => (ww / 2 + ww * cx_pct / 100, wh / 2 + wh * cy_pct / 100),
+        };
         let (ox, oy) = ((px - side / 2).clamp(0, ww - side), (py - side / 2).clamp(0, wh - side));
         let cross = ((px - ox) as f32, (py - oy) as f32);
         let (x, y) = (wx + ox, wy + oy);
@@ -580,7 +653,7 @@ mod run {
         DeleteObject(bmp as _);
         DeleteDC(mem);
         ReleaseDC(std::ptr::null_mut(), hdc);
-        if ok { Ok((buf, side as usize, cross)) } else { Err("снимок экрана не получился".into()) }
+        if ok { Ok(Cap { buf, side: side as usize, cross, origin: (ox, oy), win: (ww, wh) }) } else { Err("снимок экрана не получился".into()) }
     }
 
     // the way to the target that is left, and what the mouse has moved in all (the detector subtracts it for the delay of its picture)
@@ -664,14 +737,26 @@ mod run {
         *PENDING.lock() = (0.0, 0.0);
         std::thread::spawn(move || mover(id));
         let (mut cap_fail, mut blank) = (0u32, 0u32);
+        let mut tracker = crate::aimcross::CrossTracker::default();
+        let mut auto_px: Option<(i32, i32)> = None;
+        let mut frame_no = 0u32;
         while alive(id) {
             let cfg = crate::gamemode::aim_config();
+            let game = crate::gamemode::front_game_exe();
             let ready = crate::gamemode::is_active() && crate::gamemode::in_game_now() && crate::gamemode::anticheat_running().is_none();
             if !ready {
                 set_state("waiting");
                 *CAPTURE.lock() = "ждёт: впереди должно быть окно игры из списка и зажата правая кнопка мыши".into();
                 std::thread::sleep(std::time::Duration::from_millis(100));
                 continue;
+            }
+            if let Some(g) = &game {
+                if *LAST_GAME.lock() != *g {
+                    *LAST_GAME.lock() = g.clone();
+                    // another game: the crosshair is looked for from the start
+                    tracker.reset();
+                    auto_px = None;
+                }
             }
             if !right_button_down() {
                 set_state("waiting");
@@ -680,7 +765,7 @@ mod run {
             }
             let started = std::time::Instant::now();
             let moved_before = *MOVED.lock();
-            let (frame, side, cross) = match unsafe { capture(cfg.side as i32, cfg.cx_pct, cfg.cy_pct) } {
+            let cap = match unsafe { capture(cfg.side as i32, auto_px, cfg.cx_pct, cfg.cy_pct) } {
                 Ok(f) => f,
                 Err(e) => {
                     cap_fail += 1;
@@ -695,7 +780,8 @@ mod run {
                 }
             };
             cap_fail = 0;
-            if frame_is_blank(&frame) {
+            let (frame, side) = (&cap.buf, cap.side);
+            if frame_is_blank(frame) {
                 blank += 1;
                 *CAPTURE.lock() = "кадр пустой (чёрный)".into();
                 if blank >= 90 {
@@ -706,9 +792,25 @@ mod run {
                 continue;
             }
             blank = 0;
+            // the crosshair: looked for on the picture (cheap while it is not yet believed, rarely afterwards); its place is believed after
+            // several equal frames and then the square is cut around it
+            frame_no = frame_no.wrapping_add(1);
+            if cfg.auto_cross {
+                let reach = if tracker.is_locked() { 14 } else { 120.min(side / 2 - crate::aimcross::MARGIN.min(side / 2 - 1)) };
+                let found = if !tracker.is_locked() || frame_no % 12 == 0 { crate::aimcross::find(frame, side, cap.cross, reach).map(|f| ((cap.origin.0 as f32 + f.x) - cap.win.0 as f32 / 2.0, (cap.origin.1 as f32 + f.y) - cap.win.1 as f32 / 2.0)) } else { Some((cap.origin.0 as f32 + cap.cross.0 - cap.win.0 as f32 / 2.0, cap.origin.1 as f32 + cap.cross.1 - cap.win.1 as f32 / 2.0)) };
+                auto_px = tracker.feed(found);
+            } else {
+                tracker.reset();
+                auto_px = None;
+            }
+            *CROSS_SRC.lock() = match (auto_px, game.as_deref().and_then(game_cross)) {
+                (Some((x, y)), _) => format!("найдено на экране автоматически: {:+}, {:+} пикс. от середины окна", x, y),
+                (None, Some((x, y))) => format!("запомнено для игры {}: {:+}%, {:+}%", game.as_deref().unwrap_or(""), x, y),
+                (None, None) => format!("из общих настроек: {:+}%, {:+}% (на экране перекрестие из четырёх чёрточек не найдено)", cfg.cx_pct, cfg.cy_pct),
+            };
             *CAPTURE.lock() = format!("ок, {}×{}", side, side);
             set_state("working");
-            let res = frame_outcome(&frame, side, &cfg, &info.spec, cross, &mut |rgb| ortrun::run(&mut session, &info.input_name, rgb, info.spec.input_w, info.spec.input_h));
+            let res = frame_outcome(frame, side, &cfg, &info.spec, cap.cross, &mut |rgb| ortrun::run(&mut session, &info.input_name, rgb, info.spec.input_w, info.spec.input_h));
             match res {
                 Ok(f) => {
                     OBJECTS.store(f.objects as u32, Ordering::SeqCst);
@@ -978,6 +1080,37 @@ mod tests {
         let big = AimConfig { max_size_pct: 65, ..cfg.clone() };
         let tall = frame_outcome(&frame, side, &big, &spec8(side), (32.0, 32.0), &mut one).unwrap();
         assert_eq!((tall.outcome, tall.objects), (Outcome::NoTarget, 0), "52 of 64 is 81% of the picture");
+    }
+
+    #[test]
+    fn the_crosshair_is_kept_per_game_and_laid_over_the_general_numbers_only_for_that_game() {
+        let _l = SETTINGS_LOCK.lock();
+        let _ = std::fs::remove_file(settings_file());
+        set_point(None);
+        let base = AimConfig::default();
+        save_settings(&json!({ "cy": -3 }), &base).unwrap();
+        save_game_cross("Wonder.EXE", 1, -9).unwrap();
+        save_game_cross("shooter.exe", 0, 0).unwrap();
+        assert_eq!(game_cross("wonder.exe"), Some((1, -9)), "names are compared in small letters");
+        // the game in front has its own numbers; another game and no game take the general ones
+        let c = effective_for(&base, Some("wonder.exe"));
+        assert_eq!((c.cx_pct, c.cy_pct), (1, -9));
+        assert_eq!(effective_for(&base, Some("shooter.exe")).cy_pct, 0, "an own zero is an own number");
+        assert_eq!(effective_for(&base, Some("other.exe")).cy_pct, -3);
+        assert_eq!(effective_for(&base, None).cy_pct, -3);
+        // the general settings that are saved later do not erase the table of the games
+        save_settings(&json!({ "fps": 20 }), &base).unwrap();
+        assert_eq!(game_cross("wonder.exe"), Some((1, -9)));
+        // names that are not a program, paths and numbers out of range are refused
+        for bad in ["", "wonder", "..\\x.exe", "a/b.exe", "c:x.exe"] {
+            assert!(save_game_cross(bad, 0, 0).is_err(), "{}", bad);
+        }
+        assert!(save_game_cross("wonder.exe", 0, 99).is_err());
+        assert_eq!(game_cross("wonder.exe"), Some((1, -9)), "a refusal changes nothing");
+        // auto search can be switched off in the settings, and only with a true / false
+        assert!(!save_settings(&json!({ "auto_cross": false }), &base).unwrap().auto_cross);
+        assert!(save_settings(&json!({ "auto_cross": "no" }), &base).is_err());
+        let _ = std::fs::remove_file(settings_file());
     }
 
     #[test]
