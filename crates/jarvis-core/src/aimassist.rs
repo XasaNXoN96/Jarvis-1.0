@@ -302,7 +302,7 @@ mod run {
             let mut session: Option<ort::session::Session> = None;
             loop {
                 let cfg = crate::gamemode::aim_config();
-                let ready = ENABLED.load(Ordering::SeqCst) && crate::gamemode::is_active() && crate::gamemode::in_game_now();
+                let ready = ENABLED.load(Ordering::SeqCst) && crate::gamemode::is_active() && crate::gamemode::in_game_now() && crate::gamemode::anticheat_running().is_none();
                 if !ready {
                     std::thread::sleep(std::time::Duration::from_millis(200));
                     continue;

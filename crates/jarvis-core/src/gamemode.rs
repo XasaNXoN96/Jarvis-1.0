@@ -43,6 +43,16 @@ pub struct Profile {
     pub px_per_90: i32,
     // the experimental aim assist (aimassist.rs)
     pub aim: crate::aimassist::AimConfig,
+    // games the user added by voice («добавь эту игру»): they take the same keys unless `games` says otherwise
+    pub extra: Vec<String>,
+    // other keys / sensitivity for one program
+    pub games: std::collections::BTreeMap<String, GameOverride>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GameOverride {
+    pub keys: Keys,
+    pub px_per_90: i32,
 }
 
 impl Default for Profile {
@@ -55,6 +65,8 @@ impl Default for Profile {
             keys: Keys { forward: v("w"), back: v("s"), left: v("a"), right: v("d"), jump: v("space"), crouch: v("c"), sprint: v("shift"), reload: v("r"), grenade: v("g"), melee: v("v"), use_key: v("f") },
             px_per_90: 450,
             aim: crate::aimassist::AimConfig::default(),
+            extra: Vec::new(),
+            games: Default::default(),
         }
     }
 }
@@ -62,6 +74,54 @@ impl Default for Profile {
 // plain game keys only: letters, digits, space, shift, ctrl, tab
 pub fn allowed_key(vk: u16) -> bool {
     matches!(vk, 0x30..=0x39 | 0x41..=0x5A | 0x20 | 0x10 | 0x11 | 0x09)
+}
+
+fn valid_exe_name(name: &str) -> bool {
+    name.ends_with(".exe") && name.len() >= 5 && name.len() <= 60 && !name.contains(['\\', '/', ':'])
+}
+
+fn apply_keys(keys: &mut Keys, map: &serde_json::Map<String, Value>) -> Result<(), String> {
+    for (slot, name) in map {
+        let code = name.as_str().and_then(crate::input::vk).filter(|c| allowed_key(*c)).ok_or_else(|| format!("в game_profile.json клавиша «{}» для «{}» не разрешена (можно буквы, цифры, space, shift, ctrl, tab)", name, slot))?;
+        match slot.as_str() {
+            "forward" => keys.forward = code,
+            "back" => keys.back = code,
+            "left" => keys.left = code,
+            "right" => keys.right = code,
+            "jump" => keys.jump = code,
+            "crouch" => keys.crouch = code,
+            "sprint" => keys.sprint = code,
+            "reload" => keys.reload = code,
+            "grenade" => keys.grenade = code,
+            "melee" => keys.melee = code,
+            "use" => keys.use_key = code,
+            other => return Err(format!("в game_profile.json неизвестное действие «{}»", other)),
+        }
+    }
+    Ok(())
+}
+
+impl Profile {
+    // the programs where the mode works: the profile's own and the ones the user added
+    pub fn all_exes(&self) -> Vec<String> {
+        let mut v = self.exes.clone();
+        for e in &self.extra {
+            if !v.contains(e) {
+                v.push(e.clone());
+            }
+        }
+        v
+    }
+
+    // the profile for the window in front (its own keys and sensitivity when `games` names it)
+    pub fn effective(&self, exe: &str) -> Profile {
+        let mut p = self.clone();
+        if let Some(o) = self.games.get(exe) {
+            p.keys = o.keys.clone();
+            p.px_per_90 = o.px_per_90;
+        }
+        p
+    }
 }
 
 // a profile from the optional file game_profile.json of the data folder; anything wrong in it: the default profile and the reason
@@ -95,22 +155,26 @@ pub fn profile_from_json(text: &str) -> Result<Profile, String> {
         p.aim = crate::aimassist::config_from_json(aim)?;
     }
     if let Some(keys) = v.get("keys").and_then(|k| k.as_object()) {
-        for (slot, name) in keys {
-            let code = name.as_str().and_then(crate::input::vk).filter(|c| allowed_key(*c)).ok_or_else(|| format!("в game_profile.json клавиша «{}» для «{}» не разрешена (можно буквы, цифры, space, shift, ctrl, tab)", name, slot))?;
-            match slot.as_str() {
-                "forward" => p.keys.forward = code,
-                "back" => p.keys.back = code,
-                "left" => p.keys.left = code,
-                "right" => p.keys.right = code,
-                "jump" => p.keys.jump = code,
-                "crouch" => p.keys.crouch = code,
-                "sprint" => p.keys.sprint = code,
-                "reload" => p.keys.reload = code,
-                "grenade" => p.keys.grenade = code,
-                "melee" => p.keys.melee = code,
-                "use" => p.keys.use_key = code,
-                other => return Err(format!("в game_profile.json неизвестное действие «{}»", other)),
+        apply_keys(&mut p.keys, keys)?;
+    }
+    // other keys / sensitivity for one program: "games": { "mygame.exe": { "px_per_90": 300, "keys": { "forward": "w" } } }
+    if let Some(games) = v.get("games").and_then(|g| g.as_object()) {
+        for (exe, spec) in games.iter().take(30) {
+            let exe = exe.trim().to_lowercase();
+            if !valid_exe_name(&exe) {
+                return Err(format!("в game_profile.json неверное имя программы «{}» в games", exe));
             }
+            let mut o = GameOverride { keys: p.keys.clone(), px_per_90: p.px_per_90 };
+            if let Some(n) = spec.get("px_per_90").and_then(|n| n.as_i64()) {
+                if !(50..=3000).contains(&n) {
+                    return Err(format!("px_per_90 для {} должно быть от 50 до 3000", exe));
+                }
+                o.px_per_90 = n as i32;
+            }
+            if let Some(keys) = spec.get("keys").and_then(|k| k.as_object()) {
+                apply_keys(&mut o.keys, keys)?;
+            }
+            p.games.insert(exe, o);
         }
     }
     Ok(p)
@@ -158,6 +222,9 @@ pub enum Action {
     Tap(Tap),
     // the experimental aim assist on / off (aimassist.rs)
     AimAssist(bool),
+    // «добавь эту игру» / «забудь эту игру»: the program of the window in front joins the list of games (or leaves it)
+    AddGame,
+    ForgetGame,
 }
 
 fn normalize(text: &str) -> String {
@@ -208,6 +275,15 @@ pub fn parse(text: &str, active: bool) -> Option<Action> {
     }
     if (game && wants_off) || t.contains("хватит играть") || t.contains("выйди из игры") {
         return Some(Action::Off);
+    }
+    // the list of games: the window in front joins it (or leaves it)
+    if game && has(&t, &["эту", "этот", "эта", "текущ", "сейчас"]) {
+        if has(&t, &["добав", "запомн", "внеси", "занеси"]) {
+            return Some(Action::AddGame);
+        }
+        if has(&t, &["забуд", "удали", "убери", "исключи"]) {
+            return Some(Action::ForgetGame);
+        }
     }
     if has(&t, &["помощь", "подсказк"]) && game {
         return Some(Action::Help);
@@ -435,6 +511,8 @@ impl Game {
                 String::new()
             }
             Action::AimAssist(on) => crate::aimassist::set_enabled(*on, &self.profile.aim),
+            // done by `handle` (it needs the window in front and the file of the list)
+            Action::AddGame | Action::ForgetGame => String::new(),
             Action::Tap(t) => {
                 let vk = match t {
                     Tap::Jump => k.jump,
@@ -476,7 +554,7 @@ fn front_exe() -> Option<String> {
 }
 
 fn in_game(profile: &Profile) -> bool {
-    front_exe().map(|e| profile.exes.iter().any(|x| *x == e)).unwrap_or(false)
+    front_exe().map(|e| profile.all_exes().iter().any(|x| *x == e)).unwrap_or(false)
 }
 
 #[cfg(target_os = "windows")]
@@ -578,6 +656,133 @@ fn load_profile() -> Result<Profile, String> {
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// which programs may be added, and the anti-cheat guard
+// ---------------------------------------------------------------------------------------------
+// well-known ONLINE games: never added (the mode is for single-player games)
+const ONLINE_GAMES: &[&str] = &[
+    "valorant.exe", "valorant-win64-shipping.exe", "cs2.exe", "csgo.exe", "fortniteclient-win64-shipping.exe", "r5apex.exe", "overwatch.exe",
+    "rainbowsix.exe", "rainbowsix_vulkan.exe", "tslgame.exe", "dota2.exe", "leagueoflegends.exe", "league of legends.exe", "escapefromtarkov.exe",
+    "destiny2.exe", "paladins.exe", "apexlegends.exe", "warzone.exe", "hunt.exe", "deadbydaylight-win64-shipping.exe", "pubg.exe",
+];
+// programs that are not games: keys and mouse moves are never sent to them
+const NOT_GAMES: &[&str] = &[
+    "explorer.exe", "cmd.exe", "powershell.exe", "pwsh.exe", "windowsterminal.exe", "wt.exe", "regedit.exe", "taskmgr.exe", "mmc.exe", "chrome.exe",
+    "msedge.exe", "firefox.exe", "browser.exe", "opera.exe", "brave.exe", "vivaldi.exe", "code.exe", "devenv.exe", "notepad.exe", "winword.exe",
+    "excel.exe", "outlook.exe", "powerpnt.exe", "telegram.exe", "discord.exe", "steam.exe", "jarvis-app.exe", "jarvis.exe", "applicationframehost.exe",
+    "systemsettings.exe", "searchhost.exe", "shellexperiencehost.exe", "lockapp.exe", "mstsc.exe", "teamviewer.exe", "anydesk.exe",
+];
+// the helper programs of anti-cheat systems: while one of them runs, the game mode does not start (and stops)
+const ANTICHEAT: &[&str] = &["easyanticheat.exe", "easyanticheat_eos.exe", "beservice.exe", "bedaisy.exe", "vgc.exe", "faceitclient.exe", "faceit.exe", "esea.exe", "xigncode.exe", "gameguard.exe", "npggnt.exe", "punkbuster.exe", "pbsvc.exe"];
+
+// why this program must not be added (None: it may be)
+pub fn refuse_reason(exe: &str) -> Option<String> {
+    if ONLINE_GAMES.contains(&exe) {
+        return Some(format!("{} — сетевая игра: игровой режим только для одиночных игр", exe));
+    }
+    if NOT_GAMES.contains(&exe) {
+        return Some(format!("{} — не игра: в неё я клавиши и мышь не отправляю", exe));
+    }
+    if !valid_exe_name(exe) {
+        return Some("не удалось определить программу игры".into());
+    }
+    None
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_PROCS: std::cell::RefCell<Option<Vec<String>>> = std::cell::RefCell::new(None);
+}
+
+// the names (lower case) of the running programs
+fn running_programs() -> Vec<String> {
+    #[cfg(test)]
+    if let Some(v) = TEST_PROCS.with(|t| t.borrow().clone()) {
+        return v;
+    }
+    #[cfg(target_os = "windows")]
+    unsafe {
+        use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
+        use winapi::um::tlhelp32::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS};
+        let mut out = Vec::new();
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snap == INVALID_HANDLE_VALUE {
+            return out;
+        }
+        let mut e: PROCESSENTRY32W = std::mem::zeroed();
+        e.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+        if Process32FirstW(snap, &mut e) != 0 {
+            loop {
+                let len = e.szExeFile.iter().position(|&c| c == 0).unwrap_or(e.szExeFile.len());
+                out.push(String::from_utf16_lossy(&e.szExeFile[..len]).to_lowercase());
+                if Process32NextW(snap, &mut e) == 0 {
+                    break;
+                }
+            }
+        }
+        CloseHandle(snap);
+        out
+    }
+    #[cfg(not(target_os = "windows"))]
+    Vec::new()
+}
+
+// the name of a running anti-cheat helper, if there is one (looked up at most every three seconds)
+pub fn anticheat_running() -> Option<String> {
+    static CACHE: Lazy<Mutex<Option<(std::time::Instant, Option<String>)>>> = Lazy::new(|| Mutex::new(None));
+    #[cfg(not(test))]
+    {
+        let g = CACHE.lock();
+        if let Some((t, r)) = g.as_ref() {
+            if t.elapsed() < std::time::Duration::from_secs(3) {
+                return r.clone();
+            }
+        }
+    }
+    let found = running_programs().into_iter().find(|p| ANTICHEAT.contains(&p.as_str()));
+    #[cfg(not(test))]
+    {
+        *CACHE.lock() = Some((std::time::Instant::now(), found.clone()));
+    }
+    #[cfg(test)]
+    let _ = &CACHE;
+    found
+}
+
+// the list of games the user added: game_list.json of the data folder
+fn list_path() -> std::path::PathBuf {
+    crate::APP_DIR.join("game_list.json")
+}
+
+fn load_extra() -> Vec<String> {
+    #[cfg(test)]
+    {
+        return TEST_EXTRA.with(|t| t.borrow().clone());
+    }
+    #[cfg(not(test))]
+    {
+        let Ok(text) = std::fs::read_to_string(list_path()) else { return Vec::new() };
+        let Ok(v) = serde_json::from_str::<Value>(&text) else { return Vec::new() };
+        v.get("exes").and_then(|e| e.as_array()).map(|a| a.iter().filter_map(|x| x.as_str()).map(|x| x.trim().to_lowercase()).filter(|x| refuse_reason(x).is_none()).take(30).collect()).unwrap_or_default()
+    }
+}
+
+fn save_extra(list: &[String]) {
+    #[cfg(test)]
+    {
+        TEST_EXTRA.with(|t| *t.borrow_mut() = list.to_vec());
+    }
+    #[cfg(not(test))]
+    {
+        let _ = crate::write_atomic(&list_path(), serde_json::to_string_pretty(&json!({ "exes": list })).unwrap_or_default());
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_EXTRA: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
+}
+
 // the watchdog: a key must never stay pressed when the user leaves the game window (alt-tab to Jarvis, a crash of the game)
 static WATCHDOG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -589,6 +794,13 @@ fn start_watchdog() {
     std::thread::spawn(|| loop {
         std::thread::sleep(std::time::Duration::from_millis(500));
         let mut g = GAME.lock();
+        if g.active && anticheat_running().is_some() {
+            with_backend(|b| g.release_all(b));
+            g.active = false;
+            crate::aimassist::set_enabled(false, &g.profile.aim);
+            log::warn!("Game mode: an anti-cheat program is running, the mode is switched off");
+            continue;
+        }
         if g.active && g.anything_held() && !in_game(&g.profile) {
             with_backend(|b| g.release_all(b));
             log::info!("Game mode: the game window is not in front, the keys are released");
@@ -626,7 +838,7 @@ pub fn release_all() {
 
 pub fn status_json() -> Value {
     let g = GAME.lock();
-    json!({ "active": g.active, "game": g.profile.title, "exes": g.profile.exes, "in_game": g.active && in_game(&g.profile), "held": g.anything_held(), "aim": crate::aimassist::status_json(&g.profile.aim) })
+    json!({ "active": g.active, "game": g.profile.title, "exes": g.profile.all_exes(), "in_game": g.active && in_game(&g.profile), "held": g.anything_held(), "added": g.profile.extra, "anticheat": anticheat_running(), "aim": crate::aimassist::status_json(&g.profile.aim) })
 }
 
 // A phrase of the user: Some(the answer to show) when it belonged to the game mode (the caller stops there), None otherwise.
@@ -634,6 +846,15 @@ pub fn handle(text: &str) -> Option<String> {
     let active = is_active();
     let action = parse(text, active)?;
     let mut g = GAME.lock();
+    // an anti-cheat program is running: the mode is not started and is switched off (the keys are released first)
+    if let Some(name) = anticheat_running() {
+        if matches!(action, Action::On) || g.active {
+            with_backend(|b| g.release_all(b));
+            g.active = false;
+            crate::aimassist::set_enabled(false, &g.profile.aim);
+            return Some(format!("Игровой режим не включён: запущена защита от читов ({}). Режим только для одиночных игр без неё: закройте игру с защитой.", name));
+        }
+    }
     match &action {
         Action::On => {
             // a bad profile file does not stop the mode: the usual keys are taken and the user is told why
@@ -642,20 +863,59 @@ pub fn handle(text: &str) -> Option<String> {
                 Err(e) => (Profile::default(), format!(" Файл game_profile.json не применён: {}.", e)),
             };
             g.profile = profile;
+            g.profile.extra = load_extra();
             let mut reply = with_backend(|b| g.apply(&action, b));
             reply.push_str(&problem);
+            if !g.profile.extra.is_empty() {
+                reply.push_str(&format!(" Добавленные игры: {}.", g.profile.extra.join(", ")));
+            }
+            reply.push_str(" Своя игра: откройте её и скажите «добавь эту игру».");
             drop(g);
             start_watchdog();
             Some(reply)
         }
         Action::Off | Action::Help | Action::ReleaseAll => Some(with_backend(|b| g.apply(&action, b))),
-        _ => {
-            // an action goes only to the window of the game
-            if !in_game(&g.profile) {
-                with_backend(|b| g.release_all(b));
-                return Some(format!("Игра не в фокусе: откройте окно игры ({}), и я продолжу.", g.profile.exes.join(", ")));
+        Action::AddGame => {
+            let Some(exe) = front_exe() else {
+                return Some("Не вижу окна игры: откройте игру (она должна быть впереди) и повторите.".into());
+            };
+            if let Some(why) = refuse_reason(&exe) {
+                return Some(format!("Не добавил: {}.", why));
             }
+            if g.profile.all_exes().contains(&exe) {
+                return Some(format!("{} уже в списке игр.", exe));
+            }
+            if g.profile.extra.len() >= 30 {
+                return Some("В списке уже 30 игр: уберите ненужные («забудь эту игру»).".into());
+            }
+            g.profile.extra.push(exe.clone());
+            let list = g.profile.extra.clone();
+            save_extra(&list);
+            Some(format!("Добавил игру {}. Она тоже работает в игровом режиме с обычными клавишами (WASD, пробел, C, Shift, R, G, V, F). Только одиночные игры! Другие клавиши: game_profile.json.", exe))
+        }
+        Action::ForgetGame => {
+            let Some(exe) = front_exe() else {
+                return Some("Не вижу окна игры: откройте игру и повторите.".into());
+            };
+            if !g.profile.extra.contains(&exe) {
+                return Some(format!("{} нет среди добавленных вами игр.", exe));
+            }
+            g.profile.extra.retain(|e| *e != exe);
+            let list = g.profile.extra.clone();
+            save_extra(&list);
+            with_backend(|b| g.release_all(b));
+            Some(format!("Игра {} убрана из списка.", exe))
+        }
+        _ => {
+            // an action goes only to the window of a game of the list, with the keys of that game
+            let Some(exe) = front_exe().filter(|e| g.profile.all_exes().contains(e)) else {
+                with_backend(|b| g.release_all(b));
+                return Some(format!("Игра не в фокусе: откройте окно игры ({}) или добавьте её («добавь эту игру»), и я продолжу.", g.profile.all_exes().join(", ")));
+            };
+            let base = g.profile.clone();
+            g.profile = base.effective(&exe);
             let reply = with_backend(|b| g.apply(&action, b));
+            g.profile = base;
             Some(reply)
         }
     }
@@ -682,6 +942,20 @@ mod tests {
 
     fn p(t: &str) -> Option<Action> {
         parse(t, true)
+    }
+
+    // the tests that use the global state (the mode, the profile) run one after another
+    static GLOBAL: Mutex<()> = Mutex::new(());
+
+    fn reset_global() {
+        let mut g = GAME.lock();
+        g.active = false;
+        g.profile = Profile::default();
+        g.left_button = false;
+        g.right_button = false;
+        g.held.clear();
+        TEST_EXTRA.with(|t| t.borrow_mut().clear());
+        TEST_PROCS.with(|t| *t.borrow_mut() = Some(vec!["explorer.exe".into()]));
     }
 
     #[test]
@@ -752,6 +1026,95 @@ mod tests {
         assert_eq!(p("не целься"), Some(Action::AimOff));
         // it is a phrase of the mode only
         assert_eq!(parse("включи помощь прицела", false), None);
+    }
+
+    #[test]
+    fn the_phrases_that_add_and_forget_a_game() {
+        assert_eq!(p("добавь эту игру"), Some(Action::AddGame));
+        assert_eq!(p("запомни эту игру"), Some(Action::AddGame));
+        assert_eq!(p("забудь эту игру"), Some(Action::ForgetGame));
+        assert_eq!(p("удали эту игру из списка"), Some(Action::ForgetGame));
+        // only inside the mode, and only «this» game: a normal request about games is not taken
+        assert_eq!(parse("добавь эту игру", false), None);
+        assert_eq!(p("добавь игру в избранное"), None);
+    }
+
+    #[test]
+    fn any_offline_game_can_be_added_with_its_own_keys_but_not_an_online_game_or_a_non_game() {
+        let _lock = GLOBAL.lock();
+        reset_global();
+        TEST_FRONT.with(|t| *t.borrow_mut() = Some(Some("mygame.exe".into())));
+        handle("включи игровой режим");
+        // a game that is not in the list yet: nothing is sent, and the user is told how to add it
+        let m = handle("иди вперёд").unwrap();
+        assert!(m.contains("добавьте её"), "{}", m);
+        assert!(!GAME.lock().anything_held());
+        // added by voice: it works at once, with the usual keys
+        assert!(handle("добавь эту игру").unwrap().contains("Добавил игру mygame.exe"));
+        assert!(handle("добавь эту игру").unwrap().contains("уже в списке"));
+        handle("иди вперёд");
+        assert!(GAME.lock().held.contains(&0x57), "W is held in the added game");
+        handle("стой");
+        // remembered for the next time
+        assert_eq!(TEST_EXTRA.with(|t| t.borrow().clone()), vec!["mygame.exe".to_string()]);
+        // an online game and a program that is not a game are refused
+        for (exe, word) in [("valorant.exe", "сетевая игра"), ("cs2.exe", "сетевая игра"), ("chrome.exe", "не игра"), ("cmd.exe", "не игра")] {
+            TEST_FRONT.with(|t| *t.borrow_mut() = Some(Some(exe.into())));
+            let m = handle("добавь эту игру").unwrap();
+            assert!(m.contains("Не добавил") && m.contains(word), "{}: {}", exe, m);
+        }
+        // no window: told so
+        TEST_FRONT.with(|t| *t.borrow_mut() = Some(None));
+        assert!(handle("добавь эту игру").unwrap().contains("Не вижу окна игры"));
+        // forgotten: it is outside the list again
+        TEST_FRONT.with(|t| *t.borrow_mut() = Some(Some("mygame.exe".into())));
+        assert!(handle("забудь эту игру").unwrap().contains("убрана"));
+        assert!(handle("иди вперёд").unwrap().contains("Игра не в фокусе"));
+        assert!(handle("забудь эту игру").unwrap().contains("нет среди добавленных"));
+        // a game of the default list cannot be «forgotten» (it is not the user's addition)
+        TEST_FRONT.with(|t| *t.borrow_mut() = Some(Some("iw4sp.exe".into())));
+        assert!(handle("забудь эту игру").unwrap().contains("нет среди добавленных"));
+        handle("выключи игровой режим");
+        TEST_FRONT.with(|t| *t.borrow_mut() = None);
+        reset_global();
+    }
+
+    #[test]
+    fn a_game_can_have_its_own_keys_and_sensitivity() {
+        let p = profile_from_json(r#"{"games":{"Other.EXE":{"px_per_90":300,"keys":{"forward":"i","jump":"ctrl"}}}}"#).unwrap();
+        let e = p.effective("other.exe");
+        assert_eq!((e.px_per_90, e.keys.forward, e.keys.jump), (300, 0x49, 0x11));
+        // another program keeps the common keys and sensitivity
+        let c = p.effective("iw4sp.exe");
+        assert_eq!((c.px_per_90, c.keys.forward, c.keys.jump), (450, 0x57, 0x20));
+        for bad in [r#"{"games":{"x":{}}}"#, r#"{"games":{"C:\\a.exe":{}}}"#, r#"{"games":{"a.exe":{"px_per_90":1}}}"#, r#"{"games":{"a.exe":{"keys":{"jump":"alt"}}}}"#] {
+            assert!(profile_from_json(bad).is_err(), "{}", bad);
+        }
+    }
+
+    #[test]
+    fn an_anti_cheat_program_stops_the_mode_and_keeps_it_from_starting() {
+        let _lock = GLOBAL.lock();
+        reset_global();
+        TEST_FRONT.with(|t| *t.borrow_mut() = Some(Some("iw4sp.exe".into())));
+        TEST_PROCS.with(|t| *t.borrow_mut() = Some(vec!["explorer.exe".into(), "EasyAntiCheat.exe".to_lowercase()]));
+        let m = handle("включи игровой режим").unwrap();
+        assert!(m.contains("защита от читов") && m.contains("easyanticheat.exe"), "{}", m);
+        assert!(!is_active());
+        // the mode was on, an anti-cheat appears: the next phrase switches it off and releases the keys
+        TEST_PROCS.with(|t| *t.borrow_mut() = Some(vec!["explorer.exe".into()]));
+        handle("включи игровой режим");
+        handle("иди вперёд");
+        assert!(GAME.lock().anything_held());
+        TEST_PROCS.with(|t| *t.borrow_mut() = Some(vec!["explorer.exe".into(), "beservice.exe".into()]));
+        let m = handle("беги").unwrap();
+        assert!(m.contains("защита от читов"), "{}", m);
+        assert!(!is_active() && !GAME.lock().anything_held());
+        for name in ["easyanticheat.exe", "beservice.exe", "vgc.exe", "faceitclient.exe"] {
+            assert!(ANTICHEAT.contains(&name), "{}", name);
+        }
+        TEST_FRONT.with(|t| *t.borrow_mut() = None);
+        reset_global();
     }
 
     #[test]
@@ -834,7 +1197,8 @@ mod tests {
 
     #[test]
     fn actions_reach_only_the_window_of_the_game_and_the_keys_are_released_outside_it() {
-        // the global state: this test is the only one that uses it
+        let _lock = GLOBAL.lock();
+        reset_global();
         TEST_FRONT.with(|t| *t.borrow_mut() = Some(Some("notepad.exe".into())));
         TEST_LOG.with(|l| l.borrow_mut().clear());
         assert!(handle("включи голосовое управление для игр").unwrap().contains("включено"));

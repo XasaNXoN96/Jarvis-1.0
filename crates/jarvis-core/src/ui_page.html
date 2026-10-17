@@ -1079,10 +1079,11 @@
       </div>
 
       <div class="card" data-cat="general" id="game-card"><h3><span class="ei">🎮</span>Игровой режим (голосовое управление игрой)</h3>
-        <div class="setrow"><div class="l">Голосовое управление для игр<small id="game-hint">Только для одиночных игр. Работает в окне игры из списка (по умолчанию Call of Duty: iw3sp.exe, iw4sp.exe, iw5sp.exe). Включить можно и голосом: «Джарвис, включи голосовое управление для игр». Клавиши и список игр меняются файлом game_profile.json (см. docs/GAME-MODE.md).</small></div>
+        <div class="setrow"><div class="l">Голосовое управление для игр<small id="game-hint">Только для одиночных игр. Работает в окне игры из списка (по умолчанию Call of Duty: iw3sp.exe, iw4sp.exe, iw5sp.exe). Любую свою одиночную игру добавьте голосом: откройте игру и скажите «добавь эту игру» (убрать: «забудь эту игру»). Включить режим можно и голосом: «Джарвис, включи голосовое управление для игр». Если запущена защита от читов (EasyAntiCheat, BattlEye, Vanguard…), режим не включается. Клавиши меняются файлом game_profile.json (см. docs/GAME-MODE.md).</small></div>
           <div class="r"><span id="game-state" class="dim"></span> <button class="btn" id="game-on" type="button">Включить</button> <button class="btn" id="game-off" type="button">Выключить</button></div></div>
         <div class="setrow"><div class="l">Помощь прицела (эксперимент)<small id="aim-hint">Только в одиночных играх. Работает, пока вы держите правую кнопку мыши в окне игры: по картинке экрана находит ближайшего человека и плавно подводит прицел к его голове. Нужен файл модели (см. docs/GAME-MODE.md). Выключена при каждом запуске.</small></div>
           <div class="r"><span id="aim-state" class="dim"></span> <button class="btn" id="aim-on" type="button">Включить</button> <button class="btn" id="aim-off" type="button">Выключить</button></div></div>
+        <small class="dim" id="game-list"></small>
         <div class="msgline" id="game-msg"></div>
         <small class="dim">Фразы: иди вперёд / назад / влево / вправо, беги, стой · смотри налево / направо / вверх / вниз (можно «на 45 градусов», «чуть», «разворот») · стреляй, огонь очередью, прекрати огонь · целься, не целься · перезаряди, гранату, нож, прыгай, присядь, используй. «Стой» отпускает все клавиши. Работает только если окно игры впереди.</small>
       </div>
@@ -2500,6 +2501,7 @@ updRefresh();
 async function gameRefresh() {
   let g; try { g = await (await fetch('/game')).json(); } catch (e) { return; }
   const a = g.aim || {}; $('#aim-state').textContent = a.enabled ? 'включена (' + (a.frames || 0) + ' кадров' + (a.last_frame_ms ? ', ' + a.last_frame_ms + ' мс на кадр' : '') + ')' : (a.problem ? 'выключена: ' + a.problem : (a.model_found ? 'выключена' : 'нет файла модели'));
+  $('#game-list').textContent = 'Игры в списке: ' + (g.exes || []).join(', ') + (g.anticheat ? ' · ВНИМАНИЕ: запущена защита от читов (' + g.anticheat + '), режим не работает' : '');
   $('#game-state').textContent = g.active ? (g.in_game ? 'включён, игра в фокусе' : 'включён, окно игры не впереди') : 'выключен';
 }
 async function gameSet(on) {
