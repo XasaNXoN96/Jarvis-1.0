@@ -478,7 +478,20 @@ pub fn request_stop() {
 
 // "Полностью закрыть JARVIS" / "Выход": the wake word stops, the microphone and the speech are released, the phone
 // remote is closed, then the process ends (the settings and the history are saved as they change)
+// the icon of the tray is removed (the thread of the window did it): the exit may end the process now
+#[cfg(target_os = "windows")]
+pub static TRAY_GONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 pub fn shutdown_and_exit() -> ! {
+    // Another thread (the page, the console, a command) asks for the exit: the thread that owns the tray icon removes it first, then comes
+    // back here. (The icon of an ended process would stay in the notification area until the mouse passes over it.)
+    #[cfg(target_os = "windows")]
+    if !TRAY_GONE.load(std::sync::atomic::Ordering::SeqCst) && window::send(window::UserEvent::Exit) {
+        for _ in 0..40 {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        // the window thread did not answer in two seconds: the exit goes on without it
+    }
     info!("Exit requested: stopping the microphone, the speech and the remote");
     request_stop();
     // an AI answer still arriving is stopped (its part so far is kept in the conversation) and no new phrase

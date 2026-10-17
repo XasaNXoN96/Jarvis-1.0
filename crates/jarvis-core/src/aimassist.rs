@@ -22,6 +22,8 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 // the default side of the square around the crosshair that the detector looks at
 pub const SIDE: usize = 640;
+// the side that is taken by default: 416 is about 2.4 times faster than 640 on a processor (a person at the crosshair is still large enough)
+pub const DEFAULT_SIDE: u32 = 416;
 
 // where the model runs: Auto = the video card when this build has DirectML and it works, else the processor
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,7 +84,7 @@ pub struct AimConfig {
 
 impl Default for AimConfig {
     fn default() -> Self {
-        AimConfig { model: None, strength_pct: 25, head_pct: 12, radius_px: 260, conf_pct: 45, class: 0, device: Device::Auto, side: SIDE as u32, fps: 30, min_size_px: 24 }
+        AimConfig { model: None, strength_pct: 25, head_pct: 12, radius_px: 260, conf_pct: 45, class: 0, device: Device::Auto, side: DEFAULT_SIDE, fps: 30, min_size_px: 24 }
     }
 }
 
@@ -436,6 +438,7 @@ pub fn set_enabled(on: bool, cfg: &AimConfig) -> String {
     }
     PROBLEM.lock().clear();
     FRAMES.store(0, Ordering::SeqCst);
+    LAST_MS.store(0, Ordering::SeqCst);
     OBJECTS.store(0, Ordering::SeqCst);
     let id = RUN_ID.fetch_add(1, Ordering::SeqCst) + 1;
     ENABLED.store(true, Ordering::SeqCst);
@@ -586,7 +589,7 @@ mod run {
             let ready = crate::gamemode::is_active() && crate::gamemode::in_game_now() && crate::gamemode::anticheat_running().is_none();
             if !ready {
                 set_state("waiting");
-                *CAPTURE.lock() = "ждёт окно игры".into();
+                *CAPTURE.lock() = "ждёт: впереди должно быть окно игры из списка и зажата правая кнопка мыши".into();
                 std::thread::sleep(std::time::Duration::from_millis(100));
                 continue;
             }
@@ -882,7 +885,7 @@ mod tests {
     fn real_onnx_sessions_run_the_whole_way_with_fake_detectors_of_every_family() {
         use crate::aimdetect::ortrun;
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/testdata");
-        let cfg = AimConfig { device: Device::Cpu, min_size_px: 0, ..AimConfig::default() };
+        let cfg = AimConfig { device: Device::Cpu, min_size_px: 0, side: SIDE as u32, ..AimConfig::default() };
         // YOLOv8 fixture: a person (320, 300), 100×200; the head is at y = 200 + 200 × 0.12 = 224, the crosshair is at (320, 320):
         // 96 pixels up, a quarter of the way = 24. YOLOX fixture: the box 270..370 × 140..340, the head at y = 164: 156 up, a quarter = 39.
         for (file, want) in [("aim_dummy.onnx", -24), ("aim_yolox_dummy.onnx", -39)] {

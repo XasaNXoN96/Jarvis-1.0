@@ -252,7 +252,7 @@ pub mod ortrun {
         let (device, mut note) = resolve_device(wanted);
         let _ = device;
         // (the program shares the computer with a game: the model gets a few threads, not all of them)
-        let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).clamp(1, 4);
+        let threads = (std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4) / 2).clamp(2, 6);
         let base = || -> Result<ort::session::builder::SessionBuilder, String> {
             Session::builder().map_err(|e| format!("ONNX Runtime: {}", e))?.with_intra_threads(threads).map_err(|e| format!("ONNX Runtime: {}", e))
         };
@@ -452,7 +452,7 @@ mod tests {
             assert_eq!((x.input_name.as_str(), x.device), ("images", crate::aimassist::Device::Cpu));
             let v8 = ortrun::probe(&fixture("aim_dummy.onnx"), &cfg()).unwrap();
             assert_eq!((v8.spec.layout, v8.spec.classes), (Layout::ChannelsFirst, 1));
-            assert_eq!(v8.spec.input_w, 640, "a model that leaves the size free gets the size of the settings");
+            assert_eq!(v8.spec.input_w, cfg().side as usize, "a model that leaves the size free gets the size of the settings");
             let err = ortrun::probe(&fixture("aim_classifier_dummy.onnx"), &cfg()).unwrap_err();
             assert!(err.contains("не похожа на детектор"), "{}", err);
             // a model with fewer classes than the class of a person needs

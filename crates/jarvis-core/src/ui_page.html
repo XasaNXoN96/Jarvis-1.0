@@ -640,6 +640,29 @@
   .gp-modal .form .r { display: flex; gap: 8px; } .gp-modal .form .r input { flex: 1; width: auto; max-width: none; min-width: 0; }
   .gp-modal .form select { width: 100%; max-width: none; }
 
+
+  /* ---- the phoenix theme: a fiery background, the logo of the program, embers ---- */
+  body { background: #050507; }
+  #bgfx { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden;
+    background:
+      radial-gradient(980px 640px at 50% 118%, #ff5a1f42 0%, #b0210f28 40%, transparent 72%),
+      radial-gradient(720px 540px at 6% -10%, #5b2bd630 0%, transparent 66%),
+      radial-gradient(800px 600px at 104% 28%, #c2185b26 0%, transparent 64%),
+      radial-gradient(1200px 800px at 50% 36%, #17121c 0%, #0c0b11 50%, #050507 100%); }
+  #bgfx::after { content: ""; position: absolute; inset: 0; background: radial-gradient(70% 60% at 50% 105%, #ff7a2f2e, transparent 70%); animation: bgbreath 7s ease-in-out infinite; }
+  #bgfx .wm { position: absolute; left: 50%; top: 50%; width: min(86vh, 74vw); aspect-ratio: 1; transform: translate(-50%, -50%); background: url(/icon.png) center / contain no-repeat; opacity: .075; filter: saturate(1.15); animation: wmfloat 10s ease-in-out infinite; }
+  #bgfx .wm::before { content: ""; position: absolute; inset: 8%; border-radius: 50%; background: radial-gradient(circle, #ff7a2f55 0%, transparent 68%); z-index: -1; }
+  #bgfx canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  @keyframes wmfloat { 0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: .065; } 50% { transform: translate(-50%, -53%) scale(1.025); opacity: .105; } }
+  @keyframes bgbreath { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+  body.mini #bgfx { display: none; }
+  @media (prefers-reduced-motion: reduce) { #bgfx .wm, #bgfx::after { animation: none; } }
+  .brand-logo { width: 30px; height: 30px; flex: none; object-fit: contain; filter: drop-shadow(0 0 7px #ff7a2fa0); }
+  .brand b { background: linear-gradient(90deg, #ffd27a, #ff8a3d 55%, #ff4d4d); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  nav button.active { background: linear-gradient(90deg, #ff7a2f26, #ff7a2f08); border-color: #ff7a2f40; box-shadow: inset 2px 0 0 #ff8a3d; }
+  nav button:hover { background: #ff7a2f12; }
+  .topbar { background: #0b090dae; border-bottom-color: #ff7a2f26; }
+  nav { background: #07060acc; border-right-color: #ff7a2f22; }
   /* the mini mode: a small strip over the other windows (window.rs makes the window small and puts it on top) */
   #mini { display: none; }
   body.mini .shell, body.mini #wincap, body.mini #wincap-zone { display: none !important; }
@@ -656,6 +679,7 @@
 </style>
 </head>
 <body>
+<div id="bgfx" aria-hidden="true"><div class="wm"></div><canvas id="embers"></canvas></div>
 <div id="wincap-zone"></div>
 <div id="wincap" role="toolbar" aria-label="Окно"><span>ДЖАРВИС</span><span class="grow"></span><button type="button" id="wc-mini" title="Мини-режим: маленькое окно поверх других">&#9645;</button><button type="button" id="wc-min" title="Свернуть">&#8212;</button><button type="button" id="wc-full" title="Окно / весь экран (Alt+Enter)">&#10064;</button><button type="button" id="wc-close" title="Закрыть">&#10005;</button></div>
 <div id="mini" data-s="idle" role="region" aria-label="Мини-режим Джарвиса">
@@ -666,7 +690,7 @@
 </div>
 <div class="shell">
   <nav>
-    <div class="brand"><span class="dot" id="dot"></span><b>JARVIS</b><button type="button" class="nav-fold" id="nav-fold" title="Свернуть меню" data-ico="fold"></button></div>
+    <div class="brand"><img class="brand-logo" src="/icon.png" alt=""><span class="dot" id="dot"></span><b>JARVIS</b><button type="button" class="nav-fold" id="nav-fold" title="Свернуть меню" data-ico="fold"></button></div>
     <button data-page="home" class="active" title="Главная"><span class="ei" data-ico="orb"></span><span>Главная</span></button>
     <button data-page="chat" title="Диалоги"><span class="ei" data-ico="chat"></span><span>Диалоги</span></button>
     <button data-page="tasks" title="Задачи"><span class="ei" data-ico="check"></span><span>Задачи</span><small class="nb" id="nav-tasks"></small></button>
@@ -2599,6 +2623,30 @@ window.addEventListener('resize', syncNativeFull); syncNativeFull(); setTimeout(
   const later = () => { clearTimeout(t); t = setTimeout(() => cap.classList.remove('show'), 700); };
   zone.addEventListener('mouseenter', open); cap.addEventListener('mouseenter', open); cap.addEventListener('mouseleave', later);
   document.addEventListener('mouseleave', later);
+})();
+
+// ---- the embers of the background: a few dozen sparks that rise and flicker (about 30 frames a second, stops when the window is hidden) ----
+(() => {
+  const cv = document.getElementById('embers'); if (!cv) return;
+  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const g = cv.getContext('2d'); let w = 0, h = 0, parts = [], last = 0;
+  const fit = () => { const d = Math.min(window.devicePixelRatio || 1, 1.5); w = cv.width = Math.floor(innerWidth * d); h = cv.height = Math.floor(innerHeight * d); };
+  const mk = (init) => ({ x: Math.random() * w, y: init ? Math.random() * h : h + 10, r: (0.6 + Math.random() * 1.8) * (w / 1600 + .6), v: 0.25 + Math.random() * 0.8, dx: (Math.random() - .5) * 0.35, ph: Math.random() * 6.28, hue: 18 + Math.random() * 28 });
+  fit(); const N = Math.max(24, Math.min(70, Math.floor(innerWidth / 24))); parts = Array.from({ length: N }, () => mk(true));
+  addEventListener('resize', fit);
+  const tick = t => {
+    requestAnimationFrame(tick);
+    if (document.hidden || document.body.classList.contains('mini') || t - last < 33) return; last = t;
+    g.clearRect(0, 0, w, h);
+    for (const p of parts) {
+      p.y -= p.v; p.x += p.dx + Math.sin(t / 900 + p.ph) * 0.25;
+      const life = Math.max(0, p.y / h), a = (0.15 + 0.55 * life) * (0.65 + 0.35 * Math.sin(t / 220 + p.ph));
+      if (p.y < -10) Object.assign(p, mk(false));
+      g.beginPath(); g.fillStyle = 'hsla(' + p.hue + ',100%,' + (55 + 20 * (1 - life)) + '%,' + a.toFixed(3) + ')';
+      g.shadowColor = 'hsla(' + p.hue + ',100%,55%,.9)'; g.shadowBlur = 8; g.arc(p.x, p.y, p.r, 0, 6.2832); g.fill();
+    }
+  };
+  requestAnimationFrame(tick);
 })();
 
 // ---- the mini mode: a small strip over the other windows; the state and the last words are copied from the main page ----

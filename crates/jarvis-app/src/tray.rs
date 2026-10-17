@@ -25,14 +25,15 @@ pub fn init_blocking(settings: SettingsManager) {
     let tray_menu = menu::build(&settings);
     let menu::TrayMenu { menu, state: tray_state } = tray_menu;
 
-    let _tray_icon = TrayIconBuilder::new()
+    // (kept in a cell: the exit removes the icon from the notification area BEFORE the process is ended, see crate::shutdown_and_exit)
+    let tray_icon = std::rc::Rc::new(std::cell::RefCell::new(Some(TrayIconBuilder::new()
         .with_menu(Box::new(menu))
         // a left click opens the window (window.rs), the menu is on the right click
         .with_menu_on_left_click(false)
         .with_tooltip(i18n::t("tray-tooltip"))
         .with_icon(icon)
         .build()
-        .unwrap();
+        .unwrap())));
 
     let menu_channel = MenuEvent::receiver();
 
@@ -74,7 +75,16 @@ pub fn init_blocking(settings: SettingsManager) {
             title: "Джарвис".to_string(),
             show_at_start,
             on_menu: Box::new(move |event| handle_menu_event(event, &settings, &tray_state)),
-            on_exit: Box::new(|| crate::shutdown_and_exit()),
+            on_exit: Box::new({
+                let tray_icon = tray_icon.clone();
+                move || {
+                    // Windows keeps the icon of a program that was ended without removing it until the mouse passes over it: it is removed
+                    // here, on the thread that made it, and only then the process ends
+                    drop(tray_icon.borrow_mut().take());
+                    crate::TRAY_GONE.store(true, std::sync::atomic::Ordering::SeqCst);
+                    crate::shutdown_and_exit()
+                }
+            }),
             fallback_open: Box::new(|| jarvis_core::ui::open_browser_window()),
             on_first_show: Box::new(move || {
                 if !keep_console {
@@ -201,7 +211,14 @@ fn restart_app() {
     match next.spawn() {
         Ok(_) => {
             info!("Spawned new instance, exiting current...");
-            // the full exit: the microphone and the ports are released for the new copy
+            // the full exit: the microphone and the ports are released for the new copy. On Windows this runs on the thread of the
+            // window: the exit goes through its loop (it removes the tray icon first)
+            #[cfg(target_os = "windows")]
+            {
+                crate::window::send(crate::window::UserEvent::Exit);
+                return;
+            }
+            #[cfg(not(target_os = "windows"))]
             crate::shutdown_and_exit();
         }
         Err(e) => {
