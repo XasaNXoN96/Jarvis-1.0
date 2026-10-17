@@ -1906,6 +1906,14 @@ pub fn handle(text: &str) -> Option<String> {
             with_backend(|b| g.release_all(b));
             Some(format!("Игра {} убрана из списка.", exe))
         }
+        // switching the aim assist on or off does not need the game in front (the buttons of the Jarvis window press it, and the Jarvis window is
+        // the one in front then); WHERE it works is checked in every frame (the window of a game of the list, the right button held)
+        Action::AimAssist(on) => {
+            if *on && !g.active {
+                return Some("Сначала включите игровой режим.".into());
+            }
+            Some(crate::aimassist::set_enabled(*on, &g.profile.aim))
+        }
         _ => {
             // an action goes only to the window of a game of the list, with the keys of that game
             let Some(exe) = front_exe().filter(|e| g.profile.all_exes().contains(e)) else {
@@ -2311,6 +2319,21 @@ mod tests {
         assert_eq!(crate::aimassist::point_override(), None);
         assert_eq!(aim_config().head_pct, Profile::default().aim.head_pct);
         crate::aimassist::set_point(None);
+        reset_global();
+    }
+
+    #[test]
+    fn the_aim_assist_buttons_work_while_the_jarvis_window_is_in_front_and_say_the_real_reason() {
+        let _l = GLOBAL.lock();
+        reset_global();
+        // game mode off: the phrase is not a game phrase at all (the button then says «Сначала включите игровой режим»)
+        assert_eq!(handle("включи помощь прицела"), None);
+        // game mode on, the window of a game is NOT in front (the Jarvis window is): the aim assist is still answered about itself
+        GAME.lock().active = true;
+        let said = handle("включи помощь прицела").unwrap();
+        assert!(!said.contains("Игра не в фокусе"), "{}", said);
+        assert!(said.contains("Помощь прицела не включена"), "no model in the test folder: {}", said);
+        assert!(handle("выключи помощь прицела").unwrap().contains("выключена"));
         reset_global();
     }
 
