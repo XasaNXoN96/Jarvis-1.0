@@ -884,6 +884,8 @@ impl Game {
             Action::Help => "Фразы: иди вперёд / назад / влево / вправо, беги, стой; смотри налево / направо / вверх / вниз (можно «на 45 градусов», «чуть», «разворот»); стреляй, очередью, прекрати огонь; целься, не целься; перезаряди, граната, нож, прыгай, присядь, используй; смени оружие, следующее / предыдущее оружие, второе оружие. Помощь прицела (эксперимент): «включи помощь прицела» / «выключи помощь прицела». Своя игра: «добавь эту игру» (можно «как гонку» или «как экшен»). Гонки: газ, тормоз, прямо, ручник, нитро, сигнал. Экшен: атакуй, блок, перекат, инвентарь, карта, полечись.".into(),
             Action::ReleaseAll => {
                 self.release_all(b);
+                // «стой» has priority over everything: the aim assist is switched off too
+                crate::aimassist::suspend();
                 String::new()
             }
             Action::Walk(d) => {
@@ -1630,13 +1632,15 @@ pub fn in_game_now() -> bool {
     in_game(&GAME.lock().profile)
 }
 
+// the aim part of the profile as it is in game_profile.json (without the settings of the page)
+pub fn profile_aim() -> crate::aimassist::AimConfig {
+    GAME.lock().profile.aim.clone()
+}
+
 pub fn aim_config() -> crate::aimassist::AimConfig {
-    let mut c = GAME.lock().profile.aim.clone();
-    // «целься в корпус»: another part of the body than the head
-    if let Some(p) = crate::aimassist::point_override() {
-        c.head_pct = p;
-    }
-    c
+    // the profile, the settings of the page over it and «целься в корпус» (another part of the body than the head)
+    let profile = GAME.lock().profile.aim.clone();
+    crate::aimassist::effective(&profile)
 }
 
 // a relative move of the mouse for the aim assist
@@ -2311,43 +2315,20 @@ mod tests {
     }
 
     #[test]
-    fn the_target_is_caught_when_the_crosshair_is_on_it_and_a_model_file_is_installed_without_losing_the_old_one() {
+    fn the_target_is_caught_when_the_crosshair_is_on_it() {
         use crate::aimassist::*;
         clear_locked();
         assert!(!locked_within(10_000));
         mark_locked_for_test();
         assert!(locked_within(10_000));
         clear_locked();
-        // the outcome of a frame: nobody / on the target / a step
+        // the outcome of a frame: nobody
         let cfg = AimConfig::default();
-        let side = SIDE;
+        let side = 64usize;
         let frame = vec![0u8; side * side * 4];
-        let mut nobody = |_: &[f32], _: usize| -> Result<(Vec<f32>, usize, usize), String> { Ok((vec![0.0; 5 * 10], 5, 10)) };
-        assert_eq!(frame_outcome(&frame, side, &cfg, &mut nobody).unwrap(), Outcome::NoTarget);
-        // the file of a model
-        let dir = std::env::temp_dir().join(format!("jarvis-aim-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let src = dir.join("мой детектор.onnx");
-        std::fs::write(&src, vec![1u8; 20_000]).unwrap();
-        let dest = dir.join("aim");
-        assert!(install_model_to(&src, &dest).unwrap().contains("Модель установлена"));
-        assert_eq!(std::fs::read(dest.join("player.onnx")).unwrap().len(), 20_000);
-        // a second one: the first is kept beside, not lost
-        std::fs::write(&src, vec![2u8; 30_000]).unwrap();
-        install_model_to(&src, &dest).unwrap();
-        assert_eq!(std::fs::read(dest.join("player.onnx")).unwrap().len(), 30_000);
-        let kept: Vec<_> = std::fs::read_dir(&dest).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().starts_with("player.onnx.bak-")).collect();
-        assert_eq!(kept.len(), 1);
-        assert_eq!(std::fs::read(kept[0].path()).unwrap().len(), 20_000);
-        // not a model: a wrong name, a tiny file, a missing file
-        let txt = dir.join("a.txt");
-        std::fs::write(&txt, vec![1u8; 20_000]).unwrap();
-        assert!(install_model_to(&txt, &dest).is_err());
-        let tiny = dir.join("tiny.onnx");
-        std::fs::write(&tiny, b"x").unwrap();
-        assert!(install_model_to(&tiny, &dest).is_err());
-        assert!(install_model_to(&dir.join("нет.onnx"), &dest).is_err());
-        std::fs::remove_dir_all(&dir).ok();
+        let spec = crate::aimdetect::ModelSpec { layout: crate::aimdetect::Layout::ChannelsFirst, input_w: side, input_h: side, classes: 1, anchors: 10 };
+        let mut nobody = |_: &[f32]| -> Result<crate::aimdetect::RawOut, String> { Ok(crate::aimdetect::RawOut { data: vec![0.0; 5 * 10], dims: vec![1, 5, 10] }) };
+        assert_eq!(frame_outcome(&frame, side, &cfg, &spec, &mut nobody).unwrap().outcome, Outcome::NoTarget);
     }
 
     #[test]

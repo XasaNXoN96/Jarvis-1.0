@@ -97,6 +97,8 @@ pub mod gamedialog;
 pub mod gameicon;
 pub mod voiceprint;
 pub mod aimassist;
+pub mod aimdetect;
+pub mod aimmodel;
 pub mod scenario;
 pub mod tasks;
 pub mod telegram;

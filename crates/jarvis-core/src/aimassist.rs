@@ -1,25 +1,60 @@
 //! An experimental aim assist for SINGLE-PLAYER games (it belongs to the game mode, gamemode.rs). Off at every start.
 //!
 //! What it does: while the user HOLDS THE RIGHT MOUSE BUTTON (aims down the sights) and the window of a game of the profile is in
-//! front, it looks at a square of the screen around the crosshair, asks an ONNX detector (YOLO-style, supplied by the user) where the
-//! people are, takes the one nearest to the crosshair and nudges the mouse a part of the way towards its head in every frame.
+//! front, it looks at a square of the screen around the crosshair, asks an ONNX detector of people where they are, takes the one nearest
+//! to the crosshair and nudges the mouse a part of the way towards its head in every frame.
 //! What it does not do: it does not read the memory of a game, does not inject anything into it and does not touch its files. It
 //! only takes a picture of the screen (like a screenshot tool) and moves the mouse by relative steps (like a hand would).
-//! It never runs when the game mode is off, when the window in front is not a program of the profile, or without a model file.
+//! It never runs when the game mode is off, when the window in front is not a program of the profile, when an anti-cheat program
+//! runs, or without a model that loaded and passed the check.
 //!
-//! The detector: the default is the YOLOv8 export (`yolo export model=yolov8n.pt format=onnx imgsz=640`): input `images`
-//! (1×3×640×640, RGB, 0..1), output `output0` (1×(4+classes)×anchors: centre x, centre y, width, height, then the class scores).
-//! Class 0 is «person». The file lies at `<data folder>/aim/player.onnx` (or the path of game_profile.json → aim.model).
-//! This part of the code is split in two: the arithmetic below (decode, NMS, target choice, the size of a step) is plain and tested; the
-//! capture of the screen and the run of the model are Windows / ONNX Runtime only.
+//! The model: installed from the Games page (aimmodel.rs: the official YOLOX-s of OpenCV Zoo with a checked SHA-256, or a file of the
+//! user). Several YOLO families are understood (aimdetect.rs). The file lies at `<data folder>/aim/player.onnx` (or the path of
+//! game_profile.json → aim.model). The model finds WHOLE PEOPLE (class «person»); «head» and «body» are points chosen in the box.
+//! This part is split in two: the arithmetic (decode, NMS, target choice, the size of a step) and the settings are plain and tested; the
+//! capture of the screen is Windows only; the run of the model is ONNX Runtime (tested with small fake models on any system).
 
+use crate::aimdetect::{decode_output, preprocess, scale_back, ModelSpec, RawOut};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
-// the side of the square around the crosshair that the detector looks at
+// the default side of the square around the crosshair that the detector looks at
 pub const SIDE: usize = 640;
+
+// where the model runs: Auto = the video card when this build has DirectML and it works, else the processor
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Device {
+    Auto,
+    Cpu,
+    DirectMl,
+}
+
+impl Device {
+    pub fn from_name(n: &str) -> Option<Device> {
+        match n.trim().to_lowercase().as_str() {
+            "auto" => Some(Device::Auto),
+            "cpu" => Some(Device::Cpu),
+            "directml" | "dml" | "gpu" => Some(Device::DirectMl),
+            _ => None,
+        }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            Device::Auto => "auto",
+            Device::Cpu => "cpu",
+            Device::DirectMl => "directml",
+        }
+    }
+    pub fn title(self) -> &'static str {
+        match self {
+            Device::Auto => "Авто",
+            Device::Cpu => "Процессор (CPU)",
+            Device::DirectMl => "Видеокарта (DirectML)",
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AimConfig {
@@ -35,16 +70,24 @@ pub struct AimConfig {
     pub conf_pct: u32,
     // the class of «person» in the model
     pub class: usize,
+    // where the model runs
+    pub device: Device,
+    // the side of the square of the screen that is looked at, pixels (a smaller one is faster and sees less around the crosshair)
+    pub side: u32,
+    // the most frames a second (the program lowers it by itself when the computer cannot keep up)
+    pub fps: u32,
+    // a person whose box is lower than this (pixels of the screen) is not taken: far away or a part of something
+    pub min_size_px: u32,
 }
 
 impl Default for AimConfig {
     fn default() -> Self {
-        AimConfig { model: None, strength_pct: 25, head_pct: 12, radius_px: 260, conf_pct: 45, class: 0 }
+        AimConfig { model: None, strength_pct: 25, head_pct: 12, radius_px: 260, conf_pct: 45, class: 0, device: Device::Auto, side: SIDE as u32, fps: 30, min_size_px: 24 }
     }
 }
 
-pub fn config_from_json(v: &Value) -> Result<AimConfig, String> {
-    let mut c = AimConfig::default();
+// the numbers named in `v` (a part of game_profile.json or the settings of the page) are put into `c`, each one checked
+pub fn apply_json(c: &mut AimConfig, v: &Value) -> Result<(), String> {
     let num = |k: &str, lo: i64, hi: i64| -> Result<Option<u32>, String> {
         match v.get(k) {
             None => Ok(None),
@@ -69,6 +112,18 @@ pub fn config_from_json(v: &Value) -> Result<AimConfig, String> {
     if let Some(n) = num("class", 0, 1000)? {
         c.class = n as usize;
     }
+    if let Some(n) = num("side", 160, 1024)? {
+        c.side = n;
+    }
+    if let Some(n) = num("fps", 1, 60)? {
+        c.fps = n;
+    }
+    if let Some(n) = num("min_size", 0, 400)? {
+        c.min_size_px = n;
+    }
+    if let Some(d) = v.get("device") {
+        c.device = d.as_str().and_then(Device::from_name).ok_or("aim.device: auto, cpu или directml")?;
+    }
     if let Some(m) = v.get("model").and_then(|m| m.as_str()) {
         let m = m.trim();
         if !m.to_lowercase().ends_with(".onnx") || m.len() > 260 {
@@ -76,7 +131,64 @@ pub fn config_from_json(v: &Value) -> Result<AimConfig, String> {
         }
         c.model = Some(m.to_string());
     }
+    Ok(())
+}
+
+pub fn config_from_json(v: &Value) -> Result<AimConfig, String> {
+    let mut c = AimConfig::default();
+    apply_json(&mut c, v)?;
     Ok(c)
+}
+
+// ---------------------------------------------------------------------------------------------
+// the settings of the page (the device, the size of the picture, the frames a second, the limit of the score, the least size of a person):
+// kept in `aim_settings.json` of the data folder and laid over the profile. Nothing else of the game files is touched.
+// ---------------------------------------------------------------------------------------------
+fn settings_file() -> std::path::PathBuf {
+    #[cfg(test)]
+    {
+        return std::env::temp_dir().join(format!("jarvis-aim-settings-{}.json", std::process::id()));
+    }
+    #[cfg(not(test))]
+    {
+        crate::APP_DIR.join("aim_settings.json")
+    }
+}
+
+fn read_overlay() -> Value {
+    std::fs::read_to_string(settings_file()).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).filter(|v| v.is_object()).unwrap_or_else(|| json!({}))
+}
+
+// the settings of the page are checked as a whole, then kept; the answer is the configuration that results
+pub fn save_settings(patch: &Value, base: &AimConfig) -> Result<AimConfig, String> {
+    let Some(obj) = patch.as_object() else { return Err("настройки должны быть объектом".into()) };
+    // only the keys of the page (the path of a model is chosen with the file window, not typed here)
+    let allowed = ["device", "side", "fps", "conf", "min_size", "strength", "head", "radius"];
+    if obj.keys().any(|k| !allowed.contains(&k.as_str())) {
+        return Err("неизвестная настройка".into());
+    }
+    let mut now = read_overlay();
+    for (k, v) in obj {
+        now[k] = v.clone();
+    }
+    let mut c = base.clone();
+    apply_json(&mut c, &now)?;
+    let path = settings_file();
+    let text = serde_json::to_string_pretty(&now).unwrap_or_default();
+    crate::write_atomic(&path, text).map_err(|e| format!("не удалось сохранить настройки: {}", e))?;
+    Ok(effective(base))
+}
+
+// the configuration that is used now: the profile, the settings of the page over it, the part of the body that was asked for by voice
+pub fn effective(profile: &AimConfig) -> AimConfig {
+    let mut c = profile.clone();
+    // (a settings file that does not fit leaves the profile as it is; the page checks the numbers before it saves them)
+    let _ = apply_json(&mut c, &read_overlay());
+    if let Some(p) = point_override() {
+        c.head_pct = p;
+    }
+    c.radius_px = c.radius_px.min(c.side / 2);
+    c
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -165,61 +277,10 @@ pub fn step(delta: (f32, f32), strength_pct: u32, max_step: f32) -> (i32, i32) {
     ((delta.0 * k).round() as i32, (delta.1 * k).round() as i32)
 }
 
+
 // ---------------------------------------------------------------------------------------------
-// the running part
+// one frame
 // ---------------------------------------------------------------------------------------------
-static ENABLED: AtomicBool = AtomicBool::new(false);
-static FRAMES: AtomicU64 = AtomicU64::new(0);
-static LAST_MS: AtomicU64 = AtomicU64::new(0);
-static PROBLEM: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(String::new()));
-
-pub fn is_enabled() -> bool {
-    ENABLED.load(Ordering::SeqCst)
-}
-
-pub fn model_path(cfg: &AimConfig) -> std::path::PathBuf {
-    match &cfg.model {
-        Some(p) => std::path::PathBuf::from(p),
-        None => crate::APP_DIR.join("aim").join("player.onnx"),
-    }
-}
-
-// on / off; the answer for the user. Off at every start (never remembered).
-pub fn set_enabled(on: bool, cfg: &AimConfig) -> String {
-    if !on {
-        ENABLED.store(false, Ordering::SeqCst);
-        return "Помощь прицела выключена.".into();
-    }
-    let path = model_path(cfg);
-    if !path.is_file() {
-        ENABLED.store(false, Ordering::SeqCst);
-        return format!("Помощь прицела не включена: нет файла модели {} (см. docs/GAME-MODE.md, как его получить).", path.display());
-    }
-    if !cfg!(all(target_os = "windows", feature = "ort")) {
-        ENABLED.store(false, Ordering::SeqCst);
-        return "Помощь прицела работает только в Windows-сборке с нейросетями.".into();
-    }
-    PROBLEM.lock().clear();
-    ENABLED.store(true, Ordering::SeqCst);
-    #[cfg(all(target_os = "windows", feature = "ort"))]
-    run::start();
-    "Помощь прицела включена: работает, пока вы держите правую кнопку мыши в окне игры. «Выключи помощь прицела» отключает.".into()
-}
-
-pub fn status_json(cfg: &AimConfig) -> Value {
-    json!({ "enabled": is_enabled(), "model": model_path(cfg).display().to_string(), "model_found": model_path(cfg).is_file(),
-        "frames": FRAMES.load(Ordering::SeqCst), "last_frame_ms": LAST_MS.load(Ordering::SeqCst), "problem": PROBLEM.lock().clone() })
-}
-
-// one frame: a picture (BGRA, `side`×`side`) -> the step of the mouse (None: no target). The session is a closure, so that the
-// tests can put a fake detector in its place.
-pub fn frame_step(bgra: &[u8], side: usize, cfg: &AimConfig, detect: &mut dyn FnMut(&[f32], usize) -> Result<(Vec<f32>, usize, usize), String>) -> Result<Option<(i32, i32)>, String> {
-    Ok(match frame_outcome(bgra, side, cfg, detect)? {
-        Outcome::Step(dx, dy) => Some((dx, dy)),
-        _ => None,
-    })
-}
-
 // what one frame showed: nobody in reach, the crosshair is on the target already, or a step of the mouse towards it
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome {
@@ -231,33 +292,48 @@ pub enum Outcome {
 // the crosshair is «on the target» when the step is no more than this (pixels, both axes together)
 pub const LOCK_PX: i32 = 10;
 
-pub fn frame_outcome(bgra: &[u8], side: usize, cfg: &AimConfig, detect: &mut dyn FnMut(&[f32], usize) -> Result<(Vec<f32>, usize, usize), String>) -> Result<Outcome, String> {
-    if bgra.len() != side * side * 4 {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Frame {
+    pub outcome: Outcome,
+    // people found in the picture (after the score limit, NMS and the least size)
+    pub objects: usize,
+}
+
+// a picture with (almost) nothing in it: black (a protected window, a minimised game) or one flat colour
+pub fn frame_is_blank(bgra: &[u8]) -> bool {
+    if bgra.len() < 16 {
+        return true;
+    }
+    let first = [bgra[0], bgra[1], bgra[2]];
+    // a few hundred sample points are enough: a real picture of a game is never flat
+    let step = (bgra.len() / 4 / 400).max(1) * 4;
+    bgra.chunks(4).step_by(step / 4).all(|p| p.len() == 4 && p[0].abs_diff(first[0]) < 3 && p[1].abs_diff(first[1]) < 3 && p[2].abs_diff(first[2]) < 3)
+}
+
+// A picture (BGRA, `side`×`side`) -> what to do with the mouse. The model is a closure, so that the tests can put a fake one in its place;
+// the picture is prepared for the model, the answer is read by the layout of the model, the boxes are scaled back to the picture.
+pub fn frame_outcome(bgra: &[u8], side: usize, cfg: &AimConfig, spec: &ModelSpec, detect: &mut dyn FnMut(&[f32]) -> Result<RawOut, String>) -> Result<Frame, String> {
+    if side == 0 || bgra.len() != side * side * 4 {
         return Err("кадр неверного размера".into());
     }
-    // BGRA -> RGB planes, 0..1
-    let plane = side * side;
-    let mut rgb = vec![0f32; plane * 3];
-    for i in 0..plane {
-        rgb[i] = bgra[i * 4 + 2] as f32 / 255.0;
-        rgb[plane + i] = bgra[i * 4 + 1] as f32 / 255.0;
-        rgb[2 * plane + i] = bgra[i * 4] as f32 / 255.0;
-    }
-    let (out, channels, anchors) = detect(&rgb, side)?;
-    let dets = decode(&out, channels, anchors, cfg.class, cfg.conf_pct as f32 / 100.0).ok_or("ответ модели не подходит по форме")?;
-    let dets = nms(dets, 0.5);
+    let rgb = preprocess(bgra, side, spec.input_w, spec.input_h, spec.layout.norm());
+    let out = detect(&rgb)?;
+    let dets = decode_output(&out, spec, cfg.class, cfg.conf_pct as f32 / 100.0).ok_or("ответ модели не подходит по форме")?;
+    let dets = scale_back(nms(dets, 0.5), side, spec.input_w, spec.input_h);
+    let dets: Vec<Det> = dets.into_iter().filter(|d| (d.y2 - d.y1) >= cfg.min_size_px as f32).collect();
     let centre = (side as f32 / 2.0, side as f32 / 2.0);
-    Ok(match pick(&dets, centre, cfg) {
+    let outcome = match pick(&dets, centre, cfg) {
         None => Outcome::NoTarget,
         Some((_, head)) => match step((head.0 - centre.0, head.1 - centre.1), cfg.strength_pct, 40.0) {
             (0, 0) => Outcome::OnTarget,
             (dx, dy) => Outcome::Step(dx, dy),
         },
-    })
+    };
+    Ok(Frame { outcome, objects: dets.len() })
 }
 
 // ---- the point of the body that is aimed at, and «the target is caught» (for «целься в голову» and «прицельный огонь») ----
-static POINT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+static POINT: AtomicU32 = AtomicU32::new(0);
 static LOCKED_MS: AtomicU64 = AtomicU64::new(0);
 static CLOCK: Lazy<std::time::Instant> = Lazy::new(std::time::Instant::now);
 
@@ -290,74 +366,152 @@ pub fn clear_locked() {
     LOCKED_MS.store(0, Ordering::SeqCst);
 }
 
-// the file of a model that the user chose is put into the folder of the program under the name the aim assist reads. An older file
-// is not overwritten: it is kept beside as player.onnx.bak-<time>.
-pub fn install_model_to(src: &std::path::Path, dir: &std::path::Path) -> Result<String, String> {
-    let name = src.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase();
-    if !name.ends_with(".onnx") {
-        return Err("Нужен файл модели с расширением .onnx.".into());
-    }
-    let size = std::fs::metadata(src).map_err(|_| "Файл модели не найден.".to_string())?.len();
-    if !(10_000..=1_500_000_000).contains(&size) {
-        return Err("Файл не похож на модель: он слишком маленький или слишком большой.".into());
-    }
-    std::fs::create_dir_all(dir).map_err(|e| format!("Не удалось создать папку модели: {}.", e))?;
-    let target = dir.join("player.onnx");
-    if target.exists() {
-        let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        let kept = dir.join(format!("player.onnx.bak-{}", secs));
-        if !kept.exists() {
-            std::fs::rename(&target, &kept).map_err(|e| format!("Не удалось сохранить прежнюю модель: {}.", e))?;
-        }
-    }
-    std::fs::copy(src, &target).map_err(|e| format!("Не удалось скопировать модель: {}.", e))?;
-    Ok(format!("Модель установлена: {} ({} МБ). Включите помощь прицела.", target.display(), size / 1_048_576 + 1))
+// ---------------------------------------------------------------------------------------------
+// the state that the page and the diagnostics show
+// ---------------------------------------------------------------------------------------------
+static ENABLED: AtomicBool = AtomicBool::new(false);
+static FRAMES: AtomicU64 = AtomicU64::new(0);
+static LAST_MS: AtomicU64 = AtomicU64::new(0);
+static OBJECTS: AtomicU32 = AtomicU32::new(0);
+// the number of the run: a thread of an older run ends by itself when it is not the current one (no thread is left behind)
+static RUN_ID: AtomicU64 = AtomicU64::new(0);
+static RUNNING: AtomicBool = AtomicBool::new(false);
+static PROBLEM: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(String::new()));
+static STATE: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new("off".into()));
+static CAPTURE: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new("не снимался".into()));
+static DEVICE: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(String::new()));
+
+fn set_state(s: &str) {
+    *STATE.lock() = s.to_string();
 }
 
-pub fn install_model(src: &std::path::Path) -> Result<String, String> {
-    install_model_to(src, &crate::APP_DIR.join("aim"))
+fn fail(msg: impl Into<String>) {
+    *PROBLEM.lock() = msg.into();
+    ENABLED.store(false, Ordering::SeqCst);
+    set_state("error");
+}
+
+pub fn is_enabled() -> bool {
+    ENABLED.load(Ordering::SeqCst)
+}
+
+// a background thread of the aim assist is alive (the tests of the clean stop look at it)
+pub fn thread_running() -> bool {
+    RUNNING.load(Ordering::SeqCst)
+}
+
+pub fn model_path(cfg: &AimConfig) -> std::path::PathBuf {
+    match &cfg.model {
+        Some(p) => std::path::PathBuf::from(p),
+        None => crate::APP_DIR.join("aim").join("player.onnx"),
+    }
+}
+
+// why the aim assist cannot be turned on (None = it can): the same words are shown on the page
+pub fn enable_blockers(cfg: &AimConfig) -> Option<String> {
+    let path = model_path(cfg);
+    if !path.is_file() {
+        return Some("нет модели: установите её на странице «Игры» → «Помощь прицела» (кнопка «Установить модель автоматически»)".into());
+    }
+    if !cfg!(all(target_os = "windows", feature = "ort")) {
+        return Some("помощь прицела работает только в Windows-сборке с нейросетями".into());
+    }
+    None
+}
+
+// on / off; the answer for the user. Off at every start (never remembered).
+pub fn set_enabled(on: bool, cfg: &AimConfig) -> String {
+    if !on {
+        let was = ENABLED.swap(false, Ordering::SeqCst);
+        // the running thread sees the end by itself (it checks the flag and the number of the run on every turn)
+        RUN_ID.fetch_add(1, Ordering::SeqCst);
+        clear_locked();
+        set_state("off");
+        return if was { "Помощь прицела выключена.".into() } else { "Помощь прицела и так выключена.".into() };
+    }
+    if let Some(why) = enable_blockers(cfg) {
+        ENABLED.store(false, Ordering::SeqCst);
+        set_state("off");
+        return format!("Помощь прицела не включена: {}.", why);
+    }
+    PROBLEM.lock().clear();
+    FRAMES.store(0, Ordering::SeqCst);
+    OBJECTS.store(0, Ordering::SeqCst);
+    let id = RUN_ID.fetch_add(1, Ordering::SeqCst) + 1;
+    ENABLED.store(true, Ordering::SeqCst);
+    set_state("loading");
+    #[cfg(all(target_os = "windows", feature = "ort"))]
+    run::start(id);
+    let _ = id;
+    "Помощь прицела включена: работает, пока вы держите правую кнопку мыши в окне игры. «Выключи помощь прицела» или «стой» отключает.".into()
+}
+
+// the switch off from outside (the word «стой», the end of the game mode, the end of the program)
+pub fn suspend() {
+    if is_enabled() {
+        set_enabled(false, &AimConfig::default());
+    }
+}
+
+pub fn status_json(cfg: &AimConfig) -> Value {
+    let eff = effective(cfg);
+    json!({ "enabled": is_enabled(), "state": STATE.lock().clone(), "model": model_path(cfg).display().to_string(), "model_found": model_path(cfg).is_file(),
+        "frames": FRAMES.load(Ordering::SeqCst), "last_frame_ms": LAST_MS.load(Ordering::SeqCst), "objects": OBJECTS.load(Ordering::SeqCst),
+        "capture": CAPTURE.lock().clone(), "device_used": DEVICE.lock().clone(), "thread": thread_running(), "problem": PROBLEM.lock().clone(),
+        "settings": { "device": eff.device.name(), "side": eff.side, "fps": eff.fps, "conf": eff.conf_pct, "min_size": eff.min_size_px } })
+}
+
+// how long to rest after a frame: the frame rate that was asked for, and when the computer is slow (a frame takes more than the budget) the
+// rest is at least half of the time of the frame, so that the program never takes more than two thirds of a core from the game
+pub fn rest_after(spent: std::time::Duration, fps: u32) -> std::time::Duration {
+    let budget = std::time::Duration::from_millis(1000 / fps.clamp(1, 60) as u64);
+    if spent < budget {
+        budget - spent
+    } else {
+        spent / 2
+    }
 }
 
 #[cfg(all(target_os = "windows", feature = "ort"))]
 mod run {
     use super::*;
-    use ort::value::Tensor;
+    use crate::aimdetect::ortrun;
 
-    static STARTED: AtomicBool = AtomicBool::new(false);
-
-    // the model: loaded once, when it is first needed
-    pub fn load(path: &std::path::Path) -> Result<ort::session::Session, String> {
-        ort::session::Session::builder()
-            .map_err(|e| format!("ONNX Runtime: {}", e))?
-            .commit_from_file(path)
-            .map_err(|e| format!("модель {} не загрузилась: {}", path.display(), e))
-    }
-
-    // runs the detector on an RGB picture: the output tensor with its shape (channels, anchors)
-    pub fn detect(session: &mut ort::session::Session, rgb: &[f32], side: usize) -> Result<(Vec<f32>, usize, usize), String> {
-        let arr = ndarray::Array4::from_shape_vec((1, 3, side, side), rgb.to_vec()).map_err(|e| e.to_string())?;
-        let input = Tensor::from_array(arr).map_err(|e| format!("tensor: {}", e))?;
-        let outputs = session.run(ort::inputs! { "images" => input }).map_err(|e| format!("ort: {}", e))?;
-        let (shape, data) = outputs[0].try_extract_tensor::<f32>().map_err(|e| format!("ответ модели: {}", e))?;
-        let dims: Vec<usize> = shape.iter().map(|&d| d as usize).collect();
-        if dims.len() != 3 || dims[0] != 1 {
-            return Err(format!("ответ модели формы {:?}: нужна форма 1×(4+классы)×боксы", dims));
+    // the window in front: its client area on the screen (x, y, w, h); None when there is none, it is minimised or has no size
+    unsafe fn window_area() -> Result<(i32, i32, i32, i32), String> {
+        use winapi::shared::windef::{POINT, RECT};
+        use winapi::um::winuser::*;
+        let hwnd = GetForegroundWindow();
+        if hwnd.is_null() {
+            return Err("нет окна переднего плана".into());
         }
-        Ok((data.to_vec(), dims[1], dims[2]))
+        if IsIconic(hwnd) != 0 {
+            return Err("окно игры свёрнуто".into());
+        }
+        let mut r: RECT = std::mem::zeroed();
+        if GetClientRect(hwnd, &mut r) == 0 {
+            return Err("окно игры закрыто".into());
+        }
+        let mut p = POINT { x: 0, y: 0 };
+        if ClientToScreen(hwnd, &mut p) == 0 {
+            return Err("окно игры закрыто".into());
+        }
+        Ok((p.x, p.y, r.right - r.left, r.bottom - r.top))
     }
 
-    // the picture of the square around the crosshair (the centre of the main screen); BGRA
-    unsafe fn capture(side: i32) -> Option<Vec<u8>> {
+    // the picture of the square around the middle of the game window (the crosshair); BGRA. `side` is cut down to the window.
+    unsafe fn capture(want: i32) -> Result<(Vec<u8>, usize), String> {
         use winapi::um::wingdi::*;
         use winapi::um::winuser::*;
-        let (sw, sh) = (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-        if sw < side || sh < side {
-            return None;
+        let (wx, wy, ww, wh) = window_area()?;
+        let side = want.min(ww).min(wh) & !1;
+        if side < 64 {
+            return Err(format!("окно игры слишком маленькое ({}×{})", ww, wh));
         }
-        let (x, y) = ((sw - side) / 2, (sh - side) / 2);
+        let (x, y) = (wx + (ww - side) / 2, wy + (wh - side) / 2);
         let hdc = GetDC(std::ptr::null_mut());
         if hdc.is_null() {
-            return None;
+            return Err("экран не открывается для снимка".into());
         }
         let mem = CreateCompatibleDC(hdc);
         let bmp = CreateCompatibleBitmap(hdc, side, side);
@@ -373,71 +527,133 @@ mod run {
         DeleteObject(bmp as _);
         DeleteDC(mem);
         ReleaseDC(std::ptr::null_mut(), hdc);
-        if ok { Some(buf) } else { None }
+        if ok { Ok((buf, side as usize)) } else { Err("снимок экрана не получился".into()) }
     }
 
     fn right_button_down() -> bool {
         unsafe { (winapi::um::winuser::GetAsyncKeyState(0x02) as u16) & 0x8000 != 0 }
     }
 
-    pub fn start() {
-        if STARTED.swap(true, Ordering::SeqCst) {
-            return;
-        }
-        std::thread::spawn(|| {
-            let mut session: Option<ort::session::Session> = None;
-            loop {
-                let cfg = crate::gamemode::aim_config();
-                let ready = ENABLED.load(Ordering::SeqCst) && crate::gamemode::is_active() && crate::gamemode::in_game_now() && crate::gamemode::anticheat_running().is_none();
-                if !ready {
-                    std::thread::sleep(std::time::Duration::from_millis(200));
-                    continue;
+    // this run is the current one and still wanted
+    fn alive(id: u64) -> bool {
+        ENABLED.load(Ordering::SeqCst) && RUN_ID.load(Ordering::SeqCst) == id
+    }
+
+    pub fn start(id: u64) {
+        // an older thread, if there is one, ends by itself (its number is not the current one); a new one starts at once
+        std::thread::spawn(move || {
+            // two threads never work together: wait for the older one to leave (it checks every few milliseconds)
+            let mut waited = 0;
+            while RUNNING.swap(true, Ordering::SeqCst) {
+                if !alive(id) {
+                    return;
                 }
-                if !right_button_down() {
-                    std::thread::sleep(std::time::Duration::from_millis(15));
-                    continue;
-                }
-                if session.is_none() {
-                    match load(&model_path(&cfg)) {
-                        Ok(s) => session = Some(s),
-                        Err(e) => {
-                            *PROBLEM.lock() = e;
-                            ENABLED.store(false, Ordering::SeqCst);
-                            continue;
-                        }
-                    }
-                }
-                let started = std::time::Instant::now();
-                let Some(frame) = (unsafe { capture(SIDE as i32) }) else {
-                    *PROBLEM.lock() = "экран не снимается (игра в «настоящем» полноэкранном режиме? включите «окно без рамки»)".into();
-                    std::thread::sleep(std::time::Duration::from_millis(500));
-                    continue;
-                };
-                let s = session.as_mut().unwrap();
-                match frame_outcome(&frame, SIDE, &cfg, &mut |rgb, side| detect(s, rgb, side)) {
-                    Ok(Outcome::Step(dx, dy)) => {
-                        crate::gamemode::mouse_rel(dx, dy);
-                        if dx.abs() + dy.abs() <= LOCK_PX {
-                            mark_locked();
-                        }
-                    }
-                    Ok(Outcome::OnTarget) => mark_locked(),
-                    Ok(Outcome::NoTarget) => {}
-                    Err(e) => {
-                        *PROBLEM.lock() = e;
-                        ENABLED.store(false, Ordering::SeqCst);
-                        continue;
-                    }
-                }
-                FRAMES.fetch_add(1, Ordering::SeqCst);
-                LAST_MS.store(started.elapsed().as_millis() as u64, Ordering::SeqCst);
-                // about sixty frames a second at the most: the game keeps its time
-                let spent = started.elapsed();
-                if spent < std::time::Duration::from_millis(16) {
-                    std::thread::sleep(std::time::Duration::from_millis(16) - spent);
+                std::thread::sleep(std::time::Duration::from_millis(20));
+                waited += 1;
+                if waited > 500 {
+                    fail("прошлый запуск не завершился");
+                    return;
                 }
             }
+            main_loop(id);
+            RUNNING.store(false, Ordering::SeqCst);
         });
+    }
+
+    fn main_loop(id: u64) {
+        let cfg0 = crate::gamemode::aim_config();
+        // the model is loaded and tried once; any failure turns the module off with the reason (it does not wait for ever)
+        let info = match ortrun::probe(&model_path(&cfg0), &cfg0) {
+            Ok(i) => i,
+            Err(e) => {
+                fail(format!("модель не годится: {}", e));
+                return;
+            }
+        };
+        let mut session = match ortrun::session_for(&model_path(&cfg0), cfg0.device) {
+            Ok((s, d, note)) => {
+                *DEVICE.lock() = if note.is_empty() { d.title().to_string() } else { format!("{} ({})", d.title(), note) };
+                s
+            }
+            Err(e) => {
+                fail(e);
+                return;
+            }
+        };
+        let (mut cap_fail, mut blank) = (0u32, 0u32);
+        while alive(id) {
+            let cfg = crate::gamemode::aim_config();
+            let ready = crate::gamemode::is_active() && crate::gamemode::in_game_now() && crate::gamemode::anticheat_running().is_none();
+            if !ready {
+                set_state("waiting");
+                *CAPTURE.lock() = "ждёт окно игры".into();
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                continue;
+            }
+            if !right_button_down() {
+                set_state("waiting");
+                std::thread::sleep(std::time::Duration::from_millis(15));
+                continue;
+            }
+            let started = std::time::Instant::now();
+            let (frame, side) = match unsafe { capture(cfg.side as i32) } {
+                Ok(f) => f,
+                Err(e) => {
+                    cap_fail += 1;
+                    *CAPTURE.lock() = format!("ошибка: {}", e);
+                    // a minimised or closed window is a pause, not a failure; a long row of failures stops the module with the reason
+                    if cap_fail >= 120 {
+                        fail(format!("экран не снимается: {} (игра в «настоящем» полноэкранном режиме? включите «окно без рамки»)", e));
+                        return;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                    continue;
+                }
+            };
+            cap_fail = 0;
+            if frame_is_blank(&frame) {
+                blank += 1;
+                *CAPTURE.lock() = "кадр пустой (чёрный)".into();
+                if blank >= 90 {
+                    fail("экран снимается чёрным: окно игры защищено от снимков или игра в монопольном полноэкранном режиме (включите «окно без рамки»)");
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                continue;
+            }
+            blank = 0;
+            *CAPTURE.lock() = format!("ок, {}×{}", side, side);
+            set_state("working");
+            let res = frame_outcome(&frame, side, &cfg, &info.spec, &mut |rgb| ortrun::run(&mut session, &info.input_name, rgb, info.spec.input_w, info.spec.input_h));
+            match res {
+                Ok(f) => {
+                    OBJECTS.store(f.objects as u32, Ordering::SeqCst);
+                    // the module may have been switched off while the model worked: no move of the mouse after that
+                    if !alive(id) {
+                        break;
+                    }
+                    match f.outcome {
+                        Outcome::Step(dx, dy) => {
+                            crate::gamemode::mouse_rel(dx, dy);
+                            if dx.abs() + dy.abs() <= LOCK_PX {
+                                mark_locked();
+                            }
+                        }
+                        Outcome::OnTarget => mark_locked(),
+                        Outcome::NoTarget => {}
+                    }
+                }
+                Err(e) => {
+                    fail(e);
+                    return;
+                }
+            }
+            FRAMES.fetch_add(1, Ordering::SeqCst);
+            let spent = started.elapsed();
+            LAST_MS.store(spent.as_millis() as u64, Ordering::SeqCst);
+            std::thread::sleep(rest_after(spent, cfg.fps));
+        }
+        set_state(if ENABLED.load(Ordering::SeqCst) { "loading" } else { "off" });
     }
 }
 
@@ -509,36 +725,80 @@ mod tests {
 
     #[test]
     fn the_config_is_checked_number_by_number() {
-        let ok = config_from_json(&json!({ "strength": 40, "head": 15, "radius": 200, "conf": 50, "class": 0, "model": "D:\\m\\p.onnx" })).unwrap();
+        let ok = config_from_json(&json!({ "strength": 40, "head": 15, "radius": 200, "conf": 50, "class": 0, "model": "D:\\m\\p.onnx", "device": "cpu", "side": 512, "fps": 20, "min_size": 30 })).unwrap();
         assert_eq!((ok.strength_pct, ok.head_pct, ok.radius_px, ok.conf_pct), (40, 15, 200, 50));
+        assert_eq!((ok.device, ok.side, ok.fps, ok.min_size_px), (Device::Cpu, 512, 20, 30));
         assert_eq!(config_from_json(&json!({})).unwrap(), AimConfig::default());
-        for bad in [json!({ "strength": 0 }), json!({ "strength": 500 }), json!({ "head": 90 }), json!({ "radius": 5000 }), json!({ "model": "x.exe" }), json!({ "conf": "high" })] {
+        for bad in [json!({ "strength": 0 }), json!({ "strength": 500 }), json!({ "head": 90 }), json!({ "radius": 5000 }), json!({ "model": "x.exe" }), json!({ "conf": "high" }), json!({ "device": "tpu" }), json!({ "side": 10 }), json!({ "fps": 500 })] {
             assert!(config_from_json(&bad).is_err(), "{}", bad);
         }
     }
 
+    fn spec8(side: usize) -> ModelSpec {
+        ModelSpec { layout: crate::aimdetect::Layout::ChannelsFirst, input_w: side, input_h: side, classes: 1, anchors: 1 }
+    }
+    fn out8(v: Vec<f32>, anchors: usize) -> RawOut {
+        RawOut { data: v, dims: vec![1, 5, anchors] }
+    }
+
     #[test]
     fn a_frame_with_a_target_gives_a_step_towards_its_head_and_without_a_target_none() {
-        let cfg = AimConfig::default();
+        let cfg = AimConfig { min_size_px: 0, ..AimConfig::default() };
         let side = 64usize;
         let frame = vec![0u8; side * side * 4];
-        // a fake detector: one person whose head is up and to the left of the centre of a 64×64 picture
+        let spec = spec8(side);
         let mut seen_len = 0usize;
-        let mut one = |rgb: &[f32], s: usize| -> Result<(Vec<f32>, usize, usize), String> {
+        let mut one = |rgb: &[f32]| -> Result<RawOut, String> {
             seen_len = rgb.len();
-            assert_eq!(s, side);
             // cx=20, cy=40, w=16, h=60 -> the box 12..28 × 10..70, the head at (20, 10 + 60*0.12 = 17.2)
-            Ok((vec![20.0, 40.0, 16.0, 60.0, 0.9], 5, 1))
+            Ok(out8(vec![20.0, 40.0, 16.0, 60.0, 0.9], 1))
         };
-        let step_found = frame_step(&frame, side, &cfg, &mut one).unwrap().expect("a target");
+        let f = frame_outcome(&frame, side, &cfg, &spec, &mut one).unwrap();
         assert_eq!(seen_len, 3 * side * side, "RGB planes");
-        assert!(step_found.0 < 0 && step_found.1 < 0, "left and up: {:?}", step_found);
-        let mut nobody = |_: &[f32], _: usize| -> Result<(Vec<f32>, usize, usize), String> { Ok((vec![0.0; 5], 5, 1)) };
-        assert_eq!(frame_step(&frame, side, &cfg, &mut nobody).unwrap(), None);
+        assert_eq!(f.objects, 1);
+        match f.outcome {
+            Outcome::Step(dx, dy) => assert!(dx < 0 && dy < 0, "left and up: {:?}", (dx, dy)),
+            o => panic!("{:?}", o),
+        }
+        let mut nobody = |_: &[f32]| -> Result<RawOut, String> { Ok(out8(vec![0.0; 5], 1)) };
+        let f = frame_outcome(&frame, side, &cfg, &spec, &mut nobody).unwrap();
+        assert_eq!((f.outcome, f.objects), (Outcome::NoTarget, 0));
         // a failing detector and a frame of a wrong size are errors, not a move of the mouse
-        let mut broken = |_: &[f32], _: usize| -> Result<(Vec<f32>, usize, usize), String> { Err("нет".into()) };
-        assert!(frame_step(&frame, side, &cfg, &mut broken).is_err());
-        assert!(frame_step(&frame[..100], side, &cfg, &mut nobody).is_err());
+        let mut broken = |_: &[f32]| -> Result<RawOut, String> { Err("нет".into()) };
+        assert!(frame_outcome(&frame, side, &cfg, &spec, &mut broken).is_err());
+        assert!(frame_outcome(&frame[..100], side, &cfg, &spec, &mut nobody).is_err());
+        // an answer of a wrong shape is an error too
+        let mut wrong = |_: &[f32]| -> Result<RawOut, String> { Ok(RawOut { data: vec![0.0; 6], dims: vec![1, 5, 2] }) };
+        assert!(frame_outcome(&frame, side, &cfg, &spec, &mut wrong).is_err());
+    }
+
+    #[test]
+    fn the_boxes_are_scaled_back_to_the_picture_when_the_model_takes_another_size() {
+        // the picture is 128×128, the model takes 64×64: a box 12..28 × 10..70 of the model is 24..56 × 20..140 on the screen,
+        // the head at (40, 20 + 120*0.12 = 34.4): up-left of the centre (64, 64)
+        let cfg = AimConfig { min_size_px: 0, ..AimConfig::default() };
+        let frame = vec![9u8; 128 * 128 * 4];
+        let mut one = |rgb: &[f32]| -> Result<RawOut, String> {
+            assert_eq!(rgb.len(), 3 * 64 * 64, "the model gets its own size");
+            Ok(out8(vec![20.0, 40.0, 16.0, 60.0, 0.9], 1))
+        };
+        let f = frame_outcome(&frame, 128, &cfg, &spec8(64), &mut one).unwrap();
+        // delta = (40-64, 34.4-64) = (-24, -29.6); 25% of 38.1 = 9.5 pixels
+        match f.outcome {
+            Outcome::Step(dx, dy) => assert!(dx < 0 && dy < 0 && dx.abs() + dy.abs() >= 8, "{:?}", (dx, dy)),
+            o => panic!("{:?}", o),
+        }
+    }
+
+    #[test]
+    fn a_small_object_is_not_taken_and_a_far_one_neither() {
+        let frame = vec![9u8; 64 * 64 * 4];
+        let mut tiny = |_: &[f32]| -> Result<RawOut, String> { Ok(out8(vec![32.0, 32.0, 6.0, 20.0, 0.9], 1)) };
+        let cfg = AimConfig { min_size_px: 40, ..AimConfig::default() };
+        let f = frame_outcome(&frame, 64, &cfg, &spec8(64), &mut tiny).unwrap();
+        assert_eq!((f.outcome, f.objects), (Outcome::NoTarget, 0), "a box 20 pixels high is below the least size");
+        let cfg = AimConfig { min_size_px: 10, ..AimConfig::default() };
+        assert_eq!(frame_outcome(&frame, 64, &cfg, &spec8(64), &mut tiny).unwrap().objects, 1);
     }
 
     #[test]
@@ -548,35 +808,96 @@ mod tests {
         // B, G, R, A of four pixels
         let frame = vec![0, 0, 255, 255, 0, 255, 0, 255, 255, 0, 0, 255, 10, 20, 30, 255];
         let mut got: Vec<f32> = Vec::new();
-        let mut spy = |rgb: &[f32], _: usize| -> Result<(Vec<f32>, usize, usize), String> {
+        let mut spy = |rgb: &[f32]| -> Result<RawOut, String> {
             got = rgb.to_vec();
-            Ok((vec![0.0; 5], 5, 1))
+            Ok(out8(vec![0.0; 5], 1))
         };
-        frame_step(&frame, side, &cfg, &mut spy).unwrap();
-        assert_eq!(&got[0..4], &[1.0, 0.0, 0.0, 30.0 / 255.0], "the red plane");
-        assert_eq!(&got[4..8], &[0.0, 1.0, 0.0, 20.0 / 255.0], "the green plane");
-        assert_eq!(&got[8..12], &[0.0, 0.0, 1.0, 10.0 / 255.0], "the blue plane");
+        frame_outcome(&frame, side, &cfg, &spec8(2), &mut spy).unwrap();
+        assert!(got[0] == 1.0 && (got[3] - 30.0 / 255.0).abs() < 1e-6, "the red plane");
+        assert!(got[5] == 1.0 && (got[7] - 20.0 / 255.0).abs() < 1e-6, "the green plane");
+        assert!(got[10] == 1.0 && (got[11] - 10.0 / 255.0).abs() < 1e-6, "the blue plane");
     }
 
-    // the real ONNX Runtime with a tiny fake model (a fixed answer of a detector): the whole way from a picture to a step of the mouse
+    #[test]
+    fn a_black_or_flat_picture_is_blank_and_a_real_one_is_not() {
+        assert!(frame_is_blank(&vec![0u8; 64 * 64 * 4]));
+        assert!(frame_is_blank(&vec![200u8; 64 * 64 * 4]));
+        let mut pic = vec![0u8; 64 * 64 * 4];
+        for (i, b) in pic.iter_mut().enumerate() {
+            *b = ((i / 4) % 251) as u8;
+        }
+        assert!(!frame_is_blank(&pic));
+        assert!(frame_is_blank(&[]));
+    }
+
+    #[test]
+    fn a_slow_computer_gets_a_rest_and_the_frame_rate_is_kept_otherwise() {
+        use std::time::Duration;
+        assert_eq!(rest_after(Duration::from_millis(10), 30), Duration::from_millis(23));
+        // slower than the budget: half of the time of the frame is rest (never a busy loop)
+        assert_eq!(rest_after(Duration::from_millis(100), 30), Duration::from_millis(50));
+        assert!(rest_after(Duration::from_millis(1), 0) >= Duration::from_millis(16), "a nonsense frame rate is cut to 1..60");
+    }
+
+    #[test]
+    fn the_settings_of_the_page_are_checked_kept_and_laid_over_the_profile() {
+        let _l = SETTINGS_LOCK.lock();
+        let _ = std::fs::remove_file(settings_file());
+        set_point(None);
+        let base = AimConfig::default();
+        assert_eq!(effective(&base), AimConfig { radius_px: 260.min(base.side / 2), ..base.clone() });
+        let c = save_settings(&json!({ "device": "cpu", "fps": 15, "conf": 60, "side": 480 }), &base).unwrap();
+        assert_eq!((c.device, c.fps, c.conf_pct, c.side), (Device::Cpu, 15, 60, 480));
+        assert_eq!(effective(&base).fps, 15, "kept on the disk");
+        // a bad number or an unknown key changes nothing
+        assert!(save_settings(&json!({ "fps": 9000 }), &base).is_err());
+        assert!(save_settings(&json!({ "model": "C:\\x.onnx" }), &base).is_err());
+        assert!(save_settings(&json!({ "evil": 1 }), &base).is_err());
+        assert_eq!(effective(&base).fps, 15);
+        // the point asked by voice wins over the settings
+        set_point(Some(38));
+        assert_eq!(effective(&base).head_pct, 38);
+        set_point(None);
+        let _ = std::fs::remove_file(settings_file());
+    }
+
+    static SETTINGS_LOCK: Mutex<()> = parking_lot::const_mutex(());
+
+    #[test]
+    fn it_does_not_turn_on_without_a_model_and_turning_off_is_always_possible() {
+        let cfg = AimConfig { model: Some("Z:\\нет\\такого.onnx".into()), ..AimConfig::default() };
+        let said = set_enabled(true, &cfg);
+        assert!(said.contains("не включена"), "{}", said);
+        assert!(!is_enabled());
+        assert!(!thread_running());
+        assert_eq!(status_json(&cfg)["state"], "off");
+        assert!(set_enabled(false, &cfg).contains("выключена"));
+        suspend();
+        assert!(!is_enabled());
+    }
+
+    // the real ONNX Runtime with tiny fake models (a fixed answer of a detector): the whole way from a picture to a step of the mouse
     #[cfg(feature = "ort")]
     #[test]
-    fn a_real_onnx_session_runs_the_whole_way_with_a_fake_detector() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/testdata/aim_dummy.onnx");
-        let mut session = ort::session::Session::builder().unwrap().commit_from_file(&path).expect("the fake model loads");
-        let frame = vec![7u8; SIDE * SIDE * 4];
-        let cfg = AimConfig::default();
-        let mut run = |rgb: &[f32], s: usize| -> Result<(Vec<f32>, usize, usize), String> {
-            use ort::value::Tensor;
-            let arr = ndarray::Array4::from_shape_vec((1, 3, s, s), rgb.to_vec()).map_err(|e| e.to_string())?;
-            let outputs = session.run(ort::inputs! { "images" => Tensor::from_array(arr).map_err(|e| e.to_string())? }).map_err(|e| e.to_string())?;
-            let (shape, data) = outputs[0].try_extract_tensor::<f32>().map_err(|e| e.to_string())?;
-            let d: Vec<usize> = shape.iter().map(|&x| x as usize).collect();
-            Ok((data.to_vec(), d[1], d[2]))
-        };
-        // the fake detector always says: a person (320, 300), 100×200 (twice, nearly the same, and a weak one far away).
-        // Its head is at y = 200 + 200 × 0.12 = 224, the crosshair is at (320, 320): 96 pixels up, a quarter of the way = 24
-        let r = frame_step(&frame, SIDE, &cfg, &mut run).unwrap();
-        assert_eq!(r, Some((0, -24)));
+    fn real_onnx_sessions_run_the_whole_way_with_fake_detectors_of_every_family() {
+        use crate::aimdetect::ortrun;
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/testdata");
+        let cfg = AimConfig { device: Device::Cpu, min_size_px: 0, ..AimConfig::default() };
+        // YOLOv8 fixture: a person (320, 300), 100×200; the head is at y = 200 + 200 × 0.12 = 224, the crosshair is at (320, 320):
+        // 96 pixels up, a quarter of the way = 24. YOLOX fixture: the box 270..370 × 140..340, the head at y = 164: 156 up, a quarter = 39.
+        for (file, want) in [("aim_dummy.onnx", -24), ("aim_yolox_dummy.onnx", -39)] {
+            let path = dir.join(file);
+            let info = ortrun::probe(&path, &cfg).unwrap_or_else(|e| panic!("{}: {}", file, e));
+            let (mut session, _, _) = ortrun::session_for(&path, cfg.device).unwrap();
+            let frame = vec![7u8; SIDE * SIDE * 4];
+            let f = frame_outcome(&frame, SIDE, &cfg, &info.spec, &mut |rgb| ortrun::run(&mut session, &info.input_name, rgb, info.spec.input_w, info.spec.input_h)).unwrap();
+            assert_eq!(f.outcome, Outcome::Step(0, want), "{}", file);
+        }
+        // a classifier and a file that is not a model are refused with a reason
+        assert!(ortrun::probe(&dir.join("aim_classifier_dummy.onnx"), &cfg).is_err());
+        let junk = std::env::temp_dir().join(format!("jarvis-junk-{}.onnx", std::process::id()));
+        std::fs::write(&junk, vec![5u8; 5000]).unwrap();
+        assert!(ortrun::probe(&junk, &cfg).is_err());
+        std::fs::remove_file(&junk).ok();
     }
 }

@@ -236,7 +236,7 @@ fn paid_op_id(name: &str) -> Option<&'static str> {
         "remote_tunnel" => "ui_remote_tunnel",
         "screen_check" => "ui_screen_check",
         // the library of games (adding, choosing a file, scanning, starting, a new path, the label and the sound): a paid part, like the mode
-        "game_add" | "game_add_flagged" | "game_pick_file" | "game_launch" | "game_set_path" | "game_scan" | "game_opts" | "aim_pick_model" => "ui_game_library",
+        "game_add" | "game_add_flagged" | "game_pick_file" | "game_launch" | "game_set_path" | "game_scan" | "game_opts" | "aim_pick_model" | "aim_model_install" | "aim_model_check" | "aim_settings" => "ui_game_library",
         _ => return None,
     })
 }
@@ -596,13 +596,26 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
                 Err(why) => json!({ "ok": false, "message": why }),
             }
         }
-        // the file of the detector model for the aim assist: chosen in the system window, copied to the folder of the program
+        // the model of the aim assist (aimmodel.rs): the official download, a file of the user, the cancel, the check, the settings
+        "aim_model_install" => match crate::aimmodel::start_install(&crate::gamemode::profile_aim()) {
+            Ok(()) => json!({ "ok": true, "message": format!("Загрузка модели началась (около {} МБ).", crate::aimmodel::download_size_mb()) }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "aim_model_cancel" => json!({ "ok": true, "message": if crate::aimmodel::cancel() { "Отменяю…" } else { "Сейчас ничего не устанавливается." } }),
         "aim_pick_model" => match crate::gamedialog::pick_model() {
             Ok(None) => json!({ "ok": true, "cancelled": true }),
-            Ok(Some(path)) => match crate::aimassist::install_model(std::path::Path::new(&path)) {
-                Ok(m) => json!({ "ok": true, "message": m }),
+            Ok(Some(path)) => match crate::aimmodel::start_manual(std::path::PathBuf::from(path), &crate::gamemode::profile_aim()) {
+                Ok(()) => json!({ "ok": true, "message": "Проверяю файл модели…" }),
                 Err(e) => json!({ "ok": false, "message": e }),
             },
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "aim_model_check" => match crate::aimmodel::start_check(&crate::gamemode::aim_config()) {
+            Ok(()) => json!({ "ok": true, "message": "Проверяю модель…" }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "aim_settings" => match crate::aimassist::save_settings(body.get("settings").unwrap_or(&json!(null)), &crate::gamemode::profile_aim()) {
+            Ok(_) => json!({ "ok": true, "message": "Настройки сохранены. Устройство и размер кадра применяются при следующем включении помощи прицела." }),
             Err(e) => json!({ "ok": false, "message": e }),
         },
         // «Мой голос» (voiceprint.rs): recording the voice, testing it, the lock on / off, the strictness, deleting
@@ -1252,6 +1265,14 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
         }
         ("GET", "/games-report") => respond(&mut stream, "200 OK", "text/plain", &crate::gamemode::report_text()),
         ("GET", "/games") => respond(&mut stream, "200 OK", "application/json", &crate::gamemode::games_json().to_string()),
+        ("GET", "/aim") => {
+            let cfg = crate::gamemode::aim_config();
+            crate::aimmodel::ensure_checked(&cfg);
+            let mut v = crate::aimmodel::status_json(&cfg);
+            v["run"] = crate::aimassist::status_json(&cfg);
+            respond(&mut stream, "200 OK", "application/json", &v.to_string())
+        }
+        ("GET", "/aim-report") => respond(&mut stream, "200 OK", "text/plain", &crate::aimmodel::report_text(&crate::gamemode::aim_config())),
         ("GET", "/game") => respond(&mut stream, "200 OK", "application/json", &crate::gamemode::status_json().to_string()),
         ("GET", "/update") => respond(&mut stream, "200 OK", "application/json", &crate::updater::status_json().to_string()),
         ("GET", "/voice-install") => respond(&mut stream, "200 OK", "application/json", &crate::voice_install::status_json().to_string()),
@@ -1747,7 +1768,7 @@ mod tests {
         let _g = crate::licensing::test_lock();
         crate::licensing::test_reset();
         crate::gamelist::test_reset();
-        for (name, extra) in [("game_add", json!({ "path": "game.exe" })), ("game_add_flagged", json!({ "path": "game.exe" })), ("game_scan", json!({})), ("game_opts", json!({ "overlay": true })), ("game_mode", json!({ "value": true })), ("game_aim", json!({ "value": true })), ("game_launch", json!({ "id": "g1" })), ("game_pick_file", json!({})), ("game_set_path", json!({ "id": "g1", "path": "D:\\x.exe" }))] {
+        for (name, extra) in [("game_add", json!({ "path": "game.exe" })), ("game_add_flagged", json!({ "path": "game.exe" })), ("game_scan", json!({})), ("game_opts", json!({ "overlay": true })), ("game_mode", json!({ "value": true })), ("game_aim", json!({ "value": true })), ("game_launch", json!({ "id": "g1" })), ("game_pick_file", json!({})), ("aim_model_install", json!({})), ("aim_pick_model", json!({})), ("aim_model_check", json!({})), ("aim_settings", json!({ "settings": { "fps": 20 } })), ("game_set_path", json!({ "id": "g1", "path": "D:\\x.exe" }))] {
             let mut body = extra;
             body["name"] = json!(name);
             let r = run_action(&body);
@@ -1898,7 +1919,7 @@ mod tests {
         answer.lines().next().unwrap_or("")
     }
 
-    const DATA: &[&str] = &["/state", "/remote", "/remote-qr", "/remote-qr-net", "/remote-qr-https", "/diag", "/diag-report", "/games", "/games-list", "/game-icon", "/games-report", "/voiceprint", "/settings", "/voices", "/modules", "/chats", "/scenarios", "/tasks", "/messages", "/telegram", "/commands", "/apps", "/files", "/avatar", "/voice-install", "/reaction-voices", "/devices"];
+    const DATA: &[&str] = &["/state", "/remote", "/remote-qr", "/remote-qr-net", "/remote-qr-https", "/diag", "/diag-report", "/games", "/games-list", "/game-icon", "/games-report", "/aim", "/aim-report", "/voiceprint", "/settings", "/voices", "/modules", "/chats", "/scenarios", "/tasks", "/messages", "/telegram", "/commands", "/apps", "/files", "/avatar", "/voice-install", "/reaction-voices", "/devices"];
 
     // a program on this computer (a web page is stopped before, by the Host) sends any header it likes: without the secret of the
     // window nothing is read and nothing is done, whatever else the request says

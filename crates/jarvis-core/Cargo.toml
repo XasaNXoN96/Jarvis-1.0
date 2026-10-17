@@ -79,6 +79,8 @@ jarvis_app = [
 
 intent = ["intent-classifier", "tokio"]
 lua = ["mlua", "reqwest", "winrt-notification"]
+# the video card (DirectML) for the aim assist: off in the builds, because it was not tried on real hardware (see docs/GAME-MODE.md)
+directml = ["ort/directml"]
 lua_only = ["lua", "tokio"]
 
 [dev-dependencies]
