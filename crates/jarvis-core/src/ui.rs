@@ -502,11 +502,19 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         }
         "game_aim" => {
             let on = body.get("value").and_then(|v| v.as_bool()).unwrap_or(false);
+            if on {
+                if let Err(d) = crate::access::check("game_mode") {
+                    return json!({ "ok": false, "message": d.message });
+                }
+            }
             let msg = crate::gamemode::handle(if on { "включи помощь прицела" } else { "выключи помощь прицела" }).unwrap_or_else(|| "Сначала включите игровой режим.".into());
             json!({ "ok": true, "message": msg })
         }
         // the Games page (gamelist.rs, gamescan.rs, gamemacro.rs)
         "game_add" | "game_add_flagged" => {
+            if let Err(d) = crate::access::check("game_mode") {
+                return json!({ "ok": false, "message": d.message });
+            }
             let exe = crate::gamemode::exe_of_input(body.get("exe").and_then(|v| v.as_str()).unwrap_or(""));
             if !exe.ends_with(".exe") {
                 return json!({ "ok": false, "message": "Нужно имя программы игры с .exe, например game.exe." });
@@ -538,10 +546,16 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
                 _ => json!({ "ok": false, "message": "Не удалось сменить жанр." }),
             }
         }
+        "game_scan" if crate::access::check("game_mode").is_err() => {
+            json!({ "ok": false, "message": crate::access::check("game_mode").err().map(|d| d.message).unwrap_or_default() })
+        }
         "game_scan" => match crate::gamescan::start() {
             Ok(()) => json!({ "ok": true }),
             Err(e) => json!({ "ok": false, "message": e }),
         },
+        "game_opts" if crate::access::check("game_mode").is_err() => {
+            json!({ "ok": false, "message": crate::access::check("game_mode").err().map(|d| d.message).unwrap_or_default() })
+        }
         "game_opts" => {
             let mut o = crate::gamelist::options();
             if let Some(b) = body.get("overlay").and_then(|v| v.as_bool()) {
@@ -1372,6 +1386,29 @@ pub fn open_browser_window() -> bool {
 
 #[cfg(test)]
 mod tests {
+    // Demo (no licence): the actions of the Games page that start or change the paid function are refused, the cleaning-up ones are not
+    #[cfg(feature = "user-edition")]
+    #[test]
+    fn without_a_licence_the_games_page_refuses_adding_scanning_and_switching_on_but_lets_the_user_clean_up() {
+        let _g = crate::licensing::test_lock();
+        crate::licensing::test_reset();
+        crate::gamelist::test_reset();
+        for (name, extra) in [("game_add", json!({ "exe": "game.exe" })), ("game_add_flagged", json!({ "exe": "game.exe" })), ("game_scan", json!({})), ("game_opts", json!({ "overlay": true })), ("game_mode", json!({ "value": true })), ("game_aim", json!({ "value": true }))] {
+            let mut body = extra;
+            body["name"] = json!(name);
+            let r = run_action(&body);
+            assert_eq!(r["ok"], false, "{}: {}", name, r);
+            assert!(r["message"].as_str().unwrap_or("").contains("Premium"), "{}: {}", name, r);
+        }
+        assert!(crate::gamelist::load().is_empty(), "nothing was added");
+        assert!(!crate::gamelist::options().overlay);
+        // removing, changing the kind and deleting a macro are cleaning up: they are never behind the paywall
+        let r = run_action(&json!({ "name": "game_remove", "exe": "nothing.exe" }));
+        assert_eq!(r["message"], "Этой игры нет в списке.");
+        let r = run_action(&json!({ "name": "macro_delete", "macro": "нет такого" }));
+        assert_eq!(r["message"], "Такого макроса нет.");
+    }
+
     use super::*;
 
     #[test]

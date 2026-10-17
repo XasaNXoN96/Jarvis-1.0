@@ -106,7 +106,11 @@ fn write(f: &File) {
     }
     #[cfg(not(test))]
     {
-        let _ = crate::write_atomic(&crate::APP_DIR.join("game_list.json"), to_json(f));
+        let path = crate::APP_DIR.join("game_list.json");
+        if let Ok(old) = std::fs::read_to_string(&path) {
+            crate::keep_copy_if_repaired(&path, &old, &to_json(&parse_file(&old)));
+        }
+        let _ = crate::write_atomic(&path, to_json(f));
     }
 }
 
@@ -236,6 +240,24 @@ mod tests {
         let g = parse_file(r#"{"games":[{"exe":"valorant.exe"},{"exe":"z.exe","source":"???"},{"exe":"z.exe"}]}"#);
         assert_eq!(g.games.len(), 1);
         assert_eq!(g.games[0].source, "manual");
+    }
+
+    #[test]
+    fn a_broken_or_repaired_file_is_kept_beside_the_new_one_and_a_clean_one_is_not() {
+        let dir = std::env::temp_dir().join(format!("jarvis-gl-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("game_list.json");
+        let clean = to_json(&File { games: vec![Entry { exe: "a.exe".into(), name: "A".into(), genre: Genre::Racing, source: "manual".into() }], options: Options::default() });
+        assert!(crate::keep_copy_if_repaired(&path, &clean, &to_json(&parse_file(&clean))).is_none(), "a clean file needs no copy");
+        assert!(crate::keep_copy_if_repaired(&path, "  ", "{}").is_none(), "an empty file holds nothing");
+        // broken text: the copy holds it as it was
+        let broken = "{\"games\": [{\"exe\": \"b.exe\"";
+        let copy = crate::keep_copy_if_repaired(&path, broken, &to_json(&parse_file(broken))).expect("a copy");
+        assert_eq!(std::fs::read_to_string(&copy).unwrap(), broken);
+        // a bad entry that the reading drops
+        let partly = r#"{"games":[{"exe":"ok.exe"},{"exe":"valorant.exe"}]}"#;
+        assert!(crate::keep_copy_if_repaired(&path, partly, &to_json(&parse_file(partly))).is_some());
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

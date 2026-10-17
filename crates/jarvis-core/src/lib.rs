@@ -178,6 +178,34 @@ pub fn create_fresh(path: &std::path::Path) -> std::io::Result<std::fs::File> {
     std::fs::OpenOptions::new().write(true).create_new(true).open(path)
 }
 
+// A user's data file that is read leniently (a broken file or a bad entry is skipped) must not lose what it held when the program
+// writes it again: if reading and writing it back would change its meaning, the old text is kept beside it first (`name.bak-<time>`).
+// `clean` is what the program is about to write for the old text. Returns the copy, if one was made.
+pub fn keep_copy_if_repaired(path: &std::path::Path, old: &str, clean: &str) -> Option<std::path::PathBuf> {
+    if old.trim().is_empty() {
+        return None;
+    }
+    let same = match (serde_json::from_str::<serde_json::Value>(old), serde_json::from_str::<serde_json::Value>(clean)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    };
+    if same {
+        return None;
+    }
+    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    // (a name that is free: an older copy is never overwritten)
+    let copy = (0..50u32)
+        .map(|n| {
+            let mut name = path.as_os_str().to_owned();
+            name.push(if n == 0 { format!(".bak-{}", secs) } else { format!(".bak-{}-{}", secs, n) });
+            std::path::PathBuf::from(name)
+        })
+        .find(|c| !c.exists())?;
+    std::fs::write(&copy, old).ok()?;
+    log::warn!("{}: the file could not be read as it is; the old text is kept in {}", path.display(), copy.display());
+    Some(copy)
+}
+
 pub fn write_atomic(path: &std::path::Path, data: impl AsRef<[u8]>) -> std::io::Result<()> {
     use std::io::Write;
     // (a name of its own for every write: two writes of the same file at once never share the temporary file)

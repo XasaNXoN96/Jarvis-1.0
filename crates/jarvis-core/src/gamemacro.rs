@@ -165,7 +165,11 @@ fn save(list: &[(String, Vec<Step>)]) {
     }
     #[cfg(not(test))]
     {
-        let _ = crate::write_atomic(&crate::APP_DIR.join("game_macros.json"), store_json(list));
+        let path = crate::APP_DIR.join("game_macros.json");
+        if let Ok(old) = std::fs::read_to_string(&path) {
+            crate::keep_copy_if_repaired(&path, &old, &store_json(&parse_store(&old)));
+        }
+        let _ = crate::write_atomic(&path, store_json(list));
     }
 }
 
@@ -248,6 +252,13 @@ pub fn start(name: &str) -> Result<String, String> {
     Ok(format!("Записываю макрос «{}»: делайте нажатия в игре, потом скажите «сохрани макрос» (запись остановится сама через минуту).", name))
 }
 
+// throws the recording away (the mode was switched off, an anti-cheat program started): nothing is kept
+pub fn cancel() {
+    if REC.lock().take().is_some() {
+        log::info!("Game macro: the recording was cancelled");
+    }
+}
+
 // stops and keeps the macro; the answer for the user
 pub fn stop() -> Result<String, String> {
     let Some(r) = REC.lock().take() else { return Err("Запись не идёт.".into()) };
@@ -280,6 +291,11 @@ mod reader {
             let mut down: std::collections::HashSet<u16> = Default::default();
             let mut buttons = [false, false];
             while is_recording() {
+                // the mode is off or an anti-cheat program runs: nothing is looked at, the recording is thrown away
+                if !crate::gamemode::is_active() || crate::gamemode::anticheat_running().is_some() {
+                    cancel();
+                    break;
+                }
                 // only while a game of the list is in front: what is done in other windows is not looked at
                 if crate::gamemode::in_game_now() {
                     for &k in &list {
@@ -312,6 +328,9 @@ mod reader {
         });
     }
 }
+
+#[cfg(test)]
+pub(crate) static REC_TESTS: Mutex<()> = Mutex::new(());
 
 #[cfg(test)]
 mod tests {
@@ -364,6 +383,7 @@ mod tests {
 
     #[test]
     fn a_recording_keeps_a_macro_under_a_spoken_name_and_the_name_cannot_be_a_stop_word() {
+        let _l = REC_TESTS.lock();
         TEST_STORE.with(|t| t.borrow_mut().clear());
         assert!(start("Стой").is_err());
         assert!(start("выключи всё").is_err());

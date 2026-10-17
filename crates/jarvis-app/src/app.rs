@@ -621,8 +621,14 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
     // «стой») are keys and mouse moves of the game profile (gamemode.rs). The mode itself is a paid function (Premium).
     if jarvis_core::gamemode::would_handle(text) {
         let turning_on = !jarvis_core::gamemode::is_active();
-        if turning_on {
+        // switching off and «стой» always work; everything else needs the paid function now, not only when the mode was turned on
+        // (a licence that ended while the mode runs stops it: the keys are released first)
+        let leaving = matches!(jarvis_core::gamemode::decide(text), Some(jarvis_core::gamemode::Action::Off | jarvis_core::gamemode::Action::ReleaseAll));
+        if turning_on || !leaving {
             if let Err(denied) = jarvis_core::access::check("game_mode") {
+                if !turning_on {
+                    let _ = jarvis_core::gamemode::handle("выключи игровой режим");
+                }
                 let msg = denied.message.clone();
                 open_request(text, "command");
                 say(&msg);

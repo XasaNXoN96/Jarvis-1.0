@@ -658,6 +658,11 @@ pub trait Backend {
     fn mouse_move(&mut self, dx: i32, dy: i32);
     fn button(&mut self, right: bool, down: bool);
     fn pause(&mut self, ms: u64);
+    // asked before every step of a phrase with several steps (a macro): false = the game is not in front any more, an anti-cheat program
+    // started, or the user pressed Esc; the rest of the steps is not sent and the keys are released
+    fn may_continue(&mut self, _profile: &Profile) -> bool {
+        true
+    }
 }
 
 #[derive(Default)]
@@ -787,6 +792,11 @@ impl Game {
             }
             Action::Custom(steps) => {
                 for st in steps {
+                    if !b.may_continue(&self.profile) {
+                        self.release_all(b);
+                        log::info!("Game mode: a phrase with several steps was stopped (the game left the front, an anti-cheat program, or Esc)");
+                        break;
+                    }
                     match st {
                         Step::Tap(vk) => {
                             b.key(*vk, true);
@@ -915,6 +925,11 @@ impl Backend for WinBackend {
     }
     fn pause(&mut self, ms: u64) {
         std::thread::sleep(std::time::Duration::from_millis(ms));
+    }
+    fn may_continue(&mut self, profile: &Profile) -> bool {
+        use winapi::um::winuser::{GetAsyncKeyState, VK_ESCAPE};
+        let esc = unsafe { (GetAsyncKeyState(VK_ESCAPE) as u16) & 0x8000 != 0 };
+        !esc && in_game(profile) && anticheat_running().is_none()
     }
 }
 
@@ -1123,6 +1138,7 @@ fn start_watchdog() {
             with_backend(|b| g.release_all(b));
             g.active = false;
             crate::aimassist::set_enabled(false, &g.profile.aim);
+            crate::gamemacro::cancel();
             log::warn!("Game mode: an anti-cheat program is running, the mode is switched off");
             continue;
         }
@@ -1215,6 +1231,7 @@ pub fn handle(text: &str) -> Option<String> {
             with_backend(|b| g.release_all(b));
             g.active = false;
             crate::aimassist::set_enabled(false, &g.profile.aim);
+            crate::gamemacro::cancel();
             return Some(format!("Игровой режим не включён: запущена защита от читов ({}). Режим только для одиночных игр без неё: закройте игру с защитой.", name));
         }
     }
@@ -1237,7 +1254,12 @@ pub fn handle(text: &str) -> Option<String> {
             start_watchdog();
             Some(reply)
         }
-        Action::Off | Action::Help | Action::ReleaseAll => Some(with_backend(|b| g.apply(&action, b))),
+        Action::Off | Action::Help | Action::ReleaseAll => {
+            if matches!(action, Action::Off) {
+                crate::gamemacro::cancel();
+            }
+            Some(with_backend(|b| g.apply(&action, b)))
+        }
         Action::MacroStart(name) => Some(match crate::gamemacro::start(name) {
             Ok(m) | Err(m) => m,
         }),
@@ -1336,7 +1358,8 @@ mod tests {
     }
 
     // the tests that use the global state (the mode, the profile) run one after another
-    static GLOBAL: Mutex<()> = Mutex::new(());
+    // (the same lock as the tests of the recorder: switching the mode off throws a recording away)
+    use crate::gamemacro::REC_TESTS as GLOBAL;
 
     fn reset_global() {
         let mut g = GAME.lock();
@@ -1363,6 +1386,66 @@ mod tests {
         for t in ["запиши макрос комбо", "прочитай текст", "подскажи что делать"] {
             assert_eq!(parse(t, false), None, "{}", t);
         }
+    }
+
+    // a backend that says «stop» after `allow` steps: the game left the front, an anti-cheat program started, or Esc was pressed
+    struct Guarded {
+        log: Vec<String>,
+        allow: usize,
+    }
+    impl Backend for Guarded {
+        fn key(&mut self, vk: u16, down: bool) {
+            self.log.push(format!("{:#x}{}", vk, if down { "↓" } else { "↑" }));
+        }
+        fn mouse_move(&mut self, _: i32, _: i32) {}
+        fn button(&mut self, _: bool, _: bool) {}
+        fn pause(&mut self, _: u64) {}
+        fn may_continue(&mut self, _: &Profile) -> bool {
+            if self.allow == 0 {
+                return false;
+            }
+            self.allow -= 1;
+            true
+        }
+    }
+
+    #[test]
+    fn a_macro_stops_and_lets_go_of_the_keys_when_the_game_is_not_in_front_any_more() {
+        let mut g = Game { profile: Profile::default(), active: true, ..Default::default() };
+        let steps = vec![Step::Hold(0x57), Step::Wait(500), Step::Tap(0x20), Step::Tap(0x20), Step::Release(0x57)];
+        let mut b = Guarded { log: Vec::new(), allow: 2 };
+        g.apply(&Action::Custom(steps.clone()), &mut b);
+        // the hold and the wait were done; at the third step the guard said stop: no tap, and W is let go
+        assert_eq!(b.log, vec!["0x57↓", "0x57↑"]);
+        assert!(!g.anything_held());
+        // with the guard saying yes all steps are done
+        let mut g = Game { profile: Profile::default(), active: true, ..Default::default() };
+        let mut b = Guarded { log: Vec::new(), allow: 99 };
+        g.apply(&Action::Custom(steps), &mut b);
+        assert_eq!(b.log.len(), 6);
+    }
+
+    #[test]
+    fn switching_the_mode_off_or_an_anti_cheat_program_throws_a_recording_away() {
+        let _l = GLOBAL.lock();
+        reset_global();
+        TEST_FRONT.with(|t| *t.borrow_mut() = Some(Some("iw4sp.exe".into())));
+        crate::gamemacro::cancel();
+        handle("включи игровой режим").unwrap();
+        assert!(handle("запиши макрос комбо").unwrap().contains("Записываю"));
+        assert!(crate::gamemacro::is_recording());
+        handle("выключи игровой режим").unwrap();
+        assert!(!crate::gamemacro::is_recording(), "off: the recording is gone");
+        // an anti-cheat program
+        handle("включи игровой режим").unwrap();
+        handle("запиши макрос комбо").unwrap();
+        assert!(crate::gamemacro::is_recording());
+        TEST_PROCS.with(|t| *t.borrow_mut() = Some(vec!["easyanticheat.exe".into()]));
+        let _ = handle("иди вперёд");
+        assert!(!crate::gamemacro::is_recording(), "anti-cheat: the recording is gone");
+        crate::gamemacro::cancel();
+        TEST_FRONT.with(|t| *t.borrow_mut() = None);
+        reset_global();
     }
 
     #[test]
