@@ -183,7 +183,8 @@ fn test_com_mta_main() {
 fn main() -> Result<(), String> {
     // `--background`: no console window (used by autostart); the tray icon stays
     #[cfg(target_os = "windows")]
-    if std::env::args().any(|a| a == "--background") {
+    // (also without `--console` / `--text`: the black window of the console is not needed by a program that has its own window and tray icon)
+    if std::env::args().any(|a| a == "--background" || a == "--no-console") || !std::env::args().any(|a| a == "--console" || a == "--text" || a == "--selftest-speech") {
         unsafe {
             winapi::um::wincon::FreeConsole();
         }

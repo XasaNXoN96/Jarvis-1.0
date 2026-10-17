@@ -535,7 +535,7 @@ fn governed_side(wanted: u32, now: &mut u32) -> u32 {
     *now
 }
 
-pub const SLOW_MS: f32 = 140.0;
+pub const SLOW_MS: f32 = 90.0;
 pub const MIN_SIDE: u32 = 256;
 
 pub fn lower_side(side: u32, avg_ms: f32) -> u32 {
@@ -555,8 +555,11 @@ fn note_frame() {
     let mut g = LAST_FRAME_AT.lock();
     if let Some(prev) = *g {
         let ms = now.duration_since(prev).as_millis() as u64;
-        let old = PERIOD_MS.load(Ordering::SeqCst);
-        PERIOD_MS.store(if old == 0 || ms > 3000 { ms } else { (old * 4 + ms) / 5 }, Ordering::SeqCst);
+        // a pause between two presses of the aim button is not a slow frame
+        if ms <= 500 {
+            let old = PERIOD_MS.load(Ordering::SeqCst);
+            PERIOD_MS.store(if old == 0 { ms } else { (old * 4 + ms) / 5 }, Ordering::SeqCst);
+        }
     }
     *g = Some(now);
 }
@@ -925,6 +928,9 @@ mod run {
         let (mut cap_fail, mut blank) = (0u32, 0u32);
         let mut tracker = crate::aimcross::CrossTracker::default();
         let mut auto_px: Option<(i32, i32)> = None;
+        // the last believed place of the crosshair in this game: used while the lock is lost for a moment (the crosshair of the third person is
+        // drawn only while aiming), so the mouse never goes to the middle of the window instead of the crosshair
+        let mut last_good: Option<(i32, i32)> = None;
         let mut frame_no = 0u32;
         // the side that is really taken: lowered by itself when the frame is slow, so the game keeps its processor
         let mut side_now = 0u32;
@@ -945,6 +951,7 @@ mod run {
                     // another game: the crosshair is looked for from the start
                     tracker.reset();
                     auto_px = None;
+                    last_good = None;
                 }
             }
             if !right_button_down() {
@@ -954,7 +961,7 @@ mod run {
             }
             let started = std::time::Instant::now();
             let moved_before = *MOVED.lock();
-            let cap = match unsafe { capture(governed_side(cfg.side, &mut side_now) as i32, auto_px, cfg.cx_pct, cfg.cy_pct) } {
+            let cap = match unsafe { capture(governed_side(cfg.side, &mut side_now) as i32, auto_px.or(last_good), cfg.cx_pct, cfg.cy_pct) } {
                 Ok(f) => f,
                 Err(e) => {
                     cap_fail += 1;
@@ -997,10 +1004,15 @@ mod run {
             } else {
                 tracker.reset();
                 auto_px = None;
+                last_good = None;
+            }
+            if auto_px.is_some() {
+                last_good = auto_px;
             }
             *CROSS_SRC.lock() = match (auto_px, game.as_deref().and_then(game_cross)) {
                 (Some((x, y)), _) => format!("найдено на экране автоматически: {:+}, {:+} пикс. от середины окна", x, y),
                 (None, Some((x, y))) => format!("запомнено для игры {}: {:+}%, {:+}%", game.as_deref().unwrap_or(""), x, y),
+                (None, None) if last_good.is_some() => format!("последнее найденное место (перекрестие на миг потеряно): {:+}, {:+} пикс.", last_good.unwrap().0, last_good.unwrap().1),
                 (None, None) => format!("из общих настроек: {:+}%, {:+}% (на экране перекрестие из четырёх чёрточек не найдено)", cfg.cx_pct, cfg.cy_pct),
             };
             *CAPTURE.lock() = format!("ок, {}×{}", side, side);

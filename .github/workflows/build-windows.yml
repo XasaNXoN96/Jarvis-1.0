@@ -66,7 +66,8 @@ jobs:
           $env:LIB = "$PWD\lib\windows\amd64;$env:LIB"
           # the commit is written into the program: a report of a problem (diagnostics, the speech message) names the build
           $env:JARVIS_BUILD_SHA = "${{ github.sha }}"
-          cargo build --release -p jarvis-app
+          # with DirectML: the aim assist can use the video card (it falls back to the processor by itself if the card does not start)
+          cargo build --release -p jarvis-app --features directml
 
       # Code signing (only when the owner has put the certificate into the secrets; see installer/sign.ps1 and docs/SIGNING.md)
       - name: Sign jarvis-app.exe
@@ -83,6 +84,8 @@ jobs:
           New-Item -ItemType Directory -Force $out | Out-Null
           Copy-Item target\release\jarvis-app.exe $out
           Copy-Item lib\windows\amd64\*.dll $out
+          # the libraries that the DirectML build put beside the program (DirectML.dll and the like), if any
+          Get-ChildItem target\release\*.dll -ErrorAction SilentlyContinue | Copy-Item -Destination $out -Force
           foreach ($d in "commands", "sound", "keywords", "rustpotter") {
             Copy-Item "resources\$d" "$out\resources\$d" -Recurse
           }
@@ -914,7 +917,7 @@ jobs:
           $env:LIB = "$PWD\lib\windows\amd64;$env:LIB"
           $env:JARVIS_BUILD_SHA = "${{ github.sha }}"
           if (-not $env:JARVIS_LICENSE_PUBKEY -or -not $env:JARVIS_LICENSE_URL) { Write-Output "::warning title=license::JARVIS_LICENSE_PUBKEY / JARVIS_LICENSE_URL are not set: this Jarvis User cannot activate Premium (a build for tests only)" }
-          cargo build --release -p jarvis-app --features user-edition
+          cargo build --release -p jarvis-app --features user-edition,directml
       - name: Sign jarvis-app.exe (user edition)
         shell: pwsh
         env:
@@ -942,6 +945,8 @@ jobs:
           New-Item -ItemType Directory -Force $out | Out-Null
           Copy-Item target\release\jarvis-app.exe $out
           Copy-Item lib\windows\amd64\*.dll $out
+          # the libraries that the DirectML build put beside the program (DirectML.dll and the like), if any
+          Get-ChildItem target\release\*.dll -ErrorAction SilentlyContinue | Copy-Item -Destination $out -Force
           foreach ($d in "commands", "sound", "keywords", "rustpotter") { Copy-Item "resources\$d" "$out\resources\$d" -Recurse }
           New-Item -ItemType Directory -Force "$out\resources\vosk" | Out-Null
           Copy-Item resources\vosk\README.md "$out\resources\vosk"
