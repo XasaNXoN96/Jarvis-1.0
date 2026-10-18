@@ -484,6 +484,13 @@
   .chip { display: inline-block; margin: 4px 6px 0 0; padding: 3px 10px; border-radius: 999px; background: #ffffff10; color: var(--text); cursor: pointer; font-size: 13px; }
   .chip:hover { background: rgba(255,255,255,0.140); } .chip.on { background: rgba(255,255,255,.18); outline: 1px solid var(--accent); } .chip small { opacity: .6; }
   /*ADMIN-BEGIN*/ #page-licmgr[data-ready="0"] .lm-needs { display: none; } #page-licmgr[data-ready="1"] .lm-howto { display: none; } /*ADMIN-END*/
+  .gg .gi { position: relative; } .gg .ab { position: absolute; left: 2px; bottom: 2px; font-size: 10.5px; line-height: 1; padding: 2px 5px; border-radius: 8px; background: #000b; color: #cfd2d8; white-space: nowrap; } .gg .ab[data-s="confirmed"] { color: #5be3a1; } .gg .ab[data-s="suggested"] { color: #ffcf6b; }
+  #bind-body .acts { flex-direction: row; flex-wrap: wrap; } #bind-body .acts .btn { width: auto; padding: 8px 14px; } #bind-body .bar { height: 8px; border-radius: 4px; background: rgba(127,127,127,.25); overflow: hidden; margin: 8px 0; } #bind-body .bar i { display: block; height: 100%; background: var(--accent, #4da3ff); transition: width .2s; }
+  #bind-body .big { font-size: 15px; margin: 6px 0 10px; } #bind-body .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+  #set-main .setrow .l small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
+  #set-main .setrow .l small.open { display: block; -webkit-line-clamp: unset; }
+  #set-main > .card > h3 { cursor: pointer; display: flex; align-items: center; gap: 8px; user-select: none; } #set-main > .card > h3::after { content: '▾'; margin-left: auto; opacity: .45; font-size: 13px; } #set-main > .card.fold > h3::after { content: '▸'; }
+  #set-main:not(.searching) > .card.fold > *:not(h3) { display: none !important; } #set-main > .card.fold { padding-bottom: 12px; }
   details.gp-more { margin: 8px 0; } details.gp-more > summary { cursor: pointer; padding: 8px 0; color: var(--accent, #4da3ff); } .gp-tab[hidden] { display: none; }
   .ap-tabs { display: flex; flex-wrap: wrap; gap: 2px; margin: 8px 0 4px; }
   small.dim { color: var(--dim); }
@@ -1013,6 +1020,8 @@
           <div class="r"><button class="btn primary" id="gp-aim-install" type="button">Установить модель автоматически</button> <button class="btn" id="gp-aim-model" type="button">Выбрать файл модели…</button> <button class="btn" id="gp-aim-cancel" type="button" style="display:none">Отменить</button> <button class="btn" id="gp-aim-check" type="button">Проверить модель</button></div></div>
         <div class="setrow"><div class="l">Устройство<small id="gp-aim-devnote">Авто и «Процессор» работают на процессоре — этого достаточно для модели такого размера. Видеокарта (DirectML) — только в сборке, где она подключена и проверена.</small></div>
           <div class="r"><select id="gp-aim-device"><option value="auto">Авто</option><option value="cpu">Процессор (CPU)</option><option value="directml">Видеокарта (DirectML)</option></select></div></div>
+        <div class="setrow"><div class="l">Клавиша прицела<small id="gp-aim-bindnote">Хранится отдельно для каждой игры: нажмите на игру в «Библиотеке» или здесь на кнопку. Пока клавиша игры не настроена и не подтверждена, помощь прицела в ней не работает. Галочка «любая игра» разрешает помощь в любой одиночной игре на весь экран (защита от читов по-прежнему останавливает её)</small></div>
+          <div class="r"><button class="btn" id="gp-aim-bindbtn" type="button">Настроить клавишу последней игры</button> <label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="gp-aim-any"> любая игра</label></div></div>
         <details class="gp-more"><summary>Дополнительные настройки</summary>
         <div class="setrow"><div class="l">Размер кадра у прицела<small>Квадрат вокруг центра окна игры. Меньше — быстрее, но видно меньше вокруг прицела</small></div>
           <div class="r"><select id="gp-aim-side"><option value="320">320</option><option value="416">416</option><option value="512">512</option><option value="640">640</option><option value="800">800</option></select></div></div>
@@ -1028,8 +1037,6 @@
           <div class="r"><label class="sw"><input type="checkbox" id="gp-aim-auto"><span></span></label> <button class="btn" id="gp-aim-savegame" type="button" title="Числа «Где перекрестие» сохраняются для игры, которая была впереди последней">Запомнить числа для игры</button></div></div>
         <div class="setrow"><div class="l">Наибольший размер человека, % кадра<small>Выше этого не берутся в цель: ваш собственный персонаж и напарник у камеры очень крупные. Союзников той же модели от врагов отличить нельзя: стреляйте там, где их нет</small></div>
           <div class="r"><input type="number" id="gp-aim-max" min="20" max="100" step="5" style="width:76px"></div></div>
-        <div class="setrow"><div class="l">Клавиша прицела и игры<small>Какая клавиша или кнопка мыши удерживается для прицела: по умолчанию правая кнопка мыши (rmb). Если игра целится по другой клавише (например, Q), впишите её: буква, цифра, rmb, mmb, x1, x2, shift, ctrl, alt, space, caps, f1–f12. Галочка «любая игра» включает помощь в любой одиночной игре на весь экран, не только из списка; защита от читов по-прежнему её останавливает</small></div>
-          <div class="r"><input type="text" id="gp-aim-trigger" maxlength="8" style="width:72px" placeholder="rmb" title="клавиша прицела"> <label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="gp-aim-any"> любая игра</label></div></div>
         <div class="setrow"><div class="l">Плавность и отбор целей<small>Сила подведения (% оставшегося пути за кадр), самый длинный шаг мыши (пикс.), «мёртвая зона» вокруг головы (пикс.: внутри неё мышь не двигается) и самая большая ширина рамки в % от её высоты (шире — лежащее тело или слипшаяся толпа, не берётся). «Запомнить для игры» сохраняет эти числа и размер кадра только для игры, которая была впереди последней</small></div>
           <div class="r"><input type="number" id="gp-aim-strength" min="1" max="100" step="5" style="width:64px" title="сила, %"> <input type="number" id="gp-aim-step" min="5" max="100" step="5" style="width:64px" title="самый длинный шаг, пикс."> <input type="number" id="gp-aim-dead" min="0" max="20" step="1" style="width:64px" title="мёртвая зона, пикс."> <input type="number" id="gp-aim-aspect" min="50" max="500" step="10" style="width:64px" title="ширина рамки, % высоты"> <button class="btn" id="gp-aim-savegame2" type="button">Запомнить для игры</button></div></div>
         <div class="setrow"><div class="l">Копить кадры для обучения модели<small id="gp-aim-collectnote">Раз в секунду, пока зажата кнопка прицела, кадр и найденные рамки (текстовые файлы YOLO) сохраняются в папку aim\dataset рядом с настройками Jarvis (до 500 кадров). Рамки поставила общая модель: перед обучением их надо просмотреть и поправить. Инструкция — в docs/GAME-MODE.md</small></div>
@@ -1442,6 +1449,13 @@
   <div class="acts"><button class="btn primary" id="close-dlg-tray" type="button">Свернуть в трей</button><button class="btn" id="close-dlg-exit" type="button">Полностью закрыть JARVIS</button><button class="btn" id="close-dlg-cancel" type="button">Отмена</button></div>
 </div></div>
 
+<div id="bind-dlg" class="mdl" role="dialog" aria-modal="true" aria-labelledby="bind-title"><div class="box">
+  <button type="button" class="x" id="bind-x" aria-label="Закрыть">✕</button>
+  <h3 id="bind-title">Клавиша прицеливания</h3>
+  <div id="bind-body"></div>
+  <div class="msgline" id="bind-msg" role="status"></div>
+</div></div>
+
 <div id="pal" class="mdl" role="dialog" aria-modal="true" aria-label="Быстрые действия"><div class="box">
   <input type="text" id="pal-q" placeholder="Куда перейти или что спросить…" autocomplete="off" spellcheck="false">
   <ul id="pal-list"></ul>
@@ -1735,11 +1749,12 @@ function applyVoice(s) {
   // no microphone in this PC, the voice comes from the remote: not a fault, no red banner
   const viaRemote = !!(s.voice_state && s.voice_state.state === 'REMOTE'); voiceRemote = viaRemote;
   const textOnly = (s.voice_error || '').includes('--text');
-  const text = voiceActive || viaRemote ? '' : '<b>Голос не работает</b>, команды принимаются только текстом. Причина: ' + esc(s.voice_error || 'микрофон ещё запускается') + '.'
+  const noMic = (s.voice_error || '').includes('устройства записи');
+  const text = voiceActive || viaRemote ? '' : noMic ? '<b>Нет микрофона</b>: команды принимаются текстом. Подключите микрофон (Параметры Windows → Система → Звук → Ввод) или откройте пульт на телефоне: голос пойдёт через него.' : '<b>Голос не работает</b>, команды принимаются только текстом. Причина: ' + esc(s.voice_error || 'микрофон ещё запускается') + '.'
     + (textOnly ? ' <button class="btn small" data-restart-voice type="button">Включить голос</button>' : '');
   const reason = s.voice_error || 'микрофон ещё запускается';
   $('#hsc-vd').textContent = voiceActive ? 'Микрофон работает, голос включён.' : viaRemote ? 'На компьютере нет микрофона: голос идёт через пульт на телефоне или планшете.' : reason + '.';
-  const shortText = voiceActive || viaRemote ? '' : '<b>Голос не работает</b> — команды только текстом. <button class="btn small" data-voice-more type="button">Подробнее</button>'
+  const shortText = voiceActive || viaRemote ? '' : (noMic ? '<b>Нет микрофона</b> — только текст. ' : '<b>Голос не работает</b> — команды только текстом. ') + '<button class="btn small" data-voice-more type="button">Подробнее</button>'
     + (textOnly ? ' <button class="btn small" data-restart-voice type="button">Включить голос</button>' : '');
   for (const id of ['#voice-banner', '#voice-banner2']) {
     const full = id === '#voice-banner2';
@@ -2923,12 +2938,19 @@ function gpDefIcon(name) {
 }
 const GP_RUN = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg>';
 const GP_DEL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+// the key of the aim of a game, as the library shows it
+function bindText(a) {
+  if (!a || a.status === 'unknown') return 'Прицел не настроен';
+  if (a.status === 'suggested') return 'Нужно подтверждение';
+  return a.key === 'rmb' || a.key === 'lmb' || a.key === 'mmb' || /^x[12]$/.test(a.key) ? 'Прицел: ' + a.label : 'Прицел: клавиша ' + a.label;
+}
+function bindBadge(a) { return '<span class="ab" data-s="' + gpEsc(a ? a.status : 'unknown') + '">' + gpEsc(!a || a.status === 'unknown' ? '🎯 —' : a.status === 'suggested' ? '🎯 ?' : '🎯 ' + a.label) + '</span>'; }
 function gpCell(g) {
   const warn = g.launch === 'unverified' || g.launch === 'nopath';
   const key = g.id + g.icon_v;
   const ico = GP.noIcon.has(key) ? gpDefIcon(g.name) : '<img src="' + gpEsc(withTok('/game-icon?id=' + encodeURIComponent(g.id) + '&v=' + g.icon_v)) + '" alt="" loading="lazy" decoding="async" data-k="' + gpEsc(key) + '">';
   const tip = g.name + ' · ' + g.origin_label + (g.path ? '\n' + g.path : '') + (warn ? '\nЗапуск: нужно выбрать файл игры' : '');
-  return '<div class="gc' + (warn ? ' warn' : '') + '" data-id="' + gpEsc(g.id) + '" tabindex="0" title="' + gpEsc(tip) + '"><div class="gi" data-name="' + gpEsc(g.name) + '">' + ico + '</div><div class="gn">' + gpEsc(g.name) + '</div>' +
+  return '<div class="gc' + (warn ? ' warn' : '') + '" data-id="' + gpEsc(g.id) + '" data-exe="' + gpEsc(g.exe || '') + '" tabindex="0" title="' + gpEsc(tip + '\n' + bindText(g.aim)) + '"><div class="gi" data-name="' + gpEsc(g.name) + '">' + ico + bindBadge(g.aim) + '</div><div class="gn">' + gpEsc(g.name) + '</div>' +
     '<div class="ga"><button class="gb run" type="button" title="Запустить" aria-label="' + gpEsc('Запустить «' + g.name + '»') + '">' + GP_RUN + '</button><button class="gb del" type="button" title="Удалить из библиотеки" aria-label="' + gpEsc('Удалить «' + g.name + '» из библиотеки') + '">' + GP_DEL + '</button></div></div>';
 }
 function gpFillGrid(el, items, append) {
@@ -2938,7 +2960,7 @@ function gpFillGrid(el, items, append) {
 // a picture that did not come (a game without an icon): the plain icon instead, and the page does not ask for it again
 for (const id of ['gp-grid', 'ga-grid']) $('#' + id).addEventListener('error', e => {
   const im = e.target; if (!im || im.tagName !== 'IMG') return;
-  GP.noIcon.add(im.dataset.k); const gi = im.closest('.gi'); if (gi) gi.innerHTML = gpDefIcon(gi.dataset.name);
+  GP.noIcon.add(im.dataset.k); const gi = im.closest('.gi'); if (gi) { const badge = gi.querySelector('.ab'); gi.innerHTML = gpDefIcon(gi.dataset.name) + (badge ? badge.outerHTML : ''); }
 }, true);
 
 // ---- the menu «Вид» (like in the Explorer): large, normal, small icons; kept between starts ----
@@ -2974,12 +2996,18 @@ async function gpList(p) {
 }
 
 // ---- the main page: the recent games, or what the search found (never the whole library) ----
-function gpDrawRecent() {
+async function gpDrawRecent() {
   const s = GP.sum; if (!s) return;
-  $('#gp-title').textContent = s.recent.length && s.recent.some(g => g.last_launched) ? 'Недавние и новые' : 'Новые игры';
+  // «Мои игры»: the whole library of the user (up to 200 at once), as the grid of icons; «Все игры» at the right is the catalog as before
+  $('#gp-title').textContent = s.total ? 'Мои игры (' + s.total + ')' : 'Мои игры';
   $('#gp-more').hidden = s.total <= s.recent.length; $('#gp-more').textContent = 'Все игры (' + s.total + ')'; $('#gp-more').dataset.mode = 'all';
-  if (!s.total) $('#gp-grid').innerHTML = '<div class="gp-empty">В библиотеке пока нет игр. Нажмите «Найти игры», чтобы Jarvis нашёл их в Steam, Epic Games и GOG, или «Добавить игру», чтобы выбрать файл самому.</div>';
-  else gpFillGrid($('#gp-grid'), s.recent);
+  if (!s.total) { $('#gp-grid').innerHTML = '<div class="gp-empty">В библиотеке пока нет игр. Нажмите «Найти игры», чтобы Jarvis нашёл их в Steam, Epic Games и GOG, или «Добавить игру», чтобы выбрать файл самому.</div>'; return; }
+  // (the recent ones at once, then the whole library as soon as it comes)
+  if (!$('#gp-grid').querySelector('.gc')) gpFillGrid($('#gp-grid'), s.recent);
+  const seq = ++GP.seq;
+  let r; try { r = await gpList({ sort: GP.sort, limit: 200 }); } catch (e) { return; }
+  if (seq !== GP.seq || GP.mode !== 'recent') return;
+  gpFillGrid($('#gp-grid'), r.items);
 }
 async function gpSearch() {
   const q = $('#gp-q').value.trim(), gn = $('#gp-genre').value;
@@ -3056,11 +3084,70 @@ async function gpRemove(id, name) {
   }
 }
 function gpGridClick(e) {
-  const b = e.target.closest('.gb'); if (!b) return;
+  const b = e.target.closest('.gb');
+  if (!b) { const c = e.target.closest('.gc'); if (c && c.dataset.exe) bindOpen(c.dataset.exe, c.querySelector('.gn').textContent); return; }
   e.stopPropagation();
   const cell = b.closest('.gc'), id = cell.dataset.id, name = cell.querySelector('.gn').textContent;
   if (b.classList.contains('run')) gpLaunch(id, name, b); else gpRemove(id, name);
 }
+// ---- the key of the aim of ONE game: the wizard, the confirmation, the key typed by hand, the check, the reset ----
+const BIND = { exe: '', name: '', timer: 0, manual: false, st: null };
+const BIND_KEYS = [['rmb', 'Правая кнопка мыши (ПКМ)'], ['lmb', 'Левая кнопка мыши (ЛКМ)'], ['mmb', 'Колесо мыши (нажатие)'], ['x1', 'Боковая кнопка мыши 1'], ['x2', 'Боковая кнопка мыши 2'], ['shift', 'Shift'], ['ctrl', 'Ctrl'], ['alt', 'Alt'], ['space', 'Пробел'], ['caps', 'Caps Lock'], ['tab', 'Tab']]
+  .concat('abcdefghijklmnopqrstuvwxyz0123456789'.split('').map(c => [c, 'Клавиша ' + c.toUpperCase()])).concat(Array.from({ length: 12 }, (_, i) => ['f' + (i + 1), 'F' + (i + 1)]));
+const bindMsg = (t, ok) => { const m = $('#bind-msg'); m.className = 'msgline' + (ok === false ? ' bad' : ok ? ' ok' : ''); m.textContent = t || ''; };
+const bindCall = (name, extra) => action(name, Object.assign({ exe: BIND.exe }, extra || {})).catch(() => ({ ok: false, message: 'Не удалось связаться с программой.' }));
+function bindClose() { clearTimeout(BIND.timer); $('#bind-dlg').classList.remove('on'); if (BIND.st && ['observing', 'verifying', 'suggested', 'ambiguous'].includes(BIND.st.state)) action('bind_cancel').catch(() => {}); BIND.manual = false; }
+function bindOpen(exe, name) { BIND.exe = exe; BIND.name = name || exe; BIND.manual = false; $('#bind-title').textContent = 'Клавиша прицеливания: ' + BIND.name; bindMsg(''); $('#bind-dlg').classList.add('on'); bindRefresh(); }
+async function bindRefresh() {
+  clearTimeout(BIND.timer);
+  if (!$('#bind-dlg').classList.contains('on')) return;
+  let st; try { st = await action('bind_status', { exe: BIND.exe }); } catch (e) { return; }
+  BIND.st = st; bindDraw(st);
+  if (['observing', 'verifying'].includes(st.state)) BIND.timer = setTimeout(bindRefresh, 600);
+}
+function bindSelect(sel) { return '<select id="bind-key">' + BIND_KEYS.map(k => '<option value="' + k[0] + '"' + (k[0] === sel ? ' selected' : '') + '>' + gpEsc(k[1]) + '</option>').join('') + '</select>'; }
+function bindDraw(st) {
+  const b = $('#bind-body'), sv = st.saved || {};
+  const btn = (id, t, cls) => '<button type="button" class="btn' + (cls ? ' ' + cls : '') + '" id="' + id + '">' + t + '</button>';
+  let h = '';
+  if (BIND.manual) {
+    h = '<p>Выберите кнопку или клавишу, которой вы целитесь в этой игре.</p><div class="row">' + bindSelectRow(sv) + '</div><p><b>Изменение клавиши применяется только к профилю этой игры.</b> Остальные игры не затрагиваются.</p><div class="acts">' + btn('bind-save-manual', 'Сохранить', 'primary') + btn('bind-back', 'Назад') + '</div>';
+  } else if (st.state === 'observing') {
+    h = '<div class="big">Наблюдение ' + Math.max(1, Math.min(st.needed, (st.progress || 0) + (st.progress >= st.needed ? 0 : 1))) + ' из ' + st.needed + '</div><div class="bar"><i style="width:' + Math.round(100 * (st.progress || 0) / st.needed) + '%"></i></div><p>' + (st.in_game ? 'Нажмите свою кнопку прицеливания, подержите её секунду и отпустите. Повторите несколько раз.' : 'Перейдите в игру: пока окно игры не впереди, Jarvis ничего не записывает.') + (st.seen && st.seen.length ? ' Замечено: ' + st.seen.map(x => gpEsc(x.label) + ' ×' + x.count).join(', ') + '.' : '') + '</p><div class="acts">' + btn('bind-cancel', 'Отмена') + '</div>';
+  } else if (st.state === 'suggested') {
+    h = '<div class="big">Возможная клавиша прицеливания: <b>' + gpEsc(st.label_long || st.label) + '</b>. Использовать её для этой игры?</div><p>Jarvis видел только то, что эта кнопка нажималась и удерживалась; что она делает в игре, он не знает. Подтвердите, что это прицеливание.</p><div class="acts">' + btn('bind-yes', 'Да, сохранить', 'primary') + btn('bind-again', 'Нет, определить ещё раз') + btn('bind-other', 'Выбрать другую кнопку') + '</div>';
+  } else if (st.state === 'ambiguous') {
+    h = '<div class="big">Использовались несколько кнопок, Jarvis не уверен, какая из них прицел.</div><p>Выберите свою:</p><div class="acts">' + (st.candidates || []).map(c => '<button type="button" class="btn" data-pick="' + gpEsc(c.key) + '">' + gpEsc(c.label) + ' (×' + c.count + ')</button>').join('') + btn('bind-again', 'Определить ещё раз') + btn('bind-other', 'Выбрать другую кнопку') + '</div>';
+  } else if (st.state === 'verifying') {
+    h = '<div class="big">' + (st.seen ? 'Нажатие кнопки «' + gpEsc(st.label) + '» замечено ✓' : 'Перейдите в игру и нажмите кнопку «' + gpEsc(st.label) + '»') + '</div><p>' + (st.seen ? 'Сохранённая клавиша работает.' : (st.in_game ? 'Жду нажатия…' : 'Пока окно игры не впереди, Jarvis ничего не записывает.')) + '</p><div class="acts">' + btn('bind-cancel', st.seen ? 'Готово' : 'Отмена') + '</div>';
+  } else {
+    const note = st.state === 'cancelled' ? 'Определение остановлено, ничего не сохранено. ' : st.state === 'timeout' ? 'Время ожидания вышло, ничего не сохранено. ' : '';
+    if (sv.status === 'confirmed') {
+      h = '<p>' + note + '</p><div class="big">Клавиша прицеливания: <b>' + gpEsc(sv.label) + '</b>' + (sv.mode === 'toggle' ? ' (переключение)' : ' (удержание)') + '</div><p class="dim">' + (sv.how === 'legacy' ? 'Эта клавиша использовалась до появления настройки для каждой игры.' : sv.how === 'wizard' ? 'Найдена и подтверждена вами.' : 'Назначена вами вручную.') + ' Помощь прицела включается отдельно и сама не запускается.</p><div class="acts">' + btn('bind-verify', 'Проверить клавишу') + btn('bind-start', 'Определить заново') + btn('bind-manual', 'Изменить вручную') + btn('bind-reset', 'Сбросить') + '</div>';
+    } else {
+      h = '<p>' + note + 'Jarvis пока не знает, какая кнопка отвечает за прицеливание в этой игре. Перейдите в игру и несколько раз нажмите свою кнопку прицеливания. Я помогу определить и сохранить её.</p><p class="dim">Пока клавиша не настроена, помощь прицела в этой игре не работает. Сама игра запускается как обычно.</p><div class="acts">' + btn('bind-start', 'Начать определение', 'primary') + btn('bind-manual', 'Выбрать вручную') + btn('bind-skip', 'Пропустить') + '</div>';
+    }
+  }
+  b.innerHTML = h;
+  const on = (id, f) => { const e = $('#' + id); if (e) e.onclick = f; };
+  const done = async (name, extra, after) => { const r = await bindCall(name, extra); bindMsg(r.message, r.ok !== false); if (r.ok !== false && after) after(); BIND.manual = false; await bindRefresh(); bindLibrary(); };
+  on('bind-start', () => done('bind_start'));
+  on('bind-again', () => done('bind_start'));
+  on('bind-cancel', () => done('bind_cancel'));
+  on('bind-skip', bindClose);
+  on('bind-verify', () => done('bind_verify'));
+  on('bind-yes', () => done('bind_confirm', { mode: 'hold' }));
+  on('bind-reset', () => { if (confirm('Сбросить клавишу прицеливания только для этой игры? Сама игра и другие игры останутся.')) done('bind_reset'); });
+  on('bind-manual', () => { BIND.manual = true; bindDraw(BIND.st); });
+  on('bind-other', () => { BIND.manual = true; bindDraw(BIND.st); });
+  on('bind-back', () => { BIND.manual = false; bindDraw(BIND.st); });
+  on('bind-save-manual', () => done('bind_manual', { key: $('#bind-key').value, mode: $('#bind-mode').value }));
+  b.querySelectorAll('[data-pick]').forEach(x => x.onclick = () => done('bind_confirm', { key: x.dataset.pick, mode: 'hold' }));
+}
+function bindSelectRow(sv) { return bindSelect(sv.key || 'rmb') + '<select id="bind-mode"><option value="hold"' + (sv.mode !== 'toggle' ? ' selected' : '') + '>Удерживать</option><option value="toggle"' + (sv.mode === 'toggle' ? ' selected' : '') + '>Нажатие включает и выключает</option></select>'; }
+// the badges of the library are drawn again after a change
+async function bindLibrary() { try { await gpSummary(); if (GP.mode === 'search') gpSearch(); } catch (e) {} }
+$('#bind-x').onclick = bindClose; $('#bind-dlg').addEventListener('mousedown', e => { if (e.target === $('#bind-dlg')) bindClose(); });
 $('#gp-grid').addEventListener('click', gpGridClick); $('#ga-grid').addEventListener('click', gpGridClick);
 // a game whose file moved: the user chooses the file again
 $('#gp-relink-btn').onclick = async () => {
@@ -3219,21 +3306,22 @@ async function aimRefresh() {
   $('#gp-aim-devnote').textContent = (a.directml_build ? 'В этой сборке видеокарта (DirectML) подключена; если она не запустится, Jarvis сам перейдёт на процессор. ' : 'В этой сборке видеокарта (DirectML) не подключена: любой выбор работает на процессоре. ') + 'Видеокарта не обязательно быстрее для такой модели.';
   if (!AIM.loaded && run.settings) {
     AIM.loaded = true; const s = run.settings;
-    $('#gp-aim-device').value = s.device; $('#gp-aim-side').value = String(s.side); $('#gp-aim-fps').value = s.fps; $('#gp-aim-conf').value = s.conf; $('#gp-aim-conf-v').textContent = s.conf + '%'; $('#gp-aim-min').value = s.min_size; $('#gp-aim-cx').value = s.cx; $('#gp-aim-cy').value = s.cy; $('#gp-aim-auto').checked = s.auto_cross !== false; $('#gp-aim-max').value = s.max_size; $('#gp-aim-strength').value = s.strength; $('#gp-aim-step').value = s.max_step; $('#gp-aim-dead').value = s.dead; $('#gp-aim-aspect').value = s.max_aspect; $('#gp-aim-collect').checked = !!s.collect; $('#gp-aim-trigger').value = s.trigger || 'rmb'; $('#gp-aim-any').checked = s.any_game !== false;
+    $('#gp-aim-device').value = s.device; $('#gp-aim-side').value = String(s.side); $('#gp-aim-fps').value = s.fps; $('#gp-aim-conf').value = s.conf; $('#gp-aim-conf-v').textContent = s.conf + '%'; $('#gp-aim-min').value = s.min_size; $('#gp-aim-cx').value = s.cx; $('#gp-aim-cy').value = s.cy; $('#gp-aim-auto').checked = s.auto_cross !== false; $('#gp-aim-max').value = s.max_size; $('#gp-aim-strength').value = s.strength; $('#gp-aim-step').value = s.max_step; $('#gp-aim-dead').value = s.dead; $('#gp-aim-aspect').value = s.max_aspect; $('#gp-aim-collect').checked = !!s.collect; $('#gp-aim-any').checked = s.any_game !== false;
   }
   clearTimeout(AIM.timer); if (busy) AIM.timer = setTimeout(aimRefresh, 700);
 }
 async function aimDo(name, extra) { const r = await action(name, extra || {}).catch(() => ({ ok: false, message: 'Не удалось связаться с программой.' })); if (!r.cancelled) { gpMsg(r.message, r.ok !== false); aimMsg(r.message, r.ok !== false); } aimRefresh(); return r; }
+$('#gp-aim-bindbtn').onclick = () => { const g = AIM.st && AIM.st.run && AIM.st.run.last_game; if (g) bindOpen(g, g); else aimMsg('Игру ещё не видели: откройте игру на весь экран при включённом игровом режиме и включённой помощи прицела, потом вернитесь сюда. Или нажмите на игру в «Библиотеке».', false); };
 $('#gp-aim-install').onclick = () => aimDo('aim_model_install');
 $('#gp-aim-model').onclick = () => aimDo('aim_pick_model');
 $('#gp-aim-cancel').onclick = () => aimDo('aim_model_cancel');
 $('#gp-aim-check').onclick = () => aimDo('aim_model_check');
 $('#gp-aim-conf').oninput = () => { $('#gp-aim-conf-v').textContent = $('#gp-aim-conf').value + '%'; };
 $('#gp-aim-save').onclick = async () => {
-  const r = await aimDo('aim_settings', { settings: { device: $('#gp-aim-device').value, side: +$('#gp-aim-side').value, fps: +$('#gp-aim-fps').value, conf: +$('#gp-aim-conf').value, min_size: +$('#gp-aim-min').value, max_size: +$('#gp-aim-max').value, cx: +$('#gp-aim-cx').value, cy: +$('#gp-aim-cy').value, auto_cross: $('#gp-aim-auto').checked, strength: +$('#gp-aim-strength').value, max_step: +$('#gp-aim-step').value, dead: +$('#gp-aim-dead').value, max_aspect: +$('#gp-aim-aspect').value, collect: $('#gp-aim-collect').checked, trigger: $('#gp-aim-trigger').value.trim() || 'rmb', any_game: $('#gp-aim-any').checked } });
+  const r = await aimDo('aim_settings', { settings: { device: $('#gp-aim-device').value, side: +$('#gp-aim-side').value, fps: +$('#gp-aim-fps').value, conf: +$('#gp-aim-conf').value, min_size: +$('#gp-aim-min').value, max_size: +$('#gp-aim-max').value, cx: +$('#gp-aim-cx').value, cy: +$('#gp-aim-cy').value, auto_cross: $('#gp-aim-auto').checked, strength: +$('#gp-aim-strength').value, max_step: +$('#gp-aim-step').value, dead: +$('#gp-aim-dead').value, max_aspect: +$('#gp-aim-aspect').value, collect: $('#gp-aim-collect').checked, any_game: $('#gp-aim-any').checked } });
   if (r.ok) AIM.loaded = false;
 };
-$('#gp-aim-savegame2').onclick = () => aimDo('aim_settings', { for_game: true, settings: { cx: +$('#gp-aim-cx').value, cy: +$('#gp-aim-cy').value, strength: +$('#gp-aim-strength').value, max_step: +$('#gp-aim-step').value, dead: +$('#gp-aim-dead').value, max_aspect: +$('#gp-aim-aspect').value, side: +$('#gp-aim-side').value, trigger: $('#gp-aim-trigger').value.trim() || 'rmb' } });
+$('#gp-aim-savegame2').onclick = () => aimDo('aim_settings', { for_game: true, settings: { cx: +$('#gp-aim-cx').value, cy: +$('#gp-aim-cy').value, strength: +$('#gp-aim-strength').value, max_step: +$('#gp-aim-step').value, dead: +$('#gp-aim-dead').value, max_aspect: +$('#gp-aim-aspect').value, side: +$('#gp-aim-side').value } });
 $('#gp-aim-savegame').onclick = () => aimDo('aim_settings', { for_game: true, settings: { cx: +$('#gp-aim-cx').value, cy: +$('#gp-aim-cy').value } });
 $('#gp-aim-snapbtn').onclick = async () => {
   const r = await aimDo('aim_snapshot');
@@ -3495,6 +3583,24 @@ function setView() {
 document.querySelectorAll('#set-cats button').forEach(b => { b.onclick = () => { setCat = b.dataset.cat; try { localStorage.setItem('jarvis.setCat', setCat); } catch (e) {} $('#set-search').value = ''; setView(); $('#page-settings').scrollTop = 0; $('#set-main').scrollTop = 0; }; });
 $('#set-search').oninput = setView;
 setView();
+// the blocks of the settings fold: only the first block of a category is open at first, a click on the title opens or closes one (kept);
+// a long explanation under a setting is two lines, a click shows it all; the search ignores the folds
+(() => {
+  let saved = {}; try { saved = JSON.parse(localStorage.getItem('jarvis.setFold') || '{}') || {}; } catch (e) {}
+  const seen = {};
+  document.querySelectorAll('#set-main > .card').forEach(c => {
+    const cat = c.dataset.cat; const first = !seen[cat]; seen[cat] = true;
+    const rows = [...c.children].filter(x => x.classList.contains('setrow')).length;
+    const id = c.id || cat;
+    const fold = id in saved ? !!saved[id] : (!first && rows >= 3);
+    c.classList.toggle('fold', fold);
+    const h = c.querySelector(':scope > h3');
+    if (h) h.onclick = () => { const f = c.classList.toggle('fold'); saved[id] = f ? 1 : 0; try { localStorage.setItem('jarvis.setFold', JSON.stringify(saved)); } catch (e) {} };
+  });
+  $('#set-main').addEventListener('click', e => { const sm = e.target.closest('.setrow .l small'); if (sm) sm.classList.toggle('open'); });
+  const sync = () => $('#set-main').classList.toggle('searching', !!$('#set-search').value.trim());
+  $('#set-search').addEventListener('input', sync); sync();
+})();
 
 // ---------- privacy, notifications, notifications of other programs ----------
 function applyPrivacy(s) {
@@ -4033,7 +4139,8 @@ async function msgsLoad(first) {
       const st = (s.ext_status || {}).state, det = (s.ext_status || {}).detail || '';
       const off = !s.ext_enabled ? 'Чтение уведомлений других программ выключено — сообщения сюда не приходят.'
         : !(s.ext_social || []).length ? 'Не выбрано ни одной соцсети.'
-        : (st === 'denied' || st === 'error' || st === 'unsupported') ? det : '';
+        : (st === 'denied' || st === 'error' || st === 'unsupported') ? det
+        : (st === 'on' && ((s.ext_status || {}).stats || {}).polls > 2 && !((s.ext_status || {}).stats || {}).received && !((msgData || {}).messages || []).length) ? 'Windows пока не передала ни одного уведомления. Если ждёте сообщения из Telegram: в Telegram Desktop откройте Настройки → Уведомления и включите «Системные уведомления» (Native notifications), а имя отправителя и текст сообщения должны быть разрешены в уведомлении.' : '';
       $('#msg-setup').textContent = !s.ext_enabled ? 'Включить и читать вслух' : !(s.ext_social || []).length ? 'Выбрать все и читать вслух' : 'Открыть настройки';
       $('#msg-setup').dataset.fix = (!s.ext_enabled || !(s.ext_social || []).length) ? '1' : '';
       $('#msg-off').style.display = off ? 'block' : 'none'; $('#msg-off-t').textContent = off;

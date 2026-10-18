@@ -533,6 +533,11 @@ pub fn report_text(cfg: &AimConfig) -> String {
     r.push_str(&format!("Захват экрана: {}\n", aim["capture"].as_str().unwrap_or("")));
     r.push_str(&format!("Игра: {}; перекрестие: {}; поиск перекрестия: {}\n", aim["last_game"].as_str().filter(|g| !g.is_empty()).unwrap_or("ещё не видели"), aim["cross"].as_str().unwrap_or(""), if eff.auto_cross { "включён" } else { "выключен" }));
     r.push_str(&format!("Время кадра: {} мс; найдено людей: {}; кадров обработано: {}\n", aim["last_frame_ms"], aim["objects"], aim["frames"]));
+    {
+        let g = aim["last_game"].as_str().unwrap_or("");
+        let b = crate::aimassist::game_binding(g);
+        r.push_str(&format!("Клавиша прицела игры {}: {} ({}{})\n", if g.is_empty() { "—" } else { g }, if b.key.is_empty() { "не настроена".to_string() } else { crate::aimbind::key_label(&b.key) }, match b.status { crate::aimassist::BindStatus::Confirmed => "подтверждена", crate::aimassist::BindStatus::Suggested => "не подтверждена", crate::aimassist::BindStatus::Unknown => "неизвестна" }, if b.how.is_empty() { String::new() } else { format!(", способ: {}", b.how) }));
+    }
     r.push_str(&crate::aimassist::snapshot_details());
     r.push('\n');
     if let Some(p) = aim["problem"].as_str().filter(|p| !p.is_empty()) {

@@ -19,6 +19,8 @@ const SLACK: usize = 2;
 pub const MARGIN: usize = GAP_TO + ARM + SLACK + FREE + 3;
 // the mark that a crosshair has at least (a real one on the pictures that were tried: 130; the best false place: 36)
 pub const MIN_SCORE: f32 = 70.0;
+// a find with at least this score is believed at once, without waiting for three equal frames (a clear crosshair of the game)
+pub const STRONG_SCORE: f32 = 100.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Found {

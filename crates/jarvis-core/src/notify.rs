@@ -282,6 +282,16 @@ pub fn ext_allowed_id(s: &UiSettings, app: &str, aumid: &str) -> bool {
     true
 }
 
+// what Jarvis says about a message of a social network: the network, the sender (the first line of the notification) and the text
+pub fn social_say(network: &str, texts: &[String]) -> String {
+    let parts = ext_parts(texts);
+    match parts.len() {
+        0 => format!("Вам пришло сообщение в {}", network),
+        1 => format!("Вам пришло сообщение в {}: {}", network, parts[0]),
+        _ => format!("Вам пришло сообщение в {} от {}: {}", network, parts[0], parts[1..].join(" — ")),
+    }
+}
+
 // the texts of a notification without empty lines
 pub fn ext_parts(texts: &[String]) -> Vec<String> {
     texts.iter().map(|t| t.split_whitespace().collect::<Vec<_>>().join(" ")).filter(|t| !t.is_empty()).collect()
@@ -426,13 +436,13 @@ pub fn on_external(id: &str, app: &str, aumid: &str, texts: &[String], initial: 
     // the page "Сообщения" (memory only)
     crate::social::push(net.filter(|n| social_on(n)).map(|n| n.key).unwrap_or(""), &shown, &title, &text);
     let say: String = if net.filter(|n| social_on(n)).is_some() {
-        // "Telegram, Иван: привет, как дела?"
-        format!("{}: {}", title.replace(" · ", ", "), text)
+        // "Вам пришло сообщение в Telegram от Ивана: привет, как дела?"
+        social_say(&shown, &texts)
     } else {
         format!("Уведомление от {}. {}", shown, text)
     }
     .chars()
-    .take(220)
+    .take(260)
     .collect();
     Some(deliver("external", &title, &text, &shown, false, p, &say))
 }

@@ -214,6 +214,15 @@ fn settings_file() -> std::path::PathBuf {
     }
 }
 
+// (the tests of this module and of aimbind share one settings file: one lock for both)
+#[cfg(test)]
+pub(crate) static TEST_SETTINGS_LOCK: Mutex<()> = parking_lot::const_mutex(());
+
+#[cfg(test)]
+pub(crate) fn test_settings_file() -> std::path::PathBuf {
+    settings_file()
+}
+
 fn read_overlay() -> Value {
     std::fs::read_to_string(settings_file()).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).filter(|v| v.is_object()).unwrap_or_else(|| json!({}))
 }
@@ -239,7 +248,7 @@ pub fn save_settings(patch: &Value, base: &AimConfig) -> Result<AimConfig, Strin
 }
 
 // the name of a game for the table of the games: the file name in small letters, nothing else
-fn game_key(exe: &str) -> Option<String> {
+pub(crate) fn game_key(exe: &str) -> Option<String> {
     let e = exe.trim().to_lowercase();
     (e.ends_with(".exe") && e.len() <= 80 && !e.contains(['/', '\\', ':', '"', '\0'])).then_some(e)
 }
@@ -276,7 +285,7 @@ pub fn save_game_cross(exe: &str, cx: i64, cy: i64) -> Result<(), String> {
 }
 
 // the numbers that a game may keep for itself (besides the crosshair)
-pub const GAME_KEYS: [&str; 9] = ["strength", "head", "radius", "side", "conf", "max_step", "dead", "max_aspect", "trigger"];
+pub const GAME_KEYS: [&str; 8] = ["strength", "head", "radius", "side", "conf", "max_step", "dead", "max_aspect"];
 
 // keeps the numbers of ONE game (only GAME_KEYS, each one checked); the others and the crosshair of the game stay
 pub fn save_game_settings(exe: &str, patch: &Value) -> Result<usize, String> {
@@ -302,6 +311,186 @@ pub fn save_game_settings(exe: &str, patch: &Value) -> Result<usize, String> {
     Ok(picked.len())
 }
 
+// ---------------------------------------------------------------------------------------------
+// the key of the aim, kept for EACH game by itself (games[<exe>].bind in the same file): never one key for all the games.
+// A game that was never set up has no key at all and the aim assist does not start in it (no guess by default).
+// ---------------------------------------------------------------------------------------------
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BindStatus {
+    // nothing is known
+    Unknown,
+    // the wizard found a key, the user has not confirmed it yet: it is NOT used
+    Suggested,
+    // the user confirmed it (or typed it himself, or it was used before the keys were kept per game)
+    Confirmed,
+}
+
+impl BindStatus {
+    pub fn name(self) -> &'static str {
+        match self {
+            BindStatus::Unknown => "unknown",
+            BindStatus::Suggested => "suggested",
+            BindStatus::Confirmed => "confirmed",
+        }
+    }
+    fn from_name(n: &str) -> BindStatus {
+        match n {
+            "confirmed" => BindStatus::Confirmed,
+            "suggested" => BindStatus::Suggested,
+            _ => BindStatus::Unknown,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Binding {
+    pub key: String,
+    pub status: BindStatus,
+    // "wizard" (found by the wizard and confirmed), "manual" (typed by the user), "legacy" (was used before the keys were kept per game)
+    pub how: String,
+    // "hold" (aims while the key is held) or "toggle"
+    pub mode: String,
+    // when it was confirmed (seconds since 1970)
+    pub at: u64,
+}
+
+impl Binding {
+    pub fn none() -> Binding {
+        Binding { key: String::new(), status: BindStatus::Unknown, how: String::new(), mode: "hold".into(), at: 0 }
+    }
+    // the key that the aim assist may use: only a confirmed one
+    pub fn usable_key(&self) -> Option<&str> {
+        (self.status == BindStatus::Confirmed && trigger_vk(&self.key).is_some()).then_some(self.key.as_str())
+    }
+    // «mouse» or «keyboard»
+    pub fn input(&self) -> &'static str {
+        if matches!(self.key.as_str(), "rmb" | "lmb" | "mmb" | "x1" | "x2") { "mouse" } else { "keyboard" }
+    }
+}
+
+// games that used the right button before the keys were kept per game (the user said so): their key stays confirmed
+const LEGACY_RMB: [&str; 1] = ["wwzretail.exe"];
+
+fn binding_of_entry(key: &str, entry: Option<&Value>) -> Binding {
+    if let Some(b) = entry.and_then(|e| e.get("bind")).and_then(|b| b.as_object()) {
+        let k = b.get("key").and_then(|x| x.as_str()).unwrap_or("").to_lowercase();
+        let status = BindStatus::from_name(b.get("status").and_then(|x| x.as_str()).unwrap_or(""));
+        // a key that is not a known one is not a key
+        let status = if trigger_vk(&k).is_none() { BindStatus::Unknown } else { status };
+        return Binding {
+            key: if status == BindStatus::Unknown { String::new() } else { k },
+            status,
+            how: b.get("how").and_then(|x| x.as_str()).unwrap_or("").chars().take(12).collect(),
+            mode: if b.get("mode").and_then(|x| x.as_str()) == Some("toggle") { "toggle".into() } else { "hold".into() },
+            at: b.get("at").and_then(|x| x.as_u64()).unwrap_or(0),
+        };
+    }
+    // an older entry (made by the versions before the keys per game): it was used with the key it had (the right button by default)
+    let old_key = entry.and_then(|e| e.get("trigger")).and_then(|t| t.as_str()).filter(|t| trigger_vk(t).is_some()).map(|t| t.to_lowercase());
+    let used_before = entry.map(|e| e.as_object().map(|o| !o.is_empty()).unwrap_or(false)).unwrap_or(false) || LEGACY_RMB.contains(&key);
+    if used_before {
+        return Binding { key: old_key.unwrap_or_else(|| "rmb".into()), status: BindStatus::Confirmed, how: "legacy".into(), mode: "hold".into(), at: 0 };
+    }
+    Binding::none()
+}
+
+// the key of the aim of this game (what is kept; a game that is not in the file has none)
+pub fn game_binding(exe: &str) -> Binding {
+    let Some(key) = game_key(exe) else { return Binding::none() };
+    let o = read_overlay();
+    binding_of_entry(&key, o.get("games").and_then(|g| g.get(&key)))
+}
+
+// the status of the keys of all the games the page shows (read once, not once for each of a hundred games)
+pub fn bindings_for(exes: &[String]) -> std::collections::HashMap<String, Binding> {
+    let o = read_overlay();
+    exes.iter().filter_map(|e| game_key(e).map(|k| (k.clone(), binding_of_entry(&k, o.get("games").and_then(|g| g.get(&k)))))).collect()
+}
+
+// the file is read for a change: a file that is there but cannot be read is copied aside first (nothing is lost), then work goes on
+fn read_overlay_for_write() -> Value {
+    let path = settings_file();
+    match std::fs::read_to_string(&path) {
+        Ok(t) => match serde_json::from_str::<Value>(&t) {
+            Ok(v) if v.is_object() => v,
+            _ => {
+                let mut aside = path.clone().into_os_string();
+                aside.push(".corrupt");
+                let _ = std::fs::copy(&path, std::path::PathBuf::from(aside));
+                json!({})
+            }
+        },
+        Err(_) => json!({}),
+    }
+}
+
+// a copy of the file as it was before the first change of a key (once): the older numbers can always be got back
+fn backup_once() {
+    let path = settings_file();
+    if !path.is_file() {
+        return;
+    }
+    let mut aside = path.clone().into_os_string();
+    aside.push(".bak-before-keys");
+    let aside = std::path::PathBuf::from(aside);
+    if !aside.exists() {
+        let _ = std::fs::copy(&path, aside);
+    }
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+// keeps the key of ONE game: only its `bind`, every other number of the game and every other game stay as they are.
+// `status` Suggested keeps the key as a proposal (it is not used until it is confirmed).
+pub fn save_game_binding(exe: &str, key: &str, status: BindStatus, how: &str, mode: &str) -> Result<(), String> {
+    let gk = game_key(exe).ok_or("игра не выбрана")?;
+    let k = key.trim().to_lowercase();
+    if trigger_vk(&k).is_none() {
+        return Err(format!("неизвестная клавиша «{}»", key));
+    }
+    if !matches!(mode, "hold" | "toggle") || !matches!(how, "wizard" | "manual" | "legacy") {
+        return Err("неверный режим или способ".into());
+    }
+    backup_once();
+    let mut now = read_overlay_for_write();
+    if !now.get("games").map(|g| g.is_object()).unwrap_or(false) {
+        now["games"] = json!({});
+    }
+    if now["games"].as_object().map(|m| m.len()).unwrap_or(0) >= 100 && now["games"].get(&gk).is_none() {
+        return Err("слишком много игр в таблице".into());
+    }
+    // (an older entry keeps all its numbers: only its key is replaced)
+    if !now["games"][&gk].is_object() {
+        now["games"][&gk] = json!({});
+    }
+    now["games"][&gk]["bind"] = json!({ "v": 1, "key": k, "status": status.name(), "how": how, "mode": mode, "at": if status == BindStatus::Confirmed { now_secs() } else { 0 } });
+    // the old plain key of the entry is not used any more
+    if let Some(o) = now["games"][&gk].as_object_mut() {
+        o.remove("trigger");
+    }
+    crate::write_atomic(&settings_file(), serde_json::to_string_pretty(&now).unwrap_or_default()).map_err(|e| format!("не удалось сохранить: {}", e))
+}
+
+// the key of ONE game is forgotten (the game, its numbers and the other games stay)
+pub fn reset_game_binding(exe: &str) -> Result<(), String> {
+    let gk = game_key(exe).ok_or("игра не выбрана")?;
+    backup_once();
+    let mut now = read_overlay_for_write();
+    let had_entry = now.get("games").and_then(|g| g.get(&gk)).is_some();
+    if had_entry {
+        if let Some(o) = now["games"][&gk].as_object_mut() {
+            o.remove("bind");
+            o.remove("trigger");
+        }
+    }
+    // a game of the old list (the right button before the keys per game) must stay «not set» after a reset, not come back as an old one:
+    // the entry gets an explicit «unknown» key
+    now["games"][&gk]["bind"] = json!({ "v": 1, "key": "", "status": "unknown", "how": "", "mode": "hold", "at": 0 });
+    crate::write_atomic(&settings_file(), serde_json::to_string_pretty(&now).unwrap_or_default()).map_err(|e| format!("не удалось сохранить: {}", e))
+}
+
 // the configuration for the game that is in front: the numbers of that game laid over `effective`
 pub fn effective_for(profile: &AimConfig, exe: Option<&str>) -> AimConfig {
     let mut c = effective(profile);
@@ -309,6 +498,8 @@ pub fn effective_for(profile: &AimConfig, exe: Option<&str>) -> AimConfig {
         c.cx_pct = cx;
         c.cy_pct = cy;
     }
+    // the key of the aim: only the confirmed key of THIS game (none: the aim assist does not start)
+    c.trigger = exe.map(game_binding).and_then(|b| b.usable_key().map(|k| k.to_string())).unwrap_or_default();
     // the other numbers that this game keeps for itself lie over the general ones
     if let Some(e) = exe.and_then(game_key).and_then(|k| read_overlay().get("games").and_then(|g| g.get(&k)).cloned()) {
         if let Some(o) = e.as_object() {
@@ -418,6 +609,12 @@ pub fn trigger_vk(name: &str) -> Option<i32> {
         }
     };
     Some(code)
+}
+
+// the place of the crosshair found a moment ago (2 seconds at most): after that it is looked for again, never taken from the past
+// (a place of the first person must not live on in the third)
+pub fn fresh_place(p: Option<((i32, i32), std::time::Instant)>) -> Option<(i32, i32)> {
+    p.filter(|(_, t)| t.elapsed() < std::time::Duration::from_millis(2000)).map(|(xy, _)| xy)
 }
 
 // a program in the full screen that may be a game: its file name (None when the setting is off, the program is not a game or it is not full screen)
@@ -898,10 +1095,11 @@ pub fn suspend() {
 
 pub fn status_json(cfg: &AimConfig) -> Value {
     let eff = effective(cfg);
+    let bind_now = { let g = last_game(); let b = game_binding(&g); json!({ "game": g, "key": b.key, "status": b.status.name(), "how": b.how, "mode": b.mode }) };
     json!({ "enabled": is_enabled(), "state": STATE.lock().clone(), "model": model_path(cfg).display().to_string(), "model_found": model_path(cfg).is_file(),
         "frames": FRAMES.load(Ordering::SeqCst), "last_frame_ms": LAST_MS.load(Ordering::SeqCst), "objects": OBJECTS.load(Ordering::SeqCst),
-        "capture": CAPTURE.lock().clone(), "last_game": last_game(), "cross": cross_source(), "device_used": DEVICE.lock().clone(), "thread": thread_running(), "problem": PROBLEM.lock().clone(),
-        "settings": { "device": eff.device.name(), "side": eff.side, "fps": eff.fps, "conf": eff.conf_pct, "min_size": eff.min_size_px, "max_size": eff.max_size_pct, "cx": eff.cx_pct, "cy": eff.cy_pct, "auto_cross": eff.auto_cross, "max_aspect": eff.max_aspect_pct, "dead": eff.dead_px, "max_step": eff.max_step_px, "collect": eff.collect, "trigger": eff.trigger, "any_game": eff.any_game, "strength": eff.strength_pct, "radius": eff.radius_px, "head": eff.head_pct } })
+        "capture": CAPTURE.lock().clone(), "last_game": last_game(), "bind": bind_now,"cross": cross_source(), "device_used": DEVICE.lock().clone(), "thread": thread_running(), "problem": PROBLEM.lock().clone(),
+        "settings": { "device": eff.device.name(), "side": eff.side, "fps": eff.fps, "conf": eff.conf_pct, "min_size": eff.min_size_px, "max_size": eff.max_size_pct, "cx": eff.cx_pct, "cy": eff.cy_pct, "auto_cross": eff.auto_cross, "max_aspect": eff.max_aspect_pct, "dead": eff.dead_px, "max_step": eff.max_step_px, "collect": eff.collect, "any_game": eff.any_game, "strength": eff.strength_pct, "radius": eff.radius_px, "head": eff.head_pct } })
 }
 
 // how long to rest after a frame: the frame rate that was asked for, and when the computer is slow (a frame takes more than the budget) the
@@ -1026,9 +1224,23 @@ mod run {
     // sends small moves of the mouse about 200 times a second while the right button is held; it ends with the run
     fn mover(id: u64) {
         let mut carry = (0.0f32, 0.0f32);
+        let (mut was_down, mut toggled) = (false, false);
         while alive(id) {
             std::thread::sleep(std::time::Duration::from_millis(5));
-            if !right_button_down() {
+            // «hold»: aims while the key is held; «toggle»: a press switches the aim on, the next one off (the edge is seen here only)
+            let down = key_down();
+            let active = if MODE_TOGGLE.load(Ordering::SeqCst) {
+                if down && !was_down {
+                    toggled = !toggled;
+                }
+                toggled
+            } else {
+                toggled = false;
+                down
+            };
+            was_down = down;
+            AIM_ACTIVE.store(active, Ordering::SeqCst);
+            if !active {
                 *PENDING.lock() = (0.0, 0.0);
                 carry = (0.0, 0.0);
                 continue;
@@ -1049,9 +1261,14 @@ mod run {
 
     static TRIGGER: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0x02);
 
-    // the key or button of the aim (the setting «trigger») is held
-    fn right_button_down() -> bool {
-        unsafe { (winapi::um::winuser::GetAsyncKeyState(TRIGGER.load(Ordering::SeqCst)) as u16) & 0x8000 != 0 }
+    // the aim is on now (the mover decides: the key is held, or a toggle is switched on)
+    static AIM_ACTIVE: AtomicBool = AtomicBool::new(false);
+    static MODE_TOGGLE: AtomicBool = AtomicBool::new(false);
+
+    // the confirmed key or button of the aim of the game in front is held (0 = this game has no key: never held)
+    fn key_down() -> bool {
+        let vk = TRIGGER.load(Ordering::SeqCst);
+        vk != 0 && unsafe { (winapi::um::winuser::GetAsyncKeyState(vk) as u16) & 0x8000 != 0 }
     }
 
     // the program in front covers the whole screen of its monitor (a game in the full screen or the window without a frame)
@@ -1130,7 +1347,8 @@ mod run {
         let mut auto_px: Option<(i32, i32)> = None;
         // the last believed place of the crosshair in this game: used while the lock is lost for a moment (the crosshair of the third person is
         // drawn only while aiming), so the mouse never goes to the middle of the window instead of the crosshair
-        let mut last_good: Option<(i32, i32)> = None;
+        // (the place, when it was found): used for a moment only; an old place of another view of the game must not live on
+        let mut last_good: Option<((i32, i32), std::time::Instant)> = None;
         let mut frame_no = 0u32;
         let mut last_collect = std::time::Instant::now();
         let mut last_dets: Vec<Det> = Vec::new();
@@ -1139,15 +1357,33 @@ mod run {
         let mut avg_ms = 0.0f32;
         while alive(id) {
             let cfg = crate::gamemode::aim_config();
-            if let Some(vk) = trigger_vk(&cfg.trigger) {
-                TRIGGER.store(vk, Ordering::SeqCst);
-            }
+            // the key of THIS game, only a confirmed one; a game without it has none and the aim assist does not start in it
+            let bound = trigger_vk(&cfg.trigger).is_some();
+            TRIGGER.store(trigger_vk(&cfg.trigger).unwrap_or(0), Ordering::SeqCst);
+            MODE_TOGGLE.store(crate::gamemode::front_exe_any().map(|e| game_binding(&e).mode == "toggle").unwrap_or(false), Ordering::SeqCst);
             // a game of the list, or (when allowed) any program in the full screen that is not a browser, a player and the like
             let game = crate::gamemode::front_game_exe().or_else(|| front_any_game(&cfg));
             let ready = crate::gamemode::is_active() && game.is_some() && crate::gamemode::anticheat_running().is_none();
+            if ready && !bound {
+                set_state("waiting");
+                // the game is not in front (or has no key): the mouse is never moved, whatever is held
+                AIM_ACTIVE.store(false, Ordering::SeqCst);
+                TRIGGER.store(0, Ordering::SeqCst);
+                *PENDING.lock() = (0.0, 0.0);
+                *CAPTURE.lock() = format!("клавиша прицеливания для игры {} не настроена: Игры → нажмите на игру → «Определить клавишу»", game.as_deref().unwrap_or(""));
+                if let Some(g) = &game {
+                    *LAST_GAME.lock() = g.clone();
+                }
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                continue;
+            }
             if !ready {
                 set_state("waiting");
-                *CAPTURE.lock() = format!("ждёт: впереди должна быть игра на весь экран (или из списка) и зажата клавиша «{}»", cfg.trigger);
+                // the game is not in front (or has no key): the mouse is never moved, whatever is held
+                AIM_ACTIVE.store(false, Ordering::SeqCst);
+                TRIGGER.store(0, Ordering::SeqCst);
+                *PENDING.lock() = (0.0, 0.0);
+                *CAPTURE.lock() = "ждёт: впереди должна быть игра на весь экран (или из списка) и зажата клавиша прицела этой игры".to_string();
                 std::thread::sleep(std::time::Duration::from_millis(100));
                 continue;
             }
@@ -1160,14 +1396,14 @@ mod run {
                     last_good = None;
                 }
             }
-            if !right_button_down() {
+            if !AIM_ACTIVE.load(Ordering::SeqCst) {
                 set_state("waiting");
                 std::thread::sleep(std::time::Duration::from_millis(15));
                 continue;
             }
             let started = std::time::Instant::now();
             let moved_before = *MOVED.lock();
-            let cap = match unsafe { capture(governed_side(cfg.side, &mut side_now) as i32, auto_px.or(last_good), cfg.cx_pct, cfg.cy_pct) } {
+            let cap = match unsafe { capture(governed_side(cfg.side, &mut side_now) as i32, auto_px.or(super::fresh_place(last_good)), cfg.cx_pct, cfg.cy_pct) } {
                 Ok(f) => f,
                 Err(e) => {
                     cap_fail += 1;
@@ -1197,13 +1433,24 @@ mod run {
             // the crosshair: looked for on the picture (cheap while it is not yet believed, rarely afterwards); its place is believed after
             // several equal frames and then the square is cut around it
             frame_no = frame_no.wrapping_add(1);
+            let mut frame_cross = cap.cross;
+            let mut direct_find = false;
             if cfg.auto_cross {
                 // a locked place is checked every few frames over the wide area, so a switch first/third person is noticed
                 let verify = !tracker.is_locked() || frame_no % 4 == 0;
                 let reach = 120.min(side / 2 - crate::aimcross::MARGIN.min(side / 2 - 1));
                 if verify {
-                    let found = crate::aimcross::find(frame, side, cap.cross, reach).map(|f| ((cap.origin.0 as f32 + f.x) - cap.win.0 as f32 / 2.0, (cap.origin.1 as f32 + f.y) - cap.win.1 as f32 / 2.0));
+                    let hit = crate::aimcross::find(frame, side, cap.cross, reach);
+                    let found = hit.as_ref().map(|f| ((cap.origin.0 as f32 + f.x) - cap.win.0 as f32 / 2.0, (cap.origin.1 as f32 + f.y) - cap.win.1 as f32 / 2.0));
                     auto_px = tracker.feed(found);
+                    // a clear crosshair is believed at once (the three equal frames are for the weak finds): this frame is aimed from it
+                    if let (Some(f), Some((x, y))) = (hit.as_ref().filter(|f| f.score >= crate::aimcross::STRONG_SCORE), found) {
+                        frame_cross = (f.x, f.y);
+                        if auto_px.is_none() {
+                            auto_px = Some((x.round() as i32, y.round() as i32));
+                            direct_find = true;
+                        }
+                    }
                 } else {
                     auto_px = tracker.current();
                 }
@@ -1212,23 +1459,25 @@ mod run {
                 auto_px = None;
                 last_good = None;
             }
-            if auto_px.is_some() {
-                last_good = auto_px;
+            if let Some(p) = auto_px {
+                last_good = Some((p, std::time::Instant::now()));
             }
+            let kept = super::fresh_place(last_good);
             *CROSS_SRC.lock() = match (auto_px, game.as_deref().and_then(game_cross)) {
+                (Some((x, y)), _) if direct_find => format!("найдено на экране по одному ясному кадру: {:+}, {:+} пикс. от середины окна", x, y),
                 (Some((x, y)), _) => format!("найдено на экране автоматически: {:+}, {:+} пикс. от середины окна", x, y),
                 (None, Some((x, y))) => format!("запомнено для игры {}: {:+}%, {:+}%", game.as_deref().unwrap_or(""), x, y),
-                (None, None) if last_good.is_some() => format!("последнее найденное место (перекрестие на миг потеряно): {:+}, {:+} пикс.", last_good.unwrap().0, last_good.unwrap().1),
+                (None, None) if kept.is_some() => format!("прошлое найденное место (перекрестие потеряно меньше двух секунд назад): {:+}, {:+} пикс.", kept.unwrap().0, kept.unwrap().1),
                 (None, None) => format!("из общих настроек: {:+}%, {:+}% (на экране перекрестие из четырёх чёрточек не найдено)", cfg.cx_pct, cfg.cy_pct),
             };
             *CAPTURE.lock() = format!("ок, {}×{}", side, side);
             set_state("working");
-            let res = frame_outcome(frame, side, &cfg, &info.spec, cap.cross, &mut |rgb| ortrun::run(&mut session, &info.input_name, rgb, info.spec.input_w, info.spec.input_h));
+            let res = frame_outcome(frame, side, &cfg, &info.spec, frame_cross, &mut |rgb| ortrun::run(&mut session, &info.input_name, rgb, info.spec.input_w, info.spec.input_h));
             match res {
                 Ok(f) => {
                     OBJECTS.store(f.objects as u32, Ordering::SeqCst);
                     last_dets = f.dets.clone();
-                    keep_snapshot(Snap { bgra: frame.clone(), side, cross: cap.cross, frame: f.clone(), auto: auto_px.is_some() });
+                    keep_snapshot(Snap { bgra: frame.clone(), side, cross: frame_cross, frame: f.clone(), auto: auto_px.is_some() });
                     // the module may have been switched off while the model worked: no move of the mouse after that
                     if !alive(id) {
                         break;
@@ -1556,6 +1805,16 @@ mod tests {
     }
 
     #[test]
+    fn an_old_place_of_the_crosshair_is_not_used() {
+        let now = std::time::Instant::now();
+        assert_eq!(fresh_place(Some(((0, -84), now))), Some((0, -84)));
+        assert_eq!(fresh_place(None), None);
+        if let Some(old) = now.checked_sub(std::time::Duration::from_secs(3)) {
+            assert_eq!(fresh_place(Some(((-1, -1), old))), None, "three seconds old: looked for again");
+        }
+    }
+
+    #[test]
     fn the_key_of_the_aim_is_chosen_by_name_and_any_full_screen_game_is_allowed() {
         assert_eq!(trigger_vk("RMB"), Some(0x02));
         assert_eq!(trigger_vk(" q "), Some(0x51));
@@ -1574,6 +1833,93 @@ mod tests {
         assert!(is_not_a_game("Chrome.EXE") && is_not_a_game("explorer.exe") && !is_not_a_game("crimsondesert.exe"));
         // with the setting off nothing is taken (and on a computer without windows nothing either)
         assert_eq!(front_any_game(&AimConfig { any_game: false, ..AimConfig::default() }), None);
+    }
+
+    #[test]
+    fn old_profiles_are_read_and_keep_their_key_while_a_new_game_has_none() {
+        let _l = SETTINGS_LOCK.lock();
+        let file = settings_file();
+        // an older file: games with numbers (the right button was always used), a game with an old plain key, and the general numbers
+        std::fs::write(&file, r#"{"side":256,"games":{"old.exe":{"cx":1,"cy":-9,"strength":50},"keyed.exe":{"trigger":"q","cx":0,"cy":0}}}"#).unwrap();
+        let old = game_binding("old.exe");
+        assert_eq!((old.key.as_str(), old.status, old.how.as_str()), ("rmb", BindStatus::Confirmed, "legacy"));
+        let keyed = game_binding("KEYED.exe");
+        assert_eq!((keyed.key.as_str(), keyed.status), ("q", BindStatus::Confirmed));
+        // WWZ stays confirmed on the right button even without an entry of its own
+        let wwz = game_binding("wwzretail.exe");
+        assert_eq!((wwz.key.as_str(), wwz.status, wwz.how.as_str()), ("rmb", BindStatus::Confirmed, "legacy"));
+        // a new game has nothing
+        assert_eq!(game_binding("brandnew.exe"), Binding::none());
+        assert_eq!(game_binding("not a game"), Binding::none());
+        // nothing was written by the reading
+        assert!(std::fs::read_to_string(&file).unwrap().contains("\"trigger\":\"q\""));
+        // the key of the aim assist for each game is its own confirmed key; a new game has none (the aim assist does not start)
+        let profile = AimConfig::default();
+        assert_eq!(effective_for(&profile, Some("old.exe")).trigger, "rmb");
+        assert_eq!(effective_for(&profile, Some("keyed.exe")).trigger, "q");
+        assert_eq!(effective_for(&profile, Some("brandnew.exe")).trigger, "");
+        assert_eq!(effective_for(&profile, None).trigger, "");
+        // the old numbers of the game are used as before
+        assert_eq!((effective_for(&profile, Some("old.exe")).strength_pct, effective_for(&profile, Some("old.exe")).cy_pct), (50, -9));
+        // a change of the key of one game keeps all its numbers and the other games, and a copy of the old file is made once
+        save_game_binding("old.exe", "x2", BindStatus::Confirmed, "manual", "hold").unwrap();
+        let o = read_overlay();
+        assert_eq!(o["games"]["old.exe"]["strength"], 50);
+        assert_eq!(o["games"]["old.exe"]["cy"], -9);
+        assert_eq!(game_binding("keyed.exe").key, "q");
+        assert_eq!(o["side"], 256);
+        let mut bak = file.clone().into_os_string();
+        bak.push(".bak-before-keys");
+        let bak = std::path::PathBuf::from(bak);
+        assert!(std::fs::read_to_string(&bak).unwrap().contains("\"trigger\":\"q\""), "the copy is the file as it was");
+        // a reset of a game of the old list leaves it «not set» (it does not come back as the old one) and keeps its numbers
+        reset_game_binding("old.exe").unwrap();
+        assert_eq!(game_binding("old.exe").status, BindStatus::Unknown);
+        assert_eq!(effective_for(&profile, Some("old.exe")).strength_pct, 50);
+        let _ = std::fs::remove_file(&file);
+        let _ = std::fs::remove_file(&bak);
+    }
+
+    #[test]
+    fn a_key_that_is_only_proposed_is_never_used_and_a_broken_file_is_survived() {
+        let _l = SETTINGS_LOCK.lock();
+        let file = settings_file();
+        let _ = std::fs::remove_file(&file);
+        let profile = AimConfig::default();
+        save_game_binding("g.exe", "rmb", BindStatus::Suggested, "wizard", "hold").unwrap();
+        let b = game_binding("g.exe");
+        assert_eq!((b.status, b.usable_key()), (BindStatus::Suggested, None), "a proposal is not a key");
+        assert_eq!(effective_for(&profile, Some("g.exe")).trigger, "", "the aim assist has no key and does not start");
+        save_game_binding("g.exe", "rmb", BindStatus::Confirmed, "wizard", "hold").unwrap();
+        assert_eq!(effective_for(&profile, Some("g.exe")).trigger, "rmb");
+        assert!(game_binding("g.exe").at > 0);
+        // a key that is not a key, a wrong mode: refused, nothing is saved
+        assert!(save_game_binding("g.exe", "nonsense!", BindStatus::Confirmed, "manual", "hold").is_err());
+        assert!(save_game_binding("g.exe", "q", BindStatus::Confirmed, "manual", "sideways").is_err());
+        assert_eq!(game_binding("g.exe").key, "rmb");
+        // switching between two games takes the right profile each time
+        save_game_binding("h.exe", "q", BindStatus::Confirmed, "manual", "toggle").unwrap();
+        for _ in 0..3 {
+            assert_eq!(effective_for(&profile, Some("g.exe")).trigger, "rmb");
+            assert_eq!(effective_for(&profile, Some("h.exe")).trigger, "q");
+        }
+        assert_eq!(game_binding("h.exe").mode, "toggle");
+        // a broken file: read as nothing (no crash), kept aside, and the next save makes a good file
+        std::fs::write(&file, "{ this is not json").unwrap();
+        assert_eq!(game_binding("g.exe"), Binding::none());
+        save_game_binding("g.exe", "e", BindStatus::Confirmed, "manual", "hold").unwrap();
+        assert_eq!(game_binding("g.exe").key, "e");
+        let mut aside = file.clone().into_os_string();
+        aside.push(".corrupt");
+        let aside = std::path::PathBuf::from(aside);
+        assert_eq!(std::fs::read_to_string(&aside).unwrap(), "{ this is not json");
+        // a game that is not named by a program file cannot get a key
+        assert!(save_game_binding("some game", "q", BindStatus::Confirmed, "manual", "hold").is_err());
+        let _ = std::fs::remove_file(&file);
+        let _ = std::fs::remove_file(&aside);
+        let mut bak = file.clone().into_os_string();
+        bak.push(".bak-before-keys");
+        let _ = std::fs::remove_file(std::path::PathBuf::from(bak));
     }
 
     #[test]
@@ -1690,7 +2036,7 @@ mod tests {
         let _ = std::fs::remove_file(settings_file());
     }
 
-    static SETTINGS_LOCK: Mutex<()> = parking_lot::const_mutex(());
+    use super::TEST_SETTINGS_LOCK as SETTINGS_LOCK;
 
     #[test]
     fn it_does_not_turn_on_without_a_model_and_turning_off_is_always_possible() {

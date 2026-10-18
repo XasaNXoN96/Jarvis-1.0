@@ -236,7 +236,7 @@ fn paid_op_id(name: &str) -> Option<&'static str> {
         "remote_tunnel" => "ui_remote_tunnel",
         "screen_check" => "ui_screen_check",
         // the library of games (adding, choosing a file, scanning, starting, a new path, the label and the sound): a paid part, like the mode
-        "game_add" | "game_add_flagged" | "game_pick_file" | "game_launch" | "game_set_path" | "game_scan" | "game_opts" | "aim_pick_model" | "aim_model_install" | "aim_model_check" | "aim_settings" | "aim_snapshot" => "ui_game_library",
+        "game_add" | "game_add_flagged" | "game_pick_file" | "game_launch" | "game_set_path" | "game_scan" | "game_opts" | "aim_pick_model" | "aim_model_install" | "aim_model_check" | "aim_settings" | "aim_snapshot" | "bind_start" | "bind_confirm" | "bind_manual" | "bind_reset" | "bind_verify" => "ui_game_library",
         _ => return None,
     })
 }
@@ -297,6 +297,40 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             crate::tts::speak(text);
             json!({ "ok": true })
         }
+        // the key of the aim of ONE game: the wizard, the confirmation, the key typed by hand, the check, the reset
+        "bind_status" => crate::aimbind::status_json(body.get("exe").and_then(|v| v.as_str()).unwrap_or("")),
+        "bind_start" => match crate::aimbind::start(body.get("exe").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(()) => json!({ "ok": true, "message": "Перейдите в игру и несколько раз нажмите и подержите свою кнопку прицеливания." }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "bind_cancel" => {
+            crate::aimbind::cancel();
+            json!({ "ok": true, "message": "Определение остановлено, ничего не сохранено." })
+        }
+        "bind_verify" => match crate::aimbind::verify(body.get("exe").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(()) => json!({ "ok": true, "message": "Перейдите в игру и нажмите сохранённую кнопку." }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "bind_confirm" => {
+            let exe = body.get("exe").and_then(|v| v.as_str()).unwrap_or("");
+            let mode = body.get("mode").and_then(|v| v.as_str()).unwrap_or("hold");
+            match crate::aimbind::confirm(exe, body.get("key").and_then(|v| v.as_str()), mode) {
+                Ok(k) => json!({ "ok": true, "message": format!("Сохранено для игры {}: {}. Другие игры не затронуты. Помощь прицела по-прежнему включается отдельно.", exe, crate::aimbind::key_label(&k)) }),
+                Err(e) => json!({ "ok": false, "message": e }),
+            }
+        }
+        "bind_manual" => {
+            let exe = body.get("exe").and_then(|v| v.as_str()).unwrap_or("");
+            let mode = body.get("mode").and_then(|v| v.as_str()).unwrap_or("hold");
+            match crate::aimbind::manual(exe, body.get("key").and_then(|v| v.as_str()).unwrap_or(""), mode) {
+                Ok(()) => json!({ "ok": true, "message": "Изменение клавиши применяется только к профилю этой игры." }),
+                Err(e) => json!({ "ok": false, "message": e }),
+            }
+        }
+        "bind_reset" => match crate::aimbind::reset(body.get("exe").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(()) => json!({ "ok": true, "message": "Клавиша прицеливания этой игры сброшена. Игра осталась в библиотеке, другие игры не затронуты." }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
         // what is around: the devices of the local network and the Bluetooth devices Windows knows (read only)
         "devices_lan" => match crate::devices::lan_devices() {
             Ok(v) => json!({ "ok": true, "items": v.into_iter().map(|(ip, mac)| json!([ip, mac])).collect::<Vec<_>>() }),

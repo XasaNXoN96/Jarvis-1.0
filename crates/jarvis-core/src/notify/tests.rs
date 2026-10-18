@@ -429,3 +429,13 @@ fn a_repeated_notification_is_said_once() {
     assert_eq!(spoken_since(before).iter().filter(|s| **s == t).count(), 1);
 }
 
+
+
+#[test]
+fn a_message_of_a_social_network_is_told_with_the_network_the_sender_and_the_text() {
+    let t = |a: &[&str]| a.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+    assert_eq!(social_say("Telegram", &t(&["моя Няшка", "Alo"])), "Вам пришло сообщение в Telegram от моя Няшка: Alo");
+    assert_eq!(social_say("WhatsApp", &t(&["Иван", "привет,", "как дела?"])), "Вам пришло сообщение в WhatsApp от Иван: привет, — как дела?");
+    assert_eq!(social_say("Discord", &t(&["Новое сообщение"])), "Вам пришло сообщение в Discord: Новое сообщение");
+    assert_eq!(social_say("VK", &t(&["", "  "])), "Вам пришло сообщение в VK");
+}

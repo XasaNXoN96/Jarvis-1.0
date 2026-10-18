@@ -1777,7 +1777,7 @@ pub fn games_json() -> Value {
         "total": all.len(),
         "genres": { "shooter": count(&|e| e.genre == Genre::Shooter), "racing": count(&|e| e.genre == Genre::Racing), "action": count(&|e| e.genre == Genre::Action) },
         "origins": origins,
-        "recent": recent.iter().map(game_json).collect::<Vec<_>>(),
+        "recent": with_binding(recent.iter().map(game_json).collect::<Vec<_>>()),
         // changes when the library changes: the open catalog is drawn again only then
         "rev": crate::gamelist::id_for("", &crate::gamelist::to_json(&crate::gamelist::File { games: all.clone(), options: Default::default() }), ""),
         "scan": crate::gamescan::status_json(), "macros": macros, "recording": crate::gamemacro::recording_name(), "options": { "overlay": o.overlay, "sound": o.sound }, "builtin": Profile::default().exes
@@ -1785,11 +1785,22 @@ pub fn games_json() -> Value {
 }
 
 // a page of the catalog: the search, the filters, the sorting (gamelist::query)
+// the key of the aim of each game on the page (read once for the whole page)
+fn with_binding(mut items: Vec<Value>) -> Vec<Value> {
+    let exes: Vec<String> = items.iter().filter_map(|i| i["exe"].as_str().map(|s| s.to_string())).collect();
+    let map = crate::aimassist::bindings_for(&exes);
+    for it in items.iter_mut() {
+        let b = it["exe"].as_str().and_then(|e| map.get(&e.to_lowercase())).cloned().unwrap_or_else(crate::aimassist::Binding::none);
+        it["aim"] = json!({ "status": b.status.name(), "key": b.key, "label": if b.key.is_empty() { String::new() } else { crate::aimbind::short_label(&b.key) }, "how": b.how, "mode": b.mode });
+    }
+    items
+}
+
 pub fn games_list_json(text: &str, genre: &str, origin: &str, sort: &str, offset: usize, limit: usize) -> Value {
     let all = crate::gamelist::load();
     let q = crate::gamelist::Query { text: text.chars().take(80).collect(), genre: Genre::from_name(genre), origin: origin.chars().take(20).collect(), sort: crate::gamelist::Sort::from_name(sort), offset, limit: limit.clamp(1, 200) };
     let (matched, page) = crate::gamelist::query(&all, &q);
-    json!({ "total": all.len(), "matched": matched, "offset": offset, "items": page.iter().map(game_json).collect::<Vec<_>>() })
+    json!({ "total": all.len(), "matched": matched, "offset": offset, "items": with_binding(page.iter().map(game_json).collect::<Vec<_>>()) })
 }
 
 // a program the user typed or picked: the file name only («C:\\Games\\x\\game.exe» -> «game.exe»)
