@@ -47,6 +47,11 @@ pub(crate) fn test_touch_client() {
     LAST_CLIENT.store(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(1), Ordering::SeqCst);
 }
 
+#[cfg(test)]
+pub(crate) fn test_untouch_client() {
+    LAST_CLIENT.store(0, Ordering::SeqCst);
+}
+
 pub fn last_client() -> Option<u64> {
     match LAST_CLIENT.load(Ordering::SeqCst) { 0 => None, t => Some(t) }
 }

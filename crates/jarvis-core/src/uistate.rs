@@ -886,6 +886,9 @@ pub fn voice_state() -> Value {
         ("DISABLED", "включён режим «только текст»".into())
     } else if voice_via_remote() {
         ("REMOTE", "на компьютере нет микрофона: голос идёт через пульт на телефоне или планшете".into())
+    } else if !crate::VOICE_ACTIVE.load(SeqCst) && err.contains("устройства записи") {
+        // no microphone at all is a normal case of a PC, not a failure: the text and the remote on a phone work
+        ("DISABLED", "Нет микрофона: только текст (голос можно подключить через пульт на телефоне)".into())
     } else if !crate::VOICE_ACTIVE.load(SeqCst) {
         ("ERROR", if err.is_empty() { "голос не запущен".to_string() } else { err })
     } else if crate::MIC_MUTED.load(SeqCst) {
@@ -928,6 +931,11 @@ mod voice_tests {
         crate::remote::test_touch_client();
         assert_eq!(st(), "REMOTE");
         assert!(voice_state()["detail"].as_str().unwrap().contains("пульт"));
+        // no remote page: a quiet «no microphone», not a red error
+        crate::remote::test_untouch_client();
+        *crate::VOICE_ERROR.lock() = "Windows не показывает ни одного устройства записи".into();
+        assert_eq!(st(), "DISABLED");
+        assert!(voice_state()["detail"].as_str().unwrap().contains("Нет микрофона"));
         // another reason (a microphone that exists but does not work) stays an error even with the remote open
         *crate::VOICE_ERROR.lock() = "микрофон занят другой программой".into();
         assert_eq!(st(), "ERROR");
