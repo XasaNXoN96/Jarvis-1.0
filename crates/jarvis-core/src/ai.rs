@@ -700,9 +700,31 @@ pub fn system_prompt() -> String {
     } else {
         format!("Ты — {}, голосовой ассистент на компьютере пользователя. Отвечай на языке пользователя, кратко и по делу. Код оформляй в блоках Markdown.", ai_name())
     };
-    match mode_prompt(&crate::uistate::settings().ai_mode) {
+    let st = crate::uistate::settings();
+    let base = match mode_prompt(&st.ai_mode) {
         Some(extra) => format!("{} {}", base, extra),
         None => base,
+    };
+    match talk_prompt(&st.ai_talk) {
+        Some(extra) => format!("{} {}", base, extra),
+        None => base,
+    }
+}
+
+// how much the AI says (a setting of the page): only the length and the warmth of the answer change
+pub fn talk_id(raw: &str) -> &'static str {
+    match raw.trim() {
+        "short" => "short",
+        "detailed" => "detailed",
+        _ => "",
+    }
+}
+
+pub fn talk_prompt(id: &str) -> Option<&'static str> {
+    match id {
+        "short" => Some("Отвечай как можно короче: одно-два предложения, без вступлений и пояснений, если пользователь не просит подробнее."),
+        "detailed" => Some("Отвечай развёрнуто и тепло, как в живой беседе: объясни, приведи пример, в конце предложи, чем ещё помочь."),
+        _ => None,
     }
 }
 

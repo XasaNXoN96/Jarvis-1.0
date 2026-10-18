@@ -31,7 +31,18 @@ fn gb(v: f32) -> String {
 
 // «ЦП 23% · ОЗУ 12/32 ГБ · ВК 41% 3,2/8 ГБ · прицел 6 к/с»: short, to stand in one small line
 pub fn line(s: &Sample, aim: Option<(u32, u64)>) -> String {
-    let mut t = format!("ЦП {}% · ОЗУ {}/{} ГБ", s.cpu_pct, gb(s.ram_used_gb), gb(s.ram_total_gb));
+    line_with_fps(s, aim, None, None)
+}
+
+// the same with the frame rate of the game (when it is read) or the note why it is not
+pub fn line_with_fps(s: &Sample, aim: Option<(u32, u64)>, game_fps: Option<u32>, note: Option<&str>) -> String {
+    let mut t = String::new();
+    if let Some(f) = game_fps {
+        t.push_str(&format!("FPS {} · ", f));
+    } else if let Some(n) = note {
+        t.push_str(&format!("{} · ", n));
+    }
+    t.push_str(&format!("ЦП {}% · ОЗУ {}/{} ГБ", s.cpu_pct, gb(s.ram_used_gb), gb(s.ram_total_gb)));
     if let Some(g) = s.gpu_pct {
         t.push_str(&format!(" · ВК {}%", g));
         if let (Some(u), Some(tot)) = (s.gpu_mem_used_gb, s.gpu_mem_total_gb) {
@@ -172,6 +183,8 @@ mod tests {
         // no video card of NVIDIA, no aim assist: the line is only the processor and the memory
         let t = Sample { cpu_pct: 5, ram_used_gb: 8.5, ram_total_gb: 16.0, ..Default::default() };
         assert_eq!(line(&t, None), "ЦП 5% · ОЗУ 8,5/16 ГБ");
+        assert_eq!(line_with_fps(&t, None, Some(144), None), "FPS 144 · ЦП 5% · ОЗУ 8,5/16 ГБ");
+        assert!(line_with_fps(&t, None, None, Some("FPS игры: нужен запуск от администратора")).starts_with("FPS игры: нужен"));
         assert!(line(&s, None).chars().count() < 60, "one small line");
     }
 

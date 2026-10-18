@@ -88,11 +88,19 @@ pub struct AimConfig {
     pub max_size_pct: u32,
     // look for the crosshair on the picture by itself (aimcross.rs); the numbers above are used while it is not found
     pub auto_cross: bool,
+    // a box wider than this part of its height (percent) is not a standing person: a lying body, several people grown into one
+    pub max_aspect_pct: u32,
+    // inside this distance (pixels) from the head the mouse does not move (no trembling when the crosshair is almost there)
+    pub dead_px: u32,
+    // the longest step of the mouse for one frame, pixels
+    pub max_step_px: u32,
+    // keep a frame a second (with the boxes of the model as labels) in a folder, to train a model of this game later
+    pub collect: bool,
 }
 
 impl Default for AimConfig {
     fn default() -> Self {
-        AimConfig { model: None, strength_pct: 40, head_pct: 12, radius_px: 260, conf_pct: 45, class: 0, device: Device::Auto, side: DEFAULT_SIDE, fps: 30, min_size_px: 24, cx_pct: 0, cy_pct: 0, max_size_pct: 65, auto_cross: true }
+        AimConfig { model: None, strength_pct: 40, head_pct: 12, radius_px: 260, conf_pct: 45, class: 0, device: Device::Auto, side: DEFAULT_SIDE, fps: 30, min_size_px: 24, cx_pct: 0, cy_pct: 0, max_size_pct: 65, auto_cross: true, max_aspect_pct: 150, dead_px: 3, max_step_px: 40, collect: false }
     }
 }
 
@@ -133,6 +141,18 @@ pub fn apply_json(c: &mut AimConfig, v: &Value) -> Result<(), String> {
     }
     if let Some(n) = num("max_size", 20, 100)? {
         c.max_size_pct = n;
+    }
+    if let Some(n) = num("max_aspect", 50, 500)? {
+        c.max_aspect_pct = n;
+    }
+    if let Some(n) = num("dead", 0, 20)? {
+        c.dead_px = n;
+    }
+    if let Some(n) = num("max_step", 5, 100)? {
+        c.max_step_px = n;
+    }
+    if let Some(x) = v.get("collect") {
+        c.collect = x.as_bool().ok_or("aim.collect: true или false")?;
     }
     if let Some(x) = v.get("auto_cross") {
         c.auto_cross = x.as_bool().ok_or("aim.auto_cross: true или false")?;
@@ -187,7 +207,7 @@ fn read_overlay() -> Value {
 pub fn save_settings(patch: &Value, base: &AimConfig) -> Result<AimConfig, String> {
     let Some(obj) = patch.as_object() else { return Err("настройки должны быть объектом".into()) };
     // only the keys of the page (the path of a model is chosen with the file window, not typed here)
-    let allowed = ["device", "side", "fps", "conf", "min_size", "max_size", "cx", "cy", "auto_cross", "strength", "head", "radius"];
+    let allowed = ["device", "side", "fps", "conf", "min_size", "max_size", "cx", "cy", "auto_cross", "strength", "head", "radius", "max_aspect", "dead", "max_step", "collect"];
     if obj.keys().any(|k| !allowed.contains(&k.as_str())) {
         return Err("неизвестная настройка".into());
     }
@@ -232,8 +252,39 @@ pub fn save_game_cross(exe: &str, cx: i64, cy: i64) -> Result<(), String> {
     if now["games"].as_object().map(|m| m.len()).unwrap_or(0) >= 100 && now["games"].get(&key).is_none() {
         return Err("слишком много игр в таблице".into());
     }
-    now["games"][&key] = json!({ "cx": cx, "cy": cy });
+    if !now["games"][&key].is_object() {
+        now["games"][&key] = json!({});
+    }
+    now["games"][&key]["cx"] = json!(cx);
+    now["games"][&key]["cy"] = json!(cy);
     crate::write_atomic(&settings_file(), serde_json::to_string_pretty(&now).unwrap_or_default()).map_err(|e| format!("не удалось сохранить: {}", e))
+}
+
+// the numbers that a game may keep for itself (besides the crosshair)
+pub const GAME_KEYS: [&str; 8] = ["strength", "head", "radius", "side", "conf", "max_step", "dead", "max_aspect"];
+
+// keeps the numbers of ONE game (only GAME_KEYS, each one checked); the others and the crosshair of the game stay
+pub fn save_game_settings(exe: &str, patch: &Value) -> Result<usize, String> {
+    let key = game_key(exe).ok_or("игра не выбрана: включите помощь прицела и зажмите правую кнопку мыши в окне игры один раз")?;
+    let Some(obj) = patch.as_object() else { return Err("настройки должны быть объектом".into()) };
+    let picked: serde_json::Map<String, Value> = obj.iter().filter(|(k, _)| GAME_KEYS.contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect();
+    // the check of the ranges is the one of the general settings
+    apply_json(&mut AimConfig::default(), &Value::Object(picked.clone()))?;
+    let mut now = read_overlay();
+    if !now.get("games").map(|g| g.is_object()).unwrap_or(false) {
+        now["games"] = json!({});
+    }
+    if now["games"].as_object().map(|m| m.len()).unwrap_or(0) >= 100 && now["games"].get(&key).is_none() {
+        return Err("слишком много игр в таблице".into());
+    }
+    if !now["games"][&key].is_object() {
+        now["games"][&key] = json!({});
+    }
+    for (k, v) in &picked {
+        now["games"][&key][k] = v.clone();
+    }
+    crate::write_atomic(&settings_file(), serde_json::to_string_pretty(&now).unwrap_or_default()).map_err(|e| format!("не удалось сохранить: {}", e))?;
+    Ok(picked.len())
 }
 
 // the configuration for the game that is in front: the numbers of that game laid over `effective`
@@ -242,6 +293,14 @@ pub fn effective_for(profile: &AimConfig, exe: Option<&str>) -> AimConfig {
     if let Some((cx, cy)) = exe.and_then(game_cross) {
         c.cx_pct = cx;
         c.cy_pct = cy;
+    }
+    // the other numbers that this game keeps for itself lie over the general ones
+    if let Some(e) = exe.and_then(game_key).and_then(|k| read_overlay().get("games").and_then(|g| g.get(&k)).cloned()) {
+        if let Some(o) = e.as_object() {
+            let mine: serde_json::Map<String, Value> = o.iter().filter(|(k, _)| GAME_KEYS.contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect();
+            let _ = apply_json(&mut c, &Value::Object(mine));
+            c.radius_px = c.radius_px.min(c.side / 2);
+        }
     }
     c
 }
@@ -334,9 +393,13 @@ pub fn pick(dets: &[Det], crosshair: (f32, f32), cfg: &AimConfig) -> Option<(Det
 
 // the step of the mouse for one frame: a part of the remaining way, at most `max_step` pixels, nothing inside the dead zone
 pub fn step(delta: (f32, f32), strength_pct: u32, max_step: f32) -> (i32, i32) {
-    const DEAD: f32 = 3.0;
+    step_dead(delta, strength_pct, max_step, 3.0)
+}
+
+pub fn step_dead(delta: (f32, f32), strength_pct: u32, max_step: f32, dead: f32) -> (i32, i32) {
+    let DEAD = dead;
     let dist = (delta.0 * delta.0 + delta.1 * delta.1).sqrt();
-    if dist <= DEAD {
+    if dist <= DEAD || dist == 0.0 {
         return (0, 0);
     }
     let want = (dist * strength_pct as f32 / 100.0).clamp(1.0, max_step);
@@ -391,12 +454,13 @@ pub fn frame_outcome(bgra: &[u8], side: usize, cfg: &AimConfig, spec: &ModelSpec
     let dets = decode_output(&out, spec, cfg.class, cfg.conf_pct as f32 / 100.0).ok_or("ответ модели не подходит по форме")?;
     let dets = scale_back(nms(dets, 0.5), side, spec.input_w, spec.input_h);
     let tallest = side as f32 * cfg.max_size_pct as f32 / 100.0;
-    let dets: Vec<Det> = dets.into_iter().filter(|d| (d.y2 - d.y1) >= cfg.min_size_px as f32 && (d.y2 - d.y1) <= tallest).collect();
+    let widest = cfg.max_aspect_pct as f32 / 100.0;
+    let dets: Vec<Det> = dets.into_iter().filter(|d| (d.y2 - d.y1) >= cfg.min_size_px as f32 && (d.y2 - d.y1) <= tallest && (d.x2 - d.x1) <= (d.y2 - d.y1) * widest).collect();
     let centre = crosshair;
     let picked = pick(&dets, centre, cfg);
     let outcome = match picked {
         None => Outcome::NoTarget,
-        Some((_, head)) => match step((head.0 - centre.0, head.1 - centre.1), cfg.strength_pct, 40.0) {
+        Some((_, head)) => match step_dead((head.0 - centre.0, head.1 - centre.1), cfg.strength_pct, cfg.max_step_px as f32, cfg.dead_px as f32) {
             (0, 0) => Outcome::OnTarget,
             (dx, dy) => Outcome::Step(dx, dy),
         },
@@ -525,6 +589,45 @@ pub fn snapshot_png() -> Option<Vec<u8>> {
     let g = SNAP.lock();
     let s = g.as_ref()?;
     crate::gameicon::encode_png(s.side as u32, s.side as u32, &render_snapshot(&s.bgra, s.side, s.cross, &s.frame))
+}
+
+// ---- frames for the training of a model of one game: a frame a second, with the boxes of the model as labels (YOLO text files) ----
+pub const COLLECT_MAX: usize = 500;
+
+pub fn dataset_dir() -> std::path::PathBuf {
+    #[cfg(test)]
+    {
+        return std::env::temp_dir().join(format!("jarvis-aim-dataset-{}", std::process::id()));
+    }
+    #[cfg(not(test))]
+    crate::APP_DIR.join("aim").join("dataset")
+}
+
+// the label file of YOLO: «class cx cy w h» of every box, normalised to the side of the picture
+pub fn yolo_labels(dets: &[Det], side: usize) -> String {
+    let s = side as f32;
+    dets.iter().map(|d| format!("0 {:.6} {:.6} {:.6} {:.6}\n", ((d.x1 + d.x2) / 2.0 / s).clamp(0.0, 1.0), ((d.y1 + d.y2) / 2.0 / s).clamp(0.0, 1.0), ((d.x2 - d.x1) / s).clamp(0.0, 1.0), ((d.y2 - d.y1) / s).clamp(0.0, 1.0))).collect()
+}
+
+// one frame into the folder (the picture and the labels); Ok(false) when the folder is full
+pub fn save_training_frame(bgra: &[u8], side: usize, dets: &[Det]) -> Result<bool, String> {
+    let dir = dataset_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let n = std::fs::read_dir(&dir).map(|r| r.filter_map(|e| e.ok()).filter(|e| e.path().extension().map(|x| x == "png").unwrap_or(false)).count()).unwrap_or(0);
+    if n >= COLLECT_MAX {
+        return Ok(false);
+    }
+    let mut rgba = vec![255u8; side * side * 4];
+    for i in 0..side * side {
+        rgba[i * 4] = bgra[i * 4 + 2];
+        rgba[i * 4 + 1] = bgra[i * 4 + 1];
+        rgba[i * 4 + 2] = bgra[i * 4];
+    }
+    let png = crate::gameicon::encode_png(side as u32, side as u32, &rgba).ok_or("кадр не кодируется")?;
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    crate::write_atomic(&dir.join(format!("f{}.png", stamp)), &png).map_err(|e| e.to_string())?;
+    crate::write_atomic(&dir.join(format!("f{}.txt", stamp)), yolo_labels(dets, side)).map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 // the side taken: the wished one, lowered by the governor while frames are slow
@@ -727,7 +830,7 @@ pub fn status_json(cfg: &AimConfig) -> Value {
     json!({ "enabled": is_enabled(), "state": STATE.lock().clone(), "model": model_path(cfg).display().to_string(), "model_found": model_path(cfg).is_file(),
         "frames": FRAMES.load(Ordering::SeqCst), "last_frame_ms": LAST_MS.load(Ordering::SeqCst), "objects": OBJECTS.load(Ordering::SeqCst),
         "capture": CAPTURE.lock().clone(), "last_game": last_game(), "cross": cross_source(), "device_used": DEVICE.lock().clone(), "thread": thread_running(), "problem": PROBLEM.lock().clone(),
-        "settings": { "device": eff.device.name(), "side": eff.side, "fps": eff.fps, "conf": eff.conf_pct, "min_size": eff.min_size_px, "max_size": eff.max_size_pct, "cx": eff.cx_pct, "cy": eff.cy_pct, "auto_cross": eff.auto_cross } })
+        "settings": { "device": eff.device.name(), "side": eff.side, "fps": eff.fps, "conf": eff.conf_pct, "min_size": eff.min_size_px, "max_size": eff.max_size_pct, "cx": eff.cx_pct, "cy": eff.cy_pct, "auto_cross": eff.auto_cross, "max_aspect": eff.max_aspect_pct, "dead": eff.dead_px, "max_step": eff.max_step_px, "collect": eff.collect, "strength": eff.strength_pct, "radius": eff.radius_px, "head": eff.head_pct } })
 }
 
 // how long to rest after a frame: the frame rate that was asked for, and when the computer is slow (a frame takes more than the budget) the
@@ -932,6 +1035,8 @@ mod run {
         // drawn only while aiming), so the mouse never goes to the middle of the window instead of the crosshair
         let mut last_good: Option<(i32, i32)> = None;
         let mut frame_no = 0u32;
+        let mut last_collect = std::time::Instant::now();
+        let mut last_dets: Vec<Det> = Vec::new();
         // the side that is really taken: lowered by itself when the frame is slow, so the game keeps its processor
         let mut side_now = 0u32;
         let mut avg_ms = 0.0f32;
@@ -1021,6 +1126,7 @@ mod run {
             match res {
                 Ok(f) => {
                     OBJECTS.store(f.objects as u32, Ordering::SeqCst);
+                    last_dets = f.dets.clone();
                     keep_snapshot(Snap { bgra: frame.clone(), side, cross: cap.cross, frame: f.clone(), auto: auto_px.is_some() });
                     // the module may have been switched off while the model worked: no move of the mouse after that
                     if !alive(id) {
@@ -1048,6 +1154,10 @@ mod run {
                 }
             }
             FRAMES.fetch_add(1, Ordering::SeqCst);
+            if cfg.collect && last_collect.elapsed() >= std::time::Duration::from_secs(1) {
+                last_collect = std::time::Instant::now();
+                let _ = save_training_frame(frame, side, &last_dets);
+            }
             let spent = started.elapsed();
             LAST_MS.store(spent.as_millis() as u64, Ordering::SeqCst);
             note_frame();
@@ -1319,6 +1429,60 @@ mod tests {
         assert_eq!(&img2[0..3], &[0, 0, 255]);
         // a png can be made of it
         assert!(crate::gameicon::encode_png(side as u32, side as u32, &img).map(|p| p.starts_with(&[0x89, b'P', b'N', b'G'])).unwrap_or(false));
+    }
+
+    #[test]
+    fn a_wide_box_is_a_lying_body_and_the_dead_zone_and_the_longest_step_are_settings() {
+        let side = 64usize;
+        let bgra = vec![10u8; side * side * 4];
+        // a lying body: 40 wide, 12 high (aspect 330%)
+        let mut lying = |_: &[f32]| -> Result<RawOut, String> { Ok(out8(vec![32.0, 40.0, 40.0, 12.0, 0.9], 1)) };
+        let base = AimConfig { min_size_px: 0, max_size_pct: 100, ..AimConfig::default() };
+        let f = frame_outcome(&bgra, side, &base, &spec8(side), (10.0, 10.0), &mut lying).unwrap();
+        assert_eq!(f.outcome, Outcome::NoTarget);
+        let loose = AimConfig { max_aspect_pct: 500, ..base.clone() };
+        let f = frame_outcome(&bgra, side, &loose, &spec8(side), (10.0, 10.0), &mut lying).unwrap();
+        assert_ne!(f.outcome, Outcome::NoTarget);
+        // the dead zone and the longest step
+        assert_eq!(step_dead((6.0, 0.0), 40, 40.0, 8.0), (0, 0));
+        assert_ne!(step_dead((6.0, 0.0), 40, 40.0, 2.0), (0, 0));
+        assert_eq!(step_dead((200.0, 0.0), 100, 12.0, 3.0), (12, 0));
+        let mut c = AimConfig::default();
+        assert!(apply_json(&mut c, &json!({"max_aspect": 200, "dead": 5, "max_step": 25, "collect": true})).is_ok());
+        assert_eq!((c.max_aspect_pct, c.dead_px, c.max_step_px, c.collect), (200, 5, 25, true));
+        assert!(apply_json(&mut c, &json!({"dead": 99})).is_err());
+        assert!(apply_json(&mut c, &json!({"max_aspect": 10})).is_err());
+    }
+
+    #[test]
+    fn a_game_keeps_its_own_numbers_over_the_general_ones() {
+        let _l = SETTINGS_LOCK.lock();
+        let _ = std::fs::remove_file(settings_file());
+        let profile = AimConfig::default();
+        save_game_cross("shooter.exe", 0, -9).unwrap();
+        assert_eq!(save_game_settings("Shooter.EXE", &json!({"strength": 70, "side": 256, "unknown": 1})).unwrap(), 2);
+        let c = effective_for(&profile, Some("shooter.exe"));
+        assert_eq!((c.strength_pct, c.side, c.cy_pct), (70, 256, -9), "its own numbers and the crosshair that was kept before");
+        let other = effective_for(&profile, Some("other.exe"));
+        assert_eq!((other.strength_pct, other.side), (40, DEFAULT_SIDE));
+        assert!(save_game_settings("shooter.exe", &json!({"strength": 500})).is_err());
+        assert!(save_game_settings("not a game", &json!({"strength": 50})).is_err());
+        let _ = std::fs::remove_file(settings_file());
+    }
+
+    #[test]
+    fn frames_for_training_are_written_with_yolo_labels_up_to_a_limit() {
+        let side = 32usize;
+        let bgra = vec![50u8; side * side * 4];
+        let dir = dataset_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        let d = Det { x1: 8.0, y1: 4.0, x2: 24.0, y2: 28.0, score: 0.9 };
+        assert_eq!(yolo_labels(&[d], side), "0 0.500000 0.500000 0.500000 0.750000\n");
+        assert_eq!(save_training_frame(&bgra, side, &[d]), Ok(true));
+        let files: Vec<String> = std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).collect();
+        assert_eq!(files.len(), 2);
+        assert!(files.iter().any(|f| f.ends_with(".png")) && files.iter().any(|f| f.ends_with(".txt")));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

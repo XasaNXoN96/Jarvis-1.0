@@ -143,7 +143,10 @@ mod win {
             loop {
                 let want = crate::gamelist::options().overlay && gamemode::is_active() && gamemode::in_game_now();
                 if want && stats_at.elapsed() >= std::time::Duration::from_secs(1) {
-                    stats = crate::sysstat::line(&crate::sysstat::sample(), crate::aimassist::aim_rate());
+                    stats = {
+                        crate::gamefps::start();
+                        crate::sysstat::line_with_fps(&crate::sysstat::sample(), crate::aimassist::aim_rate(), crate::gamefps::fps_now(), crate::gamefps::note())
+                    };
                     stats_at = std::time::Instant::now();
                 }
                 let text = if want { format!("{}\n{}", current_label(), stats) } else { String::new() };

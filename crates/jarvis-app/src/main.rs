@@ -525,6 +525,8 @@ pub fn shutdown_and_exit() -> ! {
         jarvis_core::ai::stop(&id);
     }
     // (every step writes a line first: if one hangs, the log shows which)
+    info!("Exit: the frame counter");
+    jarvis_core::gamefps::stop();
     info!("Exit: the game mode");
     jarvis_core::gamemode::release_all();
     info!("Exit: the speech");

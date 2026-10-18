@@ -297,6 +297,20 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             crate::tts::speak(text);
             json!({ "ok": true })
         }
+        // asks Windows to redraw the icons of the shortcuts (the old picture stays in the cache of the system)
+        "icons_refresh" => {
+            #[cfg(target_os = "windows")]
+            let ok = std::process::Command::new("ie4uinit.exe").arg("-show").spawn().is_ok();
+            #[cfg(not(target_os = "windows"))]
+            let ok = false;
+            json!({ "ok": ok, "message": if ok { "Windows просят обновить значки. Если старые остались: удалите ярлык и создайте заново, а при необходимости удалите файлы IconCache.db и iconcache_*.db в %localappdata% и перезапустите проводник." } else { "Доступно только в Windows" } })
+        }
+        // the backup of the settings in one file (without secrets) and back
+        "backup_export" => json!({ "ok": true, "backup": crate::backup::export() }),
+        "backup_import" => match crate::backup::import(body.get("backup").unwrap_or(&json!(null))) {
+            Ok(n) => json!({ "ok": true, "message": format!("Настройки восстановлены ({} файл.). Перезапустите Jarvis, чтобы все применились.", n) }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
         // Esc of the window: the voice stops at once (the phrase that is read and the ones waiting in the queue)
         "tts_stop" => {
             // asked before the stop: did the voice really speak (the page lets Esc do its other things when it did not)
@@ -639,12 +653,14 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             // the crosshair is kept for the game that the aim assist saw last in front (the Jarvis window is in front now)
             let s = body.get("settings").unwrap_or(&json!(null)).clone();
             let game = crate::aimassist::last_game();
-            match (s.get("cx").and_then(|v| v.as_i64()), s.get("cy").and_then(|v| v.as_i64())) {
-                (Some(cx), Some(cy)) => match crate::aimassist::save_game_cross(&game, cx, cy) {
-                    Ok(()) => json!({ "ok": true, "message": format!("Положение перекрестия ({:+}%, {:+}%) запомнено для игры {}: оно подставляется само при её запуске.", cx, cy, game) }),
-                    Err(e) => json!({ "ok": false, "message": e }),
-                },
-                _ => json!({ "ok": false, "message": "укажите положение перекрестия числами" }),
+            let cross = match (s.get("cx").and_then(|v| v.as_i64()), s.get("cy").and_then(|v| v.as_i64())) {
+                (Some(cx), Some(cy)) => crate::aimassist::save_game_cross(&game, cx, cy).map(|_| Some((cx, cy))),
+                _ => Ok(None),
+            };
+            match cross.and_then(|c| crate::aimassist::save_game_settings(&game, &s).map(|n| (c, n))) {
+                Ok((c, n)) if c.is_some() || n > 0 => json!({ "ok": true, "message": format!("Для игры {} запомнено: перекрестие {}, других чисел: {}. Они подставляются сами при её запуске.", game, c.map(|(x, y)| format!("({:+}%, {:+}%)", x, y)).unwrap_or_else(|| "не менялось".into()), n) }),
+                Ok(_) => json!({ "ok": false, "message": "нет чисел для сохранения" }),
+                Err(e) => json!({ "ok": false, "message": e }),
             }
         }
         "aim_settings" => match crate::aimassist::save_settings(body.get("settings").unwrap_or(&json!(null)), &crate::gamemode::profile_aim()) {

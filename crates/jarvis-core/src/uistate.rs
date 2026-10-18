@@ -79,6 +79,8 @@ pub struct UiSettings {
     pub ai_model: String,
     // the manner of the AI answers: "" (usual), "psychologist", "teacher", "coder", "friend" (ai.rs: modes)
     pub ai_mode: String,
+    // how much the AI says: "short", "" (usual), "detailed"
+    pub ai_talk: String,
     // the window covers the whole screen without its frame (Alt+Enter switches it; kept for the next start)
     pub window_fullscreen: bool,
     pub ai_key: String,
@@ -164,7 +166,7 @@ pub fn browser_exe(key: &str) -> Option<&'static str> {
 impl Default for UiSettings {
     fn default() -> Self {
         Self {
-            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: false, city: String::new(), reaction_voice: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_mode: String::new(), window_fullscreen: true, ai_key: String::new(), ai_search_key: String::new(), cloud_tts_key: String::new(), ai_search_auto: true, ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
+            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: false, city: String::new(), reaction_voice: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_mode: String::new(), ai_talk: String::new(), window_fullscreen: true, ai_key: String::new(), ai_search_key: String::new(), cloud_tts_key: String::new(), ai_search_auto: true, ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
             ai_enabled: true, mic_off: false,
             notify_show: true, notify_speak: true, notify_sound: true, dnd: false,
             ext_enabled: false, ext_show: true, ext_speak: false, ext_strict: true, ext_allowed: Vec::new(), ext_blocked: Vec::new(), ext_seen: Vec::new(),
@@ -466,6 +468,9 @@ pub fn update_settings(patch: &Value) {
         // only a known mode is kept; anything else is the usual manner
         s.ai_mode = crate::ai::mode_id(v).to_string();
     }
+    if let Some(v) = patch.get("ai_talk").and_then(|v| v.as_str()) {
+        s.ai_talk = crate::ai::talk_id(v).to_string();
+    }
     if let Some(v) = patch.get("window_fullscreen").and_then(|v| v.as_bool()) { s.window_fullscreen = v; }
     if let Some(v) = patch.get("ai_search_key").and_then(|v| v.as_str()) { s.ai_search_key = v.trim().chars().take(300).collect(); }
     if let Some(v) = patch.get("cloud_tts_key").and_then(|v| v.as_str()) { s.cloud_tts_key = v.trim().chars().take(300).collect(); }
@@ -558,6 +563,7 @@ pub fn settings_json() -> Value {
         "piper": crate::tts::piper_available(),
     });
     // (kept out of the macro above: it is at the limit of the recursion of json!)
+    out["ai_talk"] = json!(s.ai_talk);
     out["hotkey"] = json!(s.hotkey);
     out["hotkey_status"] = json!(crate::hotkey::status());
     out["hotkey_error"] = json!(HOTKEY_ERROR.lock().clone());

@@ -100,6 +100,8 @@ pub mod aimassist;
 pub mod aimdetect;
 pub mod aimcross;
 pub mod sysstat;
+pub mod gamefps;
+pub mod backup;
 pub mod aimmodel;
 pub mod hotkey;
 pub mod barge;

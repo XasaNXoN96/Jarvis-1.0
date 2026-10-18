@@ -1522,3 +1522,13 @@ fn openai_reasoning_models_think_briefly_and_the_others_get_no_such_parameter() 
     assert!(build_body_limit(&mk("OpenRouter", "gpt-6.1-sol"), &[], "s", true, None).get("reasoning_effort").is_none());
     assert!(build_body_limit(&mk("ИИ-сервер", "gpt-5"), &[], "s", true, None).get("reasoning_effort").is_none());
 }
+
+#[test]
+fn the_talkativeness_has_three_levels_and_an_unknown_one_is_the_usual() {
+    assert_eq!(talk_id("short"), "short");
+    assert_eq!(talk_id(" detailed "), "detailed");
+    assert_eq!(talk_id("whatever"), "");
+    assert!(talk_prompt("short").unwrap().contains("короче"));
+    assert!(talk_prompt("detailed").unwrap().contains("развёрнуто"));
+    assert!(talk_prompt("").is_none());
+}

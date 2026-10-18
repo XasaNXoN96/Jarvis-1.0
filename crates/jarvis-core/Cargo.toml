@@ -62,7 +62,7 @@ opus-rs = "0.1.37"
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["shellapi", "winuser", "sysinfoapi", "fileapi", "processthreadsapi", "winnt", "combaseapi", "objbase", "mmdeviceapi", "endpointvolume", "winerror", "objidl", "unknwnbase", "handleapi", "winbase", "minwindef", "dpapi", "wincrypt", "wingdi", "libloaderapi", "synchapi", "errhandlingapi", "winreg", "shlobj", "knownfolders", "fileapi", "tlhelp32", "iphlpapi", "iptypes", "ws2def", "inaddr", "ifdef", "nldef", "ipifcons", "psapi", "jobapi2", "playsoundapi", "mmsystem", "aclapi", "accctrl", "sddl", "securitybaseapi", "commdlg"] }
+winapi = { version = "0.3", features = ["shellapi", "winuser", "sysinfoapi", "fileapi", "processthreadsapi", "winnt", "combaseapi", "objbase", "mmdeviceapi", "endpointvolume", "winerror", "objidl", "unknwnbase", "handleapi", "winbase", "minwindef", "dpapi", "wincrypt", "wingdi", "libloaderapi", "synchapi", "errhandlingapi", "winreg", "shlobj", "knownfolders", "fileapi", "tlhelp32", "iphlpapi", "iptypes", "ws2def", "inaddr", "ifdef", "nldef", "ipifcons", "psapi", "jobapi2", "playsoundapi", "mmsystem", "aclapi", "accctrl", "sddl", "securitybaseapi", "commdlg", "evntrace", "evntcons", "guiddef", "wmistr"] }
 winrt-notification = { workspace = true, optional = true }
 
 [build-dependencies]

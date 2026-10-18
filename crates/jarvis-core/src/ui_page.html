@@ -1005,6 +1005,10 @@
           <div class="r"><label class="sw"><input type="checkbox" id="gp-aim-auto"><span></span></label> <button class="btn" id="gp-aim-savegame" type="button" title="Числа «Где перекрестие» сохраняются для игры, которая была впереди последней">Запомнить числа для игры</button></div></div>
         <div class="setrow"><div class="l">Наибольший размер человека, % кадра<small>Выше этого не берутся в цель: ваш собственный персонаж и напарник у камеры очень крупные. Союзников той же модели от врагов отличить нельзя: стреляйте там, где их нет</small></div>
           <div class="r"><input type="number" id="gp-aim-max" min="20" max="100" step="5" style="width:76px"></div></div>
+        <div class="setrow"><div class="l">Плавность и отбор целей<small>Сила подведения (% оставшегося пути за кадр), самый длинный шаг мыши (пикс.), «мёртвая зона» вокруг головы (пикс.: внутри неё мышь не двигается) и самая большая ширина рамки в % от её высоты (шире — лежащее тело или слипшаяся толпа, не берётся). «Запомнить для игры» сохраняет эти числа и размер кадра только для игры, которая была впереди последней</small></div>
+          <div class="r"><input type="number" id="gp-aim-strength" min="1" max="100" step="5" style="width:64px" title="сила, %"> <input type="number" id="gp-aim-step" min="5" max="100" step="5" style="width:64px" title="самый длинный шаг, пикс."> <input type="number" id="gp-aim-dead" min="0" max="20" step="1" style="width:64px" title="мёртвая зона, пикс."> <input type="number" id="gp-aim-aspect" min="50" max="500" step="10" style="width:64px" title="ширина рамки, % высоты"> <button class="btn" id="gp-aim-savegame2" type="button">Запомнить для игры</button></div></div>
+        <div class="setrow"><div class="l">Копить кадры для обучения модели<small id="gp-aim-collectnote">Раз в секунду, пока зажата кнопка прицела, кадр и найденные рамки (текстовые файлы YOLO) сохраняются в папку aim\dataset рядом с настройками Jarvis (до 500 кадров). Рамки поставила общая модель: перед обучением их надо просмотреть и поправить. Инструкция — в docs/GAME-MODE.md</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="gp-aim-collect"><span></span></label></div></div>
         <div class="setrow"><div class="l">Что видит помощь прицела<small id="gp-aim-snaptext">Снимок последнего кадра с метками: зелёные рамки — найденные люди, жёлтая толстая — выбранная цель, красная точка — куда целимся, красная линия — путь от перекрестия, голубой плюс — перекрестие, которое использовала программа. Если прицел идёт не туда, этот снимок покажет почему</small>
           <img id="gp-aim-snap" alt="" style="display:none;max-width:100%;max-height:420px;margin-top:8px;border-radius:8px;border:1px solid var(--line)"></div>
           <div class="r"><button class="btn" id="gp-aim-snapbtn" type="button">Показать снимок последнего прицеливания</button></div></div>
@@ -1238,6 +1242,10 @@
           <div class="r"><input type="range" id="mic-sens" min="0" max="100" step="5" value="50"><b id="mic-sens-v" style="min-width:42px;text-align:right">50%</b></div></div>
         <div class="setrow"><div class="l">Горячая клавиша<small id="hk-hint">одно сочетание на весь Windows: нажали — Джарвис слушает без слова «Джарвис»; пока он говорит — замолкает. Нужен Ctrl, Alt или Win, например Ctrl+Alt+J. Пусто — выключено</small></div>
           <div class="r"><input type="text" id="hk-val" maxlength="24" style="width:130px" placeholder="Ctrl+Alt+J"> <button class="btn" id="hk-save" type="button">Сохранить</button></div></div>
+        <div class="setrow"><div class="l">Резервная копия настроек<small id="bk-hint">все настройки, список игр, макросы и числа прицела по играм — одним файлом. Ключей и паролей в файле нет: при восстановлении ваши нынешние ключи остаются</small></div>
+          <div class="r"><button class="btn" id="bk-save" type="button">Сохранить в файл</button> <button class="btn" id="bk-load" type="button">Загрузить из файла…</button> <input type="file" id="bk-file" accept=".json,application/json" style="display:none"></div></div>
+        <div class="setrow"><div class="l">Подсказки<small>короткий тур по главным местам программы (Ctrl+K — быстрый поиск по разделам). Значки ярлыков: если Windows показывает старые, кнопка просит систему обновить их</small></div>
+          <div class="r"><button class="btn" id="tour-again" type="button">Показать тур</button> <button class="btn" id="icons-refresh" type="button">Обновить значки Windows</button></div></div>
         <div class="setrow"><div class="l">Перебивание голосом<small>пока Джарвис говорит, слова «стоп», «хватит», «замолчи» его останавливают. Микрофон слышит и колонки, поэтому по умолчанию выключено: включайте, если слышно хорошо или вы в наушниках</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="barge-on"><span></span></label></div></div>
         <div class="setrow"><div class="l">Проверка микрофона<small>скажите что-нибудь: полоска должна двигаться. Это микрофон, который слушает сам Jarvis</small></div>
@@ -1284,6 +1292,8 @@
           <div class="r"><label class="sw"><input type="checkbox" id="ai-fallback"><span></span></label></div></div>
         <div class="setrow"><div class="l">Режим ответов<small>меняется только манера ответа ИИ. Голосом: «режим психолога», «режим учителя», «режим программиста», «режим друга», «обычный режим»</small></div>
           <div class="r"><select id="ai-mode"><option value="">Обычный</option><option value="psychologist">Психолог</option><option value="teacher">Учитель</option><option value="coder">Программист</option><option value="friend">Друг</option></select></div></div>
+        <div class="setrow"><div class="l">Разговорчивость<small>насколько длинно отвечает ИИ: коротко (одно-два предложения), обычно или подробно и тепло, как в беседе</small></div>
+          <div class="r"><select id="ai-talk"><option value="short">Коротко</option><option value="">Обычно</option><option value="detailed">Подробно</option></select></div></div>
         <div class="setrow" id="ai-search-row"><div class="l">Свежие ответы (Perplexity)<small id="ai-search-hint">ключ Perplexity (pplx-…). Вопросы про сегодня, новости, цены, курсы, результаты, последние события идут в Perplexity Sonar, остальные в вашу основную модель. Без основной модели Perplexity отвечает на всё</small></div>
           <div class="r"><input type="password" id="ai-search-key" placeholder="ключ pplx-…" autocomplete="off"><label class="sw" title="Выбирать Perplexity автоматически"><input type="checkbox" id="ai-search-auto"><span></span></label><button type="button" class="btn small" id="ai-search-forget">Удалить ключ</button></div></div>
         <div class="setrow"><div class="l">Анализ экрана («что на экране»)<small>по команде «Джарвис, что на экране» снимок главного экрана уйдёт выбранному провайдеру с вашим вопросом; без команды экран не снимается, снимок не сохраняется. Нужна модель, которая видит картинки (например, gemini-flash). По умолчанию выключено</small></div>
@@ -3110,7 +3120,7 @@ async function aimRefresh() {
   $('#gp-aim-devnote').textContent = (a.directml_build ? 'В этой сборке видеокарта (DirectML) подключена; если она не запустится, Jarvis сам перейдёт на процессор. ' : 'В этой сборке видеокарта (DirectML) не подключена: любой выбор работает на процессоре. ') + 'Видеокарта не обязательно быстрее для такой модели.';
   if (!AIM.loaded && run.settings) {
     AIM.loaded = true; const s = run.settings;
-    $('#gp-aim-device').value = s.device; $('#gp-aim-side').value = String(s.side); $('#gp-aim-fps').value = s.fps; $('#gp-aim-conf').value = s.conf; $('#gp-aim-conf-v').textContent = s.conf + '%'; $('#gp-aim-min').value = s.min_size; $('#gp-aim-cx').value = s.cx; $('#gp-aim-cy').value = s.cy; $('#gp-aim-auto').checked = s.auto_cross !== false; $('#gp-aim-max').value = s.max_size;
+    $('#gp-aim-device').value = s.device; $('#gp-aim-side').value = String(s.side); $('#gp-aim-fps').value = s.fps; $('#gp-aim-conf').value = s.conf; $('#gp-aim-conf-v').textContent = s.conf + '%'; $('#gp-aim-min').value = s.min_size; $('#gp-aim-cx').value = s.cx; $('#gp-aim-cy').value = s.cy; $('#gp-aim-auto').checked = s.auto_cross !== false; $('#gp-aim-max').value = s.max_size; $('#gp-aim-strength').value = s.strength; $('#gp-aim-step').value = s.max_step; $('#gp-aim-dead').value = s.dead; $('#gp-aim-aspect').value = s.max_aspect; $('#gp-aim-collect').checked = !!s.collect;
   }
   clearTimeout(AIM.timer); if (busy) AIM.timer = setTimeout(aimRefresh, 700);
 }
@@ -3121,9 +3131,10 @@ $('#gp-aim-cancel').onclick = () => aimDo('aim_model_cancel');
 $('#gp-aim-check').onclick = () => aimDo('aim_model_check');
 $('#gp-aim-conf').oninput = () => { $('#gp-aim-conf-v').textContent = $('#gp-aim-conf').value + '%'; };
 $('#gp-aim-save').onclick = async () => {
-  const r = await aimDo('aim_settings', { settings: { device: $('#gp-aim-device').value, side: +$('#gp-aim-side').value, fps: +$('#gp-aim-fps').value, conf: +$('#gp-aim-conf').value, min_size: +$('#gp-aim-min').value, max_size: +$('#gp-aim-max').value, cx: +$('#gp-aim-cx').value, cy: +$('#gp-aim-cy').value, auto_cross: $('#gp-aim-auto').checked } });
+  const r = await aimDo('aim_settings', { settings: { device: $('#gp-aim-device').value, side: +$('#gp-aim-side').value, fps: +$('#gp-aim-fps').value, conf: +$('#gp-aim-conf').value, min_size: +$('#gp-aim-min').value, max_size: +$('#gp-aim-max').value, cx: +$('#gp-aim-cx').value, cy: +$('#gp-aim-cy').value, auto_cross: $('#gp-aim-auto').checked, strength: +$('#gp-aim-strength').value, max_step: +$('#gp-aim-step').value, dead: +$('#gp-aim-dead').value, max_aspect: +$('#gp-aim-aspect').value, collect: $('#gp-aim-collect').checked } });
   if (r.ok) AIM.loaded = false;
 };
+$('#gp-aim-savegame2').onclick = () => aimDo('aim_settings', { for_game: true, settings: { cx: +$('#gp-aim-cx').value, cy: +$('#gp-aim-cy').value, strength: +$('#gp-aim-strength').value, max_step: +$('#gp-aim-step').value, dead: +$('#gp-aim-dead').value, max_aspect: +$('#gp-aim-aspect').value, side: +$('#gp-aim-side').value } });
 $('#gp-aim-savegame').onclick = () => aimDo('aim_settings', { for_game: true, settings: { cx: +$('#gp-aim-cx').value, cy: +$('#gp-aim-cy').value } });
 $('#gp-aim-snapbtn').onclick = async () => {
   const r = await aimDo('aim_snapshot');
@@ -3161,7 +3172,7 @@ async function loadSettings() {
     $('#tts-on').checked = !!s.tts_enabled; $('#tts-warm').checked = s.tts_warm !== false;
     if (document.activeElement !== $('#city-input')) $('#city-input').value = s.city || '';
     if (document.activeElement !== $('#name-input')) $('#name-input').value = s.assistant_name || '';
-    $('#ai-fallback').checked = !!s.ai_fallback; $('#ai-mode').value = s.ai_mode || ''; aiSavedProvider = s.ai_provider || ''; $('#ai-search-auto').checked = s.ai_search_auto !== false; $('#ai-search-key').value = ''; $('#ai-search-hint').dataset.saved = s.ai_search_key_saved ? '1' : ''; $('#ai-search-key').placeholder = s.ai_search_key_saved ? 'ключ сохранён (оставьте пустым, чтобы не менять)' : 'ключ pplx-…'; $('#ai-provider').value = s.ai_provider || 'none'; $('#ai-model').value = s.ai_model || ''; $('#ai-url').value = s.ai_url || ''; $('#ai-route').value = s.ai_route || ''; $('#ai-route-row').style.display = s.ai_provider === 'openrouter' ? '' : 'none';
+    $('#ai-fallback').checked = !!s.ai_fallback; $('#ai-mode').value = s.ai_mode || ''; $('#ai-talk').value = s.ai_talk || ''; aiSavedProvider = s.ai_provider || ''; $('#ai-search-auto').checked = s.ai_search_auto !== false; $('#ai-search-key').value = ''; $('#ai-search-hint').dataset.saved = s.ai_search_key_saved ? '1' : ''; $('#ai-search-key').placeholder = s.ai_search_key_saved ? 'ключ сохранён (оставьте пустым, чтобы не менять)' : 'ключ pplx-…'; $('#ai-provider').value = s.ai_provider || 'none'; $('#ai-model').value = s.ai_model || ''; $('#ai-url').value = s.ai_url || ''; $('#ai-route').value = s.ai_route || ''; $('#ai-route-row').style.display = s.ai_provider === 'openrouter' ? '' : 'none';
     $('#ai-key').value = ''; $('#ai-key-hint').textContent = s.ai_key_saved ? 'ключ сохранён (оставьте поле пустым, чтобы не менять)' : 'хранится только на этом компьютере'; $('#ai-key-hint').dataset.base = $('#ai-key-hint').textContent;
     updateAiRows();
     arLoad(); applyPrivacy(s); applyGeneral(s); $('#ai-screen').checked = !!s.ai_screen;
@@ -3315,6 +3326,7 @@ $('#ai-screen-check').onclick = async () => {
   catch (e) { m.className = 'msgline bad'; m.textContent = '✗ Не удалось выполнить проверку'; }
 };
 $('#ai-mode').onchange = () => api('/settings', { ai_mode: $('#ai-mode').value });
+$('#ai-talk').onchange = () => api('/settings', { ai_talk: $('#ai-talk').value });
 $('#ai-search-forget').onclick = async () => { await action('ai_search_key_forget'); $('#ai-search-key').placeholder = 'ключ pplx-…'; };
 async function saveAi() {
   const patch = { ai_provider: $('#ai-provider').value, ai_model: $('#ai-model').value.trim(), ai_url: $('#ai-url').value.trim(), ai_route: $('#ai-route').value.trim(), ai_fallback: $('#ai-fallback').checked };
@@ -4258,6 +4270,93 @@ setMode(mode, true);
 renderMic();
 connect();
 show('home');
+</script>
+
+<style>
+#pal{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);display:none;align-items:flex-start;justify-content:center;padding-top:14vh}
+#pal.on{display:flex}
+#pal .box{width:min(560px,92vw);background:var(--card,#16161a);border:1px solid var(--line,#333);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.6);overflow:hidden}
+#pal input{width:100%;box-sizing:border-box;padding:14px 16px;font-size:16px;background:transparent;border:0;border-bottom:1px solid var(--line,#333);color:inherit;outline:none}
+#pal ul{list-style:none;margin:0;padding:6px;max-height:48vh;overflow:auto}
+#pal li{padding:10px 12px;border-radius:8px;cursor:pointer;display:flex;justify-content:space-between;gap:12px}
+#pal li.sel,#pal li:hover{background:rgba(127,127,127,.2)}
+#pal li small{opacity:.6}
+#tour{position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center}
+#tour.on{display:flex}
+#tour .box{width:min(460px,90vw);background:var(--card,#16161a);border:1px solid var(--line,#333);border-radius:16px;padding:22px}
+#tour h3{margin:0 0 8px}
+#tour p{margin:0 0 16px;line-height:1.5;opacity:.9}
+#tour .row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+</style>
+<div id="pal" role="dialog" aria-label="Быстрый поиск"><div class="box"><input id="pal-q" type="text" placeholder="Куда перейти или что сделать… (Esc — закрыть)" autocomplete="off"><ul id="pal-list"></ul></div></div>
+<div id="tour" role="dialog" aria-label="Знакомство"><div class="box"><h3 id="tour-t"></h3><p id="tour-p"></p><div class="row"><small id="tour-n" style="opacity:.6"></small><span><button class="btn" id="tour-skip" type="button">Пропустить</button> <button class="btn primary" id="tour-next" type="button">Дальше</button></span></div></div></div>
+<script>
+(function () {
+  // ---- Ctrl+K: a quick search over the sections and a few actions ----
+  const items = () => {
+    const l = [];
+    Object.keys(TITLES).forEach(k => { if (PAGES.includes(k)) l.push({ t: TITLES[k][0], h: 'раздел', run: () => show(k) }); });
+    l.push({ t: 'Игры: помощь прицела', h: 'настройки', run: () => { show('games'); setTimeout(() => { const c = document.getElementById('gp-aim-card'); c && c.scrollIntoView({ behavior: 'smooth' }); }, 80); } });
+    l.push({ t: 'Скопировать отчёт прицела', h: 'действие', run: () => { const b = document.getElementById('gp-aim-report'); b && b.click(); } });
+    l.push({ t: 'Остановить речь', h: 'действие', run: () => { try { action('tts_stop', {}); } catch (e) {} } });
+    l.push({ t: 'Показать тур', h: 'действие', run: () => tourStart() });
+    return l;
+  };
+  let sel = 0, shown = [];
+  const pal = document.getElementById('pal'), q = document.getElementById('pal-q'), ul = document.getElementById('pal-list');
+  function draw() {
+    const w = q.value.trim().toLowerCase();
+    shown = items().filter(i => !w || i.t.toLowerCase().includes(w));
+    if (sel >= shown.length) sel = Math.max(0, shown.length - 1);
+    ul.innerHTML = '';
+    shown.forEach((i, n) => { const li = document.createElement('li'); li.className = n === sel ? 'sel' : ''; li.innerHTML = '<span></span><small></small>'; li.firstChild.textContent = i.t; li.lastChild.textContent = i.h; li.onclick = () => run(n); ul.appendChild(li); });
+  }
+  function run(n) { const i = shown[n]; palClose(); if (i) i.run(); }
+  function palOpen() { pal.classList.add('on'); q.value = ''; sel = 0; draw(); setTimeout(() => q.focus(), 0); }
+  function palClose() { pal.classList.remove('on'); }
+  q.addEventListener('input', () => { sel = 0; draw(); });
+  q.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') { sel = Math.min(shown.length - 1, sel + 1); draw(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { sel = Math.max(0, sel - 1); draw(); e.preventDefault(); }
+    else if (e.key === 'Enter') { run(sel); e.preventDefault(); }
+    else if (e.key === 'Escape') { palClose(); e.preventDefault(); e.stopPropagation(); }
+  });
+  pal.addEventListener('mousedown', e => { if (e.target === pal) palClose(); });
+  document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K' || e.key === 'л' || e.key === 'Л')) { e.preventDefault(); pal.classList.contains('on') ? palClose() : palOpen(); } }, true);
+
+  // ---- the tour of the first start ----
+  const steps = [
+    ['Это Jarvis', 'Скажите «Джарвис» и команду, или напишите её внизу главной страницы. Сфера показывает, что он слушает и говорит.'],
+    ['Быстрый поиск', 'Ctrl+K открывает поиск по разделам и действиям: начните печатать название и нажмите Enter.'],
+    ['Игры', 'В разделе «Игры» — голосовое управление игрой, метка с загрузкой компьютера и помощь прицела для одиночных игр.'],
+    ['Настройки', 'Голос, ИИ, горячая клавиша, мини-режим и резервная копия настроек — в «Настройках». Esc останавливает речь.']
+  ];
+  let ti = 0;
+  const tour = document.getElementById('tour');
+  function tourDraw() { document.getElementById('tour-t').textContent = steps[ti][0]; document.getElementById('tour-p').textContent = steps[ti][1]; document.getElementById('tour-n').textContent = (ti + 1) + ' из ' + steps.length; document.getElementById('tour-next').textContent = ti === steps.length - 1 ? 'Готово' : 'Дальше'; }
+  window.tourStart = function () { ti = 0; tourDraw(); tour.classList.add('on'); };
+  function tourEnd() { tour.classList.remove('on'); try { localStorage.setItem('jv_tour', '1'); } catch (e) {} }
+  document.getElementById('tour-next').onclick = () => { if (ti >= steps.length - 1) tourEnd(); else { ti++; tourDraw(); } };
+  document.getElementById('tour-skip').onclick = tourEnd;
+  document.getElementById('tour-again').onclick = () => window.tourStart();
+  try { if (!localStorage.getItem('jv_tour')) setTimeout(window.tourStart, 1200); } catch (e) {}
+
+  // ---- backup of the settings, Windows icons ----
+  document.getElementById('bk-save').onclick = async () => {
+    const r = await action('backup_export', {}).catch(() => ({}));
+    if (!r || !r.ok) { alert('Не удалось собрать копию'); return; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(r.backup, null, 2)], { type: 'application/json' }));
+    a.download = 'jarvis-settings-' + new Date().toISOString().slice(0, 10) + '.json'; document.body.appendChild(a); a.click(); a.remove();
+  };
+  document.getElementById('bk-load').onclick = () => document.getElementById('bk-file').click();
+  document.getElementById('bk-file').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    let data; try { data = JSON.parse(await f.text()); } catch (x) { document.getElementById('bk-hint').textContent = 'Это не файл резервной копии: не читается как JSON'; return; }
+    const r = await action('backup_import', { backup: data }).catch(() => ({}));
+    document.getElementById('bk-hint').textContent = (r && r.message) || 'Не удалось восстановить'; e.target.value = '';
+  };
+  document.getElementById('icons-refresh').onclick = async () => { const r = await action('icons_refresh', {}).catch(() => ({})); alert((r && r.message) || 'Не удалось'); };
+})();
 </script>
 </body>
 </html>
