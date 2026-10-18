@@ -297,10 +297,24 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             crate::tts::speak(text);
             json!({ "ok": true })
         }
+        // what is around: the devices of the local network and the Bluetooth devices Windows knows (read only)
+        "devices_lan" => match crate::devices::lan_devices() {
+            Ok(v) => json!({ "ok": true, "items": v.into_iter().map(|(ip, mac)| json!([ip, mac])).collect::<Vec<_>>() }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "devices_bt" => match crate::devices::bluetooth_devices() {
+            Ok(v) => json!({ "ok": true, "items": v.into_iter().map(|(n, st)| json!([n, st])).collect::<Vec<_>>() }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
         // asks Windows to redraw the icons of the shortcuts (the old picture stays in the cache of the system)
         "icons_refresh" => {
             #[cfg(target_os = "windows")]
-            let ok = std::process::Command::new("ie4uinit.exe").arg("-show").spawn().is_ok();
+            let ok = {
+                let mut c = std::process::Command::new("ie4uinit.exe");
+                c.arg("-show");
+                crate::null_stdio(&mut c);
+                c.spawn().is_ok()
+            };
             #[cfg(not(target_os = "windows"))]
             let ok = false;
             json!({ "ok": ok, "message": if ok { "Windows просят обновить значки. Если старые остались: удалите ярлык и создайте заново, а при необходимости удалите файлы IconCache.db и iconcache_*.db в %localappdata% и перезапустите проводник." } else { "Доступно только в Windows" } })
@@ -1422,12 +1436,10 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
 #[cfg(target_os = "windows")]
 fn try_start(args: &[&str]) -> bool {
     use std::os::windows::process::CommandExt;
-    Command::new("cmd")
-        .args(args)
-        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    let mut c = Command::new("cmd");
+    c.args(args).creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    crate::null_stdio(&mut c);
+    c.status().map(|s| s.success()).unwrap_or(false)
 }
 
 // What the own window of Jarvis does with an answer of its close dialog ("Свернуть в трей" / "Полностью закрыть" /

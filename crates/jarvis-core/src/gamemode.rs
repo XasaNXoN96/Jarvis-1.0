@@ -1644,6 +1644,11 @@ pub fn aim_config() -> crate::aimassist::AimConfig {
     crate::aimassist::effective_for(&profile, front_exe().as_deref())
 }
 
+// the file name of the program in front, whatever it is
+pub fn front_exe_any() -> Option<String> {
+    front_exe()
+}
+
 // the file name of the game in front, when it is a game of the list (the aim assist keeps its crosshair under this name)
 pub fn front_game_exe() -> Option<String> {
     let g = GAME.lock();

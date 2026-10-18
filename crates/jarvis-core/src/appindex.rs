@@ -364,6 +364,8 @@ fn registered_apps() -> Result<String, String> {
     use std::io::Read;
     use std::os::windows::process::CommandExt;
     let mut child = crate::psrun::command(crate::psrun::Script::AppIndex, &[], crate::psrun::Way::default())?
+        // (the input is closed: a program without a console has no valid input handle to inherit and CreateProcess fails with «os error 50»)
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .creation_flags(0x0800_0000)

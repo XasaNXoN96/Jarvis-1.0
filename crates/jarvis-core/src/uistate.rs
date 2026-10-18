@@ -114,6 +114,9 @@ pub struct UiSettings {
     // social networks (social.rs) whose notifications are let through, also from a browser, and those read aloud
     pub ext_social: Vec<String>,
     pub ext_social_speak: Vec<String>,
+    // the networks and their reading aloud are chosen for the user once (all of them) the first time: a notification of Telegram must
+    // not be dropped because nobody ticked a box
+    pub ext_social_init: bool,
     // interface choices of the window (sphere mode, photo settings): the page keeps a copy in its browser storage
     pub ui: std::collections::BTreeMap<String, String>,
     // loudness of Jarvis' voice, 0..100 (the Windows volume is not touched)
@@ -170,7 +173,7 @@ impl Default for UiSettings {
             ai_enabled: true, mic_off: false,
             notify_show: true, notify_speak: true, notify_sound: true, dnd: false,
             ext_enabled: false, ext_show: true, ext_speak: false, ext_strict: true, ext_allowed: Vec::new(), ext_blocked: Vec::new(), ext_seen: Vec::new(),
-            ext_social: Vec::new(), ext_social_speak: Vec::new(),
+            ext_social: Vec::new(), ext_social_speak: Vec::new(), ext_social_init: false,
             ui: Default::default(),
             tts_volume: 100, tts_warm: true, browser: String::new(), mic_sensitivity: 50, ai_screen: false, hotkey: crate::hotkey::DEFAULT.into(), barge_in: false,
         }
@@ -220,6 +223,16 @@ pub fn load_from(path: &std::path::Path) -> UiSettings {
     let (mut s, problem): (UiSettings, Option<String>) = parse_or_keep(path, "файл настроек окна (ui_settings.json)");
     if let Some(p) = problem {
         add_load_problem(&p);
+    }
+    if !s.ext_social_init {
+        let all: Vec<String> = crate::social::NETWORKS.iter().map(|n| n.key.to_string()).collect();
+        if s.ext_social.is_empty() {
+            s.ext_social = all.clone();
+        }
+        if s.ext_social_speak.is_empty() {
+            s.ext_social_speak = all;
+        }
+        s.ext_social_init = true;
     }
     // the key is stored encrypted (DPAPI); an old plain key is encrypted at the next save
     let plain_on_disk = !s.ai_key.is_empty() && !s.ai_key.starts_with("dpapi:");
@@ -1026,6 +1039,22 @@ mod settings_tests {
     }
 
     #[test]
+    fn the_social_networks_are_all_on_the_first_time_and_a_later_choice_is_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("ui_settings.json");
+        // an old file: the switch is on, nothing was chosen
+        std::fs::write(&p, r#"{"ext_enabled":true,"ext_social":[],"ext_social_speak":[]}"#).unwrap();
+        let s = load_from(&p);
+        assert_eq!(s.ext_social.len(), crate::social::NETWORKS.len());
+        assert_eq!(s.ext_social_speak.len(), crate::social::NETWORKS.len());
+        assert!(s.ext_social_init);
+        // after that an empty list is the user's own choice
+        std::fs::write(&p, r#"{"ext_enabled":true,"ext_social":["telegram"],"ext_social_speak":[],"ext_social_init":true}"#).unwrap();
+        let s = load_from(&p);
+        assert_eq!((s.ext_social, s.ext_social_speak.len()), (vec!["telegram".to_string()], 0));
+    }
+
+    #[test]
     fn every_setting_survives_a_restart() {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("ui_settings.json");
@@ -1035,7 +1064,7 @@ mod settings_tests {
             voice_rate: 1.3, voice_name: "piper".into(), reaction_voice: "jarvis-og".into(), city: "Самарканд".into(),
             ai_provider: "gemini".into(), ai_model: "gemini-flash-latest".into(), ai_key: "key-123".into(), ai_fallback: true,
             ai_enabled: false, mic_off: true, notify_show: false, notify_speak: false, notify_sound: false, dnd: true,
-            ext_enabled: true, ext_show: false, ext_speak: true, ext_strict: false,
+            ext_enabled: true, ext_show: false, ext_speak: true, ext_strict: false, ext_social_init: true, ext_social: crate::social::NETWORKS.iter().map(|n| n.key.to_string()).collect(), ext_social_speak: crate::social::NETWORKS.iter().map(|n| n.key.to_string()).collect(),
             ext_allowed: vec!["Telegram".into()], ext_blocked: vec!["Spam".into()], ext_seen: vec!["Mail".into()], ui, ..UiSettings::default()
         };
         write_to(&p, &saved);

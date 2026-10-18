@@ -96,11 +96,16 @@ pub struct AimConfig {
     pub max_step_px: u32,
     // keep a frame a second (with the boxes of the model as labels) in a folder, to train a model of this game later
     pub collect: bool,
+    // the key or button that is held to aim («rmb», «lmb», «mmb», «x1», «x2», a letter, «shift», «ctrl», «alt», «space», «caps», «f1»…)
+    pub trigger: String,
+    // work in any game that is in front in the full screen (not only in the games of the list); a program that protects itself from cheats
+    // still stops the module
+    pub any_game: bool,
 }
 
 impl Default for AimConfig {
     fn default() -> Self {
-        AimConfig { model: None, strength_pct: 40, head_pct: 12, radius_px: 260, conf_pct: 45, class: 0, device: Device::Auto, side: DEFAULT_SIDE, fps: 30, min_size_px: 24, cx_pct: 0, cy_pct: 0, max_size_pct: 65, auto_cross: true, max_aspect_pct: 150, dead_px: 3, max_step_px: 40, collect: false }
+        AimConfig { model: None, strength_pct: 40, head_pct: 12, radius_px: 260, conf_pct: 45, class: 0, device: Device::Auto, side: DEFAULT_SIDE, fps: 30, min_size_px: 24, cx_pct: 0, cy_pct: 0, max_size_pct: 65, auto_cross: true, max_aspect_pct: 150, dead_px: 3, max_step_px: 40, collect: false, trigger: "rmb".into(), any_game: true }
     }
 }
 
@@ -150,6 +155,16 @@ pub fn apply_json(c: &mut AimConfig, v: &Value) -> Result<(), String> {
     }
     if let Some(n) = num("max_step", 5, 100)? {
         c.max_step_px = n;
+    }
+    if let Some(x) = v.get("trigger") {
+        let name = x.as_str().ok_or("aim.trigger: название клавиши")?;
+        if trigger_vk(name).is_none() {
+            return Err(format!("aim.trigger: неизвестная клавиша «{}» (правая или средняя кнопка мыши, боковые x1/x2, буква, цифра, shift, ctrl, alt, space, caps, f1-f12)", name));
+        }
+        c.trigger = name.trim().to_lowercase();
+    }
+    if let Some(x) = v.get("any_game") {
+        c.any_game = x.as_bool().ok_or("aim.any_game: true или false")?;
     }
     if let Some(x) = v.get("collect") {
         c.collect = x.as_bool().ok_or("aim.collect: true или false")?;
@@ -207,7 +222,7 @@ fn read_overlay() -> Value {
 pub fn save_settings(patch: &Value, base: &AimConfig) -> Result<AimConfig, String> {
     let Some(obj) = patch.as_object() else { return Err("настройки должны быть объектом".into()) };
     // only the keys of the page (the path of a model is chosen with the file window, not typed here)
-    let allowed = ["device", "side", "fps", "conf", "min_size", "max_size", "cx", "cy", "auto_cross", "strength", "head", "radius", "max_aspect", "dead", "max_step", "collect"];
+    let allowed = ["device", "side", "fps", "conf", "min_size", "max_size", "cx", "cy", "auto_cross", "strength", "head", "radius", "max_aspect", "dead", "max_step", "collect", "trigger", "any_game"];
     if obj.keys().any(|k| !allowed.contains(&k.as_str())) {
         return Err("неизвестная настройка".into());
     }
@@ -261,7 +276,7 @@ pub fn save_game_cross(exe: &str, cx: i64, cy: i64) -> Result<(), String> {
 }
 
 // the numbers that a game may keep for itself (besides the crosshair)
-pub const GAME_KEYS: [&str; 8] = ["strength", "head", "radius", "side", "conf", "max_step", "dead", "max_aspect"];
+pub const GAME_KEYS: [&str; 9] = ["strength", "head", "radius", "side", "conf", "max_step", "dead", "max_aspect", "trigger"];
 
 // keeps the numbers of ONE game (only GAME_KEYS, each one checked); the others and the crosshair of the game stay
 pub fn save_game_settings(exe: &str, patch: &Value) -> Result<usize, String> {
@@ -374,6 +389,62 @@ pub fn nms(mut dets: Vec<Det>, iou_limit: f32) -> Vec<Det> {
         }
     }
     kept
+}
+
+// the virtual key code of a button or key that is held to aim (None = not a name that is known)
+pub fn trigger_vk(name: &str) -> Option<i32> {
+    let n = name.trim().to_lowercase();
+    let code = match n.as_str() {
+        "rmb" | "right" | "пкм" => 0x02,
+        "lmb" | "left" | "лкм" => 0x01,
+        "mmb" | "middle" => 0x04,
+        "x1" => 0x05,
+        "x2" => 0x06,
+        "shift" => 0x10,
+        "ctrl" | "control" => 0x11,
+        "alt" => 0x12,
+        "space" => 0x20,
+        "caps" | "capslock" => 0x14,
+        "tab" => 0x09,
+        _ => {
+            let c: Vec<char> = n.chars().collect();
+            if c.len() == 1 && c[0].is_ascii_alphanumeric() {
+                c[0].to_ascii_uppercase() as i32
+            } else if let Some(num) = n.strip_prefix('f').and_then(|x| x.parse::<i32>().ok()).filter(|k| (1..=12).contains(k)) {
+                0x70 + num - 1
+            } else {
+                return None;
+            }
+        }
+    };
+    Some(code)
+}
+
+// a program in the full screen that may be a game: its file name (None when the setting is off, the program is not a game or it is not full screen)
+pub fn front_any_game(cfg: &AimConfig) -> Option<String> {
+    if !cfg.any_game {
+        return None;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let exe = crate::gamemode::front_exe_any()?;
+        (!is_not_a_game(&exe) && run::front_fullscreen()).then_some(exe)
+    }
+    #[cfg(not(target_os = "windows"))]
+    None
+}
+
+// programs that are never a game (the browser, the desktop, a player, a messenger): the full screen of these is not the full screen of a game
+pub fn is_not_a_game(exe: &str) -> bool {
+    const NOT: [&str; 40] = [
+        "explorer.exe", "jarvis-app.exe", "chrome.exe", "msedge.exe", "firefox.exe", "opera.exe", "brave.exe", "vivaldi.exe", "browser.exe", "yandex.exe",
+        "vlc.exe", "mpv.exe", "obs64.exe", "obs32.exe", "teams.exe", "zoom.exe", "slack.exe", "discord.exe", "telegram.exe", "spotify.exe",
+        "code.exe", "devenv.exe", "steam.exe", "steamwebhelper.exe", "epicgameslauncher.exe", "applicationframehost.exe", "searchhost.exe",
+        "shellexperiencehost.exe", "startmenuexperiencehost.exe", "lockapp.exe", "taskmgr.exe", "powerpnt.exe", "winword.exe", "excel.exe",
+        "mstsc.exe", "vmware.exe", "virtualboxvm.exe", "photoshop.exe", "premiere pro.exe", "notepad.exe",
+    ];
+    let e = exe.trim().to_lowercase();
+    NOT.contains(&e.as_str())
 }
 
 // the head of a person: the middle of the top of the box (head_pct of the height from the top)
@@ -830,7 +901,7 @@ pub fn status_json(cfg: &AimConfig) -> Value {
     json!({ "enabled": is_enabled(), "state": STATE.lock().clone(), "model": model_path(cfg).display().to_string(), "model_found": model_path(cfg).is_file(),
         "frames": FRAMES.load(Ordering::SeqCst), "last_frame_ms": LAST_MS.load(Ordering::SeqCst), "objects": OBJECTS.load(Ordering::SeqCst),
         "capture": CAPTURE.lock().clone(), "last_game": last_game(), "cross": cross_source(), "device_used": DEVICE.lock().clone(), "thread": thread_running(), "problem": PROBLEM.lock().clone(),
-        "settings": { "device": eff.device.name(), "side": eff.side, "fps": eff.fps, "conf": eff.conf_pct, "min_size": eff.min_size_px, "max_size": eff.max_size_pct, "cx": eff.cx_pct, "cy": eff.cy_pct, "auto_cross": eff.auto_cross, "max_aspect": eff.max_aspect_pct, "dead": eff.dead_px, "max_step": eff.max_step_px, "collect": eff.collect, "strength": eff.strength_pct, "radius": eff.radius_px, "head": eff.head_pct } })
+        "settings": { "device": eff.device.name(), "side": eff.side, "fps": eff.fps, "conf": eff.conf_pct, "min_size": eff.min_size_px, "max_size": eff.max_size_pct, "cx": eff.cx_pct, "cy": eff.cy_pct, "auto_cross": eff.auto_cross, "max_aspect": eff.max_aspect_pct, "dead": eff.dead_px, "max_step": eff.max_step_px, "collect": eff.collect, "trigger": eff.trigger, "any_game": eff.any_game, "strength": eff.strength_pct, "radius": eff.radius_px, "head": eff.head_pct } })
 }
 
 // how long to rest after a frame: the frame rate that was asked for, and when the computer is slow (a frame takes more than the budget) the
@@ -976,8 +1047,34 @@ mod run {
         *PENDING.lock() = (0.0, 0.0);
     }
 
+    static TRIGGER: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0x02);
+
+    // the key or button of the aim (the setting «trigger») is held
     fn right_button_down() -> bool {
-        unsafe { (winapi::um::winuser::GetAsyncKeyState(0x02) as u16) & 0x8000 != 0 }
+        unsafe { (winapi::um::winuser::GetAsyncKeyState(TRIGGER.load(Ordering::SeqCst)) as u16) & 0x8000 != 0 }
+    }
+
+    // the program in front covers the whole screen of its monitor (a game in the full screen or the window without a frame)
+    pub fn front_fullscreen() -> bool {
+        use winapi::um::winuser::*;
+        unsafe {
+            let w = GetForegroundWindow();
+            if w.is_null() {
+                return false;
+            }
+            let mut r: winapi::shared::windef::RECT = std::mem::zeroed();
+            if GetWindowRect(w, &mut r) == 0 {
+                return false;
+            }
+            let m = MonitorFromWindow(w, MONITOR_DEFAULTTONEAREST);
+            let mut mi: MONITORINFO = std::mem::zeroed();
+            mi.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+            if m.is_null() || GetMonitorInfoW(m, &mut mi) == 0 {
+                return false;
+            }
+            let a = mi.rcMonitor;
+            r.left <= a.left + 2 && r.top <= a.top + 2 && r.right >= a.right - 2 && r.bottom >= a.bottom - 2
+        }
     }
 
     // this run is the current one and still wanted
@@ -1042,11 +1139,15 @@ mod run {
         let mut avg_ms = 0.0f32;
         while alive(id) {
             let cfg = crate::gamemode::aim_config();
-            let game = crate::gamemode::front_game_exe();
-            let ready = crate::gamemode::is_active() && crate::gamemode::in_game_now() && crate::gamemode::anticheat_running().is_none();
+            if let Some(vk) = trigger_vk(&cfg.trigger) {
+                TRIGGER.store(vk, Ordering::SeqCst);
+            }
+            // a game of the list, or (when allowed) any program in the full screen that is not a browser, a player and the like
+            let game = crate::gamemode::front_game_exe().or_else(|| front_any_game(&cfg));
+            let ready = crate::gamemode::is_active() && game.is_some() && crate::gamemode::anticheat_running().is_none();
             if !ready {
                 set_state("waiting");
-                *CAPTURE.lock() = "ждёт: впереди должно быть окно игры из списка и зажата правая кнопка мыши".into();
+                *CAPTURE.lock() = format!("ждёт: впереди должна быть игра на весь экран (или из списка) и зажата клавиша «{}»", cfg.trigger);
                 std::thread::sleep(std::time::Duration::from_millis(100));
                 continue;
             }
@@ -1452,6 +1553,27 @@ mod tests {
         assert_eq!((c.max_aspect_pct, c.dead_px, c.max_step_px, c.collect), (200, 5, 25, true));
         assert!(apply_json(&mut c, &json!({"dead": 99})).is_err());
         assert!(apply_json(&mut c, &json!({"max_aspect": 10})).is_err());
+    }
+
+    #[test]
+    fn the_key_of_the_aim_is_chosen_by_name_and_any_full_screen_game_is_allowed() {
+        assert_eq!(trigger_vk("RMB"), Some(0x02));
+        assert_eq!(trigger_vk(" q "), Some(0x51));
+        assert_eq!(trigger_vk("5"), Some(0x35));
+        assert_eq!(trigger_vk("x2"), Some(0x06));
+        assert_eq!(trigger_vk("F5"), Some(0x74));
+        assert_eq!(trigger_vk("shift"), Some(0x10));
+        assert_eq!(trigger_vk("f13"), None);
+        assert_eq!(trigger_vk("enter!"), None);
+        assert_eq!(trigger_vk(""), None);
+        let mut c = AimConfig::default();
+        assert_eq!((c.trigger.as_str(), c.any_game), ("rmb", true));
+        assert!(apply_json(&mut c, &json!({"trigger": "Q", "any_game": false})).is_ok());
+        assert_eq!((c.trigger.as_str(), c.any_game), ("q", false));
+        assert!(apply_json(&mut c, &json!({"trigger": "banana"})).is_err());
+        assert!(is_not_a_game("Chrome.EXE") && is_not_a_game("explorer.exe") && !is_not_a_game("crimsondesert.exe"));
+        // with the setting off nothing is taken (and on a computer without windows nothing either)
+        assert_eq!(front_any_game(&AimConfig { any_game: false, ..AimConfig::default() }), None);
     }
 
     #[test]

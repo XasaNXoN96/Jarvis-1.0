@@ -144,7 +144,8 @@
   .dv-card .dv-detail { font-size: 12px; opacity: .8; margin: 4px 0 6px; }
   .dv-caps { margin: 6px 0 0; padding: 0; list-style: none; font-size: 12px; } .dv-caps li { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; border-top: 1px solid var(--line, rgba(255,255,255,.08)); }
   .dv-caps li small { opacity: .65; display: block; } .dv-caps .st { white-space: nowrap; opacity: .85; } .dv-caps .st[data-s="available"] { color: #34d399; } .dv-caps .st[data-s="needs_permission"], .dv-caps .st[data-s="in_development"] { color: #fbbf24; } .dv-caps .st[data-s="unavailable"] { color: #f87171; }
-  .dv-card .acts { margin-top: 8px; }
+  .dv-card .acts { margin-top: 8px; } .dv-add { margin: 6px 0 14px; } .dv-addbody { margin-top: 8px; font-size: 13px; line-height: 1.6; } .dv-addbody ul { list-style: none; margin: 6px 0; padding: 0; } .dv-addbody li { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-top: 1px solid var(--line, rgba(255,255,255,.08)); }
+  .dv-map { width: 100%; height: 190px; border: 0; border-radius: 10px; margin-top: 8px; background: #1a1a20; }
   /* compact summary of the computer, the AI and the phone remote on the home page: the same data as «Система», collapsed by default */
   .h-sum { flex-shrink: 0; position: relative; z-index: 3; margin: 4px 0 2px; }
   .h-obj { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12px; min-width: 0; }
@@ -481,7 +482,10 @@
   .cmd { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; background: var(--panel); }
   .cmd b { color: var(--accent); font-weight: 600; }
   .chip { display: inline-block; margin: 4px 6px 0 0; padding: 3px 10px; border-radius: 999px; background: #ffffff10; color: var(--text); cursor: pointer; font-size: 13px; }
-  .chip:hover { background: rgba(255,255,255,0.140); }
+  .chip:hover { background: rgba(255,255,255,0.140); } .chip.on { background: rgba(255,255,255,.18); outline: 1px solid var(--accent); } .chip small { opacity: .6; }
+  /*ADMIN-BEGIN*/ #page-licmgr[data-ready="0"] .lm-needs { display: none; } #page-licmgr[data-ready="1"] .lm-howto { display: none; } /*ADMIN-END*/
+  details.gp-more { margin: 8px 0; } details.gp-more > summary { cursor: pointer; padding: 8px 0; color: var(--accent, #4da3ff); } .gp-tab[hidden] { display: none; }
+  .ap-tabs { display: flex; flex-wrap: wrap; gap: 2px; margin: 8px 0 4px; }
   small.dim { color: var(--dim); }
   .tabs { display: flex; gap: 6px; margin-bottom: 12px; } .tabs button { border: 1px solid var(--line); background: transparent; color: var(--dim); padding: 6px 14px; border-radius: 999px; font: inherit; cursor: pointer; }
   .tabs button.active { color: var(--accent); border-color: var(--accent); background: rgba(255,255,255,0.071); }
@@ -667,7 +671,7 @@
   nav { background: #07060acc; border-right-color: #ff7a2f22; }
 
   /* the home page is clean: only the sphere and the line of input under it (the texts stay in the page for the scripts, they are just not shown) */
-  #page-home .h-top, #page-home .rail, #page-home .h-sum, #page-home .herotext, #page-home #state { display: none !important; }
+  #page-home .h-sum, #page-home .herotext, #page-home #state { display: none !important; }
   #page-home .orbwrap, #page-home.big .orbwrap { width: min(100%, 640px, 68vh); }
   #page-home .hero { justify-content: center; }
   /* the mini mode: a small strip over the other windows (window.rs makes the window small and puts it on top) */
@@ -773,7 +777,14 @@
 
     <section class="page ds" id="page-devices">
       <h1>Мои устройства</h1>
-      <p class="lead">Только то, что Jarvis действительно знает: этот компьютер, телефон с пультом (после первого подключения) и микрофоны Windows. Новых устройств здесь не придумывают: то, что устройство не сообщает, помечено «нет данных», а чего пока нет — «не поддерживается» или «в разработке». Скрытого доступа к камере, микрофону и экрану нет.</p>
+      <p class="lead">Заряд, сеть и место ваших устройств. Показано только то, что устройство само сообщило.</p>
+      <div class="dv-add">
+        <button class="btn primary" id="dv-add" type="button">Добавить устройство</button>
+        <div id="dv-addbox" hidden>
+          <div class="ap-tabs"><button type="button" class="chip on" data-da="phone">Телефон или планшет</button><button type="button" class="chip" data-da="lan">Wi‑Fi / домашняя сеть</button><button type="button" class="chip" data-da="bt">Bluetooth</button></div>
+          <div id="dv-addbody" class="dv-addbody"></div>
+        </div>
+      </div>
       <div class="dv-grid" id="dv-list"><div class="empty">Загрузка…</div></div>
       <small class="rmhelp" id="dv-note">«Привязано» и «в сети» — разные вещи: привязанное устройство может быть выключено или вне сети. Телефон появляется в списке после того, как его страница пульта хотя бы раз отозвалась в этом запуске Jarvis.</small>
     </section>
@@ -808,11 +819,14 @@
             <div id="rm-off" class="rmoff">Включите пульт, чтобы получить QR-код и ссылку.</div>
             <div id="rm-on" style="display:none">
               <div class="qrbox"><img id="rm-qr" alt="QR-код пульта"></div>
-              <div class="rmlink" id="rm-url"></div>
-              <div class="rmaddrs" id="rm-addrs"></div>
               <button class="btn small" id="rm-copy" type="button">Копировать ссылку</button>
               <button class="btn small" id="rm-renew" type="button" title="Старая ссылка перестанет работать на всех телефонах">Новая ссылка</button>
+              <details class="gp-more"><summary>Адрес и подсказки</summary>
+              <div class="rmlink" id="rm-url"></div>
+              <div class="rmaddrs" id="rm-addrs"></div>
               <div class="rmoff" id="rm-hint"></div>
+              </details>
+              <details class="gp-more"><summary>Доступ из любой сети</summary>
               <div class="net-box" id="net-box">
                 <div class="hrow"><span>Из любой сети</span><b><span class="pill" id="net-pill">ВЫКЛЮЧЕНО</span></b></div>
                 <div class="rmrow"><label class="sw"><input type="checkbox" id="net-switch"><span></span></label><span id="net-label">Доступ без VPN выключен</span></div>
@@ -824,6 +838,7 @@
                 <small class="rmerr" id="net-err"></small>
                 <small class="rmhelp" id="net-hint">Пульт откроется с мобильного интернета и из чужой Wi-Fi сети, VPN не нужен. Порты на компьютере не открываются: Джарвис сам подключается к бесплатному туннелю Cloudflare.</small>
               </div>
+              </details>
               <div class="hrow" style="margin-top:10px"><span>Телефон</span><b id="ph-state">не подключён</b></div>
               <div class="hrow"><span>Последняя связь</span><b id="ph-last">—</b></div>
               <div class="hrow"><span>Заряд</span><b id="ph-bat">—</b></div>
@@ -950,15 +965,18 @@
 
     <section class="page ds" id="page-apps">
       <h1>Программы</h1>
-      <p class="lead">Программы, найденные на этом компьютере: меню «Пуск», рабочий стол, приложения Windows и реестр. Скажите «Джарвис, открой …» или нажмите «Запустить». Если название подходит к нескольким программам, Джарвис спросит, какую открыть.</p>
+      <p class="lead">Скажите «Джарвис, открой …» или нажмите «Запустить». «Обновить список» ищет заново: новые программы попадут в раздел «Новые» и в свой раздел.</p>
       <div class="ap-tools"><input type="text" id="ap-search" placeholder="Поиск программы, например: commander"><button class="btn" id="ap-rescan" type="button">Обновить список</button></div>
       <div class="msgline" id="ap-status"></div>
+      <div class="ap-tabs" id="ap-tabs" role="tablist"></div>
       <div class="ap-list" id="ap-list"><div class="empty">Загрузка…</div></div>
     </section>
 
     <section class="page" id="page-games">
       <h1>Игры</h1>
       <p class="lead">Библиотека ваших одиночных игр. Известные онлайн-игры и программы, не относящиеся к играм, в неё не попадают.</p>
+      <div class="ap-tabs" id="gp-tabs" role="tablist"><button type="button" class="chip on" data-gt="lib">Библиотека</button><button type="button" class="chip" data-gt="mode">Голосовое управление</button><button type="button" class="chip" data-gt="aim">Прицел</button><button type="button" class="chip" data-gt="macro">Макросы и подсказки</button></div>
+      <div class="gp-tab" data-gt="lib">
       <div class="gp-bar">
         <button class="btn primary" id="gp-scan" type="button">Найти игры</button>
         <button class="btn" id="gp-add" type="button">Добавить игру</button>
@@ -973,7 +991,9 @@
       <div class="gg medium" id="gp-grid"><div class="gp-empty">Загружаю библиотеку…</div></div>
       <details class="gp-skip" id="gp-skipbox" hidden><summary id="gp-skipsum"></summary><div id="gp-skipped"></div></details>
 
-      <div class="card" style="margin-top:22px"><h3><span class="ei">🎮</span>Игровой режим</h3>
+      </div>
+      <div class="gp-tab" data-gt="mode" hidden>
+      <div class="card" style="margin-top:8px"><h3><span class="ei">🎮</span>Игровой режим</h3>
         <div class="setrow"><div class="l">Голосовое управление игрой<small id="gp-state"></small></div>
           <div class="r"><button class="btn" id="gp-on" type="button" aria-pressed="false">Включить</button> <button class="btn" id="gp-off" type="button" aria-pressed="false">Выключить</button></div></div>
         <div class="setrow"><div class="l">Метка на экране<small>маленькая надпись над игрой, пока режим включён. Не ловит клики. В полноэкранном режиме игры может быть скрыта: выберите в игре «окно без рамки»</small></div>
@@ -983,6 +1003,8 @@
         <div class="setrow"><div class="l">Отчёт по играм<small>состояние режима, список игр, последний поиск и последние события: чтобы прислать разработчику. Ключей и сказанных фраз в отчёте нет</small></div>
           <div class="r"><button class="btn" id="gp-report" type="button">Копировать отчёт по играм</button></div></div>
       </div>
+      </div>
+      <div class="gp-tab" data-gt="aim" hidden>
       <div class="card" id="gp-aim-card"><h3><span class="ei">🎯</span>Помощь прицела (эксперимент, только офлайн-игры)</h3>
         <div class="setrow"><div class="l">Состояние<small id="gp-aim-state"></small><small id="gp-aim-sub" class="dim"></small></div>
           <div class="r"><button class="btn" id="gp-aim-on" type="button" aria-pressed="false">Включить</button> <button class="btn" id="gp-aim-off" type="button" aria-pressed="false">Выключить</button></div></div>
@@ -991,6 +1013,7 @@
           <div class="r"><button class="btn primary" id="gp-aim-install" type="button">Установить модель автоматически</button> <button class="btn" id="gp-aim-model" type="button">Выбрать файл модели…</button> <button class="btn" id="gp-aim-cancel" type="button" style="display:none">Отменить</button> <button class="btn" id="gp-aim-check" type="button">Проверить модель</button></div></div>
         <div class="setrow"><div class="l">Устройство<small id="gp-aim-devnote">Авто и «Процессор» работают на процессоре — этого достаточно для модели такого размера. Видеокарта (DirectML) — только в сборке, где она подключена и проверена.</small></div>
           <div class="r"><select id="gp-aim-device"><option value="auto">Авто</option><option value="cpu">Процессор (CPU)</option><option value="directml">Видеокарта (DirectML)</option></select></div></div>
+        <details class="gp-more"><summary>Дополнительные настройки</summary>
         <div class="setrow"><div class="l">Размер кадра у прицела<small>Квадрат вокруг центра окна игры. Меньше — быстрее, но видно меньше вокруг прицела</small></div>
           <div class="r"><select id="gp-aim-side"><option value="320">320</option><option value="416">416</option><option value="512">512</option><option value="640">640</option><option value="800">800</option></select></div></div>
         <div class="setrow"><div class="l">Кадров в секунду (не больше)<small>Если компьютер не успевает, Jarvis сам делает паузы между кадрами и не отнимает у игры процессор</small></div>
@@ -1005,10 +1028,13 @@
           <div class="r"><label class="sw"><input type="checkbox" id="gp-aim-auto"><span></span></label> <button class="btn" id="gp-aim-savegame" type="button" title="Числа «Где перекрестие» сохраняются для игры, которая была впереди последней">Запомнить числа для игры</button></div></div>
         <div class="setrow"><div class="l">Наибольший размер человека, % кадра<small>Выше этого не берутся в цель: ваш собственный персонаж и напарник у камеры очень крупные. Союзников той же модели от врагов отличить нельзя: стреляйте там, где их нет</small></div>
           <div class="r"><input type="number" id="gp-aim-max" min="20" max="100" step="5" style="width:76px"></div></div>
+        <div class="setrow"><div class="l">Клавиша прицела и игры<small>Какая клавиша или кнопка мыши удерживается для прицела: по умолчанию правая кнопка мыши (rmb). Если игра целится по другой клавише (например, Q), впишите её: буква, цифра, rmb, mmb, x1, x2, shift, ctrl, alt, space, caps, f1–f12. Галочка «любая игра» включает помощь в любой одиночной игре на весь экран, не только из списка; защита от читов по-прежнему её останавливает</small></div>
+          <div class="r"><input type="text" id="gp-aim-trigger" maxlength="8" style="width:72px" placeholder="rmb" title="клавиша прицела"> <label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="gp-aim-any"> любая игра</label></div></div>
         <div class="setrow"><div class="l">Плавность и отбор целей<small>Сила подведения (% оставшегося пути за кадр), самый длинный шаг мыши (пикс.), «мёртвая зона» вокруг головы (пикс.: внутри неё мышь не двигается) и самая большая ширина рамки в % от её высоты (шире — лежащее тело или слипшаяся толпа, не берётся). «Запомнить для игры» сохраняет эти числа и размер кадра только для игры, которая была впереди последней</small></div>
           <div class="r"><input type="number" id="gp-aim-strength" min="1" max="100" step="5" style="width:64px" title="сила, %"> <input type="number" id="gp-aim-step" min="5" max="100" step="5" style="width:64px" title="самый длинный шаг, пикс."> <input type="number" id="gp-aim-dead" min="0" max="20" step="1" style="width:64px" title="мёртвая зона, пикс."> <input type="number" id="gp-aim-aspect" min="50" max="500" step="10" style="width:64px" title="ширина рамки, % высоты"> <button class="btn" id="gp-aim-savegame2" type="button">Запомнить для игры</button></div></div>
         <div class="setrow"><div class="l">Копить кадры для обучения модели<small id="gp-aim-collectnote">Раз в секунду, пока зажата кнопка прицела, кадр и найденные рамки (текстовые файлы YOLO) сохраняются в папку aim\dataset рядом с настройками Jarvis (до 500 кадров). Рамки поставила общая модель: перед обучением их надо просмотреть и поправить. Инструкция — в docs/GAME-MODE.md</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="gp-aim-collect"><span></span></label></div></div>
+        </details>
         <div class="setrow"><div class="l">Что видит помощь прицела<small id="gp-aim-snaptext">Снимок последнего кадра с метками: зелёные рамки — найденные люди, жёлтая толстая — выбранная цель, красная точка — куда целимся, красная линия — путь от перекрестия, голубой плюс — перекрестие, которое использовала программа. Если прицел идёт не туда, этот снимок покажет почему</small>
           <img id="gp-aim-snap" alt="" style="display:none;max-width:100%;max-height:420px;margin-top:8px;border-radius:8px;border:1px solid var(--line)"></div>
           <div class="r"><button class="btn" id="gp-aim-snapbtn" type="button">Показать снимок последнего прицеливания</button></div></div>
@@ -1017,11 +1043,14 @@
         <div class="msgline" id="gp-aim-msg" role="status" style="padding:6px 0"></div>
         <small class="dim">Модель находит человека целиком (не отдельно голову и корпус): «голова» и «корпус» — точки внутри рамки человека. Фразы: «целься в голову» / «целься в корпус», «прицельный огонь», «не целься», «стой» (выключает всё сразу). Помощь работает только пока удерживается правая кнопка мыши в окне игры, выключена при каждом запуске и не работает при защите от читов. Подробности и лицензия модели: docs/GAME-MODE.md.</small>
       </div>
+      </div>
+      <div class="gp-tab" data-gt="macro" hidden>
       <div class="card"><h3><span class="ei">⏺</span>Макросы голосом</h3>
         <div id="gp-macros"><div class="empty">Макросов нет.</div></div>
         <small class="dim">Запись: в игре скажите «Джарвис, запиши макрос комбо», сделайте нужные нажатия, скажите «сохрани макрос». Потом фраза «комбо» повторит их. Записываются только игровые клавиши и кнопки мыши, движение мыши не записывается. «Удали макрос комбо» — убрать.</small></div>
       <div class="card"><h3><span class="ei">💡</span>Подсказки и чтение текста</h3>
         <small class="dim">В игре: «подскажи, что делать», «что мне делать дальше» — Джарвис посмотрит на экран и ответит вслух. «Прочитай текст», «переведи текст» — прочитает или переведёт надпись на экране. Нужно разрешение «Анализ экрана» в Настройках и модель, которая видит картинки. Снимок уходит выбранному провайдеру только по такой команде.</small></div>
+      </div>
     </section>
 
     <div class="gp-modal" id="gp-allwin" role="dialog" aria-modal="true" aria-label="Все игры">
@@ -1086,6 +1115,7 @@
     <section class="page ds" id="page-licmgr">
       <div class="lm-tabs" role="tablist"><button type="button" class="on" id="lm-tab-b1" data-t="main" role="tab">Ключи и тарифы</button><button type="button" id="lm-tab-b2" data-t="archive" role="tab">Архив ключей</button></div>
       <div id="lm-main">
+      <div class="banner lm-howto" id="lm-howto"><b>Как начать.</b> 1) Укажите адрес сервера лицензий и токен администратора (их выдаёт сервер при установке) и нажмите «Сохранить». 2) После этого здесь появятся создание ключей и список лицензий. Токен хранится на этом компьютере под защитой Windows и никому не передаётся.</div>
       <div class="card"><h3>Сервер лицензий</h3>
         <div class="lm-grid">
           <label>Адрес сервера (https://…)<input type="text" id="lm-url" placeholder="https://license.example.com" autocomplete="off"></label>
@@ -1094,7 +1124,7 @@
         </div>
         <div class="lic-msg" id="lm-msg"></div>
       </div>
-      <div class="card" style="margin-top:12px"><h3>Создать ключи (Keygen)</h3>
+      <div class="card lm-needs" style="margin-top:12px"><h3>Создать ключи (Keygen)</h3>
         <div class="lm-grid">
           <label hidden>Тип<select id="kg-purpose"><option value="NEW">Новая подписка</option><option value="RENEWAL">Ключ продления</option></select></label>
           <label>Тариф<select id="kg-tariff"></select></label>
@@ -1111,7 +1141,7 @@
         <div class="lic-msg" id="kg-msg"></div>
         <div id="kg-out" hidden><div class="lm-keys" id="kg-keys"></div><button class="btn small" id="kg-copy" type="button">Скопировать ключи</button> <button class="btn small" id="kg-csv" type="button">Скачать CSV</button> <small class="dim">Полные ключи показаны один раз: сервер хранит только их отпечатки.</small></div>
       </div>
-      <div class="card" style="margin-top:12px"><h3>Лицензии</h3>
+      <div class="card lm-needs" style="margin-top:12px"><h3>Лицензии</h3>
         <div class="lm-grid"><label>Поиск (заметка, номер, начало ключа)<input type="text" id="ll-q"></label>
           <label>Статус<select id="ll-status"><option value="">все</option><option value="CREATED">не активирован</option><option>ACTIVE</option><option>EXPIRED</option><option>SUSPENDED</option><option>REVOKED</option></select></label>
           <div><button class="btn" id="ll-go" type="button">Обновить</button></div></div>
@@ -1302,13 +1332,13 @@
       </div>
 
       <div class="card" data-cat="general" id="game-card"><h3><span class="ei">🎮</span>Игровой режим (голосовое управление игрой)</h3>
-        <div class="setrow"><div class="l">Голосовое управление для игр<small id="game-hint">Только для одиночных игр. Работает в окне игры из списка (по умолчанию Call of Duty: iw3sp.exe, iw4sp.exe, iw5sp.exe). Любую свою одиночную игру добавьте голосом: откройте игру и скажите «добавь эту игру» (можно «как гонку», «как экшен»; убрать: «забудь эту игру»). Включить режим можно и голосом: «Джарвис, включи голосовое управление для игр». Если запущена защита от читов (EasyAntiCheat, BattlEye, Vanguard…), режим не включается. Клавиши меняются файлом game_profile.json (см. docs/GAME-MODE.md).</small></div>
+        <div class="setrow"><div class="l">Голосовое управление для игр<small id="game-hint">Только для одиночных игр, в окне игры из списка. Если запущена защита от читов, режим не включается</small></div>
           <div class="r"><span id="game-state" class="dim"></span> <button class="btn" id="game-on" type="button">Включить</button> <button class="btn" id="game-off" type="button">Выключить</button></div></div>
-        <div class="setrow"><div class="l">Помощь прицела (эксперимент)<small id="aim-hint">Только в одиночных играх. Работает, пока вы держите правую кнопку мыши в окне игры: по картинке экрана находит ближайшего человека и плавно подводит прицел к его голове. Нужен файл модели (см. docs/GAME-MODE.md). Выключена при каждом запуске.</small></div>
+        <div class="setrow"><div class="l">Помощь прицела (эксперимент)<small id="aim-hint">Только в одиночных играх: пока удерживается клавиша прицела, подводит прицел к голове. Подробности и настройки — в разделе «Игры»</small></div>
           <div class="r"><span id="aim-state" class="dim"></span> <button class="btn" id="aim-on" type="button">Включить</button> <button class="btn" id="aim-off" type="button">Выключить</button></div></div>
-        <small class="dim" id="game-list"></small>
+        <details class="gp-more"><summary>Список игр и фразы</summary><small class="dim" id="game-list"></small>
         <div class="msgline" id="game-msg"></div>
-        <small class="dim">Фразы: иди вперёд / назад / влево / вправо, беги, стой · смотри налево / направо / вверх / вниз (можно «на 45 градусов», «чуть», «разворот») · стреляй, огонь очередью, прекрати огонь · целься, не целься · перезаряди, гранату, нож, прыгай, присядь, используй. «Стой» отпускает все клавиши. Работает только если окно игры впереди.<br>Гонки: газ, тормоз, влево, вправо, прямо, ручник, нитро, сигнал, смени камеру · Экшен/приключения: атакуй, тяжёлый удар, блок, перекат, инвентарь, карта, полечись, садись в машину · свои фразы для любого жанра — в game_profile.json (docs/GAME-MODE.md).</small>
+        <small class="dim">Фразы: иди вперёд / назад / влево / вправо, беги, стой · смотри налево / направо / вверх / вниз (можно «на 45 градусов», «чуть», «разворот») · стреляй, огонь очередью, прекрати огонь · целься, не целься · перезаряди, гранату, нож, прыгай, присядь, используй. «Стой» отпускает все клавиши. Работает только если окно игры впереди.<br>Гонки: газ, тормоз, влево, вправо, прямо, ручник, нитро, сигнал, смени камеру · Экшен/приключения: атакуй, тяжёлый удар, блок, перекат, инвентарь, карта, полечись, садись в машину · свои фразы для любого жанра — в game_profile.json (docs/GAME-MODE.md).</small></details>
       </div>
       <div class="card" data-cat="general" id="vp-card"><h3><span class="ei">🗣</span>Мой голос</h3>
         <div class="setrow"><div class="l">Слушать только мой голос<small id="vp-hint">Jarvis будет игнорировать чужие голоса, игру, фильм и свой собственный голос. Сначала запишите образец своего голоса. По умолчанию выключено.</small></div>
@@ -1765,37 +1795,86 @@ async function appsLoad() {
   try {
     const r = await (await fetch('/apps')).json();
     appsList = r.apps || [];
+    apMarkNew(appsList);
     const when = r.scanned_at ? new Date(r.scanned_at * 1000).toLocaleString('ru-RU') : 'ещё не составлялся';
     $('#ap-status').textContent = (r.scanning ? 'Ищу установленные программы… ' : '') + 'Программ: ' + appsList.length + ' · список составлен: ' + when + (r.error ? ' · ' + r.error : '');
     appsRender();
     if (r.scanning && currentPage === 'apps') appsTimer = setTimeout(appsLoad, 1500);
   } catch (e) { $('#ap-status').textContent = 'Нет связи с Джарвисом'; }
 }
-const AP_GROUPS = [['system', 'Системные инструменты и компоненты Windows'], ['user', 'Программы, установленные пользователем'], ['other', 'Другие обнаруженные приложения'], ['unknown', 'Не определено']];
+// the kinds of programs (by the name and the program file; the server only knows where an entry came from)
+const AP_KINDS = [
+  ['office', 'Офис', /\b(word|excel|powerpoint|outlook|onenote|access|publisher|libreoffice|openoffice|wps|acrobat|reader|foxit|onlyoffice|visio|project|notion|sumatra|calc|writer|impress)\b/i],
+  ['music', 'Музыка', /(spotify|aimp|foobar|itunes|winamp|musicbee|yandex ?music|яндекс ?музык|deezer|tidal|vk ?music|groove|audacity|fl studio|ableton|reaper|cubase)/i],
+  ['photo', 'Фото', /(photoshop|lightroom|gimp|paint|irfan|xnview|photos|фото|affinity|krita|inkscape|illustrator|snipping|ножницы|faststone|picasa|lightshot)/i],
+  ['video', 'Видео', /(vlc|premiere|davinci|resolve|obs|potplayer|kmplayer|mpc|media player|movies|кино|filmora|vegas|after effects|camtasia|shotcut|handbrake|ffmpeg|capcut|youtube|netflix|twitch)/i],
+  ['games', 'Игры', /(steam|epic games|gog galaxy|battle\.net|origin|ubisoft|uplay|ea app|xbox|rockstar|minecraft|launcher|wargaming|riot|valorant)/i],
+  ['web', 'Интернет', /(chrome|edge|firefox|opera|brave|vivaldi|yandex|яндекс|browser|telegram|discord|skype|zoom|teams|whatsapp|viber|slack|thunderbird)/i]
+];
+const AP_TABS = [['all', 'Все'], ['new', 'Новые'], ['user', 'Установленные'], ['system', 'Системные'], ['office', 'Офис'], ['music', 'Музыка'], ['photo', 'Фото'], ['video', 'Видео'], ['games', 'Игры'], ['web', 'Интернет']];
+let apTab = 'all';
+let apKnown = null;   // names seen at the previous scan (to mark the new ones)
+function apKind(a) {
+  if ((a.category || '') === 'system') return 'system';
+  const hay = a.name + ' ' + (a.launch || '');
+  for (const k of AP_KINDS) if (k[2].test(hay)) return k[0];
+  return 'user';
+}
+function apMarkNew(list) {
+  const names = list.map(a => a.name);
+  let old = null;
+  try { old = JSON.parse(localStorage.getItem('jv_apps_known') || 'null'); } catch (e) {}
+  if (old && Array.isArray(old)) { const set = new Set(old); list.forEach(a => { a.isNew = !set.has(a.name); }); }
+  else { list.forEach(a => { a.isNew = false; }); try { localStorage.setItem('jv_apps_known', JSON.stringify(names)); } catch (e) {} }
+  apKnown = names;
+}
+function apRememberKnown() { try { if (apKnown) localStorage.setItem('jv_apps_known', JSON.stringify(apKnown)); } catch (e) {} }
 function appsRender() {
   const q = $('#ap-search').value.trim().toLowerCase();
-  const shown = appsList.filter(a => !q || a.name.toLowerCase().includes(q));
+  appsList.forEach(a => { a.kind = apKind(a); });
+  const counts = {};
+  AP_TABS.forEach(t => { counts[t[0]] = appsList.filter(a => t[0] === 'all' || (t[0] === 'new' ? a.isNew : a.kind === t[0])).length; });
+  $('#ap-tabs').innerHTML = AP_TABS.filter(t => t[0] === 'all' || counts[t[0]] || t[0] === apTab).map(t => '<button type="button" class="chip' + (t[0] === apTab ? ' on' : '') + '" data-t="' + t[0] + '">' + t[1] + ' <small>' + counts[t[0]] + '</small></button>').join('');
+  $('#ap-tabs').querySelectorAll('button').forEach(b => b.onclick = () => { apTab = b.dataset.t; appsRender(); });
+  const shown = appsList.filter(a => (apTab === 'all' || (apTab === 'new' ? a.isNew : a.kind === apTab)) && (!q || a.name.toLowerCase().includes(q)));
   const box = $('#ap-list');
-  if (!shown.length) { box.innerHTML = '<div class="empty">' + (appsList.length ? 'Ничего не найдено. Если программа установлена недавно, нажмите «Обновить список».' : 'Список пуст. Нажмите «Обновить список».') + '</div>'; return; }
-  // the group comes from the server (the place and the kind of the entry, never the name); an entry with no group is "Не определено"
-  const groups = AP_GROUPS.map(g => [g[0], g[1], shown.filter(a => (a.category || 'unknown') === g[0])]).filter(g => g[2].length);
-  let html = '', shownCount = 0;
-  groups.forEach(g => {
-    const part = g[2].slice(0, Math.max(0, 300 - shownCount)); shownCount += part.length;
-    if (!part.length) return;
-    html += '<div class="ap-group"><h3>' + esc(g[1]) + ' <small>' + g[2].length + '</small></h3>' + part.map(a => { const i = shown.indexOf(a);
-      return '<div class="ap-row' + (a.ok ? '' : ' off') + '"><span class="ap-mono" aria-hidden="true">' + esc((a.name.trim()[0] || '?').toUpperCase()) + '</span><div><b>' + esc(a.name) + '</b><small>' + esc(a.source) + (a.ok ? '' : ' · файл запуска не найден') + '</small></div>' +
-        '<button class="btn small" type="button" data-i="' + i + '"' + (a.ok ? '' : ' disabled') + '>Запустить</button></div>'; }).join('') + '</div>';
-  });
-  box.innerHTML = html + (shown.length > 300 ? '<div class="empty">Показаны первые 300 из ' + shown.length + '. Уточните поиск.</div>' : '');
+  if (!shown.length) { box.innerHTML = '<div class="empty">' + (appsList.length ? 'В этом разделе ничего не найдено. Если программа установлена недавно, нажмите «Обновить список».' : 'Список пуст. Нажмите «Обновить список».') + '</div>'; return; }
+  const part = shown.slice(0, 300);
+  box.innerHTML = '<div class="ap-group">' + part.map((a, i) =>
+    '<div class="ap-row' + (a.ok ? '' : ' off') + '"><span class="ap-mono" aria-hidden="true">' + esc((a.name.trim()[0] || '?').toUpperCase()) + '</span><div><b>' + esc(a.name) + (a.isNew ? ' <span class="chip on" style="font-size:11px;padding:1px 7px">новое</span>' : '') + '</b><small>' + esc((AP_TABS.find(t => t[0] === a.kind) || [0, 'Установленные'])[1]) + (a.ok ? '' : ' · файл запуска не найден') + '</small></div>' +
+    '<button class="btn small" type="button" data-i="' + i + '"' + (a.ok ? '' : ' disabled') + '>Запустить</button></div>').join('') + '</div>' + (shown.length > 300 ? '<div class="empty">Показаны первые 300 из ' + shown.length + '. Уточните поиск.</div>' : '');
   box.querySelectorAll('button[data-i]').forEach(b => b.onclick = async () => {
-    const a = shown[+b.dataset.i]; b.disabled = true;
+    const a = part[+b.dataset.i]; b.disabled = true;
     try { const r = await action('app_launch', { launch: a.launch }); $('#ap-status').textContent = r.message || ''; } catch (e) { $('#ap-status').textContent = 'Нет связи с Джарвисом'; }
     setTimeout(() => { b.disabled = false; }, 4000);
   });
 }
+$('#gp-tabs').querySelectorAll('button').forEach(b => b.onclick = () => {
+  $('#gp-tabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('#page-games .gp-tab').forEach(t => { t.hidden = t.dataset.gt !== b.dataset.gt; });
+});
+// ---- «Добавить устройство» ----
+let dvAddTab = 'phone';
+async function dvAddDraw() {
+  const b = $('#dv-addbody');
+  $('#dv-addbox').querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x.dataset.da === dvAddTab));
+  if (dvAddTab === 'phone') {
+    b.innerHTML = '<p>1. Телефон и компьютер должны быть в одной сети Wi‑Fi (или включите «Из любой сети» — тогда любой интернет).<br>2. Откройте «Пульт телефона», наведите камеру телефона на QR-код.<br>3. Устройство появится в списке после первого подключения. Чтобы видеть его на карте, на странице пульта включите «Показывать, где телефон».</p><button class="btn" id="dv-pult" type="button">Открыть пульт и QR-код</button>';
+    $('#dv-pult').onclick = () => { show('system'); setTimeout(() => { const el = $('#card-remote'); if (el) el.scrollIntoView({ block: 'center' }); }, 120); };
+    return;
+  }
+  b.textContent = 'Ищу…';
+  const r = await action(dvAddTab === 'lan' ? 'devices_lan' : 'devices_bt').catch(() => ({}));
+  const items = (r && r.items) || [];
+  if (!r || r.ok === false) { b.textContent = (r && r.message) || 'Не получилось'; return; }
+  b.innerHTML = '<p class="dim">' + (dvAddTab === 'lan' ? 'Устройства домашней сети, с которыми этот компьютер недавно «разговаривал» (имена роутеры не сообщают: адрес и номер сетевой карты). Jarvis только показывает их и ими не управляет.' : 'Устройства Bluetooth, известные Windows. Jarvis только показывает их. Чтобы добавить новое, соедините его в Параметрах Windows → Bluetooth.') + '</p>' +
+    (items.length ? '<ul>' + items.map(x => '<li><span>' + esc(x[0]) + '</span><b>' + esc(x[1]) + '</b></li>').join('') + '</ul>' : '<p>Ничего не найдено.</p>') + '<button class="btn small" id="dv-again" type="button">Искать ещё раз</button>';
+  $('#dv-again').onclick = dvAddDraw;
+}
+$('#dv-add').onclick = () => { const x = $('#dv-addbox'); x.hidden = !x.hidden; if (!x.hidden) dvAddDraw(); };
+$('#dv-addbox').querySelectorAll('.chip').forEach(c => c.onclick = () => { dvAddTab = c.dataset.da; dvAddDraw(); });
 $('#ap-search').oninput = appsRender;
-$('#ap-rescan').onclick = async () => { await action('apps_rescan'); $('#ap-status').textContent = 'Ищу установленные программы…'; setTimeout(appsLoad, 600); };
+$('#ap-rescan').onclick = async () => { apRememberKnown(); await action('apps_rescan'); $('#ap-status').textContent = 'Ищу установленные программы…'; setTimeout(appsLoad, 600); };
 
 // ---------- "Файлы": search with filters, results, open / show in folder ----------
 let filesTimer = null;
@@ -2035,8 +2114,14 @@ function homeSummary(s) {
 // ---------- «Мои устройства»: the list comes from the program (/devices); nothing is invented here ----------
 let dvTimer = null;
 function dvAgo(t) { const d = Math.max(0, Math.round(Date.now() / 1000 - t)); return d < 10 ? 'только что' : d < 60 ? d + ' с назад' : d < 3600 ? Math.round(d / 60) + ' мин назад' : new Date(t * 1000).toLocaleString('ru-RU'); }
+let dvSig = '';
 function dvRender(list) {
-  const box = $('#dv-list'); box.textContent = '';
+  const box = $('#dv-list');
+  // the cards are drawn again only when something changed (the map must not reload every few seconds); the time of the last contact is updated in place
+  const sig = JSON.stringify(list.map(d => [d.id, d.status, d.battery, d.charging, d.network, d.location && [d.location.lat, d.location.lon], d.detail, d.name]));
+  if (sig === dvSig) { list.forEach(d => { const el = document.querySelector('.dv-card[data-id="' + d.id + '"] .dv-last'); if (el) el.textContent = d.last_seen ? dvAgo(d.last_seen) : '—'; }); return; }
+  dvSig = sig;
+  box.textContent = '';
   if (!list.length) { const e = document.createElement('div'); e.className = 'empty'; e.textContent = 'Нет данных об устройствах.'; box.appendChild(e); return; }
   const ST = { online: 'ok', connecting: 'info', offline: '', error: 'bad' };
   for (const d of list) {
@@ -2047,9 +2132,17 @@ function dvRender(list) {
     c.appendChild(h);
     const row = (a, b) => { const r = document.createElement('div'); r.className = 'dv-row'; const x = document.createElement('span'); x.textContent = a; const y = document.createElement('b'); y.textContent = b; r.append(x, y); c.appendChild(r); };
     row('Привязано', d.paired ? 'да' : 'нет');
-    row('Последняя связь', d.last_seen ? dvAgo(d.last_seen) : '—');
+    row('Последняя связь', d.last_seen ? dvAgo(d.last_seen) : '—'); c.lastChild.lastChild.className = 'dv-last';
     if (d.user) row('Пользователь', d.user);
     if (d.battery != null) row('Заряд', d.battery + '%' + (d.charging ? ' · заряжается' : ''));
+    if (d.network) row('Сеть', d.network);
+    if (d.location) {
+      row('Место', d.location.lat.toFixed(5) + ', ' + d.location.lon.toFixed(5) + (d.location.accuracy ? ' (±' + Math.round(d.location.accuracy) + ' м)' : ''));
+      const dl = 0.004, m = document.createElement('iframe'); m.className = 'dv-map'; m.loading = 'lazy'; m.referrerPolicy = 'no-referrer';
+      m.src = 'https://www.openstreetmap.org/export/embed.html?bbox=' + [d.location.lon - dl, d.location.lat - dl, d.location.lon + dl, d.location.lat + dl].join('%2C') + '&layer=mapnik&marker=' + d.location.lat + '%2C' + d.location.lon;
+      c.appendChild(m);
+      const a = document.createElement('a'); a.className = 'btn small'; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Открыть карту'; a.href = 'https://www.openstreetmap.org/?mlat=' + d.location.lat + '&mlon=' + d.location.lon + '#map=17/' + d.location.lat + '/' + d.location.lon; c.appendChild(a);
+    }
     const det = document.createElement('div'); det.className = 'dv-detail'; det.textContent = d.detail; c.appendChild(det);
     const more = document.createElement('details'); const sm = document.createElement('summary'); sm.textContent = 'Подробнее: функции и разрешения'; more.appendChild(sm);
     const ul = document.createElement('ul'); ul.className = 'dv-caps';
@@ -2534,7 +2627,9 @@ const lmMsg = (sel, t, c) => setLicMsg(sel, t, c);
 async function lmLoad() {
   const s = await lmApi('settings_get');
   if (s.ok) { $('#lm-url').value = s.settings.url || ''; $('#lm-token').placeholder = s.settings.has_token ? '•••• сохранён (введите новый, чтобы заменить)' : 'jla_… (сохранится под защитой Windows)'; }
-  if (s.ok && s.settings.url && s.settings.has_token) { await lmLoadTariffs(); lmList(); }
+  const ready = !!(s.ok && s.settings.url && s.settings.has_token);
+  $('#page-licmgr').dataset.ready = ready ? '1' : '0';
+  if (ready) { await lmLoadTariffs(); lmList(); }
 }
 async function lmLoadTariffs() {
   const r = await lmCall('GET', '/admin/tariffs');
@@ -3120,7 +3215,7 @@ async function aimRefresh() {
   $('#gp-aim-devnote').textContent = (a.directml_build ? 'В этой сборке видеокарта (DirectML) подключена; если она не запустится, Jarvis сам перейдёт на процессор. ' : 'В этой сборке видеокарта (DirectML) не подключена: любой выбор работает на процессоре. ') + 'Видеокарта не обязательно быстрее для такой модели.';
   if (!AIM.loaded && run.settings) {
     AIM.loaded = true; const s = run.settings;
-    $('#gp-aim-device').value = s.device; $('#gp-aim-side').value = String(s.side); $('#gp-aim-fps').value = s.fps; $('#gp-aim-conf').value = s.conf; $('#gp-aim-conf-v').textContent = s.conf + '%'; $('#gp-aim-min').value = s.min_size; $('#gp-aim-cx').value = s.cx; $('#gp-aim-cy').value = s.cy; $('#gp-aim-auto').checked = s.auto_cross !== false; $('#gp-aim-max').value = s.max_size; $('#gp-aim-strength').value = s.strength; $('#gp-aim-step').value = s.max_step; $('#gp-aim-dead').value = s.dead; $('#gp-aim-aspect').value = s.max_aspect; $('#gp-aim-collect').checked = !!s.collect;
+    $('#gp-aim-device').value = s.device; $('#gp-aim-side').value = String(s.side); $('#gp-aim-fps').value = s.fps; $('#gp-aim-conf').value = s.conf; $('#gp-aim-conf-v').textContent = s.conf + '%'; $('#gp-aim-min').value = s.min_size; $('#gp-aim-cx').value = s.cx; $('#gp-aim-cy').value = s.cy; $('#gp-aim-auto').checked = s.auto_cross !== false; $('#gp-aim-max').value = s.max_size; $('#gp-aim-strength').value = s.strength; $('#gp-aim-step').value = s.max_step; $('#gp-aim-dead').value = s.dead; $('#gp-aim-aspect').value = s.max_aspect; $('#gp-aim-collect').checked = !!s.collect; $('#gp-aim-trigger').value = s.trigger || 'rmb'; $('#gp-aim-any').checked = s.any_game !== false;
   }
   clearTimeout(AIM.timer); if (busy) AIM.timer = setTimeout(aimRefresh, 700);
 }
@@ -3131,7 +3226,7 @@ $('#gp-aim-cancel').onclick = () => aimDo('aim_model_cancel');
 $('#gp-aim-check').onclick = () => aimDo('aim_model_check');
 $('#gp-aim-conf').oninput = () => { $('#gp-aim-conf-v').textContent = $('#gp-aim-conf').value + '%'; };
 $('#gp-aim-save').onclick = async () => {
-  const r = await aimDo('aim_settings', { settings: { device: $('#gp-aim-device').value, side: +$('#gp-aim-side').value, fps: +$('#gp-aim-fps').value, conf: +$('#gp-aim-conf').value, min_size: +$('#gp-aim-min').value, max_size: +$('#gp-aim-max').value, cx: +$('#gp-aim-cx').value, cy: +$('#gp-aim-cy').value, auto_cross: $('#gp-aim-auto').checked, strength: +$('#gp-aim-strength').value, max_step: +$('#gp-aim-step').value, dead: +$('#gp-aim-dead').value, max_aspect: +$('#gp-aim-aspect').value, collect: $('#gp-aim-collect').checked } });
+  const r = await aimDo('aim_settings', { settings: { device: $('#gp-aim-device').value, side: +$('#gp-aim-side').value, fps: +$('#gp-aim-fps').value, conf: +$('#gp-aim-conf').value, min_size: +$('#gp-aim-min').value, max_size: +$('#gp-aim-max').value, cx: +$('#gp-aim-cx').value, cy: +$('#gp-aim-cy').value, auto_cross: $('#gp-aim-auto').checked, strength: +$('#gp-aim-strength').value, max_step: +$('#gp-aim-step').value, dead: +$('#gp-aim-dead').value, max_aspect: +$('#gp-aim-aspect').value, collect: $('#gp-aim-collect').checked, trigger: $('#gp-aim-trigger').value.trim() || 'rmb', any_game: $('#gp-aim-any').checked } });
   if (r.ok) AIM.loaded = false;
 };
 $('#gp-aim-savegame2').onclick = () => aimDo('aim_settings', { for_game: true, settings: { cx: +$('#gp-aim-cx').value, cy: +$('#gp-aim-cy').value, strength: +$('#gp-aim-strength').value, max_step: +$('#gp-aim-step').value, dead: +$('#gp-aim-dead').value, max_aspect: +$('#gp-aim-aspect').value, side: +$('#gp-aim-side').value } });
@@ -3931,8 +4026,12 @@ async function msgsLoad(first) {
   if (first) {
     try {
       const s = await (await fetch('/settings')).json();
+      const st = (s.ext_status || {}).state, det = (s.ext_status || {}).detail || '';
       const off = !s.ext_enabled ? 'Чтение уведомлений других программ выключено — сообщения сюда не приходят.'
-        : !(s.ext_social || []).length ? 'Не выбрано ни одной соцсети. Отметьте нужные в настройках.' : '';
+        : !(s.ext_social || []).length ? 'Не выбрано ни одной соцсети.'
+        : (st === 'denied' || st === 'error' || st === 'unsupported') ? det : '';
+      $('#msg-setup').textContent = !s.ext_enabled ? 'Включить и читать вслух' : !(s.ext_social || []).length ? 'Выбрать все и читать вслух' : 'Открыть настройки';
+      $('#msg-setup').dataset.fix = (!s.ext_enabled || !(s.ext_social || []).length) ? '1' : '';
       $('#msg-off').style.display = off ? 'block' : 'none'; $('#msg-off-t').textContent = off;
     } catch (e) {}
   }
@@ -3961,7 +4060,13 @@ function msgsRender() {
   }
 }
 $('#msg-clear').onclick = async () => { const r = await api('/messages', { op: 'clear' }); showToast(r.message || 'Очищено'); msgFilter = ''; msgsLoad(false); };
-$('#msg-setup').onclick = () => { show('settings'); setTimeout(() => { const el = $('#soc-box'); if (el) el.scrollIntoView({ block: 'center' }); }, 200); };
+$('#msg-setup').onclick = async () => {
+  if ($('#msg-setup').dataset.fix) {
+    const all = ['telegram', 'whatsapp', 'instagram', 'vk', 'discord', 'viber', 'messenger', 'skype', 'signal', 'ok', 'x'];
+    await api('/settings', { ext_enabled: true, ext_social: all, ext_social_speak: all, ext_speak: true }).catch(() => {});
+    msgsLoad(true); return;
+  }
+  show('settings'); setTimeout(() => { const el = $('#soc-box'); if (el) el.scrollIntoView({ block: 'center' }); }, 200); };
 
 // ---------- Telegram: the user's own bot, paired with one account ----------
 const tgApi = body => api('/telegram', body);

@@ -38,9 +38,10 @@ pub enum Script {
     NotifyWatcher,
     // the titles of the windows of the players and browsers (read only): what is playing now
     MediaNow,
+    Bluetooth,
 }
 
-pub const ALL: [Script; 11] = [
+pub const ALL: [Script; 12] = [
     Script::Probe,
     Script::ThermalZones,
     Script::ThermalAcpi,
@@ -52,6 +53,7 @@ pub const ALL: [Script; 11] = [
     Script::InstallPiper,
     Script::NotifyWatcher,
     Script::MediaNow,
+    Script::Bluetooth,
 ];
 
 const THERMAL_ZONES: &str = "(Get-CimInstance Win32_PerfFormattedData_Counters_ThermalZoneInformation -ErrorAction Stop | Select-Object -First 1).Temperature";
@@ -88,6 +90,9 @@ const VOICES_PICKER: &str = "Add-Type -AssemblyName System.Speech; (New-Object S
 // only the process name and the title of the window of the known players and browsers: nothing is changed, nothing is sent
 const MEDIA_NOW: &str = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -and $_.ProcessName -match '^(AIMP|chrome|msedge|firefox|browser|opera|brave|vlc|spotify|wmplayer|foobar2000|Music.UI|mpc-hc|PotPlayer)' } | ForEach-Object { $_.ProcessName + '|' + $_.MainWindowTitle }";
 
+// the Bluetooth devices Windows knows (the names and the states): nothing is changed
+const BLUETOOTH: &str = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-PnpDevice -Class Bluetooth -ErrorAction SilentlyContinue | Where-Object { $_.FriendlyName } | ForEach-Object { $_.FriendlyName + '|' + $_.Status }";
+
 const INSTALL_PIPER: &str = "Expand-Archive -LiteralPath $env:JARVIS_ZIP -DestinationPath $env:JARVIS_DEST -Force";
 
 // the text of the watcher takes the pid of Jarvis from the environment (it was a -File with a -ParentPid argument)
@@ -107,6 +112,7 @@ impl Script {
             Script::InstallPiper => INSTALL_PIPER.to_string(),
             Script::NotifyWatcher => format!("{}{}", NOTIFY_HEAD, crate::notify::EXT_BODY),
             Script::MediaNow => MEDIA_NOW.to_string(),
+            Script::Bluetooth => BLUETOOTH.to_string(),
         }
     }
 
@@ -134,6 +140,7 @@ impl Script {
             Script::InstallPiper => "install_piper",
             Script::NotifyWatcher => "notify_watcher",
             Script::MediaNow => "media_now",
+            Script::Bluetooth => "bluetooth",
         }
     }
 }

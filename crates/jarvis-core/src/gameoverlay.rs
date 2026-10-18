@@ -141,7 +141,7 @@ mod win {
             let mut stats = String::new();
             let mut stats_at = std::time::Instant::now() - std::time::Duration::from_secs(5);
             loop {
-                let want = crate::gamelist::options().overlay && gamemode::is_active() && gamemode::in_game_now();
+                let want = crate::gamelist::options().overlay && gamemode::is_active() && (gamemode::in_game_now() || crate::aimassist::front_any_game(&crate::aimassist::effective(&gamemode::profile_aim())).is_some());
                 if want && stats_at.elapsed() >= std::time::Duration::from_secs(1) {
                     stats = {
                         crate::gamefps::start();

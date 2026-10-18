@@ -122,6 +122,9 @@ pub struct Device {
     pub battery: Option<u8>,
     pub charging: Option<bool>,
     pub detail: String,
+    // the place the device told (latitude, longitude, accuracy in metres, when) and the network it reports; empty = nothing known
+    pub location: Option<(f64, f64, f64, u64)>,
+    pub network: String,
     pub caps: Vec<Capability>,
     // the page where the device is managed (an existing one): "system-remote", "settings", "system"
     pub manage: &'static str,
@@ -144,6 +147,10 @@ pub struct Inputs {
     pub phone_online: bool,
     pub phone_battery: Option<u8>,
     pub phone_charging: Option<bool>,
+    pub phone_location: Option<(f64, f64, f64, u64)>,
+    pub phone_net: String,
+    // is the internet reachable from this computer (None = not checked yet)
+    pub pc_internet: Option<bool>,
     pub mics: Vec<String>,
     pub mic_selected: i32,
 }
@@ -175,6 +182,8 @@ pub fn build(i: &Inputs) -> Vec<Device> {
         battery: i.battery.map(|b| b.0),
         charging: i.battery.map(|b| b.1),
         detail: "Здесь запущен Jarvis (центральное приложение)".into(),
+        location: None,
+        network: match i.pc_internet { Some(true) => "интернет есть".into(), Some(false) => "нет интернета".into(), None => String::new() },
         caps: pc_caps,
         manage: "system",
     });
@@ -203,12 +212,14 @@ pub fn build(i: &Inputs) -> Vec<Device> {
             battery: if live { i.phone_battery } else { None },
             charging: if live { i.phone_charging } else { None },
             detail,
+            location: if live { i.phone_location } else { None },
+            network: if live { i.phone_net.clone() } else { String::new() },
             caps: vec![
                 cap("Команды с телефона", if live { Cap::Available } else { Cap::Unavailable }, "через пульт, с секретной ссылкой"),
                 cap("Найти телефон (звуковой сигнал)", if live { Cap::Available } else { Cap::Unavailable }, "работает, пока страница пульта открыта на телефоне"),
                 cap("Ссылка или текст на телефон", if live { Cap::Available } else { Cap::Unavailable }, ""),
                 cap("Заряд батареи", if live && i.phone_battery.is_some() { Cap::Available } else { Cap::NoData }, if live && i.phone_battery.is_none() { "браузер телефона не сообщает" } else { "" }),
-                cap("Местоположение телефона", Cap::NotSupported, "пульт его не передаёт"),
+                cap("Местоположение телефона", if live && i.phone_location.is_some() { Cap::Available } else { Cap::NeedsPermission }, if live && i.phone_location.is_some() { "на карте ниже" } else { "включите «Показывать, где телефон» на странице пульта (нужна защищённая ссылка https)" }),
                 cap("Камера, микрофон и экран телефона", Cap::NotSupported, "удалённого доступа нет"),
             ],
             manage: "system-remote",
@@ -228,6 +239,8 @@ pub fn build(i: &Inputs) -> Vec<Device> {
             user: None,
             battery: None,
             charging: None,
+            location: None,
+            network: String::new(),
             detail: if chosen { "Выбран для ввода звука".into() } else if i.mic_selected < 0 && n == 0 { "Ввод звука: системное устройство по умолчанию".into() } else { "Можно выбрать для ввода звука в настройках".into() },
             caps: vec![
                 cap("Ввод звука (микрофон)", Cap::Available, if chosen { "выбран" } else { "" }),
@@ -257,6 +270,8 @@ pub fn to_json(list: &[Device]) -> Value {
             "battery": d.battery,
             "charging": d.charging,
             "detail": d.detail,
+            "network": d.network,
+            "location": d.location.map(|(lat, lon, acc, at)| json!({ "lat": lat, "lon": lon, "accuracy": acc, "at": at })),
             "manage": d.manage,
             "caps": d.caps.iter().map(|c| json!({ "label": c.label, "state": c.state.key(), "state_label": c.state.label(), "note": c.note })).collect::<Vec<_>>(),
         }))
@@ -282,9 +297,110 @@ pub fn gather() -> Inputs {
         phone_online: phone["online"].as_bool().unwrap_or(false),
         phone_battery: phone["battery"].as_u64().map(|b| b.min(100) as u8),
         phone_charging: phone["charging"].as_bool(),
+        phone_location: phone["location"].as_object().and_then(|l| Some((l.get("lat")?.as_f64()?, l.get("lon")?.as_f64()?, l.get("accuracy")?.as_f64().unwrap_or(0.0), l.get("at")?.as_u64()?))),
+        phone_net: phone["net"].as_str().unwrap_or("").to_string(),
+        pc_internet: internet_now(),
         mics,
         mic_selected: crate::DB.get().map(|d| d.read().microphone).unwrap_or(-1),
     }
+}
+
+// is the internet there: one short connection to a public address, checked at most every 15 seconds in the background (the page never waits)
+fn internet_now() -> Option<bool> {
+    static LAST: once_cell::sync::Lazy<parking_lot::Mutex<(Option<std::time::Instant>, Option<bool>)>> = once_cell::sync::Lazy::new(|| parking_lot::Mutex::new((None, None)));
+    let mut g = LAST.lock();
+    let stale = g.0.map(|t| t.elapsed() > std::time::Duration::from_secs(15)).unwrap_or(true);
+    if stale {
+        g.0 = Some(std::time::Instant::now());
+        std::thread::spawn(|| {
+            use std::net::ToSocketAddrs;
+            let ok = "1.1.1.1:443".to_socket_addrs().ok().and_then(|mut a| a.next()).map(|a| std::net::TcpStream::connect_timeout(&a, std::time::Duration::from_millis(1500)).is_ok()).unwrap_or(false);
+            LAST.lock().1 = Some(ok);
+        });
+    }
+    g.1
+}
+
+// ---- adding devices: what is around (read only: Jarvis does not pair or control them) ----
+// «arp -a»: the lines «  192.168.1.5   aa-bb-cc-dd-ee-ff   dynamic» -> (address, hardware address); broadcast and multicast entries are left out
+pub fn parse_arp(text: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 3 || !parts[2].eq_ignore_ascii_case("dynamic") && !parts[2].eq_ignore_ascii_case("динамический") {
+            continue;
+        }
+        let ip = parts[0];
+        let mac = parts[1].to_lowercase();
+        let octets: Vec<u32> = ip.split('.').filter_map(|o| o.parse().ok()).collect();
+        let ip_ok = octets.len() == 4 && octets.iter().all(|o| *o <= 255) && octets[3] != 255 && !(224..=239).contains(&octets[0]);
+        let mac_ok = mac.len() == 17 && mac.split('-').count() == 6 && mac.split('-').all(|b| b.len() == 2 && b.chars().all(|c| c.is_ascii_hexdigit())) && mac != "ff-ff-ff-ff-ff-ff";
+        if ip_ok && mac_ok {
+            out.push((ip.to_string(), mac));
+        }
+    }
+    out
+}
+
+// the devices of the local network (the table of addresses of Windows: those that talked to this computer lately)
+pub fn lan_devices() -> Result<Vec<(String, String)>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        let o = std::process::Command::new("arp").arg("-a").creation_flags(0x0800_0000).stdin(std::process::Stdio::null()).output().map_err(|e| e.to_string())?;
+        Ok(parse_arp(&String::from_utf8_lossy(&o.stdout)))
+    }
+    #[cfg(not(target_os = "windows"))]
+    Err("только в Windows".into())
+}
+
+// the Bluetooth devices Windows knows: «name|status» lines
+pub fn parse_bluetooth(text: &str) -> Vec<(String, String)> {
+    let mut seen = std::collections::HashSet::new();
+    text.lines()
+        .filter_map(|l| l.trim().split_once('|'))
+        .map(|(n, st)| (n.trim().to_string(), st.trim().to_string()))
+        // the adapters and the services of Windows are not devices of the user
+        .filter(|(n, _)| !n.is_empty() && n.len() < 80 && !n.to_lowercase().contains("enumerator") && !n.to_lowercase().contains("transport") && !n.to_lowercase().contains("adapter") && !n.to_lowercase().contains("radio") && !n.to_lowercase().contains("generic"))
+        .filter(|(n, _)| seen.insert(n.to_lowercase()))
+        .collect()
+}
+
+pub fn bluetooth_devices() -> Result<Vec<(String, String)>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::io::Read;
+        use std::os::windows::process::CommandExt;
+        let mut child = crate::psrun::command(crate::psrun::Script::Bluetooth, &[], crate::psrun::Way::default())?
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .creation_flags(0x0800_0000)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        let mut out = child.stdout.take().ok_or("нет вывода")?;
+        let reader = std::thread::spawn(move || {
+            let mut b = Vec::new();
+            let _ = out.read_to_end(&mut b);
+            b
+        });
+        let t0 = std::time::Instant::now();
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) if t0.elapsed() > std::time::Duration::from_secs(20) => {
+                    let _ = child.kill();
+                    return Err("Windows не ответила за 20 секунд".into());
+                }
+                Ok(None) => std::thread::sleep(std::time::Duration::from_millis(100)),
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+        let bytes = reader.join().unwrap_or_default();
+        Ok(parse_bluetooth(&String::from_utf8_lossy(&bytes)))
+    }
+    #[cfg(not(target_os = "windows"))]
+    Err("только в Windows".into())
 }
 
 pub fn json() -> Value {
@@ -355,9 +471,13 @@ mod tests {
         assert_eq!((p.status, p.battery), (Status::Online, None));
         assert_eq!(state(p, "Заряд батареи"), Cap::NoData, "the browser did not send the charge");
         assert_eq!(state(p, "Найти телефон (звуковой сигнал)"), Cap::Available);
-        for unsupported in ["Местоположение телефона", "Камера, микрофон и экран телефона"] {
-            assert_eq!(state(p, unsupported), Cap::NotSupported, "{} must not pretend to work", unsupported);
-        }
+        assert_eq!(state(p, "Камера, микрофон и экран телефона"), Cap::NotSupported, "must not pretend to work");
+        // the place is offered, but it needs the permission of the phone's owner on the page, and it is not shown until it comes
+        assert_eq!(state(p, "Местоположение телефона"), Cap::NeedsPermission);
+        assert!(p.location.is_none());
+        let with_place = &build(&Inputs { phone_location: Some((41.3, 69.2, 20.0, 9_999)), phone_net: "wifi".into(), ..on.clone() })[1];
+        assert_eq!(state(with_place, "Местоположение телефона"), Cap::Available);
+        assert_eq!((with_place.location.map(|l| (l.0, l.1)), with_place.network.as_str()), (Some((41.3, 69.2)), "wifi"));
         let p2 = &build(&Inputs { phone_battery: Some(80), phone_charging: Some(false), ..on })[1];
         assert_eq!((p2.battery, p2.charging), (Some(80), Some(false)));
     }
@@ -389,5 +509,13 @@ mod tests {
         for k in [Kind::Pc, Kind::Laptop, Kind::Phone, Kind::Tablet, Kind::Audio, Kind::Other] {
             assert!(!k.key().is_empty() && !k.label().is_empty());
         }
+    }
+
+    #[test]
+    fn the_network_and_bluetooth_lists_keep_only_real_devices() {
+        let arp = "Интерфейс: 192.168.1.4 --- 0x5\n  адрес в Интернете      Физический адрес      Тип\n  192.168.1.1           AA-BB-CC-DD-EE-01     динамический\n  192.168.1.9           aa-bb-cc-dd-ee-09     dynamic\n  192.168.1.255         ff-ff-ff-ff-ff-ff     static\n  224.0.0.22            01-00-5e-00-00-16     static\n  300.1.1.1             aa-bb-cc-dd-ee-10     dynamic\n  10.0.0.2              zz-bb-cc-dd-ee-11     dynamic\n";
+        assert_eq!(parse_arp(arp), vec![("192.168.1.1".to_string(), "aa-bb-cc-dd-ee-01".to_string()), ("192.168.1.9".to_string(), "aa-bb-cc-dd-ee-09".to_string())]);
+        let bt = "JBL Flip 5|OK\nMicrosoft Bluetooth Enumerator|OK\nIntel Wireless Bluetooth Adapter|OK\nJBL Flip 5|OK\nMi Band 6|Unknown\n\nrubbish line\n";
+        assert_eq!(parse_bluetooth(bt), vec![("JBL Flip 5".to_string(), "OK".to_string()), ("Mi Band 6".to_string(), "Unknown".to_string())]);
     }
 }

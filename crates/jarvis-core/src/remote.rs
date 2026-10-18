@@ -78,6 +78,10 @@ struct Phone {
     voice: String,
     voice_error: String,
     ringing: bool,
+    // where the phone is (only when its owner switched the sharing on in the page): latitude, longitude, accuracy in metres, when (seconds)
+    location: Option<(f64, f64, f64, u64)>,
+    // the network the phone reports: "wifi", "4g", "offline" … (what the browser says, nothing more)
+    net: String,
 }
 
 struct Msg {
@@ -108,6 +112,8 @@ pub fn phone_json() -> serde_json::Value {
         "voice": p.voice,
         "voice_error": p.voice_error,
         "ringing": p.ringing && phone_online(&p, now),
+        "location": p.location.map(|(lat, lon, acc, at)| serde_json::json!({ "lat": lat, "lon": lon, "accuracy": acc, "at": at })),
+        "net": p.net,
     })
 }
 
@@ -245,6 +251,15 @@ fn phone_state(body: &str) -> bool {
     p.ringing = v.get("ringing").and_then(|c| c.as_bool()).unwrap_or(false);
     p.voice = short("voice");
     p.voice_error = short("voice_error");
+    p.net = short("net").chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').take(16).collect();
+    // the place: only real numbers in the real ranges; a page that stopped sharing sends none and the old place is dropped
+    p.location = match (v.get("lat").and_then(|x| x.as_f64()), v.get("lon").and_then(|x| x.as_f64())) {
+        (Some(lat), Some(lon)) if (-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon) => {
+            let acc = v.get("acc").and_then(|x| x.as_f64()).filter(|a| a.is_finite() && *a >= 0.0).unwrap_or(0.0).min(100_000.0);
+            Some((lat, lon, acc, now_secs()))
+        }
+        _ => None,
+    };
     true
 }
 
@@ -1328,6 +1343,7 @@ const PAGE: &str = r#"<!doctype html>
     <section id="g-phone"><h2>Телефон</h2>
       <div class="row"><div>Заряд<small id="p-note">обновляется при подключении</small></div><b id="p-bat">—</b></div>
       <section id="g-find" style="margin:0"><div class="row"><div>Сигнал «Найти телефон»<small id="snd-note">Нажмите один раз: потом компьютер сможет позвать телефон командой «Найди телефон».</small></div><button class="btn" id="snd" type="button">🔔 Разрешить</button></div></section>
+      <div class="row"><div>Показывать, где телефон<small id="loc-note">на компьютере в разделе «Устройства» появится карта. Включайте, только если хотите искать телефон</small></div><input type="checkbox" id="loc"></div>
       <label class="row" id="wl-row" style="display:none"><div>Не гасить экран<small>пока открыт пульт</small></div><input type="checkbox" id="wl"></label>
     </section>
   </div>
@@ -1440,10 +1456,13 @@ async function poll() {
 $('c-retry').onclick = () => { failures = 0; $('c-state').textContent = 'проверяю…'; $('c-state').className = ''; poll(); reportSoon(); };
 
 // ---------- what the phone tells the computer: battery, screen, voice ----------
-let battery = null, reportTimer = null;
+let battery = null, reportTimer = null, place = null, geoWatch = null;
 const state = { voice: 'off', voice_error: '' };
 async function report() {
-  const body = { battery: battery ? battery.level : null, charging: battery ? battery.charging : null,
+  const conn = navigator.connection || {};
+  const net = navigator.onLine === false ? 'offline' : (conn.type || conn.effectiveType || 'online');
+  const body = { battery: battery ? battery.level : null, charging: battery ? battery.charging : null, net: net,
+    lat: place ? place.lat : null, lon: place ? place.lon : null, acc: place ? place.acc : null,
     visible: document.visibilityState === 'visible', ringing: ringing, voice: state.voice, voice_error: state.voice_error };
   try { await fetchT('/state', {method:'POST', headers:{'X-Token':token, 'Content-Type':'application/json'}, body: JSON.stringify(body)}); } catch (e) {}
 }
@@ -1457,6 +1476,17 @@ function showBattery() {
 }
 if (navigator.getBattery) navigator.getBattery().then(b => { battery = b; b.onlevelchange = b.onchargingchange = showBattery; showBattery(); }).catch(() => { $('p-note').textContent = 'Браузер не сообщает заряд.'; });
 else $('p-note').textContent = 'Этот браузер не сообщает заряд (умеет Chrome на Android).';
+
+// the place of the phone: only while the switch is on (the browser asks for the permission itself; it needs the protected page)
+$('loc').onchange = () => {
+  if (geoWatch !== null) { navigator.geolocation.clearWatch(geoWatch); geoWatch = null; }
+  place = null;
+  if (!$('loc').checked) { $('loc-note').textContent = 'Выключено: место не передаётся.'; reportSoon(); return; }
+  if (!navigator.geolocation || !window.isSecureContext) { $('loc').checked = false; $('loc-note').textContent = 'Нужна защищённая страница пульта (ссылка https из раздела «Из любой сети»).'; return; }
+  $('loc-note').textContent = 'Определяю место…';
+  geoWatch = navigator.geolocation.watchPosition(p => { place = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy }; $('loc-note').textContent = 'Место передаётся (точность около ' + Math.round(p.coords.accuracy) + ' м).'; reportSoon(); },
+    e => { place = null; $('loc').checked = false; $('loc-note').textContent = 'Не удалось определить место: ' + e.message; reportSoon(); }, { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 });
+};
 
 // keep the screen on while the remote is open (Screen Wake Lock: Chrome, secure page only)
 let wakeLock = null;
@@ -1788,6 +1818,24 @@ mod tests {
 
     fn ip(s: &str) -> std::net::Ipv4Addr {
         s.parse().unwrap()
+    }
+
+    #[test]
+    fn the_place_and_the_network_of_the_phone_are_taken_only_when_they_are_real() {
+        let _g = PHONE_TEST_LOCK.lock();
+        assert!(phone_state(r#"{"net":"wifi","lat":41.3111,"lon":69.2797,"acc":25.5}"#));
+        let j = phone_json();
+        assert_eq!(j["net"], "wifi");
+        assert_eq!((j["location"]["lat"].as_f64(), j["location"]["accuracy"].as_f64()), (Some(41.3111), Some(25.5)));
+        // out of range numbers or a missing half: no place
+        assert!(phone_state(r#"{"lat":91.0,"lon":10.0}"#));
+        assert!(phone_json()["location"].is_null());
+        assert!(phone_state(r#"{"lat":10.0}"#));
+        assert!(phone_json()["location"].is_null());
+        // a page that stopped sharing sends none: the old place is gone
+        assert!(phone_state(r#"{"net":"<script>"}"#));
+        assert!(phone_json()["location"].is_null());
+        assert_eq!(phone_json()["net"], "script", "only letters, digits and a dash stay");
     }
 
     #[test]
