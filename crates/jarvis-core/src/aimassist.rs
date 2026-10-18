@@ -436,12 +436,13 @@ pub fn front_any_game(cfg: &AimConfig) -> Option<String> {
 
 // programs that are never a game (the browser, the desktop, a player, a messenger): the full screen of these is not the full screen of a game
 pub fn is_not_a_game(exe: &str) -> bool {
-    const NOT: [&str; 40] = [
+    const NOT: [&str; 52] = [
         "explorer.exe", "jarvis-app.exe", "chrome.exe", "msedge.exe", "firefox.exe", "opera.exe", "brave.exe", "vivaldi.exe", "browser.exe", "yandex.exe",
         "vlc.exe", "mpv.exe", "obs64.exe", "obs32.exe", "teams.exe", "zoom.exe", "slack.exe", "discord.exe", "telegram.exe", "spotify.exe",
         "code.exe", "devenv.exe", "steam.exe", "steamwebhelper.exe", "epicgameslauncher.exe", "applicationframehost.exe", "searchhost.exe",
         "shellexperiencehost.exe", "startmenuexperiencehost.exe", "lockapp.exe", "taskmgr.exe", "powerpnt.exe", "winword.exe", "excel.exe",
         "mstsc.exe", "vmware.exe", "virtualboxvm.exe", "photoshop.exe", "premiere pro.exe", "notepad.exe",
+        "potplayermini64.exe", "potplayer64.exe", "potplayer.exe", "video.ui.exe", "wmplayer.exe", "mpc-hc64.exe", "mpc-hc.exe", "kmplayer.exe", "music.ui.exe", "aimp.exe", "foobar2000.exe", "teamviewer.exe",
     ];
     let e = exe.trim().to_lowercase();
     NOT.contains(&e.as_str())
@@ -468,9 +469,8 @@ pub fn step(delta: (f32, f32), strength_pct: u32, max_step: f32) -> (i32, i32) {
 }
 
 pub fn step_dead(delta: (f32, f32), strength_pct: u32, max_step: f32, dead: f32) -> (i32, i32) {
-    let DEAD = dead;
     let dist = (delta.0 * delta.0 + delta.1 * delta.1).sqrt();
-    if dist <= DEAD || dist == 0.0 {
+    if dist <= dead || dist == 0.0 {
         return (0, 0);
     }
     let want = (dist * strength_pct as f32 / 100.0).clamp(1.0, max_step);

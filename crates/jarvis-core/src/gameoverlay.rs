@@ -139,9 +139,15 @@ mod win {
             let mut shown = false;
             let mut last = String::new();
             let mut stats = String::new();
+            // (a program in the full screen is looked for twice a second, not at every turn of the loop)
+            let (mut any_game, mut any_at) = (false, std::time::Instant::now() - std::time::Duration::from_secs(5));
             let mut stats_at = std::time::Instant::now() - std::time::Duration::from_secs(5);
             loop {
-                let want = crate::gamelist::options().overlay && gamemode::is_active() && (gamemode::in_game_now() || crate::aimassist::front_any_game(&crate::aimassist::effective(&gamemode::profile_aim())).is_some());
+                if any_at.elapsed() >= std::time::Duration::from_millis(500) {
+                    any_game = crate::aimassist::front_any_game(&crate::aimassist::effective(&gamemode::profile_aim())).is_some();
+                    any_at = std::time::Instant::now();
+                }
+                let want = crate::gamelist::options().overlay && gamemode::is_active() && (gamemode::in_game_now() || any_game);
                 if want && stats_at.elapsed() >= std::time::Duration::from_secs(1) {
                     stats = {
                         crate::gamefps::start();

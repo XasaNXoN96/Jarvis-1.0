@@ -245,6 +245,17 @@ pub fn load_from(path: &std::path::Path) -> UiSettings {
     s
 }
 
+// the settings file was replaced (a restored backup): the program works with the new content from now on, not with the old one in memory
+pub fn reload() {
+    if let Some(p) = file("ui_settings.json") {
+        let fresh = load_from(&p);
+        let hotkey = fresh.hotkey.clone();
+        *SETTINGS.lock() = fresh;
+        crate::hotkey::apply(&hotkey);
+        crate::notify::ext_apply();
+    }
+}
+
 pub fn add_load_problem(text: &str) {
     let mut p = LOAD_PROBLEM.lock();
     if !p.is_empty() {

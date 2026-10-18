@@ -327,7 +327,9 @@ pub fn parse_arp(text: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for line in text.lines() {
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 3 || !parts[2].eq_ignore_ascii_case("dynamic") && !parts[2].eq_ignore_ascii_case("динамический") {
+        // (the word of the type depends on the language of Windows: everything but the fixed entries is taken)
+        let kind = parts.get(2).map(|k| k.to_lowercase()).unwrap_or_default();
+        if parts.len() < 3 || kind.starts_with("stat") || kind.starts_with("стат") || kind.starts_with("invalid") {
             continue;
         }
         let ip = parts[0];

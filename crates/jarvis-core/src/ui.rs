@@ -322,7 +322,10 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         // the backup of the settings in one file (without secrets) and back
         "backup_export" => json!({ "ok": true, "backup": crate::backup::export() }),
         "backup_import" => match crate::backup::import(body.get("backup").unwrap_or(&json!(null))) {
-            Ok(n) => json!({ "ok": true, "message": format!("Настройки восстановлены ({} файл.). Перезапустите Jarvis, чтобы все применились.", n) }),
+            Ok(n) => {
+                crate::uistate::reload();
+                json!({ "ok": true, "message": format!("Настройки восстановлены ({} файл.). Часть из них (список игр, макросы) применится после перезапуска Jarvis.", n) })
+            }
             Err(e) => json!({ "ok": false, "message": e }),
         },
         // Esc of the window: the voice stops at once (the phrase that is read and the ones waiting in the queue)

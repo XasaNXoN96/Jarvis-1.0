@@ -1804,12 +1804,12 @@ async function appsLoad() {
 }
 // the kinds of programs (by the name and the program file; the server only knows where an entry came from)
 const AP_KINDS = [
-  ['office', 'Офис', /\b(word|excel|powerpoint|outlook|onenote|access|publisher|libreoffice|openoffice|wps|acrobat|reader|foxit|onlyoffice|visio|project|notion|sumatra|calc|writer|impress)\b/i],
-  ['music', 'Музыка', /(spotify|aimp|foobar|itunes|winamp|musicbee|yandex ?music|яндекс ?музык|deezer|tidal|vk ?music|groove|audacity|fl studio|ableton|reaper|cubase)/i],
-  ['photo', 'Фото', /(photoshop|lightroom|gimp|paint|irfan|xnview|photos|фото|affinity|krita|inkscape|illustrator|snipping|ножницы|faststone|picasa|lightshot)/i],
-  ['video', 'Видео', /(vlc|premiere|davinci|resolve|obs|potplayer|kmplayer|mpc|media player|movies|кино|filmora|vegas|after effects|camtasia|shotcut|handbrake|ffmpeg|capcut|youtube|netflix|twitch)/i],
-  ['games', 'Игры', /(steam|epic games|gog galaxy|battle\.net|origin|ubisoft|uplay|ea app|xbox|rockstar|minecraft|launcher|wargaming|riot|valorant)/i],
-  ['web', 'Интернет', /(chrome|edge|firefox|opera|brave|vivaldi|yandex|яндекс|browser|telegram|discord|skype|zoom|teams|whatsapp|viber|slack|thunderbird)/i]
+  ['office', 'Офис', /\b(word|excel|powerpoint|outlook|onenote|publisher|libreoffice|openoffice|wps|acrobat|foxit|onlyoffice|visio|sumatra)\b/i],
+  ['music', 'Музыка', /(spotify|\baimp|foobar|itunes|winamp|musicbee|yandex ?music|яндекс ?музык|deezer|\btidal|vk ?music|\bgroove|audacity|fl studio|ableton|\breaper|cubase)/i],
+  ['photo', 'Фото', /(photoshop|lightroom|\bgimp|\bpaint\b|irfan|xnview|\bphotos\b|фото|affinity|\bkrita|inkscape|illustrator|snipping|ножницы|faststone|picasa|lightshot)/i],
+  ['video', 'Видео', /(\bvlc|premiere|davinci|\bobs\b|potplayer|kmplayer|\bmpc|media player|\bmovies|кино|filmora|\bvegas|after effects|camtasia|shotcut|handbrake|ffmpeg|capcut|youtube|netflix|twitch)/i],
+  ['games', 'Игры', /(\bsteam|epic games|gog galaxy|battle\.net|\borigin\b|ubisoft|uplay|\bea app|\bxbox|rockstar|minecraft|\blauncher|wargaming|\briot\b|valorant)/i],
+  ['web', 'Интернет', /(chrome|\bedge\b|firefox|\bopera\b|\bbrave\b|vivaldi|yandex|яндекс|browser|telegram|discord|skype|\bzoom\b|\bteams\b|whatsapp|viber|\bslack\b|thunderbird)/i]
 ];
 const AP_TABS = [['all', 'Все'], ['new', 'Новые'], ['user', 'Установленные'], ['system', 'Системные'], ['office', 'Офис'], ['music', 'Музыка'], ['photo', 'Фото'], ['video', 'Видео'], ['games', 'Игры'], ['web', 'Интернет']];
 let apTab = 'all';
@@ -2826,6 +2826,10 @@ const pal = (() => {
   const build = q => {
     const all = [...document.querySelectorAll('nav button[data-page]')].map(b => ({ name: b.querySelector('span:last-of-type').textContent, hint: 'раздел', run: () => show(b.dataset.page) }));
     all.push({ name: 'Во весь экран / окно', hint: 'Alt+Enter', run: () => winFullToggle() });
+    all.push({ name: 'Игры: помощь прицела', hint: 'настройки', run: () => { show('games'); const b = document.querySelector('#gp-tabs button[data-gt="aim"]'); if (b) b.click(); } });
+    all.push({ name: 'Скопировать отчёт прицела', hint: 'действие', run: () => { const b = $('#gp-aim-report'); if (b) b.click(); } });
+    all.push({ name: 'Остановить речь', hint: 'Esc', run: () => { action('tts_stop').catch(() => {}); } });
+    all.push({ name: 'Показать тур по программе', hint: 'действие', run: () => { if (window.tourStart) window.tourStart(); } });
     const t = q.trim().toLowerCase();
     items = t ? all.filter(x => x.name.toLowerCase().includes(t)) : all;
     if (t) items.push({ name: 'Спросить Джарвиса: «' + q.trim() + '»', hint: 'Enter', run: () => { show('home'); const i = $('#h-input'); i.value = q.trim(); $('#h-send').click(); } });
@@ -3229,7 +3233,7 @@ $('#gp-aim-save').onclick = async () => {
   const r = await aimDo('aim_settings', { settings: { device: $('#gp-aim-device').value, side: +$('#gp-aim-side').value, fps: +$('#gp-aim-fps').value, conf: +$('#gp-aim-conf').value, min_size: +$('#gp-aim-min').value, max_size: +$('#gp-aim-max').value, cx: +$('#gp-aim-cx').value, cy: +$('#gp-aim-cy').value, auto_cross: $('#gp-aim-auto').checked, strength: +$('#gp-aim-strength').value, max_step: +$('#gp-aim-step').value, dead: +$('#gp-aim-dead').value, max_aspect: +$('#gp-aim-aspect').value, collect: $('#gp-aim-collect').checked, trigger: $('#gp-aim-trigger').value.trim() || 'rmb', any_game: $('#gp-aim-any').checked } });
   if (r.ok) AIM.loaded = false;
 };
-$('#gp-aim-savegame2').onclick = () => aimDo('aim_settings', { for_game: true, settings: { cx: +$('#gp-aim-cx').value, cy: +$('#gp-aim-cy').value, strength: +$('#gp-aim-strength').value, max_step: +$('#gp-aim-step').value, dead: +$('#gp-aim-dead').value, max_aspect: +$('#gp-aim-aspect').value, side: +$('#gp-aim-side').value } });
+$('#gp-aim-savegame2').onclick = () => aimDo('aim_settings', { for_game: true, settings: { cx: +$('#gp-aim-cx').value, cy: +$('#gp-aim-cy').value, strength: +$('#gp-aim-strength').value, max_step: +$('#gp-aim-step').value, dead: +$('#gp-aim-dead').value, max_aspect: +$('#gp-aim-aspect').value, side: +$('#gp-aim-side').value, trigger: $('#gp-aim-trigger').value.trim() || 'rmb' } });
 $('#gp-aim-savegame').onclick = () => aimDo('aim_settings', { for_game: true, settings: { cx: +$('#gp-aim-cx').value, cy: +$('#gp-aim-cy').value } });
 $('#gp-aim-snapbtn').onclick = async () => {
   const r = await aimDo('aim_snapshot');
@@ -4378,14 +4382,6 @@ show('home');
 </script>
 
 <style>
-#pal{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);display:none;align-items:flex-start;justify-content:center;padding-top:14vh}
-#pal.on{display:flex}
-#pal .box{width:min(560px,92vw);background:var(--card,#16161a);border:1px solid var(--line,#333);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.6);overflow:hidden}
-#pal input{width:100%;box-sizing:border-box;padding:14px 16px;font-size:16px;background:transparent;border:0;border-bottom:1px solid var(--line,#333);color:inherit;outline:none}
-#pal ul{list-style:none;margin:0;padding:6px;max-height:48vh;overflow:auto}
-#pal li{padding:10px 12px;border-radius:8px;cursor:pointer;display:flex;justify-content:space-between;gap:12px}
-#pal li.sel,#pal li:hover{background:rgba(127,127,127,.2)}
-#pal li small{opacity:.6}
 #tour{position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center}
 #tour.on{display:flex}
 #tour .box{width:min(460px,90vw);background:var(--card,#16161a);border:1px solid var(--line,#333);border-radius:16px;padding:22px}
@@ -4393,42 +4389,9 @@ show('home');
 #tour p{margin:0 0 16px;line-height:1.5;opacity:.9}
 #tour .row{display:flex;justify-content:space-between;align-items:center;gap:10px}
 </style>
-<div id="pal" role="dialog" aria-label="Быстрый поиск"><div class="box"><input id="pal-q" type="text" placeholder="Куда перейти или что сделать… (Esc — закрыть)" autocomplete="off"><ul id="pal-list"></ul></div></div>
 <div id="tour" role="dialog" aria-label="Знакомство"><div class="box"><h3 id="tour-t"></h3><p id="tour-p"></p><div class="row"><small id="tour-n" style="opacity:.6"></small><span><button class="btn" id="tour-skip" type="button">Пропустить</button> <button class="btn primary" id="tour-next" type="button">Дальше</button></span></div></div></div>
 <script>
 (function () {
-  // ---- Ctrl+K: a quick search over the sections and a few actions ----
-  const items = () => {
-    const l = [];
-    Object.keys(TITLES).forEach(k => { if (PAGES.includes(k)) l.push({ t: TITLES[k][0], h: 'раздел', run: () => show(k) }); });
-    l.push({ t: 'Игры: помощь прицела', h: 'настройки', run: () => { show('games'); setTimeout(() => { const c = document.getElementById('gp-aim-card'); c && c.scrollIntoView({ behavior: 'smooth' }); }, 80); } });
-    l.push({ t: 'Скопировать отчёт прицела', h: 'действие', run: () => { const b = document.getElementById('gp-aim-report'); b && b.click(); } });
-    l.push({ t: 'Остановить речь', h: 'действие', run: () => { try { action('tts_stop', {}); } catch (e) {} } });
-    l.push({ t: 'Показать тур', h: 'действие', run: () => tourStart() });
-    return l;
-  };
-  let sel = 0, shown = [];
-  const pal = document.getElementById('pal'), q = document.getElementById('pal-q'), ul = document.getElementById('pal-list');
-  function draw() {
-    const w = q.value.trim().toLowerCase();
-    shown = items().filter(i => !w || i.t.toLowerCase().includes(w));
-    if (sel >= shown.length) sel = Math.max(0, shown.length - 1);
-    ul.innerHTML = '';
-    shown.forEach((i, n) => { const li = document.createElement('li'); li.className = n === sel ? 'sel' : ''; li.innerHTML = '<span></span><small></small>'; li.firstChild.textContent = i.t; li.lastChild.textContent = i.h; li.onclick = () => run(n); ul.appendChild(li); });
-  }
-  function run(n) { const i = shown[n]; palClose(); if (i) i.run(); }
-  function palOpen() { pal.classList.add('on'); q.value = ''; sel = 0; draw(); setTimeout(() => q.focus(), 0); }
-  function palClose() { pal.classList.remove('on'); }
-  q.addEventListener('input', () => { sel = 0; draw(); });
-  q.addEventListener('keydown', e => {
-    if (e.key === 'ArrowDown') { sel = Math.min(shown.length - 1, sel + 1); draw(); e.preventDefault(); }
-    else if (e.key === 'ArrowUp') { sel = Math.max(0, sel - 1); draw(); e.preventDefault(); }
-    else if (e.key === 'Enter') { run(sel); e.preventDefault(); }
-    else if (e.key === 'Escape') { palClose(); e.preventDefault(); e.stopPropagation(); }
-  });
-  pal.addEventListener('mousedown', e => { if (e.target === pal) palClose(); });
-  document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K' || e.key === 'л' || e.key === 'Л')) { e.preventDefault(); pal.classList.contains('on') ? palClose() : palOpen(); } }, true);
-
   // ---- the tour of the first start ----
   const steps = [
     ['Это Jarvis', 'Скажите «Джарвис» и команду, или напишите её внизу главной страницы. Сфера показывает, что он слушает и говорит.'],
