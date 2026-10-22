@@ -222,6 +222,7 @@
       <div class="row"><div>Связь с компьютером<small>последнее соединение: <span id="c-last">—</span></small></div><b id="c-state">проверяю…</b></div>
       <div class="dim" id="c-err"></div>
       <button class="btn wide" id="c-retry" type="button">Переподключиться</button>
+      <button class="btn wide" id="c-change" type="button" hidden>Сменить компьютер</button>
       <div class="dim">Пульт работает, пока эта страница открыта на экране: свёрнутый браузер телефон усыпляет.</div>
     </section>
     <section id="g-voicepick"><h2>Голос Джарвиса</h2>
@@ -354,6 +355,7 @@ async function poll() {
   polling = false;
   timer = setTimeout(poll, failures ? Math.min(2000 * (failures + 1), 10000) : 2000);
 }
+if (window.JarvisAndroid) { $('c-change').hidden = false; $('c-change').onclick = () => window.JarvisAndroid.changeComputer(); }
 $('c-retry').onclick = () => { failures = 0; $('c-state').textContent = 'проверяю…'; $('c-state').className = ''; poll(); reportSoon(); };
 
 // ---------- what the phone tells the computer: battery, screen, voice ----------
@@ -375,7 +377,10 @@ function showBattery() {
   $('p-bat').textContent = Math.round(battery.level * 100) + '%' + (battery.charging ? ' ⚡ заряжается' : '');
   reportSoon();
 }
-if (navigator.getBattery) navigator.getBattery().then(b => { battery = b; b.onlevelchange = b.onchargingchange = showBattery; showBattery(); }).catch(() => { $('p-note').textContent = 'Браузер не сообщает заряд.'; });
+if (window.JarvisAndroid) {
+  const readBat = () => { try { const j = JSON.parse(window.JarvisAndroid.battery()); if (typeof j.level === 'number') { battery = { level: j.level, charging: !!j.charging }; showBattery(); } } catch (e) {} };
+  readBat(); setInterval(readBat, 30000);
+} else if (navigator.getBattery) navigator.getBattery().then(b => { battery = b; b.onlevelchange = b.onchargingchange = showBattery; showBattery(); }).catch(() => { $('p-note').textContent = 'Браузер не сообщает заряд.'; });
 else $('p-note').textContent = 'Этот браузер не сообщает заряд (умеет Chrome на Android).';
 
 // the place of the phone: only while the switch is on (the browser asks for the permission itself; it needs the protected page)
@@ -392,8 +397,8 @@ $('loc').onchange = () => {
 // keep the screen on while the remote is open (Screen Wake Lock: Chrome, secure page only)
 let wakeLock = null;
 async function keepAwake() { if ($('wl').checked && 'wakeLock' in navigator && !wakeLock) { try { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.onrelease = () => { wakeLock = null; }; } catch (e) { $('c-err').textContent = 'Не удалось держать экран включённым: ' + e.message; $('wl').checked = false; } } }
-if ('wakeLock' in navigator && window.isSecureContext) $('wl-row').style.display = 'flex';
-$('wl').onchange = () => { if ($('wl').checked) keepAwake(); else if (wakeLock) wakeLock.release(); };
+if (window.JarvisAndroid || ('wakeLock' in navigator && window.isSecureContext)) $('wl-row').style.display = 'flex';
+$('wl').onchange = () => { if (window.JarvisAndroid) { window.JarvisAndroid.keepScreenOn($('wl').checked); return; } if ($('wl').checked) keepAwake(); else if (wakeLock) wakeLock.release(); };
 
 // ---------- messages from the computer ----------
 let audio = null, ringing = false, ringTimer = null;
@@ -576,7 +581,21 @@ document.querySelectorAll('#hi-seg button').forEach(b => b.onclick = () => { hiD
 // ---------- voice: the browser listens through the phone microphone and sends the recognized text ----------
 // Browsers allow the microphone only on secure pages (https); on plain http over Wi-Fi it may be refused.
 const micBtn = $('mic'), heard = $('heard');
-const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+// inside the Android application (JarvisAndroid.apk) the speech recognizer of the phone is used through the bridge of the application
+const ANDROID = window.JarvisAndroid || null;
+class NativeSR {
+  constructor() { this.lang = 'ru-RU'; this.onresult = this.onerror = this.onend = null; }
+  start() { NativeSR.cur = this; ANDROID.listen(this.lang); }
+  stop() { ANDROID.stopListening(); }
+  abort() { ANDROID.stopListening(); }
+}
+if (ANDROID) {
+  window.onNativeSpeech = (text, final) => { const r = NativeSR.cur; if (!r || !r.onresult) return; const item = [{ transcript: text }]; item.isFinal = !!final; r.onresult({ results: [item] }); };
+  window.onNativeSpeechError = code => { const r = NativeSR.cur; if (r && r.onerror) r.onerror({ error: code }); };
+  window.onNativeSpeechEnd = () => { const r = NativeSR.cur; NativeSR.cur = null; if (r && r.onend) r.onend(); };
+}
+const SR = ANDROID ? NativeSR : (window.SpeechRecognition || window.webkitSpeechRecognition);
+const SECURE = window.isSecureContext || !!ANDROID;
 let rec = null, wantVoice = false, speakingHere = false;
 // the https address of the same computer and port; the secret goes after # (never sent to a server, removed at once)
 $('to-https').onclick = () => { location.href = 'https://' + location.host + '/#t=' + encodeURIComponent(token); };
@@ -591,12 +610,12 @@ function voice(st, err) {
   if (err) heard.textContent = err;
   reportSoon();
 }
-if (!window.isSecureContext) { voice('unavailable', 'Голос: нужна защищённая страница пульта (кнопка ниже). Текстом всё работает.'); }
+if (!SECURE) { voice('unavailable', 'Голос: нужна защищённая страница пульта (кнопка ниже). Текстом всё работает.'); }
 else if (!SR) { voice('unavailable', 'Этот браузер не умеет распознавать речь. Используйте Chrome или микрофон на клавиатуре.'); }
 function listen() {
   // the lock to the voice of the owner (or the user's choice): the computer recognizes the speech, not the browser
   if (usePc()) { pcListen(); return; }
-  if (!window.isSecureContext) { $('help').style.display = 'block'; voice('unavailable', 'Браузер не разрешает микрофон на этой странице. Откройте защищённую страницу (ниже).'); wantVoice = false; return; }
+  if (!SECURE) { $('help').style.display = 'block'; voice('unavailable', 'Браузер не разрешает микрофон на этой странице. Откройте защищённую страницу (ниже).'); wantVoice = false; return; }
   if (!SR) { voice('unavailable', 'Браузер не умеет слушать. Нажмите значок микрофона на клавиатуре в поле команды.'); wantVoice = false; return; }
   rec = new SR(); rec.lang = navigator.language && !/^ru/i.test(navigator.language) && /^(en|uk)/i.test(navigator.language) ? navigator.language : 'ru-RU'; rec.interimResults = true; rec.continuous = false;
   micBtn.classList.add('on'); heard.textContent = 'Слушаю… (нажмите на сферу, чтобы остановить)'; voice('listening');

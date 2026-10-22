@@ -56,3 +56,7 @@ tree.txt
 
 # runtime state of command scripts (written while Jarvis or the tests run)
 .state.json
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties

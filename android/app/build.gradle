@@ -1,0 +1,40 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'app.jarvis.remote'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'app.jarvis.remote'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0.0'
+    }
+
+    // The APK is signed with the sideload key of the project (keystore/jarvis-sideload.jks), so a new build installs OVER the old one.
+    // A real release key can be given with the environment variables JARVIS_KEYSTORE / JARVIS_KEYSTORE_PASSWORD / JARVIS_KEY_ALIAS.
+    signingConfigs {
+        release {
+            storeFile file(System.getenv('JARVIS_KEYSTORE') ?: '../keystore/jarvis-sideload.jks')
+            storePassword System.getenv('JARVIS_KEYSTORE_PASSWORD') ?: 'jarvis-sideload'
+            keyAlias System.getenv('JARVIS_KEY_ALIAS') ?: 'jarvis'
+            keyPassword System.getenv('JARVIS_KEYSTORE_PASSWORD') ?: 'jarvis-sideload'
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    lint {
+        abortOnError false
+    }
+}
