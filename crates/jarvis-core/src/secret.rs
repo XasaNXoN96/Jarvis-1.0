@@ -59,6 +59,38 @@ fn unprotect_bytes(_data: &[u8]) -> Option<Vec<u8>> {
     None
 }
 
+// ---- strict sealing of key material (the TLS key of the remote): never a silent fallback ----
+// On Windows the bytes are sealed with DPAPI or the call FAILS (no plain key on a Windows disk). Elsewhere (development and the tests on Linux)
+// the bytes are stored with the marker "plain:" and the file is made private by the caller. A sealed text is only opened by the same Windows
+// user on the same computer; another user, another computer or a damaged file is an ERROR (the caller never answers it by making a new key).
+const PLAIN: &str = "plain:";
+
+pub fn seal_bytes_strict(data: &[u8]) -> Result<String, String> {
+    if data.is_empty() {
+        return Err("нечего защищать: ключ пуст".into());
+    }
+    match protect_bytes(data) {
+        Some(blob) => Ok(format!("{}{}", PREFIX, to_hex(&blob))),
+        None if cfg!(target_os = "windows") => Err("Windows (DPAPI) не смог защитить ключ".into()),
+        None => Ok(format!("{}{}", PLAIN, to_hex(data))),
+    }
+}
+
+pub fn open_bytes_strict(stored: &str) -> Result<Vec<u8>, String> {
+    let stored = stored.trim();
+    if let Some(hex) = stored.strip_prefix(PREFIX) {
+        let blob = from_hex(hex).ok_or("файл ключа повреждён")?;
+        return unprotect_bytes(&blob).ok_or_else(|| "Windows не смог открыть ключ (другой пользователь или другой компьютер, либо файл повреждён)".to_string());
+    }
+    if let Some(hex) = stored.strip_prefix(PLAIN) {
+        if cfg!(target_os = "windows") {
+            return Err("на Windows ключ должен быть защищён DPAPI, а в файле открытый ключ".into());
+        }
+        return from_hex(hex).ok_or_else(|| "файл ключа повреждён".to_string());
+    }
+    Err("неизвестный формат файла ключа".into())
+}
+
 // text for the settings file
 pub fn seal(secret: &str) -> String {
     if secret.is_empty() {
@@ -88,5 +120,17 @@ mod tests {
         assert_eq!(open("plain-key"), "plain-key");
         assert_eq!(open("dpapi:zz"), "");
         assert_eq!(seal(""), "");
+    }
+
+    #[test]
+    fn key_material_is_sealed_strictly_and_a_bad_file_is_an_error_not_an_empty_key() {
+        assert!(seal_bytes_strict(&[]).is_err());
+        let sealed = seal_bytes_strict(&[1, 2, 3, 250]).unwrap();
+        // (on Linux the development marker, on Windows a DPAPI blob; both open to the same bytes)
+        assert_eq!(open_bytes_strict(&sealed).unwrap(), vec![1, 2, 3, 250]);
+        assert_eq!(open_bytes_strict(&format!("  {}\n", sealed)).unwrap(), vec![1, 2, 3, 250], "whitespace around the text is harmless");
+        for bad in ["", "garbage", "dpapi:", "dpapi:zz", "dpapi:0102", "plain:zz", "plain:1"] {
+            assert!(open_bytes_strict(bad).is_err(), "«{}» must be an error", bad);
+        }
     }
 }

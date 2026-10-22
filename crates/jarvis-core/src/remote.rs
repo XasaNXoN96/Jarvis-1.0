@@ -652,8 +652,10 @@ pub fn start() -> Result<String, String> {
     if is_running() {
         return Ok(url());
     }
+    // no hidden fallback to plain http: when the key of the PC cannot be stored or opened the remote does not start, and says why
     if let Err(e) = tls_current() {
-        warn!("Remote control: https is not available ({}), plain http only", e);
+        warn!("Remote control: not started, the TLS identity is not available: {}", e);
+        return Err(format!("Пульт не запущен: {}", e));
     }
     // switched off a moment ago: the old listener closes within a fraction of a second, so try again briefly
     let mut attempt = 0;
@@ -785,19 +787,35 @@ const MAX_CONNECTIONS: usize = 24;
 
 // the https setup for the current addresses of the PC: made again when they change (another Wi-Fi, a new address
 // from the router, a VPN switched on), so the certificate always names the address the phone opens
-static TLS: Lazy<Mutex<Option<(String, std::sync::Arc<rustls::ServerConfig>)>>> = Lazy::new(|| Mutex::new(None));
+static TLS: Lazy<Mutex<Option<(String, std::sync::Arc<rustls::ServerConfig>, u64)>>> = Lazy::new(|| Mutex::new(None));
+// the last problem with the TLS identity (the key or the certificate could not be stored or used); shown by the diagnostics
+static TLS_PROBLEM: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(String::new()));
+
+pub fn tls_problem() -> String {
+    TLS_PROBLEM.lock().clone()
+}
 
 fn tls_current() -> Result<std::sync::Arc<rustls::ServerConfig>, String> {
     let names = cert_names();
     let key = names.join(",");
-    if let Some((k, c)) = TLS.lock().as_ref() {
-        if *k == key {
+    let now = now_secs();
+    if let Some((k, c, not_after)) = TLS.lock().as_ref() {
+        // (the certificate is made again, with the same key, when the addresses change or when less than a month of its term is left)
+        if *k == key && *not_after > now + crate::remote_tls::RENEW_BEFORE_SECS {
             return Ok(c.clone());
         }
     }
-    let c = tls_config(&names)?;
-    *TLS.lock() = Some((key, c.clone()));
-    Ok(c)
+    match tls_config(&names) {
+        Ok((c, not_after)) => {
+            TLS_PROBLEM.lock().clear();
+            *TLS.lock() = Some((key, c.clone(), not_after));
+            Ok(c)
+        }
+        Err(e) => {
+            *TLS_PROBLEM.lock() = e.clone();
+            Err(e)
+        }
+    }
 }
 
 fn cert_names() -> Vec<String> {
@@ -987,49 +1005,24 @@ fn serve(stream: TcpStream) -> std::io::Result<()> {
     }
 }
 
-// self-signed certificate for this PC's address, kept in the config dir (renewed when the address changes)
-fn tls_config(names: &[String]) -> Result<std::sync::Arc<rustls::ServerConfig>, String> {
+// The TLS identity of this PC (remote_tls.rs): ONE long-lived key (sealed with DPAPI) and a self-signed certificate for the current
+// addresses, issued again with the same key. A key that cannot be stored or opened is an error, never a new key.
+fn tls_config(names: &[String]) -> Result<(std::sync::Arc<rustls::ServerConfig>, u64), String> {
     use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 
-    let key = names.join(",");
-    let dir = APP_CONFIG_DIR.get().cloned();
-    let (cert_path, key_path, ip_path) = match &dir {
-        Some(d) => (Some(d.join("remote_cert.der")), Some(d.join("remote_key.der")), Some(d.join("remote_cert.ip"))),
-        None => (None, None, None),
-    };
-
-    let mut cert_der: Option<Vec<u8>> = None;
-    let mut key_der: Option<Vec<u8>> = None;
-    if let (Some(c), Some(k), Some(i)) = (&cert_path, &key_path, &ip_path) {
-        if std::fs::read_to_string(i).map(|v| v.trim() == key).unwrap_or(false) {
-            cert_der = std::fs::read(c).ok();
-            key_der = std::fs::read(k).ok();
-        }
+    let (m, warning) = crate::remote_tls::material(names, now_secs())?;
+    if let Some(w) = warning {
+        warn!("Remote control: {}", w);
+        *TLS_PROBLEM.lock() = w;
     }
-    if cert_der.is_none() || key_der.is_none() {
-        let generated = rcgen::generate_simple_self_signed(names.to_vec()).map_err(|e| e.to_string())?;
-        let c = generated.cert.der().to_vec();
-        let k = generated.key_pair.serialize_der();
-        if let (Some(cp), Some(kp), Some(ip_p)) = (&cert_path, &key_path, &ip_path) {
-            let _ = std::fs::write(cp, &c);
-            let _ = std::fs::write(kp, &k);
-            let _ = std::fs::write(ip_p, &key);
-        }
-        cert_der = Some(c);
-        key_der = Some(k);
-    }
-
     let provider = std::sync::Arc::new(rustls::crypto::ring::default_provider());
     let config = rustls::ServerConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .map_err(|e| e.to_string())?
         .with_no_client_auth()
-        .with_single_cert(
-            vec![CertificateDer::from(cert_der.unwrap())],
-            PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key_der.unwrap())),
-        )
+        .with_single_cert(vec![CertificateDer::from(m.cert_der)], PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(m.key_der)))
         .map_err(|e| e.to_string())?;
-    Ok(std::sync::Arc::new(config))
+    Ok((std::sync::Arc::new(config), m.not_after))
 }
 
 // the phone can send a phrase when the queue of the program exists (it is created at the start of the program)
@@ -2145,4 +2138,9 @@ mod tests {
         }
     }
 
+}
+
+#[cfg(test)]
+pub(crate) fn tls_config_for_tests(names: &[String]) -> Result<(std::sync::Arc<rustls::ServerConfig>, u64), String> {
+    tls_config(names)
 }
