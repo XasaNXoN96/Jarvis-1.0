@@ -1,0 +1,61 @@
+name: Android key status
+
+# Reports whether the owner's own Android release key is in the protected secrets, WITHOUT building or publishing anything and WITHOUT
+# printing any secret: it only says «set / missing», checks that the key opens with its password, and compares the (public) certificate
+# fingerprint with the fingerprint of the old, compromised key of the repository. Run it from the Actions tab (Run workflow) after
+# tools/android-key/make-key.* was run. Red = the key is not in place yet (or is wrong); green = a NEW working key is set.
+on:
+  workflow_dispatch:
+  push:
+    branches: ["dev/**"]
+    paths:
+      - ".github/workflows/android-key-status.yml"
+      - "tools/android-key/**"
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Check the secrets and the key
+        shell: bash
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -u
+          missing=0
+          for n in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS; do
+            case "$n" in
+              ANDROID_KEYSTORE_BASE64) v="$KS_B64";; ANDROID_KEYSTORE_PASSWORD) v="$KS_PASS";; *) v="$KS_ALIAS";;
+            esac
+            if [ -n "$v" ]; then echo "$n: set"; else echo "$n: MISSING"; missing=1; fi
+          done
+          if [ "$missing" = 1 ]; then
+            echo "::error title=Android key not in place::The release key is not in the protected secrets yet. Run tools/android-key/make-key.sh (or make-key.ps1) once on your computer; see docs/implementation/SECURITY_FIXES.md."
+            exit 1
+          fi
+          umask 077
+          export KS_PASS="$(printf '%s' "$KS_PASS" | tr -d '\r\n')" KS_ALIAS="$(printf '%s' "$KS_ALIAS" | tr -d '\r\n')"
+          printf '%s' "$KS_B64" | base64 -d > "$RUNNER_TEMP/new.jks" || { echo "::error::ANDROID_KEYSTORE_BASE64 is not valid base64"; exit 1; }
+          fp() { sed -n 's/^[[:space:]]*SHA256:[[:space:]]*//p' | head -1; }
+          new_fp="$(keytool -list -v -keystore "$RUNNER_TEMP/new.jks" -storepass:env KS_PASS -alias "$KS_ALIAS" 2>/dev/null | fp)"
+          if [ -z "$new_fp" ]; then
+            echo "::error::The key does not open with the stored password and alias (or the alias is wrong). Nothing is printed about the secrets."
+            exit 1
+          fi
+          # the old key of the repository is public (its password is in the history), so its fingerprint is public information as well
+          old_fp="$(keytool -list -v -keystore android/keystore/jarvis-sideload.jks -storepass jarvis-sideload -alias jarvis 2>/dev/null | fp)"
+          echo "New key certificate SHA-256 (public): $new_fp"
+          echo "Old compromised key SHA-256 (public): $old_fp"
+          if [ "$new_fp" = "$old_fp" ]; then
+            echo "::error::The key in the secrets is the OLD compromised key. Make a new key."
+            exit 1
+          fi
+          echo "OK: a NEW key that is different from the compromised one is in the protected secrets and opens with its password."
+          rm -f "$RUNNER_TEMP/new.jks"

@@ -59,6 +59,8 @@ jobs:
             exit 1
           fi
           umask 077
+          # (a secret pasted or piped by hand may end with a line break: it is not part of the password)
+          KS_PASS="$(printf '%s' "$KS_PASS" | tr -d '\r\n')"; KS_ALIAS="$(printf '%s' "$KS_ALIAS" | tr -d '\r\n')"
           echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
           echo "::add-mask::$KS_PASS"
           echo "JARVIS_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
