@@ -291,6 +291,22 @@
   #page-home.big .examples, #page-home.big .howto, #page-home.big .banner { display: none !important; }
   .composer { display: flex; gap: 8px; flex-shrink: 0; padding-top: 12px; max-width: 900px; width: 100%; margin: 0 auto; }
   .composer input { flex: 1; min-width: 0; padding: 13px 18px; border-radius: 14px; border: 1px solid var(--line); background: #ffffff06; color: var(--text); font: inherit; outline: none; transition: .2s; }
+  .composer textarea { flex: 1; min-width: 0; padding: 13px 18px; border-radius: 14px; border: 1px solid var(--line); background: #ffffff06; color: var(--text); font: inherit; outline: none; transition: border-color .2s, background .2s; }
+  .composer textarea:focus { border-color: var(--line2); background: #ffffff0a; box-shadow: 0 0 0 3px #ffffff0d; }
+  .grow-in { resize: none; overflow-y: auto; line-height: 1.35; max-height: 40vh; box-sizing: border-box; }
+  #form { align-items: flex-end; } .composer { align-items: flex-end; }
+  /* the corner block «Мой ПК»: real readings every 2 s while the home page is open; «Недоступно» where Windows or the driver gives nothing */
+  .mon { padding: 8px 11px; border: 1px solid var(--line); border-radius: 14px; background: rgba(14,14,18,.72); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); font-size: 12px; }
+  .mon[hidden] { display: none; }
+  .mon .mr { display: grid; grid-template-columns: 1fr auto; gap: 1px 8px; padding: 2px 0; } .mon .mr span { opacity: .7; } .mon .mr b { font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
+  .mon .mr.na b { opacity: .45; font-weight: 400; } .mon .bar { grid-column: 1 / -1; height: 3px; border-radius: 2px; background: #ffffff14; overflow: hidden; } .mon .bar i { display: block; height: 100%; background: var(--accent); transition: width .4s; }
+  .mon .bar i.hi { background: #fbbf24; } .mon .bar i.crit { background: #f87171; }
+  @media (max-width: 1250px) { .mon { display: none; } }
+  .mem-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; } .mem-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 10px; background: #ffffff06; font-size: 13px; }
+  .mem-item span { flex: 1; min-width: 0; word-break: break-word; } .mem-item small { opacity: .6; display: block; } .ct-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; margin: 8px 0; }
+  .ct-form input, .ct-form select, #mem-new, #mem-q { padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: #ffffff06; color: var(--text); font: inherit; min-width: 0; }
+  .gm-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: #ffffff06; color: var(--text); cursor: pointer; font: inherit; font-size: 13px; }
+  .gm-chip:hover { border-color: var(--line2); } .gm-chip[aria-pressed="true"] { border-color: var(--accent); background: #ffffff14; }
   .composer input:focus { border-color: var(--line2); background: #ffffff0a; box-shadow: 0 0 0 3px #ffffff0d; }
   .composer .ib { width: 46px; border: 1px solid var(--line); border-radius: 14px; background: #ffffff06; color: var(--text); cursor: pointer; font-size: 18px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; }
   .composer .ib svg { width: 20px; height: 20px; }
@@ -581,6 +597,7 @@
   .bottom { padding: 12px 16px 10px; border-top: 1px solid var(--line); background: #0b0b0ed9; }
   form { display: flex; gap: 8px; }
   #input { flex: 1; min-width: 0; padding: 13px 16px; border-radius: 12px; border: 1px solid var(--line); background: #17171a; color: var(--text); font: inherit; outline: none; }
+  textarea#input { flex: 1; min-width: 0; padding: 13px 16px; border-radius: 12px; border: 1px solid var(--line); background: #17171a; color: var(--text); font: inherit; outline: none; }
   #input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,255,255,0.093); }
   #micbtn { width: 48px; border: 1px solid var(--line); border-radius: 12px; background: #ffffff06; color: var(--text); cursor: pointer; font-size: 18px; display: inline-flex; align-items: center; justify-content: center; } #micbtn svg { width: 20px; height: 20px; }
   #micbtn:hover { border-color: var(--accent); } #micbtn.off { color: #ff9aa6; border-color: #ff6b7a77; }
@@ -718,7 +735,6 @@
     <button data-page="builder" title="Конструктор"><span class="ei" data-ico="flow"></span><span>Конструктор</span></button>
     <button data-page="apps" title="Программы"><span class="ei" data-ico="apps"></span><span>Программы</span></button>
     <button data-page="games" title="Игры"><span class="ei">🎮</span><span>Игры</span></button>
-    <button data-page="files" title="Файлы"><span class="ei" data-ico="folder"></span><span>Файлы</span></button>
     <button data-page="devices" title="Мои устройства"><span class="ei" data-ico="phone"></span><span>Устройства</span></button>
     <button data-page="system" title="Система"><span class="ei" data-ico="cpu"></span><span>Система</span></button>
     <button data-page="diag" title="Диагностика"><span class="ei" data-ico="pulse"></span><span>Диагностика</span></button>
@@ -740,6 +756,7 @@
   <div class="pages">
     <section class="page active" id="page-home">
       <div class="h-top">
+        <button type="button" class="gm-chip" id="gm-home" aria-pressed="false" title="Голосовое управление игрой: включить / выключить"><span>🎮</span><b id="gm-home-t">Игровой режим: выкл</b></button>
         <span class="grow"></span>
         <button type="button" class="wbox" id="wbox" title="Погода: выберите город в настройках"><span class="w-main" id="w-main">Погода…</span><small id="w-city"></small></button>
         <div class="clockbox" title="Время и дата берутся с этого компьютера"><div class="clk" id="clk-time">--:--</div><div class="clk-date" id="clk-date"></div></div>
@@ -751,6 +768,7 @@
       </div>
       <!-- the state of the voice, the computer, the AI and the phone: small signs at the right edge; a click opens the panel, the sphere never moves -->
       <div class="rail" id="rail" role="group" aria-label="Состояние Джарвиса">
+        <div class="mon" id="mon" aria-label="Мой ПК: нагрузка" hidden></div>
         <button type="button" class="rb" id="hs-voice" data-k="voice" data-s="" aria-expanded="false" title="Голос"><i></i><b>Голос</b><em>…</em></button>
         <button type="button" class="rb" id="hs-pc" data-k="pc" data-s="" aria-expanded="false" title="Компьютер"><i></i><b>ПК</b><em>…</em></button>
         <button type="button" class="rb" id="hs-ai" data-k="ai" data-s="" aria-expanded="false" title="Нейросеть"><i></i><b>ИИ</b><em>…</em></button>
@@ -776,7 +794,7 @@
         </div>
       </div>
       <form class="composer" id="h-form" autocomplete="off">
-        <input id="h-input" placeholder="Напишите сообщение или команду…" autofocus>
+        <textarea id="h-input" class="grow-in" rows="1" placeholder="Напишите сообщение или команду…" autofocus></textarea>
         <button type="button" class="ib" id="h-listen" title="Говорить: Джарвис послушает одну фразу" data-ico="wave"></button>
         <button type="button" class="ib" id="h-mic" title="Микрофон"></button>
         <button type="submit" class="sb" id="h-send">Отправить</button>
@@ -1332,6 +1350,25 @@
         <div class="setrow"><div class="l">Отвечать ИИ на непонятные фразы, сказанные голосом<small>Всё, что вы напечатали и что не является командой, идёт выбранному ИИ, если он подключён. Вопросы голосом («что такое…», «объясни…») тоже. Этот переключатель добавляет к ним остальные непонятные фразы, сказанные голосом.</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="ai-fallback"><span></span></label></div></div>
       </div>
+      <div class="card" data-cat="ai" id="mem-card" data-tab="Память"><h3><span class="ei">🧠</span>Память Jarvis</h3>
+        <div class="setrow"><div class="l">Что я помню<small>Скажите «запомни, что …», «что ты помнишь про …», «забудь …». Пароли, ключи, токены и номера карт не запоминаются. Файл лежит только на этом компьютере.</small></div>
+          <div class="r"><label class="sw" title="ИИ сам предлагает запомнить важное (пока только хранит выбор)"><input type="checkbox" id="mem-auto"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Добавить запись</div><div class="r"><input type="text" id="mem-new" maxlength="500" placeholder="например: мой день рождения 5 мая"><button class="btn" id="mem-add" type="button">Запомнить</button></div></div>
+        <div class="setrow"><div class="l">Найти<small>по словам записи</small></div><div class="r"><input type="text" id="mem-q" placeholder="поиск"><button class="btn" id="mem-export" type="button">Копировать всё</button></div></div>
+        <div id="mem-list" class="mem-list"></div><div class="msgline" id="mem-msg"></div>
+      </div>
+      <div class="card" data-cat="connect" id="ct-card" data-tab="Мои контакты"><h3><span class="ei">👥</span>Мои контакты</h3>
+        <div class="setrow"><div class="l">Кому писать голосом<small>«напиши жене: буду поздно». В «Именах» перечислите слова, которыми вы называете человека (жена, любимая). Сообщение всегда ждёт вашего «да». WhatsApp и Telegram открываются с готовым текстом — «Отправить» нажимаете вы.</small></div></div>
+        <div class="ct-form">
+          <input type="text" id="ct-name" maxlength="60" placeholder="Имя"><input type="text" id="ct-alias" maxlength="120" placeholder="Имена через запятую: жена, Малика">
+          <input type="text" id="ct-phone" maxlength="20" placeholder="Телефон 998901234567"><input type="text" id="ct-tg" maxlength="40" placeholder="Telegram без @">
+          <select id="ct-pref"><option value="">Канал: спросить</option><option value="telegram">Telegram</option><option value="whatsapp">WhatsApp</option></select>
+          <button class="btn primary" id="ct-save" type="button">Сохранить контакт</button>
+        </div>
+        <div id="ct-list" class="mem-list"></div><div class="msgline" id="ct-msg"></div>
+        <h4 style="margin:14px 0 6px">История сообщений</h4><div id="out-list" class="mem-list"></div>
+        <div class="r"><button class="btn small" id="out-clear" type="button">Очистить историю</button></div>
+      </div>
       <div class="card" data-cat="ai" id="ai-extra-card" data-tab="Режим и возможности"><h3><span class="ei">🎭</span>Режим ответов и возможности</h3>
         <div class="setrow"><div class="l">Режим ответов<small>меняется только манера ответа ИИ. Голосом: «режим психолога», «режим учителя», «режим программиста», «режим друга», «обычный режим»</small></div>
           <div class="r"><select id="ai-mode"><option value="">Обычный</option><option value="psychologist">Психолог</option><option value="teacher">Учитель</option><option value="coder">Программист</option><option value="friend">Друг</option></select></div></div>
@@ -1439,7 +1476,7 @@
 <div class="bottom" id="bottom">
   <div id="session-bar"><span class="sdot"></span><div class="st2" id="session-text"></div><button class="btn small" id="session-yes" type="button" style="display:none">Да</button><button class="btn small" id="session-end" type="button">Закончить</button></div>
   <form id="form" autocomplete="off">
-    <input id="input" placeholder="Напишите команду, например: таймер на 5 минут" autofocus>
+    <textarea id="input" class="grow-in" rows="1" placeholder="Напишите команду, например: таймер на 5 минут" autofocus></textarea>
     <button type="button" id="micbtn" title="Микрофон"></button>
     <button id="send" type="submit">Отправить</button>
   </form>
@@ -1602,7 +1639,7 @@ function show(name) {
   if (name === 'games') gpSummary();
   if (name === 'files') filesLoad();
   if (name === 'devices') devicesLoad();
-  if (name === 'settings') { loadSettings(); refreshRemote(); tgLoad(); setTimeout(() => { if (typeof setView === 'function') setView(); }, 60); }
+  if (name === 'settings') { memLoad(); ctLoad(); loadSettings(); refreshRemote(); tgLoad(); setTimeout(() => { if (typeof setView === 'function') setView(); }, 60); }
   if (name === 'tasks') { tkEdit = -1; tasksLoad(); }
   if (name === 'home') { homeSig = ''; }
   if (name === 'messages') msgsLoad(true);
@@ -1683,6 +1720,19 @@ function submitFrom(inputEl) {
   if (!text.trim()) return;
   ask(text).then(ok => { if (ok) inputEl.value = ''; });
 }
+// the input grows with the text (up to 40% of the window, then scrolls); Enter sends, Shift+Enter is a new line
+function growInput(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight + 2, Math.round(window.innerHeight * 0.4)) + 'px'; }
+for (const el of document.querySelectorAll('textarea.grow-in')) {
+  el.addEventListener('input', () => growInput(el));
+  el.addEventListener('keydown', e => {
+    // (a word being composed by an IME is not sent)
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); el.form.requestSubmit(); }
+  });
+  // after a send, a programmatic change of the text: the height follows
+  const d = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+  Object.defineProperty(el, 'value', { get() { return d.get.call(this); }, set(v) { d.set.call(this, v); growInput(this); }, configurable: true });
+}
+window.addEventListener('resize', () => document.querySelectorAll('textarea.grow-in').forEach(growInput));
 $('#form').onsubmit = e => { e.preventDefault(); submitFrom($('#input')); };
 $('#h-form').onsubmit = e => { e.preventDefault(); submitFrom($('#h-input')); };
 // "Стоп" stays while anything is to be said (also between the sentences of an answer, while the next one is prepared)
@@ -2903,21 +2953,104 @@ updRefresh();
 
 
 // the game mode: the state and the two buttons (the same thing as the phrases «включи / выключи игровой режим»)
+// ONE state of the game mode (GET /game): Home, Games and Settings are drawn from it, never from their own copies
+const GM = { active: false, in_game: false, st: null };
+function gmApply(st) {
+  GM.st = st; GM.active = !!st.active; GM.in_game = !!st.in_game;
+  const txt = st.active ? (st.in_game ? 'включён, игра в фокусе' : 'включён, окно игры не впереди') : 'выключен';
+  const ac = st.anticheat ? ' · запущена защита от читов (' + st.anticheat + '): режим не работает' : '';
+  $('#gp-state').textContent = txt + ac; $('#game-state').textContent = txt;
+  tgl('#gp-on', '#gp-off', GM.active); tgl('#game-on', '#game-off', GM.active);
+  const c = $('#gm-home'); c.setAttribute('aria-pressed', GM.active ? 'true' : 'false'); $('#gm-home-t').textContent = 'Игровой режим: ' + (GM.active ? 'вкл' : 'выкл');
+}
+async function gmToggle(on) {
+  // the change is shown at once on all three places and corrected by the real state that comes back
+  gmApply(Object.assign({}, GM.st || {}, { active: on }));
+  const r = await action('game_mode', { value: on }).catch(() => ({}));
+  try { gmApply(await (await fetch('/game')).json()); } catch (e) {}
+  return r;
+}
+$('#gm-home').onclick = async () => { const r = await gmToggle(!GM.active); if (r && r.message) showToast(r.message); };
 async function gameRefresh() {
   let g; try { g = await (await fetch('/game')).json(); } catch (e) { return; }
+  gmApply(g);
   const a = g.aim || {}; $('#aim-state').textContent = a.enabled ? 'включена (' + (a.frames || 0) + ' кадров' + (a.last_frame_ms ? ', ' + a.last_frame_ms + ' мс на кадр' : '') + ')' : (a.problem ? 'выключена: ' + a.problem : (a.model_found ? 'выключена' : 'нет файла модели'));
   $('#game-list').textContent = 'Игры в списке: ' + (g.exes || []).join(', ') + (g.anticheat ? ' · ВНИМАНИЕ: запущена защита от читов (' + g.anticheat + '), режим не работает' : '');
-  $('#game-state').textContent = g.active ? (g.in_game ? 'включён, игра в фокусе' : 'включён, окно игры не впереди') : 'выключен';
 }
 async function gameSet(on) {
-  const r = await action('game_mode', { value: on }).catch(() => ({}));
+  const r = await gmToggle(on);
   const m = $('#game-msg'); m.className = 'msgline' + (r && r.ok === false ? ' bad' : ' ok'); m.textContent = (r && r.message) || '';
-  gameRefresh();
 }
 $('#game-on').onclick = () => gameSet(true); $('#game-off').onclick = () => gameSet(false);
 $('#aim-on').onclick = async () => { const r = await action('game_aim', { value: true }).catch(() => ({})); const m = $('#game-msg'); m.className = 'msgline ok'; m.textContent = (r && r.message) || ''; gameRefresh(); };
 $('#aim-off').onclick = async () => { const r = await action('game_aim', { value: false }).catch(() => ({})); const m = $('#game-msg'); m.className = 'msgline ok'; m.textContent = (r && r.message) || ''; gameRefresh(); };
 gameRefresh(); setInterval(gameRefresh, 4000);
+
+// ---------- memory, contacts and the messages written by voice ----------
+const memMsg = (t, ok) => { const m = $('#mem-msg'); m.className = 'msgline ' + (ok === false ? 'bad' : 'ok'); m.textContent = t || ''; };
+async function memLoad() {
+  const r = await action('mem_list').catch(() => ({ items: [] })); const q = $('#mem-q').value.trim().toLowerCase();
+  $('#mem-auto').checked = !!r.auto;
+  const items = (r.items || []).filter(e => !q || e.text.toLowerCase().includes(q));
+  $('#mem-list').innerHTML = items.length ? items.map(e => '<div class="mem-item" data-id="' + gpEsc(e.id) + '"><span>' + gpEsc(e.text) + '</span><button class="btn small" data-op="edit" type="button">Изменить</button><button class="btn small" data-op="del" type="button">Удалить</button></div>').join('') : '<small class="dim">' + (q ? 'Ничего не найдено.' : 'Память пуста.') + '</small>';
+}
+$('#mem-list').onclick = async e => {
+  const b = e.target.closest('button[data-op]'); if (!b) return; const row = b.closest('.mem-item'), id = row.dataset.id;
+  if (b.dataset.op === 'del') { await action('mem_delete', { id }); memLoad(); return; }
+  const cur = row.querySelector('span').textContent, t = prompt('Изменить запись:', cur);
+  if (t != null && t.trim()) { const r = await action('mem_edit', { id, text: t }).catch(() => ({})); memMsg(r.message, r.ok); memLoad(); }
+};
+$('#mem-add').onclick = async () => {
+  const text = $('#mem-new').value; if (!text.trim()) return;
+  let r = await action('mem_add', { text }).catch(() => ({}));
+  if (r.conflict && confirm(r.message)) r = await action('mem_add', { text, replace: true }).catch(() => ({}));
+  memMsg(r.message, r.ok); if (r.ok) $('#mem-new').value = ''; memLoad();
+};
+$('#mem-q').oninput = memLoad;
+$('#mem-auto').onchange = e => action('mem_auto', { value: e.target.checked });
+$('#mem-export').onclick = async () => { const r = await action('mem_export').catch(() => ({})); try { await navigator.clipboard.writeText(r.text || ''); memMsg('Скопировано.'); } catch (e) { memMsg('Не удалось скопировать.', false); } };
+let ctEditId = '';
+async function ctLoad() {
+  const r = await action('ct_list').catch(() => ({ contacts: [] }));
+  $('#ct-list').innerHTML = (r.contacts || []).length ? r.contacts.map(c => '<div class="mem-item" data-id="' + gpEsc(c.id) + '"><span><b>' + gpEsc(c.name) + '</b>' + ((c.aliases || []).length ? ' · ' + gpEsc(c.aliases.join(', ')) : '') + '<small>' + gpEsc([c.phone && ('тел. ' + c.phone), c.telegram && ('Telegram @' + c.telegram)].filter(Boolean).join(' · ') || 'нет адреса') + '</small></span><button class="btn small" data-op="edit" type="button">Изменить</button><button class="btn small" data-op="del" type="button">Удалить</button></div>').join('') : '<small class="dim">Контактов нет.</small>';
+  ctData = r.contacts || [];
+  const o = await action('out_list').catch(() => ({ items: [] }));
+  $('#out-list').innerHTML = (o.items || []).length ? o.items.map(m => '<div class="mem-item" data-id="' + gpEsc(m.id) + '"><span><b>' + gpEsc(m.contact) + '</b> (' + gpEsc(m.channel) + '): ' + gpEsc(m.body) + '<small>' + gpEsc(m.label) + (m.note ? ' — ' + gpEsc(m.note) : '') + '</small></span>' + (m.status === 'awaiting_confirmation' ? '<button class="btn small primary" data-op="send" type="button">Отправить</button><button class="btn small" data-op="cancel" type="button">Отмена</button>' : '') + '</div>').join('') : '<small class="dim">Сообщений пока не было.</small>';
+}
+let ctData = [];
+$('#ct-list').onclick = async e => {
+  const b = e.target.closest('button[data-op]'); if (!b) return; const id = b.closest('.mem-item').dataset.id;
+  if (b.dataset.op === 'del') { await action('ct_delete', { id }); ctLoad(); return; }
+  const c = ctData.find(x => x.id === id); if (!c) return; ctEditId = id;
+  $('#ct-name').value = c.name; $('#ct-alias').value = (c.aliases || []).join(', '); $('#ct-phone').value = c.phone || ''; $('#ct-tg').value = c.telegram || ''; $('#ct-pref').value = c.preferred || '';
+};
+$('#out-list').onclick = async e => {
+  const b = e.target.closest('button[data-op]'); if (!b) return; const id = b.closest('.mem-item').dataset.id;
+  const r = await action(b.dataset.op === 'send' ? 'out_confirm' : 'out_cancel', { id }).catch(() => ({}));
+  const m = $('#ct-msg'); m.className = 'msgline ' + (r.ok === false ? 'bad' : 'ok'); m.textContent = r.message || ''; ctLoad();
+};
+$('#ct-save').onclick = async () => {
+  const contact = { id: ctEditId, name: $('#ct-name').value, aliases: $('#ct-alias').value.split(',').map(x => x.trim()).filter(Boolean), phone: $('#ct-phone').value, telegram: $('#ct-tg').value, preferred: $('#ct-pref').value };
+  const r = await action('ct_save', { contact }).catch(() => ({}));
+  const m = $('#ct-msg'); m.className = 'msgline ' + (r.ok ? 'ok' : 'bad'); m.textContent = r.message || '';
+  if (r.ok) { ctEditId = ''; for (const i of ['#ct-name', '#ct-alias', '#ct-phone', '#ct-tg']) $(i).value = ''; $('#ct-pref').value = ''; ctLoad(); }
+};
+$('#out-clear').onclick = async () => { if (confirm('Очистить историю сообщений?')) { await action('out_clear'); ctLoad(); } };
+
+// ---------- the corner block «Мой ПК» ----------
+let monBusy = false;
+async function monTick() {
+  if (currentPage !== 'home' || document.hidden || monBusy) return;
+  monBusy = true;
+  try {
+    const j = await (await fetch('/monitor')).json();
+    const box = $('#mon'); box.hidden = false;
+    box.innerHTML = (j.items || []).map(i => '<div class="mr' + (i.available ? '' : ' na') + '" title="' + gpEsc(i.available ? '' : (i.why || 'Недоступно')) + '"><span>' + gpEsc(i.label) + '</span><b>' + gpEsc(i.value) + '</b>' +
+      (i.available && i.pct != null ? '<div class="bar"><i class="' + (i.pct >= 90 ? 'crit' : i.pct >= 75 ? 'hi' : '') + '" style="width:' + Math.max(0, Math.min(100, i.pct)) + '%"></i></div>' : '') + '</div>').join('');
+  } catch (e) { $('#mon').hidden = true; }
+  monBusy = false;
+}
+setInterval(monTick, 2000); setTimeout(monTick, 600);
 
 // ---------- the library of games: icons like the desktop of Windows ----------
 // The data come from /games (the numbers and the recent games) and /games-list (a page of the catalog: search, filters, sorting).
@@ -3037,8 +3170,8 @@ async function gpSummary() {
   }
   const prev = GP.sum; GP.sum = g;
   $('#gp-total').textContent = g.total;
-  $('#gp-state').textContent = (st.active ? (st.in_game ? 'включён, игра в фокусе' : 'включён, окно игры не впереди') : 'выключен') + (st.anticheat ? ' · запущена защита от читов (' + st.anticheat + '): режим не работает' : '');
-  tgl('#gp-on', '#gp-off', !!st.active);
+  gmApply(st);
+
   const o = g.options || {}; $('#gp-overlay').checked = !!o.overlay; $('#gp-sound').checked = !!o.sound;
   // the recent games are drawn again only when they changed
   const sig = JSON.stringify([g.recent.map(x => [x.id, x.icon_v, x.launch, x.name]), g.total]);
@@ -3255,8 +3388,8 @@ $('#gp-scan').onclick = async () => { const r = await action('game_scan').catch(
 $('#gp-report').onclick = async () => { try { const t = await (await fetch('/games-report')).text(); await copyText(t, $('#gp-report')); gpMsg('Отчёт скопирован', true); } catch (e) { gpMsg('Не удалось скопировать', false); } };
 $('#gp-aim-on').onclick = async () => { tgl('#gp-aim-on', '#gp-aim-off', true); const r = await action('game_aim', { value: true }).catch(() => ({})); gpMsg(r.message, r.ok !== false); aimMsg(r.message || (r.ok === false ? 'Не удалось' : ''), r.ok !== false); gpSummary(); aimRefresh(); };
 $('#gp-aim-off').onclick = async () => { tgl('#gp-aim-on', '#gp-aim-off', false); const r = await action('game_aim', { value: false }).catch(() => ({})); gpMsg(r.message, r.ok !== false); aimMsg(r.message || (r.ok === false ? 'Не удалось' : ''), r.ok !== false); gpSummary(); aimRefresh(); };
-$('#gp-on').onclick = async () => { tgl('#gp-on', '#gp-off', true); const r = await action('game_mode', { value: true }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gpSummary(); };
-$('#gp-off').onclick = async () => { tgl('#gp-on', '#gp-off', false); const r = await action('game_mode', { value: false }).catch(() => ({})); gpMsg(r.message, r.ok !== false); gpSummary(); };
+$('#gp-on').onclick = async () => { const r = await gmToggle(true); gpMsg(r.message, r.ok !== false); gpSummary(); };
+$('#gp-off').onclick = async () => { const r = await gmToggle(false); gpMsg(r.message, r.ok !== false); gpSummary(); };
 $('#gp-overlay').onchange = async e => { const r = await action('game_opts', { overlay: e.target.checked }).catch(() => ({})); if (r.ok === false) { e.target.checked = !e.target.checked; gpMsg(r.message, false); } };
 $('#gp-sound').onchange = async e => { const r = await action('game_opts', { sound: e.target.checked }).catch(() => ({})); if (r.ok === false) { e.target.checked = !e.target.checked; gpMsg(r.message, false); } };
 // ---- «Мой голос» (settings) ----

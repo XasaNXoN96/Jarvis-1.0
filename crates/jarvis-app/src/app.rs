@@ -742,6 +742,22 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
         ipc::send(IpcEvent::Idle);
         return false;
     }
+    // memory, translation, messenger (features.rs): answered locally, nothing is sent without a confirmation
+    let original_text = ORIGINAL.lock().trim().to_string();
+    if let Some(reply) = jarvis_core::features::handle(&original_text) {
+        let msg = reply.text;
+        open_request(text, "command");
+        say(&msg);
+        ipc::send(IpcEvent::Output { text: msg.clone() });
+        jarvis_core::dialog::reply(&msg, "local");
+        jarvis_core::dialog::end(true);
+        jarvis_core::uistate::log_action(text, "функции Jarvis", true);
+        if jarvis_core::tts::is_enabled() {
+            jarvis_core::tts::speak(&msg);
+        }
+        ipc::send(IpcEvent::Idle);
+        return false;
+    }
     let commands_list = match COMMANDS_LIST.get() {
         Some(c) => c,
         None => {

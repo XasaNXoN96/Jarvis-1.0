@@ -353,6 +353,43 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             let ok = false;
             json!({ "ok": ok, "message": if ok { "Windows просят обновить значки. Если старые остались: удалите ярлык и создайте заново, а при необходимости удалите файлы IconCache.db и iconcache_*.db в %localappdata% и перезапустите проводник." } else { "Доступно только в Windows" } })
         }
+        // memory, contacts and the messenger (memory.rs, contacts.rs, messenger.rs)
+        "mem_list" => { let m = crate::memory::load(); json!({ "ok": true, "items": m.items, "auto": m.auto_remember }) }
+        "mem_add" => match crate::memory::add_with(body.get("text").and_then(|v| v.as_str()).unwrap_or(""), "window", body.get("replace").and_then(|v| v.as_bool()).unwrap_or(false)) {
+            Ok(crate::memory::Added::Added(_)) => json!({ "ok": true, "message": "Запомнил." }),
+            Ok(crate::memory::Added::Duplicate(_)) => json!({ "ok": true, "message": "Это уже есть в памяти." }),
+            Ok(crate::memory::Added::Conflict(id, old)) => json!({ "ok": false, "conflict": true, "id": id, "message": format!("Раньше было иначе: «{}». Заменить?", old) }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "mem_edit" => match crate::memory::edit(body.get("id").and_then(|v| v.as_str()).unwrap_or(""), body.get("text").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(()) => json!({ "ok": true, "message": "Сохранено." }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "mem_delete" => json!({ "ok": crate::memory::delete(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) }),
+        "mem_export" => json!({ "ok": true, "text": crate::memory::export_text() }),
+        "mem_auto" => match crate::memory::set_auto(body.get("value").and_then(|v| v.as_bool()).unwrap_or(false)) {
+            Ok(()) => json!({ "ok": true }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "ct_list" => json!({ "ok": true, "contacts": crate::contacts::list() }),
+        "ct_save" => match serde_json::from_value::<crate::contacts::Contact>(body.get("contact").cloned().unwrap_or(json!({}))) {
+            Ok(c) => match crate::contacts::save(c) {
+                Ok(id) => json!({ "ok": true, "id": id, "message": "Контакт сохранён." }),
+                Err(e) => json!({ "ok": false, "message": e }),
+            },
+            Err(_) => json!({ "ok": false, "message": "Неверные данные контакта." }),
+        },
+        "ct_delete" => json!({ "ok": crate::contacts::delete(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) }),
+        "out_list" => { let mut h = crate::messenger::history(); h.reverse(); json!({ "ok": true, "items": h.into_iter().take(50).map(|o| { let label = o.status.label(); let mut v = serde_json::to_value(&o).unwrap_or(json!({})); v["label"] = json!(label); v }).collect::<Vec<_>>() }) }
+        "out_confirm" => match crate::features::confirm_message(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(o) => json!({ "ok": o.status != crate::messenger::Status::Error, "status": o.status, "message": if o.status == crate::messenger::Status::ManualSendRequired { "Чат открыт с текстом: нажмите «Отправить» в приложении.".to_string() } else { o.note.clone() } }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "out_cancel" => match crate::features::cancel_message(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(_) => json!({ "ok": true, "message": "Отменено." }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "out_clear" => json!({ "ok": crate::messenger::clear_history() }),
         // the backup of the settings in one file (without secrets) and back
         "backup_export" => json!({ "ok": true, "backup": crate::backup::export() }),
         "backup_import" => match crate::backup::import(body.get("backup").unwrap_or(&json!(null))) {
@@ -1377,6 +1414,10 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
             None => respond(&mut stream, "404 Not Found", "text/plain", "no snapshot"),
         },
         ("GET", "/aim-report") => respond(&mut stream, "200 OK", "text/plain", &crate::aimmodel::report_text(&crate::gamemode::aim_config())),
+        ("GET", "/monitor") => {
+            let s = crate::sysstat::sample();
+            respond(&mut stream, "200 OK", "application/json", &crate::sysstat::monitor_json(&s, cfg!(target_os = "windows")).to_string())
+        }
         ("GET", "/game") => respond(&mut stream, "200 OK", "application/json", &crate::gamemode::status_json().to_string()),
         ("GET", "/update") => respond(&mut stream, "200 OK", "application/json", &crate::updater::status_json().to_string()),
         ("GET", "/voice-install") => respond(&mut stream, "200 OK", "application/json", &crate::voice_install::status_json().to_string()),

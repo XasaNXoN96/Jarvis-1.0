@@ -13,6 +13,11 @@ pub struct Sample {
     pub gpu_pct: Option<u32>,
     pub gpu_mem_used_gb: Option<f32>,
     pub gpu_mem_total_gb: Option<f32>,
+    pub gpu_temp_c: Option<u32>,
+    pub gpu_clock_mhz: Option<u32>,
+    // the system drive
+    pub disk_used_gb: Option<f32>,
+    pub disk_total_gb: Option<f32>,
 }
 
 // the load of the processor between two readings of (idle, kernel + user) times
@@ -82,11 +87,15 @@ mod win {
     type HandleFn = unsafe extern "C" fn(u32, *mut *mut std::ffi::c_void) -> i32;
     type UtilFn = unsafe extern "C" fn(*mut std::ffi::c_void, *mut NvUtil) -> i32;
     type MemFn = unsafe extern "C" fn(*mut std::ffi::c_void, *mut NvMem) -> i32;
+    type TempFn = unsafe extern "C" fn(*mut std::ffi::c_void, u32, *mut u32) -> i32;
+    type ClockFn = unsafe extern "C" fn(*mut std::ffi::c_void, u32, *mut u32) -> i32;
 
     struct Nvml {
         handle: usize,
         util: UtilFn,
         mem: MemFn,
+        temp: Option<TempFn>,
+        clock: Option<ClockFn>,
     }
     // the library of the driver is loaded once, from the system folder only (never from the folder of the program or the current one)
     static NVML: Lazy<Option<Nvml>> = Lazy::new(|| unsafe {
@@ -115,7 +124,11 @@ mod win {
         if handle(0, &mut h) != 0 || h.is_null() {
             return None;
         }
-        Some(Nvml { handle: h as usize, util, mem })
+        // (the temperature and the clock are optional: an old driver without them still gives the load)
+        let (t, c) = (sym(b"nvmlDeviceGetTemperature\0"), sym(b"nvmlDeviceGetClockInfo\0"));
+        let temp: Option<TempFn> = if t.is_null() { None } else { Some(std::mem::transmute(t)) };
+        let clock: Option<ClockFn> = if c.is_null() { None } else { Some(std::mem::transmute(c)) };
+        Some(Nvml { handle: h as usize, util, mem, temp, clock })
     });
 
     pub fn sample() -> Sample {
@@ -136,6 +149,20 @@ mod win {
                     s.cpu_pct = cpu_percent(prev, now);
                 }
             }
+            // the drive Windows is installed on
+            {
+                use winapi::um::fileapi::GetDiskFreeSpaceExW;
+                use winapi::shared::ntdef::ULARGE_INTEGER;
+                let root: Vec<u16> = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into()).encode_utf16().chain("\\".encode_utf16()).chain(std::iter::once(0)).collect();
+                let (mut free, mut total, mut tf): (ULARGE_INTEGER, ULARGE_INTEGER, ULARGE_INTEGER) = std::mem::zeroed();
+                if GetDiskFreeSpaceExW(root.as_ptr(), &mut free, &mut total, &mut tf) != 0 {
+                    let (t, f) = (*total.QuadPart(), *free.QuadPart());
+                    if t > 0 {
+                        s.disk_total_gb = Some(g(t));
+                        s.disk_used_gb = Some(g(t.saturating_sub(f)));
+                    }
+                }
+            }
             if let Some(n) = NVML.as_ref() {
                 let h = n.handle as *mut std::ffi::c_void;
                 let mut u = NvUtil { gpu: 0, memory: 0 };
@@ -146,6 +173,18 @@ mod win {
                 if (n.mem)(h, &mut mm) == 0 && mm.total > 0 {
                     s.gpu_mem_used_gb = Some(g(mm.used));
                     s.gpu_mem_total_gb = Some(g(mm.total));
+                }
+                if let Some(f) = n.temp {
+                    let mut t = 0u32;
+                    if f(h, 0, &mut t) == 0 && t > 0 && t < 150 {
+                        s.gpu_temp_c = Some(t);
+                    }
+                }
+                if let Some(f) = n.clock {
+                    let mut c = 0u32;
+                    if f(h, 0, &mut c) == 0 && c > 0 {
+                        s.gpu_clock_mhz = Some(c);
+                    }
                 }
             }
         }
@@ -163,6 +202,33 @@ pub fn sample() -> Sample {
     Sample::default()
 }
 
+// The block of the home page («Мой ПК»): every value is real or marked «Недоступно» with the reason; nothing is invented.
+// The temperature of the processor cannot be read without a driver of the board maker, so it is never shown.
+pub fn monitor_json(s: &Sample, available: bool) -> serde_json::Value {
+    use serde_json::json;
+    let gbs = |v: f32| format!("{} ГБ", gb(v));
+    let na = |id: &str, label: &str, why: &str| json!({ "id": id, "label": label, "value": "Недоступно", "pct": null, "available": false, "why": why });
+    let ok = |id: &str, label: &str, value: String, pct: Option<u32>| json!({ "id": id, "label": label, "value": value, "pct": pct, "available": true });
+    if !available {
+        return json!({ "items": [na("cpu", "Процессор", "только в Windows"), na("ram", "Память", "только в Windows")] });
+    }
+    let mut items = vec![ok("cpu", "Процессор", format!("{}%", s.cpu_pct), Some(s.cpu_pct))];
+    items.push(if s.ram_total_gb > 0.0 { ok("ram", "Память", format!("{} / {}", gbs(s.ram_used_gb), gbs(s.ram_total_gb)), Some((s.ram_used_gb / s.ram_total_gb * 100.0).round().clamp(0.0, 100.0) as u32)) } else { na("ram", "Память", "Windows не ответил") });
+    items.push(match (s.disk_used_gb, s.disk_total_gb) {
+        (Some(u), Some(t)) if t > 0.0 => ok("disk", "Диск системы", format!("{} / {}", gbs(u), gbs(t)), Some((u / t * 100.0).round().clamp(0.0, 100.0) as u32)),
+        _ => na("disk", "Диск системы", "Windows не ответил"),
+    });
+    let nv = "нужна видеокарта NVIDIA с драйвером";
+    items.push(match s.gpu_pct { Some(g) => ok("gpu", "Видеокарта", format!("{}%", g), Some(g)), None => na("gpu", "Видеокарта", nv) });
+    items.push(match (s.gpu_mem_used_gb, s.gpu_mem_total_gb) {
+        (Some(u), Some(t)) if t > 0.0 => ok("vram", "Видеопамять", format!("{} / {}", gbs(u), gbs(t)), Some((u / t * 100.0).round().clamp(0.0, 100.0) as u32)),
+        _ => na("vram", "Видеопамять", nv),
+    });
+    items.push(match s.gpu_temp_c { Some(t) => ok("gpu_temp", "Температура видеокарты", format!("{} °C", t), Some(t.min(100))), None => na("gpu_temp", "Температура видеокарты", nv) });
+    items.push(match s.gpu_clock_mhz { Some(c) => ok("gpu_clock", "Частота видеокарты", format!("{} МГц", c), None), None => na("gpu_clock", "Частота видеокарты", nv) });
+    json!({ "items": items })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,7 +244,7 @@ mod tests {
 
     #[test]
     fn the_line_is_short_and_has_only_what_is_known() {
-        let s = Sample { cpu_pct: 23, ram_used_gb: 12.4, ram_total_gb: 31.9, gpu_pct: Some(41), gpu_mem_used_gb: Some(3.2), gpu_mem_total_gb: Some(8.0) };
+        let s = Sample { cpu_pct: 23, ram_used_gb: 12.4, ram_total_gb: 31.9, gpu_pct: Some(41), gpu_mem_used_gb: Some(3.2), gpu_mem_total_gb: Some(8.0), ..Default::default() };
         assert_eq!(line(&s, Some((6, 160))), "ЦП 23% · ОЗУ 12/32 ГБ · ВК 41% 3,2/8,0 ГБ · прицел 6 к/с (160 мс)");
         // no video card of NVIDIA, no aim assist: the line is only the processor and the memory
         let t = Sample { cpu_pct: 5, ram_used_gb: 8.5, ram_total_gb: 16.0, ..Default::default() };
@@ -186,6 +252,27 @@ mod tests {
         assert_eq!(line_with_fps(&t, None, Some(144), None), "FPS 144 · ЦП 5% · ОЗУ 8,5/16 ГБ");
         assert!(line_with_fps(&t, None, None, Some("FPS игры: нужен запуск от администратора")).starts_with("FPS игры: нужен"));
         assert!(line(&s, None).chars().count() < 60, "one small line");
+    }
+
+    #[test]
+    fn the_monitor_block_marks_what_is_unknown_and_invents_nothing() {
+        let t = Sample { cpu_pct: 5, ram_used_gb: 8.0, ram_total_gb: 16.0, ..Default::default() };
+        let j = monitor_json(&t, true);
+        let items = j["items"].as_array().unwrap();
+        let get = |id: &str| items.iter().find(|i| i["id"] == id).unwrap().clone();
+        assert_eq!(get("cpu")["value"], "5%");
+        assert_eq!(get("ram")["pct"], 50);
+        assert_eq!(get("gpu")["value"], "Недоступно");
+        assert_eq!(get("gpu")["available"], false);
+        assert_eq!(get("disk")["value"], "Недоступно");
+        let full = Sample { gpu_pct: Some(41), gpu_mem_used_gb: Some(3.0), gpu_mem_total_gb: Some(8.0), gpu_temp_c: Some(62), gpu_clock_mhz: Some(1800), disk_used_gb: Some(100.0), disk_total_gb: Some(500.0), ..t };
+        let j = monitor_json(&full, true);
+        let g = |id: &str| j["items"].as_array().unwrap().iter().find(|i| i["id"] == id).unwrap().clone();
+        assert_eq!(g("gpu_temp")["value"], "62 °C");
+        assert_eq!(g("vram")["pct"], 38);
+        assert_eq!(g("disk")["pct"], 20);
+        assert_eq!(g("gpu_clock")["value"], "1800 МГц");
+        assert!(monitor_json(&t, false)["items"][0]["available"] == false);
     }
 
     #[test]

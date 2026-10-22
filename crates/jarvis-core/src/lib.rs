@@ -118,6 +118,13 @@ pub mod screen;
 pub mod sites;
 pub mod notify;
 pub mod social;
+pub mod store;
+pub mod textnorm;
+pub mod memory;
+pub mod translate;
+pub mod contacts;
+pub mod messenger;
+pub mod features;
 #[cfg(target_os = "windows")]
 pub mod notify_win;
 pub mod diag;
