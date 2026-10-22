@@ -302,6 +302,11 @@ fn run(gen: u64) {
     }
 }
 
+// the tunnel is up now (the only reason for a plain-http connection from this very computer, see remote::http_policy)
+pub fn is_on() -> bool {
+    matches!(state(), State::On(_))
+}
+
 // the link for the phone: the public address with the secret of the remote
 pub fn public_link() -> Option<String> {
     match state() {

@@ -946,6 +946,15 @@
               <div class="qrbox"><img id="rm-qr" alt="QR-код пульта"></div>
               <button class="btn small" id="rm-copy" type="button">Копировать ссылку</button>
               <button class="btn small" id="rm-renew" type="button" title="Старая ссылка перестанет работать на всех телефонах">Новая ссылка</button>
+              <div class="rmoff" id="rm-fp" style="word-break:break-all"></div>
+              <div class="msgline bad" id="rm-httpwarn" hidden>Обычный http в локальной сети ВКЛЮЧЁН: пароли и секреты видны в сети. <button class="btn small" id="rm-httpoff" type="button">Выключить</button></div>
+              <div class="msgline bad" id="rm-tlsprob" hidden></div>
+              <details class="gp-more" id="sec-box"><summary>Безопасность соединения</summary>
+                <small class="dim">Телефон запоминает отпечаток ключа этого компьютера и не принимает другой. При первой привязке сверьте отпечаток на телефоне с этим. Адрес компьютера может меняться: отпечаток остаётся тем же.</small>
+                <div class="rmlink" id="rm-fp2"></div>
+                <div class="rmrow"><button class="btn small" id="rm-httpon" type="button">Разрешить обычный http (небезопасно)</button><button class="btn small" id="rm-rotate" type="button">Сменить ключ ПК</button></div>
+                <div class="msgline" id="rm-secmsg"></div>
+              </details>
               <details class="gp-more" id="pair-box"><summary>Привязанные устройства (по коду)</summary>
                 <small class="dim">Каждый телефон получает свой доступ и отзывается отдельно. Откройте на телефоне ссылку пульта без секрета, введите код и нажмите «Привязать». Код действует 5 минут и одну привязку.</small>
                 <div class="rmrow"><button class="btn small primary" id="pair-start" type="button">Привязать телефон по коду</button><b id="pair-code" class="pair-code"></b></div>
@@ -1654,11 +1663,11 @@
           <div class="r"><button class="btn" data-cmd="включи удалённое управление" data-stay="1">Включить</button><button class="btn" data-cmd="выключи удалённое управление" data-stay="1">Выключить</button></div></div>
         <div id="remote-box" style="display:none;text-align:center;padding-top:10px">
           <div style="background:#fff;border-radius:16px;padding:10px;display:inline-block"><img id="remote-qr" alt="QR" style="width:220px;height:220px;display:block"></div>
-          <div><small class="dim">Ссылка секретная: не показывайте её другим. Ссылка открывается в любом браузере без предупреждений. Телефон и компьютер должны быть в одной Wi-Fi сети.</small></div>
+          <div><small class="dim">Ссылка не содержит секрета: телефон подключается по одноразовому коду (кнопка «Привязать телефон по коду») и запоминает ключ этого компьютера. Телефон и компьютер должны быть в одной сети (или используйте «Из любой сети»). Браузер телефона покажет предупреждение о сертификате: приложение Jarvis для Android проверяет отпечаток ключа, браузер — нет.</small></div>
           <div><small class="dim" id="remote-url" style="word-break:break-all;user-select:all"></small></div>
           <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px;text-align:left">
             <b>Голос с телефона</b>
-            <div><small class="dim">Ссылка открывается в любом браузере без предупреждений. Текстовые команды и кнопки работают сразу. Для кнопки «🎤» на странице пульта браузеру нужно один раз разрешить микрофон: на самой странице пульта нажмите «Не работает голос? Как включить», там пошаговая инструкция для Chrome. Самый простой способ без настроек: значок микрофона на клавиатуре телефона в поле ввода.</small></div>
+            <div><small class="dim">Текстовые команды и кнопки работают после привязки. Для кнопки «🎤» на странице пульта браузеру нужно один раз разрешить микрофон: на самой странице пульта нажмите «Не работает голос? Как включить», там пошаговая инструкция для Chrome. Самый простой способ без настроек: значок микрофона на клавиатуре телефона в поле ввода.</small></div>
           </div>
         </div>
       </div>
@@ -2273,6 +2282,24 @@ function remoteHint(r) {
   else h = 'Адрес VPN работает, когда телефон тоже подключён к этому VPN — из любой сети, трафик зашифрован. Без VPN — переключатель «Из любой сети» ниже.';
   return h + ' Не открывается по Wi-Fi? Брандмауэр Windows должен разрешать Jarvis для частных сетей.';
 }
+// the fingerprint of the key of the PC, the warning about plain http and the problem with the key (the phone pins this key)
+function secShow(r) {
+  const fp = r.fingerprint ? 'Отпечаток ПК: ' + r.fingerprint : '';
+  $('#rm-fp').textContent = fp; $('#rm-fp2').textContent = fp || 'Ключ ПК недоступен.';
+  $('#rm-httpwarn').hidden = !r.allow_http;
+  $('#rm-httpon').hidden = !!r.allow_http;
+  const p = $('#rm-tlsprob'); p.hidden = !r.tls_problem; p.textContent = r.tls_problem ? 'Ключ ПК: ' + r.tls_problem : '';
+}
+const secMsg = (r, ok) => { const m = $('#rm-secmsg'); m.className = 'msgline ' + (r && r.ok ? 'ok' : 'bad'); m.textContent = ok || (r && r.message) || ''; };
+$('#rm-httpon').onclick = async () => {
+  if (!confirm('Обычный http передаёт пароли и секреты открытым текстом: любой в вашей сети сможет их прочитать. Включить?')) return;
+  const r = await action('remote_http_set', { value: true, confirm: 'http' }).catch(() => ({})); secMsg(r, r.ok ? 'Обычный http включён. Выключите его, когда он больше не нужен.' : ''); remoteAt = 0; remoteCard(lastState || { remote: true });
+};
+$('#rm-httpoff').onclick = async () => { const r = await action('remote_http_set', { value: false }).catch(() => ({})); secMsg(r, r.ok ? 'Обычный http выключен.' : ''); remoteAt = 0; remoteCard(lastState || { remote: true }); };
+$('#rm-rotate').onclick = async () => {
+  if (!confirm('Сменить ключ компьютера? Все телефоны перестанут доверять этому компьютеру и их придётся привязать заново (по новому отпечатку). Продолжить?')) return;
+  const r = await action('remote_key_rotate', { confirm: 'rotate' }).catch(() => ({})); secMsg(r, r.ok ? 'Ключ заменён. Новый отпечаток: ' + r.fingerprint : ''); remoteAt = 0; remoteSeen = ''; remoteCard(lastState || { remote: true });
+};
 async function remoteCard(s) {
   const on = !!s.remote, sw = $('#rm-switch');
   if (!remoteBusy) { sw.checked = on; sw.disabled = false; }
@@ -2284,6 +2311,7 @@ async function remoteCard(s) {
   remoteAt = performance.now();
   try {
     const r = await (await fetch('/remote')).json();
+    secShow(r);
     if (!r.enabled || !r.url) { $('#rm-err').textContent = 'Адрес пульта недоступен'; return; }
     const addrs = r.addresses || [];
     if (!addrs.some(a => a.ip === remoteIp)) remoteIp = addrs.length ? addrs[0].ip : '';
@@ -3275,10 +3303,12 @@ $('#aim-off').onclick = async () => { const r = await action('game_aim', { value
 gameRefresh(); setInterval(gameRefresh, 4000);
 
 // ---------- pairing of phones with a one-time code ----------
-let pairTimer = null;
+let pairTimer = null, pairShownCode = '';
 async function pairLoad() {
   const r = await action('pair_list').catch(() => ({ items: [] }));
   const c = $('#pair-code');
+  // (the QR code carries the code while one is shown: it is drawn again when the code appears or ends)
+  if ((r.code || '') !== pairShownCode) { pairShownCode = r.code || ''; if (remoteIp !== undefined) $('#rm-qr').src = withTok('/remote-qr?ip=' + encodeURIComponent(remoteIp) + '&t=' + Date.now()); }
   if (r.code) { c.textContent = r.code + ' · ещё ' + Math.floor(r.left / 60) + ':' + String(r.left % 60).padStart(2, '0'); } else { c.textContent = ''; }
   $('#pair-list').innerHTML = (r.items || []).length ? r.items.map(d => '<div class="mem-item" data-id="' + gpEsc(d.id) + '"><span><b>' + gpEsc(d.name) + '</b><small>' + (d.revoked ? 'отозвано' : 'привязан ' + new Date(d.created * 1000).toLocaleDateString('ru-RU') + ' · был на связи ' + (d.last_seen ? new Date(d.last_seen * 1000).toLocaleString('ru-RU') : 'ещё не был')) + '</small></span>' + (d.revoked ? '' : '<button class="btn small" type="button">Отозвать</button>') + '</div>').join('') : '<small class="dim">Устройств, привязанных по коду, нет.</small>';
   clearTimeout(pairTimer); if (r.code && currentPage === 'settings') pairTimer = setTimeout(pairLoad, 1000);

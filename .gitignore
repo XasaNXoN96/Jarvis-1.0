@@ -67,3 +67,9 @@ crates/*/remote_nonces.json
 jarvis-android-key/
 ANDROID_KEYSTORE_BASE64.txt
 password.txt
+
+# TLS identity files written by a program run in a source folder (never committed)
+remote_key.sealed
+remote_cert.der
+remote_cert.meta
+remote_policy.json

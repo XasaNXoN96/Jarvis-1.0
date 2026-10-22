@@ -44,6 +44,11 @@ fn path(name: &str) -> Result<PathBuf, String> {
         // (never a key in the current folder: without the folder of the program there is no safe place)
         return Err("нет папки данных программы: ключ пульта негде безопасно хранить".into());
     }
+    // (a test without a temporary folder of its own would write a key next to the sources: refused)
+    #[cfg(test)]
+    if crate::store::TEST_DIR.lock().is_none() {
+        return Err("тест без временной папки: ключ не пишется".into());
+    }
     Ok(crate::store::file(name))
 }
 

@@ -265,7 +265,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         }
     }
     // with a password of the owner set, the actions that change what Jarvis keeps or does need the unlocked program
-    if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "notes_edit" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message" | "audit_clear" | "ca_apply" | "pl_add" | "pl_remove" | "persona_set" | "pair_start" | "pair_revoke" | "comp_do" | "sync_folder" | "sync_run" | "sync_clear" | "wol_add" | "wol_remove" | "wol_wake" | "mem_use_ai") {
+    if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "notes_edit" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message" | "audit_clear" | "ca_apply" | "pl_add" | "pl_remove" | "persona_set" | "pair_start" | "pair_revoke" | "remote_http_set" | "remote_key_rotate" | "comp_do" | "sync_folder" | "sync_run" | "sync_clear" | "wol_add" | "wol_remove" | "wol_wake" | "mem_use_ai") {
         if let Err(m) = crate::owner::guard() {
             return json!({ "ok": false, "locked": true, "message": m });
         }
@@ -417,6 +417,27 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             }
             let code = crate::pairing::start_code(crate::store::now());
             json!({ "ok": true, "code": code })
+        }
+        // plain http in the home network: OFF by default; switching it on needs the owner and an explicit confirmation
+        "remote_http_set" => {
+            let on = body.get("value").and_then(|v| v.as_bool()).unwrap_or(false);
+            if on && body.get("confirm").and_then(|v| v.as_str()) != Some("http") {
+                return json!({ "ok": false, "message": "Нужно подтверждение: обычный http передаёт секреты открытым текстом." });
+            }
+            match crate::remote::set_allow_http(on) {
+                Ok(()) => json!({ "ok": true, "allow_http": on }),
+                Err(e) => json!({ "ok": false, "message": e }),
+            }
+        }
+        // a NEW key of the PC: every phone must be paired again and the fingerprint checked again
+        "remote_key_rotate" => {
+            if body.get("confirm").and_then(|v| v.as_str()) != Some("rotate") {
+                return json!({ "ok": false, "message": "Нужно подтверждение: после смены ключа все телефоны придётся привязать заново." });
+            }
+            match crate::remote::rotate_tls_key() {
+                Ok(fp) => json!({ "ok": true, "fingerprint": fp }),
+                Err(e) => json!({ "ok": false, "message": e }),
+            }
         }
         "pair_list" => {
             let now = crate::store::now();
@@ -1599,16 +1620,21 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
             respond(&mut stream, "200 OK", "application/json", &crate::filesearch::state_json().to_string());
         }
         ("GET", "/remote") => {
-            // phone remote state for the window (the secret link is shown only to this window): every address of
-            // this PC a phone can reach, best first (home Wi-Fi, the hotspot of this PC, a VPN for other networks)
+            // phone remote state for the window: every address of this PC a phone can reach, best first (home Wi-Fi, the hotspot of this
+            // PC, a VPN for other networks). The links are https and carry NO secret; the pin of the key of the PC is shown for the eyes.
             let on = crate::remote::is_running();
+            let http = crate::remote::allow_http();
             let addrs: Vec<serde_json::Value> = if on {
                 crate::remote::addresses()
                     .into_iter()
-                    .map(|a| json!({ "ip": a.ip, "kind": a.kind, "label": a.label, "url": crate::remote::url_for(&a.ip, false), "url_https": crate::remote::url_for(&a.ip, true) }))
+                    .map(|a| json!({ "ip": a.ip, "kind": a.kind, "label": a.label, "url": crate::remote::url_for(&a.ip, true), "url_https": crate::remote::url_for(&a.ip, true), "url_http": if http { crate::remote::url_for(&a.ip, false) } else { String::new() } }))
                     .collect()
             } else {
                 Vec::new()
+            };
+            let (fingerprint, pin) = match crate::remote_tls::current_pin() {
+                Ok((_, pin, fp)) => (fp, pin),
+                Err(_) => (String::new(), String::new()),
             };
             let body = serde_json::json!({
                 "enabled": on,
@@ -1617,6 +1643,10 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
                 "addresses": addrs,
                 "last_client": crate::remote::last_client(),
                 "tunnel": crate::tunnel::json(),
+                "fingerprint": fingerprint,
+                "pin": pin,
+                "allow_http": http,
+                "tls_problem": crate::remote::tls_problem(),
             })
             .to_string();
             respond(&mut stream, "200 OK", "application/json", &body);
@@ -1629,18 +1659,18 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
                 None => respond(&mut stream, "500 Internal Server Error", "text/plain", "qr failed"),
             },
         },
+        // the QR code for pairing: https://<address>/#pin=<pin of the key of the PC>[&c=<code>] (no secret of the link in it)
         ("GET", "/remote-qr") | ("GET", "/remote-qr-https") => {
             if !crate::remote::is_running() {
                 respond(&mut stream, "404 Not Found", "text/plain", "remote control is off");
             } else {
-                let https = req.path == "/remote-qr-https";
                 // ?ip=… : only an address of this PC (never a link to somewhere else)
                 let ip = req.query.split('&').find_map(|kv| kv.strip_prefix("ip=")).map(|v| v.to_string());
-                let link = match ip {
-                    Some(ip) if crate::remote::addresses().iter().any(|a| a.ip == ip) => crate::remote::url_for(&ip, https),
-                    _ => if https { crate::remote::url_https() } else { crate::remote::url() },
+                let ip = match ip {
+                    Some(ip) if crate::remote::addresses().iter().any(|a| a.ip == ip) => ip,
+                    _ => crate::remote::addresses().first().map(|a| a.ip.clone()).unwrap_or_else(|| "localhost".to_string()),
                 };
-                match qr_svg(&link) {
+                match crate::remote::pair_link(&ip).ok().and_then(|l| qr_svg(&l)) {
                     Some(svg) => respond_bytes(&mut stream, "200 OK", "image/svg+xml", svg.as_bytes()),
                     None => respond(&mut stream, "500 Internal Server Error", "text/plain", "qr failed"),
                 }

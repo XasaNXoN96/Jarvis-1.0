@@ -543,7 +543,7 @@ fn measure_remote() -> Check {
     let running = crate::remote::is_running();
     let lan = if running {
         let url = crate::remote::url();
-        let host = url.trim_start_matches("http://").split('/').next().unwrap_or("").to_string();
+        let host = url.trim_start_matches("https://").trim_start_matches("http://").split('/').next().unwrap_or("").to_string();
         if host.is_empty() {
             None
         } else {

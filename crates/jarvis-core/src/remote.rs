@@ -630,18 +630,74 @@ fn local_ip() -> String {
     addresses().first().map(|a| a.ip.clone()).or_else(|| default_route_ip().map(|ip| ip.to_string())).unwrap_or_else(|| "localhost".to_string())
 }
 
+// https: the address of the PC WITHOUT any secret (the phone is paired with a one-time code and pins the key of the PC, see pair_link);
+// http (only for the owner's explicit «allow http», see allow_http): the old link with the shared secret
 pub fn url_for(ip: &str, https: bool) -> String {
-    format!("{}://{}:{}/?t={}", if https { "https" } else { "http" }, ip, PORT, token())
+    if https {
+        format!("https://{}:{}/", ip, PORT)
+    } else {
+        format!("http://{}:{}/?t={}", ip, PORT, token())
+    }
 }
 
-// main link: plain http opens in every browser without a warning (inside the home network or a VPN)
+// the link of the PC for the phone (https, no secret in it)
 pub fn url() -> String {
-    url_for(&local_ip(), false)
+    url_for(&local_ip(), true)
 }
 
-// https link (own certificate): browsers warn once, but only here the phone microphone is allowed
 pub fn url_https() -> String {
-    url_for(&local_ip(), true)
+    url()
+}
+
+// The link for pairing: the address, the pin of the PC key and, while a code is shown, the one-time code. Everything after «#» stays
+// on the phone (a fragment is never sent over the network). The phone checks the pin at the very first handshake.
+pub fn pair_link(ip: &str) -> Result<String, String> {
+    let (_, pin, _) = crate::remote_tls::current_pin()?;
+    let mut link = format!("https://{}:{}/#pin={}", ip, PORT, pin);
+    if let Some((code, _)) = crate::pairing::active_code(now_secs()) {
+        link.push_str(&format!("&c={}", code));
+    }
+    Ok(link)
+}
+
+// ---- the policy of plain http ----
+// OFF by default. Plain http is answered only (1) from this very computer while the Cloudflare tunnel is up (cloudflared connects to
+// 127.0.0.1) or (2) when the owner switched «allow http in the home network» on (a visible warning, an entry in the journal).
+// Everything else gets an answer that says to use https, and its request is not read.
+const POLICY_FILE: &str = "remote_policy.json";
+
+#[derive(serde::Serialize, serde::Deserialize, Default, Clone)]
+struct Policy {
+    allow_http: bool,
+    since: u64,
+}
+
+pub fn allow_http() -> bool {
+    crate::store::read::<Policy>(POLICY_FILE).0.allow_http
+}
+
+pub fn set_allow_http(on: bool) -> Result<(), String> {
+    crate::store::write(POLICY_FILE, &Policy { allow_http: on, since: crate::store::now() })?;
+    crate::audit::record("remote", "allow_http", "high", if on { "allowed" } else { "refused" }, true, if on { "обычный http в локальной сети включён владельцем" } else { "обычный http в локальной сети выключен" });
+    Ok(())
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum HttpVerdict {
+    Serve,
+    // the peer is this computer and the tunnel is up: the only loopback client that is expected
+    ServeTunnel,
+    Refuse,
+}
+
+pub fn http_policy(peer_is_loopback: bool, tunnel_up: bool, allow_http: bool) -> HttpVerdict {
+    if peer_is_loopback && tunnel_up {
+        HttpVerdict::ServeTunnel
+    } else if allow_http {
+        HttpVerdict::Serve
+    } else {
+        HttpVerdict::Refuse
+    }
 }
 
 pub fn is_running() -> bool {
@@ -995,13 +1051,25 @@ fn serve(stream: TcpStream) -> std::io::Result<()> {
         let config = tls_current().map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
         let conn = rustls::ServerConnection::new(config).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
         let mut tls_stream = rustls::StreamOwned::new(conn, stream);
-        handle(&mut tls_stream)?;
+        // (a request that arrives over TLS is never a tunnel request: the address header of Cloudflare is not believed there)
+        handle_from(&mut tls_stream, false)?;
         tls_stream.conn.send_close_notify();
         let _ = tls_stream.flush();
         Ok(())
     } else {
         let mut stream = stream;
-        handle(&mut stream)
+        let loopback = stream.peer_addr().map(|a| a.ip().is_loopback()).unwrap_or(false);
+        match http_policy(loopback, crate::tunnel::is_on(), allow_http()) {
+            HttpVerdict::Refuse => {
+                crate::audit::record_rate_limited("remote-plain-http", 60, "remote", "plain_http", "refused", "обычный http отклонён: нужен https");
+                // not read, not parsed: no secret in that request is looked at
+                let body = "Обычный http отключён. Откройте пульт по https (адрес из окна Jarvis).";
+                let _ = write!(stream, "HTTP/1.1 426 Upgrade Required\r\nUpgrade: TLS/1.2\r\nConnection: Upgrade, close\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\n\r\n{}", body.len(), body);
+                Ok(())
+            }
+            HttpVerdict::ServeTunnel => handle_from(&mut stream, true),
+            HttpVerdict::Serve => handle_from(&mut stream, false),
+        }
     }
 }
 
@@ -1023,6 +1091,14 @@ fn tls_config(names: &[String]) -> Result<(std::sync::Arc<rustls::ServerConfig>,
         .with_single_cert(vec![CertificateDer::from(m.cert_der)], PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(m.key_der)))
         .map_err(|e| e.to_string())?;
     Ok((std::sync::Arc::new(config), m.not_after))
+}
+
+// A new key of the PC (the owner asked): the old key file is kept aside, the served configuration is dropped, every phone must pair again.
+pub fn rotate_tls_key() -> Result<String, String> {
+    let h = crate::remote_tls::rotate_key()?;
+    *TLS.lock() = None;
+    crate::audit::record("remote", "tls_key_rotate", "high", "allowed", true, "ключ ПК заменён по запросу владельца");
+    Ok(crate::remote_tls::fingerprint_groups(&h))
 }
 
 // the phone can send a phrase when the queue of the program exists (it is created at the start of the program)
@@ -1097,8 +1173,19 @@ pub fn voice_audio(samples: &[i16]) -> serde_json::Value {
     json!({ "ok": true, "kind": "command", "text": text })
 }
 
+// (the tests describe a request of the tunnel, like cloudflared would send it)
+#[cfg(test)]
 fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
-    let req = read_request(stream)?;
+    handle_from(stream, true)
+}
+
+// `via_tunnel`: the request came from this computer while the tunnel is up; only then the address in `Cf-Connecting-Ip` is believed
+// (from the home network anybody could write that header and pick a fresh bucket of the limit for every request)
+fn handle_from<S: Read + Write>(stream: &mut S, via_tunnel: bool) -> std::io::Result<()> {
+    let mut req = read_request(stream)?;
+    if !via_tunnel {
+        req.client_ip.clear();
+    }
 
     if !is_running() {
         respond(stream, "503 Service Unavailable", "text/plain", "off");
@@ -1606,65 +1693,136 @@ mod tests {
         assert!(t0.elapsed() < Duration::from_secs(2), "{:?}", t0.elapsed());
     }
 
+    // waits until the port really accepts connections (up to 15 s): on a loaded runner the start (certificate, bind) is not instant
+    fn wait_for_port() {
+        let addr = std::net::SocketAddr::from(([127, 0, 0, 1], PORT));
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        while std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_err() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+
     // the page opens without the secret (a reload, a home-screen shortcut); news and commands never do
     #[test]
     fn the_page_needs_no_secret_but_every_request_for_data_does() {
         let _g = PHONE_TEST_LOCK.lock();
-        start().expect("start");
-        std::thread::sleep(Duration::from_millis(500));
-        let get = |path: &str, extra: &[&str]| {
-            let mut args = vec!["-s", "--max-time", "5"];
-            args.extend_from_slice(extra);
-            let url = format!("http://127.0.0.1:{}{}", PORT, path);
-            args.push(&url);
-            let out = std::process::Command::new("curl").args(&args).output().expect("curl");
-            String::from_utf8_lossy(&out.stdout).to_string()
-        };
-        assert!(get("/", &[]).contains("Сказать команду"), "the page itself");
-        assert_eq!(get("/poll?after=0", &[]), "forbidden");
-        assert_eq!(get("/cmd", &["-X", "POST", "-d", "выключи компьютер"]), "forbidden");
-        assert_eq!(get("/?t=0123456789abcdef0123456789abcdef", &[]), "forbidden", "a wrong secret in the link");
-        let t = token();
-        let header = format!("X-Token: {}", t);
-        assert!(get("/poll?after=0", &["-H", &header]).contains("\"msgs\""));
+        // (https: plain http from the home network is off by default; the key of the test lives in a temporary folder)
+        crate::store::with_temp(|| {
+            RUNNING.store(false, Ordering::SeqCst);
+            std::thread::sleep(Duration::from_millis(400));
+            start().expect("start");
+            wait_for_port();
+            let get = |path: &str, extra: &[&str]| {
+                let mut args = vec!["-sk", "--max-time", "5"];
+                args.extend_from_slice(extra);
+                let url = format!("https://127.0.0.1:{}{}", PORT, path);
+                args.push(&url);
+                let out = std::process::Command::new("curl").args(&args).output().expect("curl");
+                String::from_utf8_lossy(&out.stdout).to_string()
+            };
+            assert!(get("/", &[]).contains("Сказать команду"), "the page itself");
+            assert_eq!(get("/poll?after=0", &[]), "forbidden");
+            assert_eq!(get("/cmd", &["-X", "POST", "-d", "выключи компьютер"]), "forbidden");
+            assert_eq!(get("/?t=0123456789abcdef0123456789abcdef", &[]), "forbidden", "a wrong secret in the link");
+            let t = token();
+            let header = format!("X-Token: {}", t);
+            assert!(get("/poll?after=0", &["-H", &header]).contains("\"msgs\""));
+        });
     }
 
     // the same port answers https (self-signed) and plain http
     #[test]
     fn https_and_http_on_one_port() {
         let _g = PHONE_TEST_LOCK.lock();
-        // every failure names the stage, the port and what the program thought it was doing (the secret is never printed)
-        // other tests set the flag by hand (no listener behind it): with it left on, start() would return at once and nothing would listen.
-        // The flag is cleared and the old accept loop, if there is one, is given the time to see it and close its listener.
+        // (the key and the certificate of the test live in a temporary folder, never next to the sources)
+        crate::store::with_temp(|| {
+            // every failure names the stage, the port and what the program thought it was doing (the secret is never printed)
+            // other tests set the flag by hand (no listener behind it): with it left on, start() would return at once and nothing would listen.
+            // The flag is cleared and the old accept loop, if there is one, is given the time to see it and close its listener.
+            RUNNING.store(false, Ordering::SeqCst);
+            std::thread::sleep(Duration::from_millis(400));
+            let started = start();
+            assert!(started.is_ok(), "stage=start port={} error={:?} running={}", PORT, started.as_ref().err(), is_running());
+            wait_for_port();
+            let get = |scheme: &str| -> (Option<i32>, String) {
+                let out = std::process::Command::new("curl").args(["-sk", "--max-time", "5", "-i", &format!("{}://127.0.0.1:{}/", scheme, PORT)]).output().expect("curl");
+                (out.status.code(), String::from_utf8_lossy(&out.stdout).to_string())
+            };
+            // https: the page, without any secret
+            let (code, text) = get("https");
+            assert!(text.contains("Сказать команду"), "stage=curl-https curl_status={:?} running={} stdout_head={:?}", code, is_running(), text.chars().take(80).collect::<String>());
+            // plain http: OFF by default, whoever asks (this computer without the tunnel is not the tunnel)
+            assert!(!allow_http());
+            let (_, text) = get("http");
+            assert!(text.starts_with("HTTP/1.1 426") && !text.contains("Сказать команду"), "plain http must be refused by default: {:?}", text.chars().take(80).collect::<String>());
+            // the owner switches it on on purpose: then it answers (and the journal has the entry)
+            set_allow_http(true).unwrap();
+            let (_, text) = get("http");
+            assert!(text.contains("Сказать команду"), "stage=curl-http-allowed stdout_head={:?}", text.chars().take(80).collect::<String>());
+            set_allow_http(false).unwrap();
+            let (_, text) = get("http");
+            assert!(text.starts_with("HTTP/1.1 426"), "switched off again: refused again");
+            stop();
+        });
+    }
+
+    #[test]
+    fn plain_http_is_answered_only_for_the_tunnel_or_when_the_owner_allowed_it() {
+        use HttpVerdict::*;
+        // (peer is this computer, tunnel is up, owner allowed http)
+        assert_eq!(http_policy(true, true, false), ServeTunnel, "cloudflared on this computer while the tunnel is up");
+        assert_eq!(http_policy(true, false, false), Refuse, "this computer without the tunnel is not a reason");
+        assert_eq!(http_policy(false, true, false), Refuse, "the home network is never the tunnel");
+        assert_eq!(http_policy(false, false, false), Refuse);
+        assert_eq!(http_policy(false, false, true), Serve, "only the explicit choice of the owner opens the home network");
+        assert_eq!(http_policy(false, true, true), Serve);
+    }
+
+    #[test]
+    fn the_http_choice_is_saved_and_off_by_default() {
+        crate::store::with_temp(|| {
+            assert!(!allow_http());
+            set_allow_http(true).unwrap();
+            assert!(allow_http());
+            set_allow_http(false).unwrap();
+            assert!(!allow_http());
+        });
+    }
+
+    #[test]
+    fn links_for_the_phone_carry_no_secret_and_the_pairing_link_carries_the_pin() {
+        let _g = PHONE_TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            let link = url_for("192.168.1.42", true);
+            assert_eq!(link, "https://192.168.1.42:9713/");
+            assert!(!link.contains(&token()) && !link.contains("t="));
+            pairing::reset_for_tests();
+            let p = pair_link("192.168.1.42").unwrap();
+            let (_, pin, _) = crate::remote_tls::current_pin().unwrap();
+            assert_eq!(p, format!("https://192.168.1.42:9713/#pin={}", pin), "no code is shown: only the pin");
+            assert!(!p.contains(&token()), "the shared secret is never in the pairing link");
+            let code = pairing::start_code(now_secs());
+            let p = pair_link("192.168.1.42").unwrap();
+            assert_eq!(p, format!("https://192.168.1.42:9713/#pin={}&c={}", pin, code));
+            pairing::reset_for_tests();
+        });
+    }
+
+    #[test]
+    fn the_address_header_of_cloudflare_is_believed_only_on_the_tunnel_connection() {
+        let _g = PHONE_TEST_LOCK.lock();
+        // a wrong secret with a forged header from the home network: the forged address must not pick a bucket of the limit
+        FAILS.lock().clear();
+        RUNNING.store(true, Ordering::SeqCst);
+        let raw = "GET /poll HTTP/1.1\r\nCf-Connecting-Ip: 203.0.113.200\r\nX-Token: wrong\r\n\r\n";
+        let mut m = Mock { inp: std::io::Cursor::new(raw.as_bytes().to_vec()), out: Vec::new() };
+        handle_from(&mut m, false).unwrap();
+        assert!(!FAILS.lock().contains_key(&throttle_key("203.0.113.200")), "a header from the home network is not believed");
+        let mut m = Mock { inp: std::io::Cursor::new(raw.as_bytes().to_vec()), out: Vec::new() };
+        handle_from(&mut m, true).unwrap();
+        assert!(FAILS.lock().contains_key(&throttle_key("203.0.113.200")), "through the tunnel it is");
+        FAILS.lock().clear();
         RUNNING.store(false, Ordering::SeqCst);
-        std::thread::sleep(Duration::from_millis(400));
-        let started = start();
-        assert!(started.is_ok(), "stage=start port={} error={:?} running={}", PORT, started.as_ref().err(), is_running());
-        // wait until the port really accepts connections (up to 15 s): on a loaded runner the start (certificate, bind) is not instant
-        let addr = std::net::SocketAddr::from(([127, 0, 0, 1], PORT));
-        let deadline = std::time::Instant::now() + Duration::from_secs(15);
-        while std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_err() && std::time::Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(100));
-        }
-        for scheme in ["https", "http"] {
-            let out = std::process::Command::new("curl")
-                .args(["-sk", "--max-time", "5", &format!("{}://127.0.0.1:{}/?t={}", scheme, PORT, token())])
-                .output()
-                .expect("curl");
-            let text = String::from_utf8_lossy(&out.stdout);
-            assert!(
-                text.contains("Сказать команду"),
-                "stage=curl-{} address=127.0.0.1:{} curl_status={:?} running={} stdout_len={} stdout_head={:?} stderr={:?}",
-                scheme,
-                PORT,
-                out.status.code(),
-                is_running(),
-                text.len(),
-                text.chars().take(80).collect::<String>(),
-                String::from_utf8_lossy(&out.stderr).trim()
-            );
-        }
-        stop();
     }
 
     #[test]
