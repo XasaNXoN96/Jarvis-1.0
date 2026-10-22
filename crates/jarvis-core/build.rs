@@ -48,7 +48,19 @@ fn main() {
     println!("cargo:rerun-if-changed={}", page_path.display());
     let page = std::fs::read_to_string(&page_path).unwrap();
     let page = if std::env::var("CARGO_FEATURE_USER_EDITION").is_ok() { strip_admin(&page) } else { page };
-    std::fs::write(PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("ui_page.html"), page).unwrap();
+    // the themes and the spheres are one piece of code for the window and for the phone page
+    let src_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("src");
+    let kit_path = src_dir.join("orbkit.js");
+    println!("cargo:rerun-if-changed={}", kit_path.display());
+    let kit = std::fs::read_to_string(&kit_path).unwrap();
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    assert!(page.contains("/*ORBKIT*/"), "ui_page.html: the place of the sphere code is gone");
+    std::fs::write(out_dir.join("ui_page.html"), page.replace("/*ORBKIT*/", &kit)).unwrap();
+    let phone_path = src_dir.join("remote_page.html");
+    println!("cargo:rerun-if-changed={}", phone_path.display());
+    let phone = std::fs::read_to_string(&phone_path).unwrap();
+    assert!(phone.contains("/*ORBKIT*/"), "remote_page.html: the place of the sphere code is gone");
+    std::fs::write(out_dir.join("remote_page.html"), phone.replace("/*ORBKIT*/", &kit)).unwrap();
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let root = manifest_dir.join("..").join("..").join("resources").join("commands");
     println!("cargo:rerun-if-changed={}", root.display());

@@ -233,7 +233,7 @@ fn license_action(body: &serde_json::Value) -> serde_json::Value {
 // the buttons of the window that do what a paid command does
 fn paid_op_id(name: &str) -> Option<&'static str> {
     Some(match name {
-        "app_launch" => "ui_app_launch",
+        "app_launch" | "ess_launch" => "ui_app_launch",
         "file_search" => "ui_file_search",
         "file_open" | "file_reveal" => "ui_file_open",
         "remote_tunnel" => "ui_remote_tunnel",
@@ -472,6 +472,22 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         "pl_remove" => json!({ "ok": crate::proglib::remove_shortcut(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) }),
         "pl_hide" => json!({ "ok": crate::proglib::hide(body.get("name").and_then(|v| v.as_str()).unwrap_or("")) }),
         "pl_unhide" => json!({ "ok": crate::proglib::unhide_all() }),
+        // «Проверить имя»: a few seconds of listening that only shows what the wake-word recognizer heard
+        "hist_get" => {
+            let door = match body.get("door").and_then(|v| v.as_str()) { Some("pc") => "pc", Some("phone") => "phone", _ => "all" };
+            json!({ "ok": true, "h": crate::devhist::json(door, 60) })
+        }
+        "hist_clear" => {
+            let door = match body.get("door").and_then(|v| v.as_str()) { Some("pc") => "pc", Some("phone") => "phone", _ => "all" };
+            json!({ "ok": true, "removed": crate::devhist::clear(door) })
+        }
+        "name_test_start" => { crate::nametest::start(); json!({ "ok": true, "status": crate::nametest::status_json() }) }
+        "name_test_stop" => { crate::nametest::stop(); json!({ "ok": true, "status": crate::nametest::status_json() }) }
+        "name_test_status" => json!({ "ok": true, "status": crate::nametest::status_json() }),
+        "ess_launch" => match crate::proglib::launch_essential(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(m) => json!({ "ok": true, "message": m }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
         "pl_launch" => match crate::proglib::launch_shortcut(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) {
             Ok(m) => json!({ "ok": true, "message": m }),
             Err(e) => json!({ "ok": false, "message": e }),

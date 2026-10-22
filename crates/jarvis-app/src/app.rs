@@ -671,6 +671,8 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
     // (the loop reads no microphone while a command runs: the watchdog of the microphone is told)
     let _busy = jarvis_core::wakewatch::busy();
     info!("Command door: {}", source.as_str());
+    // the history of the two sections «ПК» / «Телефон» (a question that only answers an open «да/нет» is not a new one)
+    if jarvis_core::confirm::pending().is_none() { jarvis_core::devhist::question(source, text); }
 
     // a question «Подтвердить? да / нет» is open: this phrase answers it (only from the door the request came through)
     match jarvis_core::confirm::reply(text, source) {

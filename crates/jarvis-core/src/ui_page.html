@@ -764,6 +764,32 @@
   #mini .mtxt span { font-size: 13px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   #mini .mb { flex: none; width: 30px; height: 30px; border-radius: 8px; border: 1px solid rgba(127,127,127,.35); background: transparent; color: inherit; cursor: pointer; font-size: 14px; }
   .gp-modal .form .acts { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+
+  /* ---- settings v2: panels, an accent of the theme, folded blocks (the colours come from the theme variables) ---- */
+  #page-settings.ds .set-main { padding: 2px 10px 24px 2px; }
+  #page-settings.ds .set-title { border: 0; margin-bottom: var(--sp-4); }
+  #page-settings.ds .set-title h1 { font-size: 24px; letter-spacing: var(--ls, 0); text-transform: var(--head-tf, none); }
+  #page-settings.ds .set-main > .card { border: 1px solid var(--line); background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 96%, #fff 4%), var(--panel)); border-radius: var(--radius-lg); padding: 6px 20px 10px; margin: 0 0 var(--sp-4); box-shadow: 0 8px 28px #0000003a; }
+  #page-settings.ds .set-main > .card > h3 { margin: 0; padding: 14px 0 12px; font-size: 13px; letter-spacing: .09em; color: var(--text); border-bottom: 1px solid var(--row-line); }
+  #page-settings.ds .set-main > .card > h3 .ei { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-size: 15px; }
+  #page-settings.ds .set-main > .card .setrow:first-of-type { border-top: 0; }
+  #page-settings.ds .set-main > .card .setrow { padding: 13px 4px; }
+  #page-settings.ds .set-main > .card .setrow:hover { background: transparent; }
+  #page-settings.ds .set-cats button { border: 1px solid transparent; }
+  #page-settings.ds .set-cats button.active { background: color-mix(in srgb, var(--accent) 13%, transparent); border-color: color-mix(in srgb, var(--accent) 38%, transparent); color: var(--text); box-shadow: inset 3px 0 0 var(--accent); }
+  #page-settings.ds .set-cats button.active .ei { color: var(--accent); }
+  #page-settings.ds .set-side input[type=text] { border-radius: 999px; padding: 10px 16px; }
+  /* «Дополнительно»: a list of folded blocks, one is open at a time */
+  #page-settings.ds .card.acc > h3 { cursor: pointer; border-bottom-color: transparent; position: relative; padding-right: 30px; user-select: none; }
+  #page-settings.ds .card.acc > h3::after { content: ""; position: absolute; right: 4px; top: 50%; width: 8px; height: 8px; margin-top: -6px; border-right: 2px solid var(--dim); border-bottom: 2px solid var(--dim); transform: rotate(45deg); transition: transform .18s; }
+  #page-settings.ds .card.acc:not(.folded) > h3 { border-bottom-color: var(--row-line); } #page-settings.ds .card.acc:not(.folded) > h3::after { transform: rotate(-135deg); margin-top: -2px; }
+  #page-settings.ds .card.acc > h3:hover { color: var(--accent); }
+  #page-settings.ds .card.acc.folded { padding-bottom: 0; } #page-settings.ds .card.acc.folded > :not(h3) { display: none !important; }
+  .hi-list { max-height: 360px; overflow-y: auto; } .hi-item { padding: 9px 4px; border-top: 1px solid var(--row-line); } .hi-item small { color: var(--dim); } .hi-item .hi-a { color: var(--accent); font-size: var(--fs-sm); margin-top: 2px; }
+  /* the test of the name */
+  .nt-box { margin: 2px 0 10px; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--field-bg); } .nt-box[hidden] { display: none; }
+  .nt-h { font-size: var(--fs-md); margin-bottom: 6px; } .nt-h.ok { color: var(--ok); } .nt-h.bad { color: var(--warn); }
+  .nt-row { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; border-top: 1px solid var(--row-line); font-size: var(--fs-sm); color: var(--dim); } .nt-row.ok { color: var(--ok); } .nt-row b { font-weight: 600; }
 </style>
 </head>
 <body>
@@ -1053,7 +1079,7 @@
     <section class="page ds" id="page-apps">
       <h1>Программы</h1>
       <p class="lead">Скажите «Джарвис, открой …» или нажмите «Запустить». «Обновить список» ищет заново: новые программы попадут в раздел «Новые» и в свой раздел.</p>
-      <div class="ap-tabs" id="ap-mode" role="tablist"><button type="button" class="chip on" data-m="list">Установленные</button><button type="button" class="chip" data-m="catalog">Каталог Windows</button></div>
+      <div class="ap-tabs" id="ap-mode" role="tablist"><button type="button" class="chip on" data-m="list">Установленные</button><button type="button" class="chip" data-m="catalog">Найти и установить</button></div>
       <div id="ap-catalog" hidden>
         <p class="lead">Программы из официального каталога Windows (winget). Установщик скачивается и сверяется winget по контрольной сумме из каталога; запускается с обычным окном, молча ничего не ставится. Нужны разрешение «Скачивать и ставить программы» в центре разрешений и ваш клик «Установить».</p>
         <div class="ap-tools"><input type="text" id="pc-q" maxlength="60" placeholder="Что найти, например: vlc"><button class="btn primary" id="pc-find" type="button">Найти</button></div>
@@ -1283,20 +1309,17 @@
         <aside class="set-side">
           <input type="text" id="set-search" placeholder="Поиск по настройкам" aria-label="Поиск по настройкам">
           <div class="set-cats" id="set-cats" role="navigation" aria-label="Категории настроек">
-            <button type="button" data-cat="general"><span class="ei" data-ico="gear"></span><span>Общие</span></button>
+            <button type="button" data-cat="main"><span class="ei" data-ico="gear"></span><span>Основное</span></button>
             <button type="button" data-cat="look"><span class="ei" data-ico="grid"></span><span>Внешний вид</span></button>
-            <button type="button" data-cat="voice"><span class="ei" data-ico="speaker"></span><span>Голос и звук</span></button>
-            <button type="button" data-cat="ai"><span class="ei" data-ico="spark"></span><span>ИИ и ответы</span></button>
-            <button type="button" data-cat="notify"><span class="ei" data-ico="inbox"></span><span>Уведомления</span></button>
-            <button type="button" data-cat="connect"><span class="ei" data-ico="phone"></span><span>Телефон и интеграции</span></button>
-            <button type="button" data-cat="privacy"><span class="ei" data-ico="shield"></span><span>Безопасность и данные</span></button>
+            <button type="button" data-cat="connect"><span class="ei" data-ico="phone"></span><span>Подключения</span></button>
+            <button type="button" data-cat="more"><span class="ei" data-ico="shield"></span><span>Дополнительно</span></button>
           </div>
         </aside>
         <div class="set-main" id="set-main">
-          <div class="set-title"><h1 id="set-title">Общие</h1><small class="dim" id="set-sub">Изменения сохраняются сами и остаются после перезапуска.</small></div>
+          <div class="set-title"><h1 id="set-title">Основное</h1><small class="dim" id="set-sub">Изменения сохраняются сами и остаются после перезапуска.</small></div>
           <div id="set-subtabs" role="tablist" hidden></div>
           <div class="empty" id="set-none" style="display:none">Ничего не найдено. Попробуйте другое слово, например: громкость, микрофон, ключ.</div>
-      <div class="card" data-cat="general" id="general-card" data-tab="Основные"><h3><span class="ei">⚙</span>Основные</h3>
+      <div class="card" data-cat="main" data-ord="5" id="general-card" data-tab="Основные"><h3><span class="ei">⚙</span>Основные</h3>
         <div class="setrow"><div class="l">Автозагрузка с Windows<small id="as-hint">запускать Джарвиса в фоне (значок в трее) при входе в Windows; та же настройка, что в установщике</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="as-on"><span></span></label></div></div>
         <div class="setrow"><div class="l">Браузер для сайтов<small>в нём открываются сайты по голосовым командам; если его нет на компьютере — откроется браузер Windows по умолчанию</small></div>
@@ -1306,7 +1329,7 @@
         <div class="msgline" id="gen-msg"></div>
       </div>
 
-      <div class="card" data-cat="privacy" id="archive-card" data-tab="Архив диалогов"><h3><span class="ei">🗃</span>Архив диалогов</h3>
+      <div class="card acc" data-cat="more" id="archive-card" data-tab="Архив диалогов"><h3><span class="ei">🗃</span>Архив диалогов</h3>
         <div class="privacy">Когда вы удаляете диалог, он попадает сюда и хранится как текст только на этом компьютере. Отсюда его можно прочитать, скопировать, вернуть в «Диалоги» или удалить навсегда.</div>
         <div class="setrow"><div class="l">Поиск по архиву<small id="ar-count">—</small></div>
           <div class="r"><input type="text" id="ar-query" placeholder="название или слово из переписки"><button class="btn" id="ar-clear" type="button">Очистить архив</button></div></div>
@@ -1318,7 +1341,7 @@
         <div class="msgline" id="ar-msg"></div>
       </div>
 
-      <div class="card" data-cat="privacy" id="privacy-card" data-tab="Приватность"><h3><span class="ei">🛡</span>Приватность и разрешения</h3>
+      <div class="card acc" data-cat="more" id="privacy-card" data-tab="Приватность"><h3><span class="ei">🛡</span>Приватность и разрешения</h3>
         <div class="setrow"><div class="l">Микрофон<small>выключенный микрофон не начинает новых записей, текущая запись останавливается; остаётся выключенным после перезапуска</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="pv-mic"><span></span></label></div></div>
         <div class="setrow"><div class="l">Голосовое озвучивание<small>при выключении текущая речь сразу останавливается; голос Windows вместо Piper не подставляется</small></div>
@@ -1340,7 +1363,7 @@
         <div id="pv-net"></div>
       </div>
 
-      <div class="card" data-cat="notify" id="notify-card" data-tab="Джарвис"><h3><span class="ei">🔔</span>Уведомления Джарвиса</h3>
+      <div class="card" data-cat="connect" id="notify-card" data-tab="Джарвис"><h3><span class="ei">🔔</span>Уведомления Джарвиса</h3>
         <div class="setrow"><div class="l">Показывать уведомления<small>карточка «JARVIS // …» в правом верхнем углу экрана: таймеры, будильники, напоминания, завершённые задачи, ошибки. Не забирает фокус ввода</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="nt-show"><span></span></label></div></div>
         <div class="setrow"><div class="l">Озвучивать уведомления<small>голосом Джарвиса (Piper); ответ, уже сказанный в диалоге, повторно не озвучивается</small></div>
@@ -1354,7 +1377,7 @@
         <div id="nt-list"><div class="empty">Уведомлений пока нет.</div></div>
       </div>
 
-      <div class="card" data-cat="notify" id="sms-card" data-tab="Чтение сообщений"><h3><span class="ei">🗣</span>Как читать сообщения</h3>
+      <div class="card acc" data-cat="more" id="sms-card" data-tab="Чтение сообщений"><h3><span class="ei">🗣</span>Как читать сообщения</h3>
         <div class="setrow"><div class="l">Что зачитывать<small>полностью — отправитель и текст; только отправитель; или лишь «пришло сообщение». «Повтори сообщение» читает последнее ещё раз полностью, «стоп» останавливает голос.</small></div>
           <div class="r"><select id="sms-privacy"><option value="full">Отправитель и текст</option><option value="sender">Только отправитель</option><option value="silent">Только факт сообщения</option></select></div></div>
         <div class="setrow"><div class="l">Язык фраз<small>ссылки в тексте читаются словом «ссылка», длинные тексты сокращаются</small></div>
@@ -1362,7 +1385,7 @@
         <div class="setrow"><div class="l">Прочитать последнее<small>проверка звучания</small></div><div class="r"><button class="btn" id="sms-repeat" type="button">Повторить сообщение</button></div></div>
         <div class="msgline" id="sms-msg"></div>
       </div>
-      <div class="card" data-cat="notify" id="ext-card" data-tab="Другие программы"><h3><span class="ei">📨</span>Уведомления других программ</h3>
+      <div class="card" data-cat="connect" id="ext-card" data-tab="Другие программы"><h3><span class="ei">📨</span>Уведомления других программ</h3>
         <small class="dim">Джарвис может показывать и читать уведомления мессенджеров, почты и других программ — только с вашего разрешения и разрешения Windows (Windows 10 1809+ и Windows 11). При включении Windows может спросить разрешение; без него ничего не читается. Не все программы отправляют уведомления так, чтобы их можно было прочитать, а обычным (не из Microsoft Store) программам Windows иногда не даёт доступ совсем — тогда это будет видно в статусе. Тексты уведомлений остаются на этом компьютере: не сохраняются на диск, не попадают в историю и не отправляются в ИИ или в интернет.</small>
         <div class="setrow"><div class="l">Читать уведомления других программ<small id="ext-status">выключено</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="ext-on"><span></span></label></div></div>
@@ -1380,7 +1403,7 @@
         <div class="setrow"><div class="l">Добавить программу по названию</div><div class="r"><input type="text" id="ext-name" placeholder="например: Telegram" maxlength="80"><button class="btn" id="ext-add" type="button">Разрешить</button><button class="btn" id="ext-block" type="button">Исключить</button></div></div>
       </div>
 
-      <div class="card" data-cat="voice" id="mic-card" data-tab="Микрофон"><h3><span class="ei">🎤</span>Микрофон и звук</h3>
+      <div class="card" data-cat="main" data-ord="2" id="mic-card" data-tab="Микрофон"><h3><span class="ei">🎤</span>Микрофон и звук</h3>
         <div class="setrow"><div class="l">Микрофон<small>применится после перезапуска Джарвиса</small></div>
           <div class="r"><select id="mic-select"><option value="-1">Системный по умолчанию</option></select></div></div>
         <div class="setrow"><div class="l">Режим<small>выключите микрофон, чтобы управлять только текстом</small></div>
@@ -1401,7 +1424,7 @@
         <div class="banner" id="voice-banner2" style="margin-top:10px;width:100%"></div>
       </div>
 
-      <div class="card" data-cat="voice" id="voice-card" data-tab="Голос"><h3><span class="ei">🔊</span>Голос</h3>
+      <div class="card" data-cat="main" data-ord="1" id="voice-card" data-tab="Голос"><h3><span class="ei">🔊</span>Голос</h3>
         <div class="setrow"><div class="l">Голос реплик Джарвиса<small>записанные фразы («Да, сэр», «Слушаю»): Jarvis OG, Remaster, Howdy</small></div>
           <div class="r"><select id="rv-select"></select> <button class="btn" id="rv-test">Послушать</button></div></div>
         <div class="setrow" id="vi-row"><div class="l">Голос Джарвиса<small id="vi-hint">Свой женский голос Джарвиса (≈80 МБ), чтобы не говорил голос Windows</small></div>
@@ -1415,14 +1438,14 @@
         <div class="setrow"><div class="l">Озвучка ответов</div>
           <div class="r"><label class="sw"><input type="checkbox" id="tts-on"><span></span></label><button class="btn primary" id="tts-test">Проверить звук</button></div></div>
       </div>
-      <div class="card" data-cat="voice" id="voice-extra-card" data-tab="Облачный голос и память"><h3><span class="ei">☁</span>Облачный голос и память</h3>
+      <div class="card acc" data-cat="more" id="voice-extra-card" data-tab="Облачный голос и память"><h3><span class="ei">☁</span>Облачный голос и память</h3>
         <div class="setrow" id="cloud-row"><div class="l">Облачный голос (Яндекс SpeechKit)<small id="cloud-hint">Необязательно. Нужен ваш ключ от Yandex Cloud (сервисный аккаунт с ролью ai.speechkit-tts.user). <b>Текст ответов уходит в Яндекс</b> и услуга платная по тарифу Яндекса. После сохранения ключа голоса Яндекса появятся в списке «Голос». Если облако не отвечает, говорит голос Джарвиса.</small></div>
           <div class="r"><input type="password" id="cloud-key" placeholder="ключ Яндекса" autocomplete="off"><button type="button" class="btn small" id="cloud-save">Сохранить ключ</button><button type="button" class="btn small" id="cloud-forget">Удалить ключ</button></div></div>
         <div class="setrow"><div class="l">Держать голос в памяти<small>голос Джарвиса (Piper) загружается один раз, речь начинается быстрее; занимает около 100 МБ памяти. Выключите, если памяти мало</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="tts-warm"><span></span></label></div></div>
       </div>
 
-      <div class="card" data-cat="ai" id="ai-card" data-tab="Провайдер"><h3><span class="ei">✨</span>ИИ-провайдер</h3>
+      <div class="card" data-cat="main" data-ord="3" id="ai-card" data-tab="Провайдер"><h3><span class="ei">✨</span>ИИ-провайдер</h3>
         <div class="setrow"><div class="l">Провайдер</div>
           <div class="r"><select id="ai-provider">
             <option value="none">Не использовать</option>
@@ -1440,7 +1463,7 @@
         <div class="setrow"><div class="l">Отвечать ИИ на непонятные фразы, сказанные голосом<small>Всё, что вы напечатали и что не является командой, идёт выбранному ИИ, если он подключён. Вопросы голосом («что такое…», «объясни…») тоже. Этот переключатель добавляет к ним остальные непонятные фразы, сказанные голосом.</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="ai-fallback"><span></span></label></div></div>
       </div>
-      <div class="card" data-cat="privacy" id="owner-card" data-tab="Пароль владельца"><h3><span class="ei">🔐</span>Пароль владельца</h3>
+      <div class="card acc" data-cat="more" id="owner-card" data-tab="Пароль владельца"><h3><span class="ei">🔐</span>Пароль владельца</h3>
         <div class="setrow"><div class="l">Состояние<small id="ow-state"></small></div><div class="r"><button class="btn" id="ow-lock" type="button">Заблокировать</button></div></div>
         <div class="setrow"><div class="l">Войти<small>пока пароль задан, отправка сообщений, удаление памяти и контактов, расписание, разрешения и установка программ работают только после ввода пароля (на 15 минут). Голосом пароль не вводится.</small></div>
           <div class="r"><input type="password" id="ow-pw" autocomplete="off" placeholder="Пароль"><button class="btn primary" id="ow-unlock" type="button">Разблокировать</button></div></div>
@@ -1451,7 +1474,7 @@
         <div class="setrow"><div class="l">Снять пароль</div><div class="r"><input type="password" id="ow-rm" autocomplete="off" placeholder="Текущий пароль"><button class="btn" id="ow-remove" type="button">Снять</button></div></div>
         <div class="msgline" id="ow-msgline"></div>
       </div>
-      <div class="card" data-cat="privacy" id="perm-card" data-tab="Разрешения"><h3><span class="ei">🛡</span>Центр разрешений</h3>
+      <div class="card acc" data-cat="more" id="perm-card" data-tab="Разрешения"><h3><span class="ei">🛡</span>Центр разрешений</h3>
         <div class="setrow"><div class="l">Что Jarvis может делать сам<small>выключенное действительно останавливает способность: обработчик проверяет переключатель перед тем, как что-то сделать.</small></div></div>
         <div id="perm-list"></div><div class="msgline" id="perm-msg"></div>
       </div>
@@ -1465,11 +1488,11 @@
         <div class="ct-form"><input type="text" id="wol-name" maxlength="40" placeholder="Название"><input type="text" id="wol-mac" maxlength="20" placeholder="AA:BB:CC:DD:EE:FF"><button class="btn primary" id="wol-add" type="button">Добавить</button></div>
         <div id="wol-list" class="mem-list"></div><div class="msgline" id="wol-msg"></div>
       </div>
-      <div class="card" data-cat="privacy" id="comp-card" data-tab="Компоненты"><h3><span class="ei">🧩</span>Компоненты и модули</h3>
+      <div class="card acc" data-cat="more" id="comp-card" data-tab="Компоненты"><h3><span class="ei">🧩</span>Компоненты и модули</h3>
         <div class="setrow"><div class="l">Что скачивается отдельно<small>Файлы с фиксированных официальных адресов (голоса Piper, модель помощи прицела). Здесь видно, что установлено, чем гарантирована целостность, и можно установить, проверить или удалить. Включить и выключить разделы команд можно на странице «Команды».</small></div></div>
         <div id="comp-list" class="mem-list"></div><div class="msgline" id="comp-msg"></div>
       </div>
-      <div class="card" data-cat="privacy" id="kb-card" data-tab="База знаний"><h3><span class="ei">📚</span>База знаний (мои документы)</h3>
+      <div class="card acc" data-cat="more" id="kb-card" data-tab="База знаний"><h3><span class="ei">📚</span>База знаний (мои документы)</h3>
         <div class="setrow"><div class="l">Папки<small>Читаются только добавленные вами папки (txt, md, csv, rtf, docx, xlsx, pptx, odt). Вопросы: «найди в моих документах …», «ответь по документам …». Ответ всегда с источниками; тексты файлов для ИИ — только данные, не приказы.</small></div>
           <div class="r"><input type="text" id="kb-path" placeholder="C:\Users\Вы\Documents\Заметки"><button class="btn" id="kb-add" type="button">Добавить папку</button></div></div>
         <div id="kb-folders" class="mem-list"></div>
@@ -1477,7 +1500,7 @@
         <div class="setrow"><div class="l">Проверить поиск</div><div class="r"><input type="text" id="kb-q" placeholder="что искать"><button class="btn" id="kb-find" type="button">Найти</button></div></div>
         <div id="kb-hits" class="mem-list"></div><div class="msgline" id="kb-msg"></div>
       </div>
-      <div class="card" data-cat="privacy" id="undo-card" data-tab="История действий"><h3><span class="ei">↩</span>История действий</h3>
+      <div class="card acc" data-cat="more" id="undo-card" data-tab="История действий"><h3><span class="ei">↩</span>История действий</h3>
         <div class="setrow"><div class="l">Что Jarvis сделал сам<small>«Отменить» есть только у действий, которые можно честно вернуть (запись, задание, созданная картинка). Отправленное сообщение или запущенную программу вернуть нельзя. Голосом: «верни как было».</small></div></div>
         <div id="undo-list" class="mem-list"></div><div class="msgline" id="undo-msg"></div>
       </div>
@@ -1487,12 +1510,12 @@
         <div class="setrow"><div class="l">Устройства<small>включите разрешение «Управлять умным домом» в центре разрешений</small></div><div class="r"><button class="btn" id="home-load" type="button">Показать устройства</button></div></div>
         <div id="home-list" class="mem-list"></div><div class="msgline" id="home-msg"></div>
       </div>
-      <div class="card" data-cat="general" id="sched-card" data-tab="Расписание"><h3><span class="ei">⏰</span>Расписание заданий</h3>
+      <div class="card acc" data-cat="more" id="sched-card" data-tab="Расписание"><h3><span class="ei">⏰</span>Расписание заданий</h3>
         <div class="setrow"><div class="l">Новое задание<small>Фраза с временем: «каждый день в 9:00 открой почту», «завтра в 8:30 напомни про встречу», «каждые 30 минут пей воду», «каждую пятницу в 18:00 …». Задание выполняется так, будто вы сказали фразу. Пропущенное при выключенном Jarvis: выполняется один раз, если опоздание до часа, иначе пропускается.</small></div>
           <div class="r"><input type="text" id="sch-text" maxlength="300" placeholder="каждый день в 9:00 открой почту"><button class="btn primary" id="sch-add" type="button">Поставить</button></div></div>
         <div id="sch-list" class="mem-list"></div><div class="msgline" id="sch-msg"></div>
       </div>
-      <div class="card" data-cat="ai" id="persona-card" data-tab="Характер"><h3><span class="ei">🎭</span>Характер ответов</h3>
+      <div class="card acc" data-cat="more" id="persona-card" data-tab="Характер"><h3><span class="ei">🎭</span>Характер ответов</h3>
         <div class="setrow"><div class="l">Юмор<small>только манера ответа; о здоровье, деньгах, безопасности и горе Jarvis не шутит ни на каком уровне</small></div>
           <div class="r"><select id="pe-humor"><option value="0">Серьёзно</option><option value="1">Чуть-чуть</option><option value="2">Умеренно</option><option value="3">Весело</option></select></div></div>
         <div class="setrow"><div class="l">Язык ответов<small>«Как вопрос» — на языке вашего вопроса (русский, английский, узбекский)</small></div>
@@ -1500,23 +1523,23 @@
         <div class="setrow"><div class="l">Живая речь<small>короткие фразы без канцелярита; при неясном запросе — один уточняющий вопрос вместо догадок</small></div><div class="r"><label class="sw"><input type="checkbox" id="pe-natural"><span></span></label></div></div>
         <div class="msgline" id="pe-msg"></div>
       </div>
-      <div class="card" data-cat="ai" id="ca-card" data-tab="Правка кода"><h3><span class="ei">🧑‍💻</span>Помощник программиста</h3>
+      <div class="card acc" data-cat="more" id="ca-card" data-tab="Правка кода"><h3><span class="ei">🧑‍💻</span>Помощник программиста</h3>
         <div class="setrow"><div class="l">Файл и просьба<small>Укажите полный путь к текстовому файлу и что изменить. Jarvis покажет, какие строки уйдут и какие появятся, и ничего не запишет, пока вы не нажмёте «Применить». Перед записью рядом кладётся копия <code>.jarvis-bak</code>, вернуть можно в «Истории действий». Текст файла уходит ИИ-провайдеру, который вы настроили.</small></div></div>
         <div class="ct-form"><input type="text" id="ca-path" maxlength="260" placeholder="C:\\Проекты\\script.py"><input type="text" id="ca-text" maxlength="400" placeholder="Что изменить, например: добавь проверку на пустой ввод"><button class="btn primary" id="ca-go" type="button">Предложить правку</button></div>
         <pre id="ca-diff" class="ca-diff" hidden></pre>
         <div class="r" id="ca-actions" hidden><button class="btn primary" id="ca-apply" type="button">Применить</button><button class="btn" id="ca-discard" type="button">Отклонить</button></div>
         <div class="msgline" id="ca-msg"></div>
       </div>
-      <div class="card" data-cat="ai" id="img-card" data-tab="Картинки"><h3><span class="ei">🎨</span>Генерация картинок</h3>
+      <div class="card acc" data-cat="more" id="img-card" data-tab="Картинки"><h3><span class="ei">🎨</span>Генерация картинок</h3>
         <div class="setrow"><div class="l">Описание<small id="img-info">Картинка делается вашим ИИ-провайдером (OpenAI, Gemini или совместимым сервером) и сохраняется в Изображения\\Jarvis. Запрос может быть платным: решает провайдер. Видео пока недоступно: общего способа у провайдеров нет.</small></div></div>
         <div class="ct-form"><input type="text" id="img-prompt" maxlength="1500" placeholder="например: рыжий кот на крыше ночью, акварель"><input type="text" id="img-model" maxlength="80" placeholder="модель (пусто — по умолчанию)"><button class="btn primary" id="img-go" type="button">Создать</button><button class="btn" id="img-cancel" type="button" disabled>Отмена</button></div>
         <div class="msgline" id="img-msg"></div><img id="img-out" class="img-out" alt="" hidden>
       </div>
-      <div class="card" data-cat="ai" id="notes-card" data-tab="Дневник"><h3><span class="ei">📓</span>Голосовой дневник и заметки</h3>
+      <div class="card acc" data-cat="more" id="notes-card" data-tab="Дневник"><h3><span class="ei">📓</span>Голосовой дневник и заметки</h3>
         <div class="setrow"><div class="l">Записи<small>«запиши в дневник: …», «заметка: …», «что я записывал вчера», «найди в дневнике …». Пишется только то, что вы сами сказали записать.</small></div></div>
         <div id="notes-list" class="mem-list"></div>
       </div>
-      <div class="card" data-cat="ai" id="mem-card" data-tab="Память"><h3><span class="ei">🧠</span>Память Jarvis</h3>
+      <div class="card acc" data-cat="more" id="mem-card" data-tab="Память"><h3><span class="ei">🧠</span>Память Jarvis</h3>
         <div class="setrow"><div class="l">Что я помню<small>Скажите «запомни, что …», «что ты помнишь про …», «забудь …». Пароли, ключи, токены и номера карт не запоминаются. Файл лежит только на этом компьютере.</small></div>
           <div class="r"><label class="sw" title="ИИ сам предлагает запомнить важное (пока только хранит выбор)"><input type="checkbox" id="mem-auto"><span></span></label></div></div>
         <div class="setrow"><div class="l">Подсказывать ИИ<small>последние факты (до 15) добавляются к запросам: ИИ-провайдер видит их, когда вы с ним говорите</small></div>
@@ -1525,7 +1548,7 @@
         <div class="setrow"><div class="l">Найти<small>по словам записи</small></div><div class="r"><input type="text" id="mem-q" placeholder="поиск"><button class="btn" id="mem-export" type="button">Копировать всё</button></div></div>
         <div id="mem-list" class="mem-list"></div><div class="msgline" id="mem-msg"></div>
       </div>
-      <div class="card" data-cat="connect" id="ct-card" data-tab="Мои контакты"><h3><span class="ei">👥</span>Мои контакты</h3>
+      <div class="card acc" data-cat="more" id="ct-card" data-tab="Мои контакты"><h3><span class="ei">👥</span>Мои контакты</h3>
         <div class="setrow"><div class="l">Кому писать голосом<small>«напиши жене: буду поздно». В «Именах» перечислите слова, которыми вы называете человека (жена, любимая). Сообщение всегда ждёт вашего «да». WhatsApp и Telegram открываются с готовым текстом — «Отправить» нажимаете вы.</small></div></div>
         <div class="ct-form">
           <input type="text" id="ct-name" maxlength="60" placeholder="Имя"><input type="text" id="ct-alias" maxlength="120" placeholder="Имена через запятую: жена, Малика">
@@ -1537,7 +1560,7 @@
         <h4 style="margin:14px 0 6px">История сообщений</h4><div id="out-list" class="mem-list"></div>
         <div class="r"><button class="btn small" id="out-clear" type="button">Очистить историю</button></div>
       </div>
-      <div class="card" data-cat="ai" id="ai-extra-card" data-tab="Режим и возможности"><h3><span class="ei">🎭</span>Режим ответов и возможности</h3>
+      <div class="card acc" data-cat="more" id="ai-extra-card" data-tab="Режим и возможности"><h3><span class="ei">🎭</span>Режим ответов и возможности</h3>
         <div class="setrow"><div class="l">Режим ответов<small>меняется только манера ответа ИИ. Голосом: «режим психолога», «режим учителя», «режим программиста», «режим друга», «обычный режим»</small></div>
           <div class="r"><select id="ai-mode"><option value="">Обычный</option><option value="psychologist">Психолог</option><option value="teacher">Учитель</option><option value="coder">Программист</option><option value="friend">Друг</option></select></div></div>
         <div class="setrow"><div class="l">Разговорчивость<small>насколько длинно отвечает ИИ: коротко (одно-два предложения), обычно или подробно и тепло, как в беседе</small></div>
@@ -1549,7 +1572,7 @@
         <small class="dim">Ответы ИИ появляются на странице «Диалог». Ключ хранится только на этом компьютере в зашифрованном виде (шифрование Windows) и не показывается в окне. Сообщения уходят провайдеру, когда вы нажимаете «Отправить» или задаёте вопрос; команды компьютера («открой ворд», «поставь таймер») в ИИ не отправляются.</small>
       </div>
 
-      <div class="card" data-cat="general" id="game-card" data-tab="Игры"><h3><span class="ei">🎮</span>Игровой режим (голосовое управление игрой)</h3>
+      <div class="card acc" data-cat="more" id="game-card" data-tab="Игры"><h3><span class="ei">🎮</span>Игровой режим (голосовое управление игрой)</h3>
         <div class="setrow"><div class="l">Голосовое управление для игр<small id="game-hint">Только для одиночных игр, в окне игры из списка. Если запущена защита от читов, режим не включается</small></div>
           <div class="r"><span id="game-state" class="dim"></span> <button class="btn" id="game-on" type="button">Включить</button> <button class="btn" id="game-off" type="button">Выключить</button></div></div>
         <div class="setrow"><div class="l">Помощь прицела (эксперимент)<small id="aim-hint">Только в одиночных играх: пока удерживается клавиша прицела, подводит прицел к голове. Подробности и настройки — в разделе «Игры»</small></div>
@@ -1558,11 +1581,11 @@
         <div class="msgline" id="game-msg"></div>
         <small class="dim">Фразы: иди вперёд / назад / влево / вправо, беги, стой · смотри налево / направо / вверх / вниз (можно «на 45 градусов», «чуть», «разворот») · стреляй, огонь очередью, прекрати огонь · целься, не целься · перезаряди, гранату, нож, прыгай, присядь, используй. «Стой» отпускает все клавиши. Работает только если окно игры впереди.<br>Гонки: газ, тормоз, влево, вправо, прямо, ручник, нитро, сигнал, смени камеру · Экшен/приключения: атакуй, тяжёлый удар, блок, перекат, инвентарь, карта, полечись, садись в машину · свои фразы для любого жанра — в game_profile.json (docs/GAME-MODE.md).</small></details>
       </div>
-      <div class="card" data-cat="voice" id="micw-card" data-tab="Микрофон"><h3><span class="ei">🎙</span>Состояние микрофона</h3>
+      <div class="card acc" data-cat="more" id="micw-card" data-tab="Микрофон"><h3><span class="ei">🎙</span>Состояние микрофона</h3>
         <div class="setrow"><div class="l">Идёт ли звук<small id="micw-text">…</small></div><div class="r"><button class="btn" id="micw-refresh" type="button">Проверить</button></div></div>
         <small class="dim">Если звук перестал приходить, Jarvis сам переоткрывает микрофон (не чаще раза в 20 секунд, не больше 5 раз подряд) и честно пишет, если не вышло. Слово «Джарвис» он при этом не «слышит»: это только проверка потока звука.</small>
       </div>
-      <div class="card" data-cat="general" id="vp-card" data-tab="Мой голос"><h3><span class="ei">🗣</span>Мой голос</h3>
+      <div class="card acc" data-cat="more" id="vp-card" data-tab="Мой голос"><h3><span class="ei">🗣</span>Мой голос</h3>
         <div class="setrow"><div class="l">Слушать только мой голос<small id="vp-hint">Jarvis будет игнорировать чужие голоса, игру, фильм и свой собственный голос. Сначала запишите образец своего голоса. По умолчанию выключено.</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="vp-on"><span></span></label></div></div>
         <div class="setrow"><div class="l">Образец голоса<small id="vp-note"></small></div>
@@ -1572,20 +1595,29 @@
         <small class="dim" id="vp-stat"></small>
         <small class="dim">Это простая защита (экспериментально): голос различается по тембру и высоте. Она может ошибаться на похожих голосах и в шумной комнате и не защищает от записи вашего голоса. Хранятся только числа (без звука), на этом компьютере. Очень короткие команды из одного слова пропускаются без проверки. Отказы видны в «Диагностике» с расстоянием и порогом.</small>
       </div>
-      <div class="card" data-cat="general" id="upd-card" data-tab="Обновления"><h3><span class="ei">⟳</span>Обновления</h3>
+      <div class="card acc" data-cat="more" id="upd-card" data-tab="Обновления"><h3><span class="ei">⟳</span>Обновления</h3>
         <div class="setrow"><div class="l">Версия программы<small id="upd-hint">Проверка и установка обновлений только по вашей кнопке</small></div>
           <div class="r"><b id="upd-cur"></b> <button class="btn" id="upd-check" type="button">Проверить обновления</button> <button class="btn primary" id="upd-go" type="button" hidden>Скачать</button></div></div>
         <div class="msgline" id="upd-msg"></div>
       </div>
-      <div class="card" data-cat="general" id="name-card" data-tab="Имя помощника"><h3><span class="ei">🏷</span>Имя помощника</h3>
+      <div class="card" data-cat="main" data-ord="0" id="name-card" data-tab="Имя помощника"><h3><span class="ei">🏷</span>Имя помощника</h3>
         <div class="setrow"><div class="l">Как его зовут<small>на это имя он откликается голосом и в тексте. Одно слово, например «Карен». Пусто = «Джарвис». Интерфейс остаётся «Джарвис».</small></div>
           <div class="r"><input type="text" id="name-input" placeholder="Джарвис" maxlength="20"><button class="btn primary" id="name-save" type="button">Сохранить</button></div></div>
+        <div class="setrow"><div class="l">Проверить имя<small>скажите имя вслух: 12 секунд Jarvis только слушает и показывает, что услышал (никуда не отправляется, команды не выполняются)</small></div>
+          <div class="r"><button class="btn" id="name-test" type="button">Проверить имя</button></div></div>
+        <div class="nt-box" id="nt-box" hidden></div>
         <div class="msgline" id="name-msg"></div>
       </div>
-      <div class="card" data-cat="general" id="city-card" data-tab="Погода и город"><h3><span class="ei">🌤</span>Погода и город</h3>
+      <div class="card" data-cat="main" data-ord="4" id="city-card" data-tab="Погода и город"><h3><span class="ei">🌤</span>Погода и город</h3>
         <div class="setrow"><div class="l">Город<small>нужен только для блока погоды на главной. Местоположение компьютера не определяется. В интернет уходит только название города (open-meteo.com), и только для погоды.</small></div>
           <div class="r"><input type="text" id="city-input" placeholder="например: Ташкент" maxlength="80"><button class="btn primary" id="city-save" type="button">Сохранить</button></div></div>
         <div class="msgline" id="city-msg"></div>
+      </div>
+      <div class="card" data-cat="connect" id="hist-card" data-tab="История ПК и телефона"><h3><span class="ei">🧠</span>История: ПК и телефон</h3>
+        <div class="setrow"><div class="l">Что вы говорили<small>одна общая память: команды с телефона видны здесь, а команды с компьютера — в пульте на телефоне. «ПК» — голос, окно, консоль; «Телефон» — пульт и Telegram. Пароли и ключи не сохраняются.</small></div>
+          <div class="r"><div class="seg" id="hi-seg"><button type="button" data-door="pc" class="active">ПК <span id="hi-npc"></span></button><button type="button" data-door="phone">Телефон <span id="hi-nph"></span></button></div></div></div>
+        <div class="hi-list" id="hi-list"></div>
+        <div class="setrow"><div class="l">Очистить<small>удаляет только эту историю (память «запомни…» и диалоги остаются)</small></div><div class="r"><button class="btn" id="hi-clear" type="button">Очистить раздел</button></div></div>
       </div>
       <div class="card" data-cat="connect" id="remote-card" data-tab="Пульт телефона"><h3><span class="ei">📱</span>Пульт для телефона</h3>
         <div class="setrow"><div class="l">Управление с телефона<small>по Wi-Fi — в одной сети, из любой другой — с включённым «Из любой сети»; наведите камеру на QR-код</small></div>
@@ -1623,7 +1655,7 @@
         <div class="msgline" id="tg-msg"></div>
       </div>
 
-      <div class="card" data-cat="general" id="perf-card" data-tab="Производительность"><h3><span class="ei">⚡</span>Производительность</h3>
+      <div class="card acc" data-cat="more" id="perf-card" data-tab="Производительность"><h3><span class="ei">⚡</span>Производительность</h3>
         <div class="setrow"><div class="l">Режим<small id="perf-hint">«Слабый ноут»: сфера рисуется меньшим числом точек и реже, анимация останавливается, когда окно скрыто или открыта другая страница. Команды и голос работают так же</small></div>
           <div class="r"><div class="seg" id="perf-seg"><button data-perf="low" type="button">Слабый ноут</button><button data-perf="normal" type="button">Обычный ПК</button></div></div></div>
         <div class="setrow"><div class="l">Память Джарвиса<small>сколько оперативной памяти сейчас занимает сам Джарвис (с голосовыми моделями)</small></div>
@@ -2052,7 +2084,7 @@ async function appsLoad() {
     appsList = r.apps || [];
     apMarkNew(appsList);
     const when = r.scanned_at ? new Date(r.scanned_at * 1000).toLocaleString('ru-RU') : 'ещё не составлялся';
-    $('#ap-status').textContent = (r.scanning ? 'Ищу установленные программы… ' : '') + 'Программ: ' + appsList.length + ' · список составлен: ' + when + (r.error ? ' · ' + r.error : '');
+    $('#ap-status').textContent = (r.scanning ? 'Ищу установленные программы… ' : '') + 'Программ: ' + appsList.filter(a => a.category === 'user' || a.category === 'other').length + ' · список составлен: ' + when + (r.error ? ' · ' + r.error : '');
     appsRender();
     if (r.scanning && currentPage === 'apps') appsTimer = setTimeout(appsLoad, 1500);
   } catch (e) { $('#ap-status').textContent = 'Нет связи с Джарвисом'; }
@@ -2066,11 +2098,12 @@ const AP_KINDS = [
   ['games', 'Игры', /(\bsteam|epic games|gog galaxy|battle\.net|\borigin\b|ubisoft|uplay|\bea app|\bxbox|rockstar|minecraft|\blauncher|wargaming|\briot\b|valorant)/i],
   ['web', 'Интернет', /(chrome|\bedge\b|firefox|\bopera\b|\bbrave\b|vivaldi|yandex|яндекс|browser|telegram|discord|skype|\bzoom\b|\bteams\b|whatsapp|viber|\bslack\b|thunderbird)/i]
 ];
-const AP_TABS = [['all', 'Все'], ['new', 'Новые'], ['office', 'Офис'], ['music', 'Музыка'], ['photo', 'Фото'], ['video', 'Видео'], ['games', 'Игры'], ['web', 'Интернет']];
+const AP_ESS = [['cmd', 'Командная строка', 'CMD'], ['powershell', 'PowerShell', 'Терминал'], ['settings', 'Параметры Windows', 'Настройки'], ['taskmgr', 'Диспетчер задач', 'Система'], ['explorer', 'Проводник', 'Файлы'], ['control', 'Панель управления', 'Настройки'], ['notepad', 'Блокнот', 'Текст'], ['calc', 'Калькулятор', 'Утилиты'], ['paint', 'Paint', 'Графика']];
+const AP_TABS = [['all', 'Все'], ['main', 'Основное'], ['new', 'Новые'], ['office', 'Офис'], ['music', 'Музыка'], ['photo', 'Фото'], ['video', 'Видео'], ['games', 'Игры'], ['web', 'Интернет']];
 let apTab = 'all';
 let apKnown = null;   // names seen at the previous scan (to mark the new ones)
 function apKind(a) {
-  if ((a.category || '') === 'system') return 'system';
+  if (a.ess) return 'main';
   const hay = a.name + ' ' + (a.launch || '');
   for (const k of AP_KINDS) if (k[2].test(hay)) return k[0];
   return 'user';
@@ -2092,7 +2125,10 @@ function appsRender() {
   // the programs found on the computer (minus the hidden cards) and the shortcuts the user added
   const hidden = new Set((plLib.hidden || []).map(x => x.toLowerCase()));
   // the programs of Windows itself are not listed: only what was installed by the user (and the shortcuts added by hand)
-  const all = appsList.filter(a => ['user', 'other'].includes(a.category || '') && !hidden.has(a.name.toLowerCase())).concat((plLib.shortcuts || []).map(sc => ({ name: sc.name, launch: 'sc:' + sc.id, ok: true, category: 'user', sc: sc.id })));
+  const apJunk = /(uninstall|удалить|удаление|readme|read me|help|справка|documentation|документация|website|веб-сайт|license|лицензи|release notes|redistributable|updater|обновлени|setup|install|настройка параметров|\bsdk\b|\bdocs?\b|\bmanual\b)/i;
+  const all = appsList.filter(a => (a.category === 'user' || (a.category === 'other' && /^shell:appsfolder/i.test(a.launch || ''))) && !apJunk.test(a.name) && !hidden.has(a.name.toLowerCase())).concat((plLib.shortcuts || []).map(sc => ({ name: sc.name, launch: 'sc:' + sc.id, ok: true, category: 'user', sc: sc.id })));
+  // the few tools of Windows that people really use come first; no other system program is listed
+  AP_ESS.slice().reverse().forEach(e => all.unshift({ name: e[1], ess: e[0], essKind: e[2], launch: 'ess:' + e[0], ok: true, category: 'user' }));
   all.forEach(a => { a.kind = apKind(a); });
   const counts = {};
   AP_TABS.forEach(t => { counts[t[0]] = all.filter(a => t[0] === 'all' || (t[0] === 'new' ? a.isNew : a.kind === t[0])).length; });
@@ -2102,23 +2138,23 @@ function appsRender() {
   $('#ap-sort').value = apSort; document.querySelectorAll('#ap-view button').forEach(b => b.classList.toggle('active', b.dataset.v === apView));
   const last = a => ((plLib.launches || {})[a.name.toLowerCase()] || { last: 0 }).last;
   const shown = all.filter(a => (apTab === 'all' || (apTab === 'new' ? a.isNew : a.kind === apTab)) && (!q || a.name.toLowerCase().includes(q)))
-    .sort((x, y) => apSort === 'recent' ? (last(y) - last(x)) || x.name.localeCompare(y.name) : x.name.localeCompare(y.name));
+    .sort((x, y) => (!!y.ess - !!x.ess) || (apSort === 'recent' ? (last(y) - last(x)) || x.name.localeCompare(y.name) : x.name.localeCompare(y.name)));
   const box = $('#ap-list');
   if (!shown.length) { box.innerHTML = '<div class="empty">' + (all.length ? 'В этом разделе ничего не найдено. Если программа установлена недавно, нажмите «Обновить список».' : 'Список пуст. Нажмите «Обновить список».') + '</div>'; return; }
   const part = shown.slice(0, 300);
-  const kindName = a => (AP_TABS.find(t => t[0] === a.kind) || [0, 'Установленные'])[1];
+  const kindName = a => a.ess ? a.essKind : (AP_TABS.find(t => t[0] === a.kind) || [0, 'Установленные'])[1];
   if (apView === 'cards') {
     box.innerHTML = '<div class="pc-grid">' + part.map((a, i) => '<div class="pc-card' + (a.ok ? '' : ' off') + '"><span class="pc-mono" aria-hidden="true">' + esc((a.name.trim()[0] || '?').toUpperCase()) + '</span><b title="' + esc(a.name) + '">' + esc(a.name) + '</b><small>' + esc(kindName(a)) + (a.sc ? ' · мой ярлык' : '') + (a.ok ? '' : ' · файл не найден') + '</small>' +
-      '<div class="pc-act"><button class="btn small primary" type="button" data-i="' + i + '"' + (a.ok ? '' : ' disabled') + '>Запустить</button><button class="btn small" type="button" data-rm="' + i + '" title="' + (a.sc ? 'Убрать ярлык (сама программа остаётся)' : 'Скрыть карточку (программа остаётся на компьютере)') + '">Убрать</button></div></div>').join('') + '</div>';
+      '<div class="pc-act"><button class="btn small primary" type="button" data-i="' + i + '"' + (a.ok ? '' : ' disabled') + '>Запустить</button>' + (a.ess ? '' : '<button class="btn small" type="button" data-rm="' + i + '" title="' + (a.sc ? 'Убрать ярлык (сама программа остаётся)' : 'Скрыть карточку (программа остаётся на компьютере)') + '">Убрать</button>') + '</div></div>').join('') + '</div>';
   } else {
     box.innerHTML = '<div class="ap-group">' + part.map((a, i) =>
       '<div class="ap-row' + (a.ok ? '' : ' off') + '"><span class="ap-mono" aria-hidden="true">' + esc((a.name.trim()[0] || '?').toUpperCase()) + '</span><div><b>' + esc(a.name) + (a.isNew ? ' <span class="chip on" style="font-size:11px;padding:1px 7px">новое</span>' : '') + '</b><small>' + esc(kindName(a)) + (a.ok ? '' : ' · файл запуска не найден') + '</small></div>' +
-      '<span><button class="btn small" type="button" data-i="' + i + '"' + (a.ok ? '' : ' disabled') + '>Запустить</button> <button class="btn small" type="button" data-rm="' + i + '">Убрать</button></span></div>').join('') + '</div>';
+      '<span><button class="btn small" type="button" data-i="' + i + '"' + (a.ok ? '' : ' disabled') + '>Запустить</button> ' + (a.ess ? '' : '<button class="btn small" type="button" data-rm="' + i + '">Убрать</button>') + '</span></div>').join('') + '</div>';
   }
   if (shown.length > 300) box.insertAdjacentHTML('beforeend', '<div class="empty">Показаны первые 300 из ' + shown.length + '. Уточните поиск.</div>');
   box.querySelectorAll('button[data-i]').forEach(b => b.onclick = async () => {
     const a = part[+b.dataset.i]; b.disabled = true;
-    try { const r = a.sc ? await action('pl_launch', { id: a.sc }) : await action('app_launch', { launch: a.launch }); $('#ap-status').textContent = r.message || ''; setTimeout(plLoad, 500); } catch (e) { $('#ap-status').textContent = 'Нет связи с Джарвисом'; }
+    try { const r = a.ess ? await action('ess_launch', { id: a.ess }) : a.sc ? await action('pl_launch', { id: a.sc }) : await action('app_launch', { launch: a.launch }); $('#ap-status').textContent = r.message || ''; setTimeout(plLoad, 500); } catch (e) { $('#ap-status').textContent = 'Нет связи с Джарвисом'; }
     setTimeout(() => { b.disabled = false; }, 4000);
   });
   // «Убрать» removes only the card: a shortcut of the user is forgotten, a found program is hidden; no program is ever uninstalled
@@ -4048,6 +4084,45 @@ async function saveAssistantName(name, msg) {
   else { msg.className = 'msgline ok'; msg.textContent = 'Имя «' + shown + '» сохранено: скажите «' + shown + ', …» или напишите так в строке ввода.'; }
   return true;
 }
+// history of the two sections (PC / phone)
+let hiDoor = 'pc';
+const hiWhen = s => { const d = new Date(s * 1000), n = new Date(); const hm = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }); return d.toDateString() === n.toDateString() ? hm : d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) + ' ' + hm; };
+async function hiLoad() {
+  const r = await action('hist_get', { door: hiDoor }).catch(() => null); if (!r || !r.ok) return;
+  $('#hi-npc').textContent = r.h.pc ? '(' + r.h.pc + ')' : ''; $('#hi-nph').textContent = r.h.phone ? '(' + r.h.phone + ')' : '';
+  $('#hi-list').innerHTML = r.h.items.length ? r.h.items.map(i => '<div class="hi-item"><small>' + esc(hiWhen(i.at)) + '</small><div>' + esc(i.text) + '</div>' + (i.answer ? '<div class="hi-a">↳ ' + esc(i.answer) + '</div>' : '') + '</div>').join('') : '<div class="empty">' + (hiDoor === 'pc' ? 'С компьютера пока ничего не говорили.' : 'С телефона пока ничего не отправляли.') + '</div>';
+}
+document.querySelectorAll('#hi-seg button').forEach(b => b.onclick = () => { hiDoor = b.dataset.door; document.querySelectorAll('#hi-seg button').forEach(x => x.classList.toggle('active', x === b)); hiLoad(); });
+$('#hi-clear').onclick = async () => { if (!confirm('Очистить историю раздела «' + (hiDoor === 'pc' ? 'ПК' : 'Телефон') + '»?')) return; await action('hist_clear', { door: hiDoor }); hiLoad(); };
+setInterval(() => { if (currentPage === 'settings' && setCat === 'connect' && setSub.connect === 'hist-card') hiLoad(); }, 4000);
+$('#set-cats').addEventListener('click', () => setTimeout(() => { if (setCat === 'connect') hiLoad(); }, 50));
+$('#set-subtabs').addEventListener('click', () => setTimeout(hiLoad, 50));
+// «Проверить имя»: 12 seconds of listening; the page asks what was heard twice a second
+let ntTimer = null;
+function ntRender(st) {
+  const b = $('#nt-box'); b.hidden = false;
+  const rows = (st.heard || []).map(x => '<div class="nt-row ' + (x.ratio >= st.threshold ? 'ok' : '') + '"><span>«' + esc(x.text) + '»</span><b>' + Math.round(x.ratio) + '%</b></div>').join('');
+  const v = (st.voice || {}).state;
+  let head;
+  if (v === 'DISABLED' || v === 'ERROR') head = '<div class="nt-h bad">Микрофон не слушает: ' + esc((st.voice || {}).detail || '') + '</div>';
+  else if (st.engine !== 'vosk') head = '<div class="nt-h bad">Активация работает на движке «' + esc(st.engine) + '»: он ищет не слово, а записанный образец, поэтому своё имя этим способом не проверить.</div>';
+  else if (st.matched) head = '<div class="nt-h ok">✓ Имя «' + esc(st.name) + '» услышано.' + (st.active ? '' : ' Всё в порядке.') + '</div>';
+  else if (st.active) head = '<div class="nt-h">Слушаю… скажите «' + esc(st.name) + '» (осталось ' + st.seconds_left + ' с)</div>';
+  else if ((st.heard || []).length || st.unknown) head = '<div class="nt-h bad">Имя не распознано. Попробуйте сказать чётче, ближе к микрофону или выберите более простое имя из 2–3 слогов.</div>';
+  else head = '<div class="nt-h bad">Ничего не слышно. Проверьте, что микрофон включён.</div>';
+  b.innerHTML = head + rows + (st.unknown ? '<div class="nt-row"><span>речь, которую не удалось разобрать</span><b>×' + st.unknown + '</b></div>' : '');
+}
+$('#name-test').onclick = async () => {
+  const btn = $('#name-test'); btn.disabled = true; clearInterval(ntTimer);
+  let r = await action('name_test_start').catch(() => null);
+  if (!r || !r.ok) { btn.disabled = false; $('#nt-box').hidden = false; $('#nt-box').innerHTML = '<div class="nt-h bad">Нет связи с Джарвисом</div>'; return; }
+  ntRender(r.status);
+  ntTimer = setInterval(async () => {
+    const q = await action('name_test_status').catch(() => null); if (!q || !q.ok) return;
+    ntRender(q.status);
+    if (!q.status.active) { clearInterval(ntTimer); btn.disabled = false; }
+  }, 500);
+};
 $('#name-save').onclick = () => saveAssistantName($('#name-input').value.trim(), $('#name-msg'));
 $('#name-ask-save').onclick = async () => { const n = $('#name-ask-input').value.trim(); if (!n) { $('#name-ask-msg').className = 'msgline bad'; $('#name-ask-msg').textContent = 'Введите имя или нажмите «Оставить Джарвис»'; return; } if (await saveAssistantName(n, $('#name-ask-msg'))) setTimeout(() => { $('#name-ask').hidden = true; }, 4500); };
 $('#name-ask-skip').onclick = async () => { try { await api('/settings', { assistant_named: true }); } catch (e) {} $('#name-ask').hidden = true; };
@@ -4166,24 +4241,28 @@ $('#tts-vol').oninput = e => { $('#tts-vol-v').textContent = e.target.value + '%
 document.querySelectorAll('#rate-seg button').forEach(b => b.onclick = () => { $('#rate').value = b.dataset.rate; $('#rate').oninput({ target: $('#rate') }); document.querySelectorAll('#rate-seg button').forEach(x => x.classList.toggle('active', x === b)); });
 // settings: the categories on the left, the cards of the chosen one on the right; the search looks through all of them
 // (a row stays when its text has the words, a whole block stays when its title has them)
-let setCat = 'general';
-try { setCat = localStorage.getItem('jarvis.setCat') || 'general'; } catch (e) {}
+let setCat = 'main';
+try { setCat = localStorage.getItem('jarvis.setCat') || 'main'; } catch (e) {}
+if (!['main', 'look', 'connect', 'more'].includes(setCat)) setCat = 'main';
+// «Основное» shows all its blocks one under another; «Дополнительно» is a list of folded blocks (one opens on a click); the others have tabs
+const SET_STACK = { main: true }, SET_FOLD = { more: true };
+{ const mc = [...document.querySelectorAll('#set-main > .card[data-cat="main"]')].sort((a, b) => (+a.dataset.ord) - (+b.dataset.ord)); const anchor = document.getElementById('set-none'); mc.reverse().forEach(c => anchor.after(c)); }
 // the chosen block of every category (the horizontal tabs under the title), kept between starts
 let setSub = {};
 try { setSub = JSON.parse(localStorage.getItem('jarvis.setSub') || '{}') || {}; } catch (e) {}
-const setCards = cat => [...document.querySelectorAll('#set-main > .card')].filter(c => c.dataset.cat === cat);
+const setCards = cat => [...document.querySelectorAll('#set-main > .card')].filter(c => c.dataset.cat === cat).sort((a, b) => (+a.dataset.ord || 0) - (+b.dataset.ord || 0));
 const setTabName = c => c.dataset.tab || (c.querySelector('h3') ? c.querySelector('h3').textContent.trim() : c.id);
 const setTabIcon = c => { const e = c.querySelector('h3 .ei'); return e ? e.textContent : ''; };
 function setView() {
   const q = $('#set-search').value.trim().toLowerCase();
   const btns = [...document.querySelectorAll('#set-cats button')];
-  if (!btns.some(b => b.dataset.cat === setCat)) setCat = 'general';
+  if (!btns.some(b => b.dataset.cat === setCat)) setCat = 'main';
   btns.forEach(b => b.classList.toggle('active', !q && b.dataset.cat === setCat));
   // the block that is shown in this category: the chosen one, else the first
   const cards = setCards(setCat);
   let sel = cards.find(c => c.id === setSub[setCat]) || cards[0];
   const tabs = $('#set-subtabs');
-  tabs.hidden = !!q || cards.length < 2;
+  tabs.hidden = !!q || cards.length < 2 || SET_STACK[setCat] || SET_FOLD[setCat];
   if (!tabs.hidden) {
     tabs.innerHTML = '';
     cards.forEach(c => { const b = document.createElement('button'); b.type = 'button'; b.setAttribute('role', 'tab'); b.className = c === sel ? 'on' : ''; b.setAttribute('aria-selected', c === sel ? 'true' : 'false'); b.innerHTML = '<span class="ei"></span><span></span>'; b.firstChild.textContent = setTabIcon(c); b.lastChild.textContent = setTabName(c); b.onclick = () => { setSub[setCat] = c.id; try { localStorage.setItem('jarvis.setSub', JSON.stringify(setSub)); } catch (e) {} setView(); }; tabs.appendChild(b); });
@@ -4192,7 +4271,7 @@ function setView() {
   document.querySelectorAll('#set-main > .card').forEach(c => {
     const rows = [...c.children].filter(x => x.classList.contains('setrow'));
     let show;
-    if (!q) { show = c === sel; rows.forEach(r => { r.style.display = ''; }); }
+    if (!q) { show = SET_STACK[setCat] || SET_FOLD[setCat] ? c.dataset.cat === setCat : c === sel; rows.forEach(r => { r.style.display = ''; }); }
     else {
       const whole = (c.querySelector('h3') || { textContent: '' }).textContent.toLowerCase().includes(q);
       show = whole;
@@ -4200,6 +4279,7 @@ function setView() {
       if (!rows.length) show = c.textContent.toLowerCase().includes(q);
     }
     c.style.display = show ? '' : 'none';
+    if (c.classList.contains('acc')) c.classList.toggle('folded', !q && c.id !== setSub.more);
     if (show) shown++;
   });
   const cur = btns.find(b => b.dataset.cat === setCat);
@@ -4233,6 +4313,8 @@ function setClampHints() {
 }
 document.querySelectorAll('#set-cats button').forEach(b => { b.onclick = () => { setCat = b.dataset.cat; try { localStorage.setItem('jarvis.setCat', setCat); } catch (e) {} $('#set-search').value = ''; setView(); $('#page-settings').scrollTop = 0; $('#set-main').scrollTop = 0; }; });
 $('#set-search').oninput = setView;
+// a folded block opens by a click on its title (and the one that was open folds)
+$('#set-main').addEventListener('click', e => { const hd = e.target.closest('.card.acc > h3'); if (!hd) return; const c = hd.parentElement; setSub.more = setSub.more === c.id ? '' : c.id; try { localStorage.setItem('jarvis.setSub', JSON.stringify(setSub)); } catch (x) {} setView(); if (setSub.more) c.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); });
 setView();
 $('#set-main').addEventListener('click', e => { const sm = e.target.closest('.setrow .l small'); if (sm) { sm.classList.toggle('open'); setClampHints(); } });
 window.addEventListener('resize', () => { if (currentPage === 'settings') setClampHints(); });
@@ -4972,17 +5054,7 @@ let yaw = 0, level = 0, glitchUntil = 0, nextGlitch = performance.now() + 3000;
 // tooltip all come from it (never from separate flags)
 // A THEME changes everything at once: the colours of the page and of the background, the font, the effects of the background, the colour of
 // the sparks and the sphere. [hue, saturation, spark hue, the sphere that goes with the theme, name]
-const THEMES = {
-  jarvis: [176, 45, 25, 'dots', 'Jarvis'],
-  cyberpunk: [55, 100, 320, 'neon', 'Cyberpunk'],
-  avengers: [44, 100, 44, 'holo', 'Avengers: Эра Альтрона'],
-  matrix: [130, 90, 130, 'wave', 'Matrix'],
-  ice: [200, 80, 200, 'core', 'Ice'],
-  sunset: [18, 90, 340, 'orbit', 'Sunset']
-};
-const LEGACY_THEME = { graphite: 'jarvis', ocean: 'ice', amber: 'avengers', ruby: 'sunset', violet: 'cyberpunk', lime: 'matrix' };
-const SPHERES = { dots: 'Частицы', core: 'Реактор', holo: 'Голограмма', neon: 'Неон', wave: 'Волна', orbit: 'Орбиты' };
-const SPEEDS = { slow: 0.45, normal: 1, fast: 1.8, hyper: 3 }, GLOWS = { soft: 0.6, normal: 1, strong: 1.5 };
+/*ORBKIT*/
 let theme = 'jarvis', sphere = 'dots', motion = 'auto', speed = 'normal', glow = 'normal';
 try {
   theme = localStorage.getItem('jarvis-theme') || 'jarvis'; sphere = localStorage.getItem('jarvis-sphere') || ''; motion = localStorage.getItem('jarvis-motion') || 'auto';
@@ -5085,120 +5157,6 @@ function drawOrb(t) {
   }
 }
 
-// ---- the spheres. Every one draws from the same few things: the colour of the theme and of the state (palette), `level` (how loud/active),
-// `t` (the animation clock that already has the chosen speed in it) and the glow multiplier of the setting ----
-const TAU = Math.PI * 2;
-const glowK = () => GLOWS[glow];
-function haze(cx, cy, r, hue, sat, a) {
-  const g = ctx.createRadialGradient(cx, cy, r * 0.04, cx, cy, r);
-  g.addColorStop(0, `hsla(${hue},${sat}%,55%,${Math.min(0.9, a * glowK())})`); g.addColorStop(1, `hsla(${hue},${sat}%,30%,0)`);
-  ctx.fillStyle = g; ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
-}
-// a point of a globe: [x, y, depth 0..1]
-function globe(lon, lat, R, rot, tilt) {
-  const x0 = Math.cos(lat) * Math.cos(lon + rot), z0 = Math.cos(lat) * Math.sin(lon + rot), y0 = Math.sin(lat);
-  const y = y0 * Math.cos(tilt) - z0 * Math.sin(tilt), z = y0 * Math.sin(tilt) + z0 * Math.cos(tilt);
-  return [W / 2 + x0 * R, H / 2 + y * R, (z + 1) / 2];
-}
-// «Голограмма» (Avengers, Age of Ultron): a gold wire globe with thin rings, a scanning beam and a light flicker, like Jarvis's hologram
-function drawHolo(t) {
-  const [hue, sat] = palette(), cx = W / 2, cy = H / 2, R = W * 0.3, speaking = state === 'speaking';
-  const flick = 0.9 + 0.1 * Math.sin(t / 47) * Math.sin(t / 131);
-  haze(cx, cy, R * 1.6, hue, sat, 0.1 + level * 0.18);
-  ctx.save(); ctx.globalAlpha = flick; ctx.lineCap = 'round';
-  const rot = t / 2600, tilt = 0.42, k = 1 + (speaking ? 0.035 * level * Math.sin(t / 120) : Math.sin(t / 1100) * 0.008);
-  const wire = (f, n, w) => { let prev = null; for (let i = 0; i <= n; i++) { const q = f(i / n); if (prev) { const d = (q[2] + prev[2]) / 2; ctx.strokeStyle = `hsla(${hue},${sat}%,${58 + d * 30}%,${(0.1 + d * 0.62) * Math.min(1.4, glowK())})`; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(prev[0], prev[1]); ctx.lineTo(q[0], q[1]); ctx.stroke(); } prev = q; } };
-  const M = PERF_LOW ? 8 : 12, P = PERF_LOW ? 6 : 9;
-  for (let m = 0; m < M; m++) wire(u => globe(m / M * TAU, (u - 0.5) * Math.PI, R * k, rot, tilt), 40, 2);
-  for (let p = 1; p < P; p++) wire(u => globe(u * TAU, (p / P - 0.5) * Math.PI, R * k, rot, tilt), 56, p === (P >> 1) ? 3 : 1.6);
-  // two thin orbit rings with ticks
-  for (let i = 0; i < 2; i++) {
-    const rr = R * (1.22 + i * 0.16), a = t / (3400 + i * 1500) * (i ? -1 : 1), tl = 1.05 + i * 0.35;
-    ctx.strokeStyle = `hsla(${hue},${sat}%,72%,${0.5 * glowK()})`; ctx.lineWidth = 2; ctx.beginPath();
-    for (let j = 0; j <= 90; j++) { const th = j / 90 * TAU, x = Math.cos(th) * rr, y = Math.sin(th) * rr * Math.cos(tl); const xr = x * Math.cos(a) - y * Math.sin(a), yr = x * Math.sin(a) + y * Math.cos(a); j ? ctx.lineTo(cx + xr, cy + yr) : ctx.moveTo(cx + xr, cy + yr); }
-    ctx.stroke();
-    for (let j = 0; j < 24; j++) { const th = j / 24 * TAU + a * 2, x = Math.cos(th) * rr, y = Math.sin(th) * rr * Math.cos(tl); ctx.fillStyle = `hsla(${hue},${sat}%,80%,.55)`; ctx.fillRect(cx + x - 2, cy + y - 2, 4, 4); }
-  }
-  // the scanning beam: a bright band that runs over the globe from top to bottom
-  const by = cy - R + ((t / 1700) % 1) * R * 2, half = Math.sqrt(Math.max(0, R * R - (by - cy) ** 2));
-  const bg = ctx.createLinearGradient(0, by - 26, 0, by + 26); bg.addColorStop(0, `hsla(${hue},${sat}%,70%,0)`); bg.addColorStop(0.5, `hsla(${hue},${sat}%,75%,${0.32 * glowK()})`); bg.addColorStop(1, `hsla(${hue},${sat}%,70%,0)`);
-  ctx.fillStyle = bg; ctx.fillRect(cx - half, by - 26, half * 2, 52);
-  // a few bright specks on the surface
-  for (let i = 0; i < (PERF_LOW ? 14 : 30); i++) { const q = globe(((i * 2.399) % TAU), Math.asin(((i * 0.618) % 1) * 2 - 1), R * k, rot, tilt); ctx.fillStyle = `hsla(${hue},${sat}%,85%,${0.15 + q[2] * 0.6})`; ctx.fillRect(q[0] - 2, q[1] - 2, 4, 4); }
-  ctx.restore();
-}
-// «Неон» (Cyberpunk): a segmented neon ring, two turning hexagons, a radar sweep and short glitches with a colour split
-function drawNeon(t) {
-  const [hue, sat] = palette(), cx = W / 2, cy = H / 2, R = W * 0.31, glitch = (Math.sin(t / 233) * Math.sin(t / 71) > 0.93) && !reducedMotion();
-  const cyan = ORB_KINDS[orbKind()][1] ? hue : 185, mag = ORB_KINDS[orbKind()][1] ? hue : 322;
-  haze(cx, cy, R * 1.5, hue, sat, 0.1 + level * 0.2);
-  const ring = (dx, h, alpha) => {
-    ctx.strokeStyle = `hsla(${h},100%,${h === hue ? 58 : 62}%,${alpha * Math.min(1.3, glowK())})`; ctx.lineWidth = 7; ctx.lineCap = 'butt';
-    const n = 36, rot = t / 1800;
-    for (let i = 0; i < n; i++) { if (i % 6 === 5) continue; const a0 = rot + i / n * TAU, len = (i % 3 === 0 ? 0.13 : 0.075) + level * 0.02; ctx.beginPath(); ctx.arc(cx + dx, cy, R, a0, a0 + len); ctx.stroke(); }
-  };
-  if (glitch) { ring(-10, cyan, 0.55); ring(10, mag, 0.55); }
-  ring(0, hue, 0.95);
-  const hex = (r, rot, w, alpha) => { ctx.strokeStyle = `hsla(${hue},${sat}%,66%,${alpha * glowK()})`; ctx.lineWidth = w; ctx.beginPath(); for (let i = 0; i <= 6; i++) { const a = rot + i / 6 * TAU; const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke(); };
-  hex(R * 0.78, t / 3000, 4, 0.85); hex(R * 0.58, -t / 2100, 3, 0.7); hex(R * 0.38 * (1 + level * 0.08), t / 1500, 3, 0.9);
-  // the radar sweep
-  const sw = t / 1100;
-  const g = ctx.createConicGradient ? ctx.createConicGradient(sw, cx, cy) : null;
-  if (g) { g.addColorStop(0, `hsla(${hue},${sat}%,60%,${0.4 * glowK()})`); g.addColorStop(0.18, `hsla(${hue},${sat}%,60%,0)`); g.addColorStop(1, `hsla(${hue},${sat}%,60%,0)`); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, R * 0.74, 0, TAU); ctx.fill(); }
-  // data ticks around
-  ctx.fillStyle = `hsla(${hue},${sat}%,70%,.7)`;
-  for (let i = 0; i < 72; i++) { const a = i / 72 * TAU, r0 = R * 1.14, l = i % 6 === 0 ? 16 : 7; ctx.save(); ctx.translate(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); ctx.rotate(a); ctx.fillRect(0, -1, l, 2); ctx.restore(); }
-  ctx.fillStyle = `hsla(${hue},${sat}%,75%,${0.6 + level * 0.4})`; ctx.beginPath(); ctx.arc(cx, cy, 10 + level * 14 + Math.sin(t / 220) * 2, 0, TAU); ctx.fill();
-}
-// «Волна»: a ring of bars that follow how loud it is
-function drawWave(t) {
-  const [hue, sat] = palette(), cx = W / 2, cy = H / 2, R0 = W * 0.25, N = PERF_LOW ? 64 : 112;
-  haze(cx, cy, R0 * 2.1, hue, sat, 0.08 + level * 0.2);
-  ctx.lineCap = 'round'; ctx.lineWidth = PERF_LOW ? 6 : 4.5;
-  for (let i = 0; i < N; i++) {
-    const a = i / N * TAU - Math.PI / 2, n1 = Math.sin(a * 3 + t / 420) * 0.5 + Math.sin(a * 7 - t / 290) * 0.35 + Math.sin(a * 13 + t / 170) * 0.15;
-    const len = 10 + (0.35 + Math.abs(n1)) * (18 + level * 150);
-    ctx.strokeStyle = `hsla(${hue},${sat}%,${55 + Math.abs(n1) * 25}%,${(0.45 + Math.abs(n1) * 0.5) * Math.min(1.3, glowK())})`;
-    ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * R0, cy + Math.sin(a) * R0); ctx.lineTo(cx + Math.cos(a) * (R0 + len), cy + Math.sin(a) * (R0 + len)); ctx.stroke();
-  }
-  ctx.strokeStyle = `hsla(${hue},${sat}%,70%,.55)`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, R0 - 14, 0, TAU); ctx.stroke();
-  ctx.fillStyle = `hsla(${hue},${sat}%,70%,${0.18 + level * 0.3})`; ctx.beginPath(); ctx.arc(cx, cy, R0 - 24 + level * 10, 0, TAU); ctx.fill();
-}
-// «Реактор»: concentric rings with ticks that turn in turns, and a bright core
-function drawCore(t) {
-  const [hue, sat] = palette(), cx = W / 2, cy = H / 2, S = W * 0.45;
-  haze(cx, cy, S * 1.05, hue, sat, 0.12 + level * 0.22);
-  const rings = [[0.46, 2, 120, 1], [0.38, 6, 24, -1.4], [0.3, 3, 60, 0.8], [0.22, 10, 12, -0.6]];
-  rings.forEach(([f, w, n, dir], k) => {
-    const r = S * f, rot = t / 2400 * dir;
-    ctx.lineWidth = w; ctx.strokeStyle = `hsla(${hue},${sat}%,${60 + k * 6}%,${(0.55 + k * 0.07) * Math.min(1.3, glowK())})`;
-    ctx.setLineDash(w > 5 ? [r * TAU / n * 0.62, r * TAU / n * 0.38] : [r * TAU / n * 0.5, r * TAU / n * 0.5]);
-    ctx.lineDashOffset = -rot * r; ctx.beginPath(); ctx.arc(cx, cy, r, rot, rot + TAU); ctx.stroke();
-  });
-  ctx.setLineDash([]);
-  // triangular coils of the reactor
-  for (let i = 0; i < 10; i++) { const a = i / 10 * TAU + t / 5000; ctx.fillStyle = `hsla(${hue},${sat}%,66%,${0.35 + level * 0.3})`; ctx.beginPath(); ctx.moveTo(cx + Math.cos(a - 0.12) * S * 0.14, cy + Math.sin(a - 0.12) * S * 0.14); ctx.lineTo(cx + Math.cos(a + 0.12) * S * 0.14, cy + Math.sin(a + 0.12) * S * 0.14); ctx.lineTo(cx + Math.cos(a) * S * 0.2, cy + Math.sin(a) * S * 0.2); ctx.closePath(); ctx.fill(); }
-  const pulse = 1 + Math.sin(t / 300) * 0.06 + level * 0.25;
-  const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, S * 0.12 * pulse); g.addColorStop(0, '#fff'); g.addColorStop(0.4, `hsla(${hue},${sat}%,75%,.95)`); g.addColorStop(1, `hsla(${hue},${sat}%,50%,0)`);
-  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, S * 0.12 * pulse, 0, TAU); ctx.fill();
-}
-// «Орбиты»: a nucleus and three tilted orbits with electrons that leave a trail
-function drawOrbit(t) {
-  const [hue, sat] = palette(), cx = W / 2, cy = H / 2, R = W * 0.33;
-  haze(cx, cy, R * 1.2, hue, sat, 0.12 + level * 0.2);
-  for (let k = 0; k < 3; k++) {
-    const tilt = k * Math.PI / 3 + t / 9000, ry = R * (0.34 + 0.04 * k), c = Math.cos(tilt), s = Math.sin(tilt);
-    const pt = th => [cx + Math.cos(th) * R * c - Math.sin(th) * ry * s, cy + Math.cos(th) * R * s + Math.sin(th) * ry * c];
-    ctx.strokeStyle = `hsla(${hue},${sat}%,66%,${0.45 * Math.min(1.3, glowK())})`; ctx.lineWidth = 2; ctx.beginPath();
-    for (let j = 0; j <= 72; j++) { const q = pt(j / 72 * TAU); j ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }
-    ctx.stroke();
-    const th0 = t / (700 + k * 260) * (k % 2 ? -1 : 1);
-    for (let j = 0; j < (PERF_LOW ? 6 : 14); j++) { const q = pt(th0 - j * 0.07 * (k % 2 ? -1 : 1)); ctx.fillStyle = `hsla(${hue},${sat}%,${80 - j * 3}%,${(1 - j / 15) * 0.9})`; ctx.beginPath(); ctx.arc(q[0], q[1], 9 - j * 0.5, 0, TAU); ctx.fill(); }
-  }
-  const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, 46 + level * 30); g.addColorStop(0, '#fff'); g.addColorStop(0.35, `hsla(${hue},${sat}%,72%,.95)`); g.addColorStop(1, `hsla(${hue},${sat}%,50%,0)`);
-  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 46 + level * 30, 0, TAU); ctx.fill();
-}
-const SPHERE_DRAW = { holo: drawHolo, neon: drawNeon, wave: drawWave, core: drawCore, orbit: drawOrbit };
 
 // ---------- avatar (photo -> hologram) ----------
 let avatarImg = null, avatarCanvas = null, avatarVersion = 0;

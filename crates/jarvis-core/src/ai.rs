@@ -670,6 +670,7 @@ impl Store {
         self.save(&chat);
         // the phone that asked sees (and hears) the answer
         if role == "assistant" || role == "error" {
+            crate::devhist::answer(content);
             crate::remote::announce_answer(content);
         }
         Some(chat)

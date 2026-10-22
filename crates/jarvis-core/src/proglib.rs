@@ -127,6 +127,42 @@ fn open(_target: &str) -> Result<(), String> {
     Err("запуск программ доступен только в Windows".into())
 }
 
+// The few tools of Windows that people really use. Everything else of Windows is not shown on the page "Программы".
+// (id, name shown, what it is, the fixed target: nothing of it comes from the page, only the id does)
+pub const ESSENTIALS: [(&str, &str, &str, &str); 9] = [
+    ("cmd", "Командная строка", "CMD", "cmd.exe"),
+    ("powershell", "PowerShell", "Терминал", "powershell.exe"),
+    ("settings", "Параметры Windows", "Настройки", "ms-settings:"),
+    ("taskmgr", "Диспетчер задач", "Система", "taskmgr.exe"),
+    ("explorer", "Проводник", "Файлы", "explorer.exe"),
+    ("control", "Панель управления", "Настройки", "control.exe"),
+    ("notepad", "Блокнот", "Текст", "notepad.exe"),
+    ("calc", "Калькулятор", "Утилиты", "calc.exe"),
+    ("paint", "Paint", "Графика", "mspaint.exe"),
+];
+
+pub fn essentials_json() -> Vec<serde_json::Value> {
+    ESSENTIALS.iter().map(|(id, name, kind, _)| serde_json::json!({ "id": id, "name": name, "kind": kind })).collect()
+}
+
+pub fn launch_essential(id: &str) -> Result<String, String> {
+    let (_, name, _, target) = ESSENTIALS.iter().find(|e| e.0 == id).ok_or("Такого инструмента нет.")?;
+    start_fixed(target)?;
+    note_launch(name, store::now());
+    Ok(format!("Запускаю {}", name))
+}
+
+#[cfg(target_os = "windows")]
+fn start_fixed(target: &str) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    // "start" opens the tool in its own window; the helper itself has no window
+    std::process::Command::new("cmd.exe").args(["/c", "start", "", target]).creation_flags(0x0800_0000).spawn().map(|_| ()).map_err(|e| format!("не удалось запустить: {}", e))
+}
+#[cfg(not(target_os = "windows"))]
+fn start_fixed(_target: &str) -> Result<(), String> {
+    Err("запуск программ доступен только в Windows".into())
+}
+
 pub fn launch_shortcut(id: &str) -> Result<String, String> {
     let l = load();
     let s = l.shortcuts.iter().find(|s| s.id == id).ok_or("Такого ярлыка нет.")?;
@@ -146,6 +182,13 @@ mod tests {
         let p = d.join(n);
         std::fs::write(&p, b"MZ").unwrap();
         p.to_string_lossy().to_string()
+    }
+
+    #[test]
+    fn the_essential_tools_are_a_fixed_short_list() {
+        assert!(ESSENTIALS.len() <= 10 && ESSENTIALS.iter().any(|e| e.0 == "cmd") && ESSENTIALS.iter().any(|e| e.0 == "powershell"));
+        assert!(launch_essential("../../evil").is_err() && launch_essential("").is_err());
+        assert!(ESSENTIALS.iter().all(|e| !e.3.contains(' ') && !e.3.contains('&')));
     }
 
     #[test]

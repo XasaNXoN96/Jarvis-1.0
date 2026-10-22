@@ -127,6 +127,8 @@ pub mod messenger;
 pub mod features;
 pub mod scheduler;
 pub mod notes;
+pub mod nametest;
+pub mod devhist;
 pub mod owner;
 pub mod perms;
 pub mod progsearch;

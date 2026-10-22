@@ -1703,7 +1703,7 @@ mod tests {
         assert!(voice_label("piper").contains("Piper"));
         assert!(voice_label("silero:kseniya").contains("Silero") && voice_label("silero:kseniya").contains("kseniya"));
         assert!(voice_label("yandex:alena").contains("Яндекс"));
-        assert!(voice_label("piper:denis").contains("denis"));
+        assert!(voice_label("piper:denis").contains("неизвестный"));
         assert!(voice_label("win:Irina").starts_with("Windows"));
         assert!(voice_label("мусор").contains("неизвестный"));
     }

@@ -15,9 +15,7 @@ pub const PREFIX: &str = "silero:";
 const TAG: &str = "@@jarvis ";
 
 // (silero speaker, name shown in the settings)
-pub const SPEAKERS: [(&str, &str); 5] = [
-    ("aidar", "Джарвис (мужской, Silero)"),
-    ("eugene", "Евгений (мужской, Silero)"),
+pub const SPEAKERS: [(&str, &str); 3] = [
     ("kseniya", "Луна (женский, Silero)"),
     ("xenia", "Ксения (женский, Silero)"),
     ("baya", "Бая (женский, Silero)"),
@@ -256,7 +254,7 @@ mod tests {
 
     #[test]
     fn only_known_speakers_are_taken() {
-        assert_eq!(speaker_of("silero:aidar"), Some("aidar"));
+        assert_eq!(speaker_of("silero:aidar"), None, "male voices are not offered");
         assert_eq!(speaker_of("silero:kseniya"), Some("kseniya"));
         assert_eq!(speaker_of("silero:../../x"), None);
         assert_eq!(speaker_of("piper"), None);
@@ -273,12 +271,12 @@ mod tests {
 
     #[test]
     fn job_line_is_one_line_of_json_with_the_text_intact() {
-        let l = job_line(7, "Привет\n\"мир\"", "aidar", 1.2, Path::new("C:\\Users\\Иван\\a.wav"));
+        let l = job_line(7, "Привет\n\"мир\"", "xenia", 1.2, Path::new("C:\\Users\\Иван\\a.wav"));
         assert!(!l.contains('\n'));
         let v: serde_json::Value = serde_json::from_str(&l).unwrap();
         assert_eq!(v["id"], "7");
         assert_eq!(v["text"], "Привет\n\"мир\"");
-        assert_eq!(v["voice"], "aidar");
+        assert_eq!(v["voice"], "xenia");
         assert_eq!(v["out"], "C:\\Users\\Иван\\a.wav");
     }
 

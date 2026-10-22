@@ -1113,6 +1113,16 @@ fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
         respond(stream, "200 OK", "text/html", PAGE);
         return Ok(());
     }
+    // «Add to the home screen» on Android: the manifest and the icon hold no secret and no data, like the page itself
+    if req.method == "GET" && route0 == "/manifest.webmanifest" {
+        respond(stream, "200 OK", "application/manifest+json", MANIFEST);
+        return Ok(());
+    }
+    if req.method == "GET" && route0 == "/icon.png" {
+        let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\nCache-Control: public, max-age=86400\r\nConnection: close\r\n\r\n", APP_ICON.len());
+        let _ = stream.write_all(APP_ICON);
+        return Ok(());
+    }
     let supplied = req.token_header.clone().or_else(|| token_in_path(&req.path));
     let key = throttle_key(&req.client_ip);
     let now = std::time::Instant::now();
@@ -1237,6 +1247,17 @@ fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
                 }
             }
         }
+        // the two sections «ПК» / «Телефон» (devhist.rs): the same history the window shows
+        ("GET", "/history") => {
+            let door = match query_param(&req.path, "door") { Some("pc") => "pc", Some("phone") => "phone", _ => "all" };
+            respond(stream, "200 OK", "application/json", &crate::devhist::json(door, 40).to_string());
+        }
+        // the look of the window (theme, sphere, speed, glow): the phone starts with the same one
+        ("GET", "/look") => {
+            let ui = crate::uistate::settings().ui;
+            let g = |k: &str| ui.get(k).cloned().unwrap_or_default();
+            respond(stream, "200 OK", "application/json", &serde_json::json!({ "theme": g("jarvis-theme"), "sphere": g("jarvis-sphere"), "speed": g("jarvis-speed"), "glow": g("jarvis-glow") }).to_string());
+        }
         ("GET", "/media") => {
             let items: Vec<serde_json::Value> = crate::media::now().into_iter().map(|n| serde_json::json!({ "app": n.app, "title": n.title })).collect();
             respond(stream, "200 OK", "application/json", &serde_json::json!({ "items": items }).to_string());
@@ -1261,663 +1282,11 @@ fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
     Ok(())
 }
 
-const PAGE: &str = r#"<!doctype html>
-<html lang="ru"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Jarvis</title>
-<style>
-  :root { color-scheme: dark; --bg: #0b0c0e; --bg2: #131418; --card: #17181d; --line: #2b2d35; --text: #ececf0; --dim: #8e909a; --a: #6aa8ff; --a2: #8cc0ff; --ok: #5bd98a; --bad: #ff6b5e; --warn: #fbbf24;
-    --tile: linear-gradient(160deg, #1d1f26, #17181d); --btn: linear-gradient(135deg, #4c8dff, #2f66d0); --glow: 0 0 20px #6aa8ff33; }
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { height: 100%; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 15px system-ui, sans-serif; display: flex; flex-direction: column; overflow: hidden; }
-  button { font: inherit; color: inherit; cursor: pointer; }
-  .ok { color: var(--ok); } .bad { color: var(--bad); } .dim { color: var(--dim); font-size: 12.5px; line-height: 1.45; }
+const APP_ICON: &[u8] = include_bytes!("../../../resources/icons/icon.png");
+const MANIFEST: &str = r##"{"name":"Jarvis","short_name":"Jarvis","description":"Пульт Jarvis для компьютера","start_url":"/","scope":"/","display":"standalone","orientation":"portrait","background_color":"#08090b","theme_color":"#08090b","icons":[{"src":"/icon.png","sizes":"512x512","type":"image/png","purpose":"any"}]}"##;
 
-  .top { padding: 14px 16px 10px; background: radial-gradient(120% 90% at 50% 0%, #1b2536 0%, var(--bg2) 62%); border-bottom: 1px solid var(--line); flex: none; }
-  .brand { display: flex; align-items: center; gap: 10px; }
-  .reactor { width: 32px; height: 32px; border-radius: 50%; flex: none; box-shadow: var(--glow); position: relative;
-    background: radial-gradient(circle, #fff 0 12%, #cfe3ff 14% 28%, transparent 30%), conic-gradient(from 0deg, #4c8dff, #9fc8ff, #4c8dff, #9fc8ff, #4c8dff); }
-  .reactor::after { content: ""; position: absolute; inset: 5px; border-radius: 50%; border: 2px solid #0008; }
-  .brand b { font-size: 17px; letter-spacing: .14em; font-weight: 700; background: linear-gradient(90deg, #cfe3ff, #6aa8ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .brand small { display: block; color: var(--dim); font-size: 11.5px; letter-spacing: .03em; margin-top: 1px; }
-  .chips { display: flex; gap: 7px; margin-top: 10px; flex-wrap: wrap; }
-  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: #ffffff0d; border: 1px solid var(--line); font-size: 12px; }
-  .chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
-  .chip.ok i { background: var(--ok); box-shadow: 0 0 8px var(--ok); } .chip.bad i { background: var(--bad); box-shadow: 0 0 8px var(--bad); } .chip.warn i { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
-
-  .body { flex: 1; overflow-y: auto; padding: 14px 14px 10px; -webkit-overflow-scrolling: touch; }
-  .tab { display: none; } .tab.on { display: block; }
-  section { margin-bottom: 16px; }
-  section h2 { margin: 0 2px 8px; font-size: 11.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--a); font-weight: 600; }
-  .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--tile); margin-bottom: 8px; font-size: 14px; }
-  .row small { color: var(--dim); display: block; font-size: 11.5px; margin-top: 2px; line-height: 1.35; }
-  .row b { font-weight: 600; text-align: right; }
-  label.row input[type=checkbox] { width: 42px; height: 24px; flex: none; appearance: none; -webkit-appearance: none; border-radius: 999px; background: #ffffff22; position: relative; margin: 0; cursor: pointer; transition: .15s; }
-  label.row input[type=checkbox]::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: .15s; }
-  label.row input[type=checkbox]:checked { background: #4c8dff; } label.row input[type=checkbox]:checked::after { left: 21px; }
-  .btn { border: 1px solid var(--line); background: #ffffff0a; border-radius: 12px; padding: 11px 14px; }
-  .btn.wide { width: 100%; margin-bottom: 8px; } .btn.dash { border-style: dashed; color: var(--dim); background: transparent; }
-  select { width: 100%; padding: 11px 12px; border-radius: 12px; border: 1px solid var(--line); background: #0d0e11; color: var(--text); font: inherit; margin-top: 8px; }
-
-  .grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-  .tile { aspect-ratio: 1 / 1; border-radius: 16px; border: 1px solid var(--line); background: var(--tile); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 4px; transition: .15s; }
-  .tile span { font-size: 21px; line-height: 1; } .tile em { font-style: normal; font-size: 10px; color: var(--dim); text-align: center; line-height: 1.15; max-width: 100%; overflow-wrap: anywhere; }
-  .tile:active { border-color: var(--a); box-shadow: 0 0 14px #6aa8ff33 inset; transform: translateY(1px); }
-  .tile.hot span { color: var(--a2); }
-  .tile.yes { border-color: #2f7a4a; background: linear-gradient(160deg, #15291d, #101b14); } .tile.yes span { color: var(--ok); } .tile.yes em { color: #9be0b4; }
-  .tile.no { border-color: #8a3a34; background: linear-gradient(160deg, #2c1614, #1b0f0e); } .tile.no span { color: var(--bad); } .tile.no em { color: #f0a49c; }
-
-  .player { border: 1px solid var(--line); background: var(--tile); border-radius: 18px; padding: 12px 10px; display: grid; gap: 10px; }
-  .ctrl { display: flex; align-items: center; justify-content: center; gap: 10px; }
-  .ctrl button { width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--line); background: #ffffff0a; font-size: 18px; }
-  .ctrl button.main { width: 62px; height: 62px; background: var(--btn); border: 0; font-size: 24px; box-shadow: var(--glow); color: #fff; }
-  .vol { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-  .vol button { height: 40px; border-radius: 12px; border: 1px solid var(--line); background: #ffffff0a; font-size: 16px; }
-
-  #status { min-height: 20px; color: var(--a2); font-size: 13px; margin: 0 2px 8px; word-break: break-word; }
-  .msg { border: 1px solid #2f66d0; background: #0d1a33; border-radius: 14px; padding: 10px 12px; margin-bottom: 10px; }
-  .msg .body { word-break: break-all; user-select: all; margin: 6px 0 8px; padding: 0; overflow: visible; }
-  .msg .acts { display: flex; gap: 8px; } .msg .acts button { padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: #ffffff0f; }
-  .msg .acts button:not(.sec) { background: var(--btn); border: 0; color: #fff; }
-
-  .orbwrap { display: grid; place-items: center; padding: 4px 0 6px; gap: 6px; }
-  #mic { width: min(58vw, 210px); aspect-ratio: 1; border: 0; padding: 0; border-radius: 50%; background: transparent; position: relative; }
-  #mic canvas { width: 100%; height: 100%; display: block; }
-  #mic.on::after { content: ""; position: absolute; inset: 4%; border-radius: 50%; border: 2px solid #5bd1c8aa; animation: ring 1.3s infinite; }
-  @keyframes ring { from { transform: scale(.92); opacity: .9; } to { transform: scale(1.12); opacity: 0; } }
-  #orb-cap { font-size: 12.5px; color: var(--dim); text-align: center; letter-spacing: .02em; }
-  #heard { min-height: 18px; color: var(--a2); font-size: 14px; text-align: center; padding: 0 8px; word-break: break-word; }
-  #help { display: none; border: 1px solid var(--line); border-radius: 14px; background: var(--tile); padding: 12px; margin-bottom: 8px; font-size: 13.5px; line-height: 1.5; }
-  #help .btn { margin-top: 6px; }
-
-  #confirm { display: none; flex: none; padding: 10px 12px; border-top: 1px solid var(--line); background: #101319; align-items: center; gap: 10px; }
-  #confirm.on { display: flex; } #confirm .q { flex: 1; min-width: 0; font-size: 13px; line-height: 1.35; }
-  #confirm button { flex: none; min-width: 74px; padding: 12px 14px; border-radius: 14px; border: 1px solid; font-weight: 600; font-size: 15px; }
-  #confirm .yes { background: linear-gradient(160deg, #1d4a2e, #143321); border-color: #2f7a4a; color: #b6f0c9; }
-  #confirm .no { background: linear-gradient(160deg, #4a1f1b, #331411); border-color: #8a3a34; color: #ffc1b9; }
-
-  form#f { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); background: var(--bg2); flex: none; margin: 0; }
-  form#f input { flex: 1; min-width: 0; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: #00000055; color: var(--text); font: 16px system-ui, sans-serif; }
-  form#f button { width: 50px; border: 0; border-radius: 14px; background: var(--btn); color: #fff; font-size: 18px; box-shadow: var(--glow); }
-  .tabs { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--bg2); border-top: 1px solid var(--line); padding: 6px 6px calc(10px + env(safe-area-inset-bottom)); flex: none; }
-  .tabs button { border: 0; background: transparent; color: var(--dim); display: grid; gap: 2px; justify-items: center; padding: 6px 0; font-size: 11px; border-radius: 12px; }
-  .tabs button span { font-size: 19px; } .tabs button.on { color: var(--a2); } .tabs button.on span { filter: drop-shadow(0 0 6px #6aa8ff); }
-  /* every screen: a phone, a tablet (upright and sideways) and a computer's browser. The content is a column of at most 760px
-     in the middle (the bars at the top and bottom keep the same edges); the sphere, the icons and the texts grow with the width */
-  :root { --pad: max(14px, calc((100vw - 620px) / 2)); }
-  body { font-size: clamp(15px, 1.6vw, 16.5px); }
-  .top { padding-inline: var(--pad); } .body { padding-inline: var(--pad); } #confirm { padding-inline: var(--pad); } form#f { padding-inline: var(--pad); } .tabs { padding-inline: var(--pad); }
-  .brand b { font-size: clamp(17px, 2.6vw, 20px); } .brand small { font-size: clamp(11.5px, 1.6vw, 13px); } .reactor { width: clamp(32px, 5vw, 38px); height: clamp(32px, 5vw, 38px); }
-  .chip { font-size: clamp(12px, 1.7vw, 13.5px); padding: 4px clamp(10px, 1.6vw, 12px); }
-  section h2 { font-size: clamp(11.5px, 1.8vw, 14px); }
-  #mic { width: min(66vw, 34vh, 300px); min-width: 150px; }
-  #orb-cap { font-size: clamp(12.5px, 2vw, 16px); } #heard { font-size: clamp(14px, 2.2vw, 18px); }
-  .tile span { font-size: clamp(22px, 5vw, 30px); } .tile em { font-size: clamp(10px, 1.9vw, 12.5px); }
-  /* a wide screen (a tablet, a computer's browser): the tiles are low and wide, not squares that push the rest out of sight */
-  @media (min-width: 560px) { .tile { aspect-ratio: auto; min-height: 84px; } }
-  .tile { border-radius: clamp(16px, 2.6vw, 22px); } .grid4 { gap: clamp(8px, 1.6vw, 14px); }
-  .player { padding: clamp(12px, 2.4vw, 20px) clamp(10px, 2vw, 18px); gap: clamp(10px, 2vw, 16px); }
-  .ctrl { gap: clamp(10px, 2.4vw, 20px); }
-  .ctrl button { width: clamp(48px, 10vw, 62px); height: clamp(48px, 10vw, 62px); font-size: clamp(18px, 4vw, 24px); }
-  .ctrl button.main { width: clamp(62px, 13vw, 78px); height: clamp(62px, 13vw, 78px); font-size: clamp(24px, 5vw, 30px); }
-  .vol button { height: clamp(40px, 7vw, 50px); font-size: clamp(16px, 3.4vw, 22px); }
-  .row { font-size: clamp(14px, 2.1vw, 17px); padding: clamp(11px, 1.8vw, 16px) clamp(12px, 2vw, 18px); } .row small { font-size: clamp(11.5px, 1.7vw, 14px); }
-  form#f input { font-size: clamp(16px, 2.2vw, 19px); padding-block: clamp(12px, 1.8vw, 16px); } form#f button { width: clamp(50px, 8vw, 66px); }
-  .tabs button { font-size: clamp(11px, 1.6vw, 12.5px); } .tabs button span { font-size: clamp(19px, 3vw, 23px); }
-  #status { font-size: clamp(13px, 2vw, 16px); }
-  /* a low window (a phone sideways): the sphere is smaller so that the buttons stay in sight */
-  @media (max-height: 520px) { #mic { width: min(40vh, 220px); min-width: 120px; } }
-  .np-item { margin-top: 6px; font-size: clamp(15px, 2.4vw, 19px); line-height: 1.35; word-break: break-word; } .np-item b { color: var(--a2); }
-  #ringbox { display: none; position: fixed; inset: 0; background: rgba(218,54,51,.94); z-index: 9; text-align: center; padding-top: 30vh; font-size: 22px; }
-  #ringbox button { font-size: 22px; padding: 18px 30px; background: #fff; color: #da3633; margin-top: 20px; border: 0; border-radius: 14px; }
-</style></head><body>
-<div id="ringbox">📢 Компьютер ищет этот телефон<br><button id="ringstop" type="button">Я нашёл телефон</button></div>
-
-<div class="top">
-  <div class="brand"><div class="reactor"></div><div><b>JARVIS</b><small>пульт · ваш компьютер</small></div></div>
-  <div class="chips"><span class="chip" id="chip-conn"><i></i><span>Связь…</span></span><span class="chip" id="chip-bat"><i></i><span>Заряд —</span></span><span class="chip" id="chip-voice"><i></i><span>Голос: выкл</span></span></div>
-</div>
-
-<div class="body">
-  <div class="tab on" id="t-home">
-    <div class="orbwrap"><button id="mic" type="button" aria-label="Сказать команду" title="Сказать команду"><canvas id="orb" width="360" height="360"></canvas></button>
-      <div id="orb-cap">Нажмите на сферу и скажите команду</div><div id="heard"></div></div>
-    <div id="status"></div>
-    <div id="inbox"></div>
-    <section id="g-quick"><h2>Быстрые действия</h2>
-      <div class="grid4" id="quick"></div>
-    </section>
-  </div>
-
-  <div class="tab" id="t-media">
-    <section id="g-media"><h2>Звук и музыка</h2>
-      <div class="row" id="nowplaying" style="display:block"><div>Сейчас играет<small id="np-note">смотрю, что запущено на компьютере…</small></div><div id="np-list"></div></div>
-      <div class="player" id="media"></div>
-      <div class="dim" style="margin-top:6px">Кнопки управляют звуком и музыкой <b>компьютера</b>. Приложения самого телефона веб-страница переключать не может.</div>
-    </section>
-  </div>
-
-  <div class="tab" id="t-phone">
-    <section id="g-voice"><h2>Голос на телефоне</h2>
-      <label class="row"><div>Непрерывный режим<small>слушать команду за командой</small></div><input type="checkbox" id="cont"></label>
-      <label class="row"><div>Озвучивать ответы<small>на этом телефоне</small></div><input type="checkbox" id="spk" checked></label>
-      <div class="row"><div>Микрофон</div><b id="v-state">выключен</b></div>
-      <div id="help">
-        <b>Как включить голос на этом телефоне (один раз)</b><br>
-        <span id="yandex" style="display:none;color:#ffb347">Яндекс.Браузер для этого не подходит. Откройте эту ссылку в <b>Chrome</b>.<br></span>
-        Браузер даёт микрофон только защищённой странице (https). У пульта она есть на том же компьютере:<br>
-        1. Нажмите <b>«Открыть защищённую страницу»</b> ниже.<br>
-        2. Браузер один раз предупредит о сертификате (он сделан самим компьютером, а не центром сертификации): нажмите «Дополнительно» → «Перейти на сайт».<br>
-        3. Нажмите на сферу и разрешите микрофон.<br>
-        <button id="to-https" class="btn wide" type="button">Открыть защищённую страницу</button>
-        <span class="dim">Не хотите настраивать? Нажмите на значок микрофона на клавиатуре телефона в поле команды: он диктует голосом и работает без настроек.</span>
-      </div>
-      <button id="howto" class="btn dash wide" type="button">Не работает голос? Как включить</button>
-      <div class="dim">Речь распознаёт сам браузер телефона (в Chrome — сервис Google через интернет). Компьютер получает только готовый текст команды.</div>
-    </section>
-    <section id="g-phone"><h2>Телефон</h2>
-      <div class="row"><div>Заряд<small id="p-note">обновляется при подключении</small></div><b id="p-bat">—</b></div>
-      <section id="g-find" style="margin:0"><div class="row"><div>Сигнал «Найти телефон»<small id="snd-note">Нажмите один раз: потом компьютер сможет позвать телефон командой «Найди телефон».</small></div><button class="btn" id="snd" type="button">🔔 Разрешить</button></div></section>
-      <div class="row"><div>Показывать, где телефон<small id="loc-note">на компьютере в разделе «Устройства» появится карта. Включайте, только если хотите искать телефон</small></div><input type="checkbox" id="loc"></div>
-      <label class="row" id="wl-row" style="display:none"><div>Не гасить экран<small>пока открыт пульт</small></div><input type="checkbox" id="wl"></label>
-    </section>
-  </div>
-
-  <div class="tab" id="t-more">
-    <section id="g-conn"><h2>Подключение</h2>
-      <div class="row"><div>Связь с компьютером<small>последнее соединение: <span id="c-last">—</span></small></div><b id="c-state">проверяю…</b></div>
-      <div class="dim" id="c-err"></div>
-      <button class="btn wide" id="c-retry" type="button">Переподключиться</button>
-      <div class="dim">Пульт работает, пока эта страница открыта на экране: свёрнутый браузер телефон усыпляет.</div>
-    </section>
-    <section id="g-voicepick"><h2>Голос Джарвиса</h2>
-      <div class="row" style="display:block"><div>Кто отвечает<small>тот же выбор, что в Настройках → Голос на компьютере</small></div><select id="vsel" aria-label="Голос Джарвиса"><option value="">Загружаю список…</option></select><div class="dim" id="vmsg"></div></div>
-    </section>
-    <section id="g-vp"><h2>Мой голос</h2>
-      <div class="row" style="display:block"><div>Чтобы Jarvis слушал только вас<small>микрофон этого устройства записывает ваши фразы и отправляет их на компьютер; звук не сохраняется, хранятся только числа</small></div>
-        <div class="dim" id="vp-note">Загружаю…</div>
-        <div class="dim" id="vp-stat"></div>
-        <button class="btn wide" id="vp-rec" type="button">Записать мой голос</button>
-        <button class="btn wide" id="vp-cancel" type="button" hidden>Отмена</button>
-        <button class="btn wide" id="vp-test" type="button">Проверить мой голос</button>
-        <label class="dim" style="display:block;margin-top:10px"><input type="checkbox" id="vp-on"> Слушать только мой голос</label>
-        <label class="dim" style="display:block;margin-top:6px"><input type="checkbox" id="pcrec"> Распознавать речь на компьютере (офлайн, без интернета у планшета)</label>
-        <select id="vp-strict" aria-label="Строгость проверки голоса"><option value="0">Мягче</option><option value="1">Обычная</option><option value="2">Строже</option></select>
-        <button class="btn wide" id="vp-del" type="button">Удалить мой голос</button>
-      </div>
-      <div class="dim">Это простая защита (экспериментально): голос различается по тембру и высоте и может ошибаться на похожих голосах. Когда включено «Слушать только мой голос», речь распознаёт компьютер, а не браузер планшета.</div>
-    </section>
-    <section id="g-limits"><h2>Чего пульт не делает</h2>
-      <div class="dim">Пульт — это страница в браузере, а не приложение. Поэтому он не блокирует и не усыпляет телефон, не читает уведомления телефона и не управляет его другими приложениями. Обойти экран блокировки, PIN-код или разрешения Android он не пытается.</div>
-    </section>
-  </div>
-</div>
-
-<div id="confirm"><div class="q" id="confirm-q"></div><button class="yes" id="cy" type="button">Да</button><button class="no" id="cn" type="button">Нет</button></div>
-<form id="f"><input id="t" placeholder="Команда: таймер на 5 минут" autocomplete="off"><button aria-label="Отправить">➤</button></form>
-<div class="tabs" id="tabs">
-  <button class="on" data-tab="home" type="button"><span>⚡</span>Главная</button>
-  <button data-tab="media" type="button"><span>🎵</span>Звук</button>
-  <button data-tab="phone" type="button"><span>📱</span>Телефон</button>
-  <button data-tab="more" type="button"><span>⚙</span>Ещё</button>
-</div>
-<script>
-// the secret of the link is taken from the address once and kept on this phone: it does not stay in the address
-// bar, the browser history or a shared screenshot ("Новая ссылка" on the computer revokes it)
-const token = (() => {
-  // (?t=… from the QR code; #t=… when the page moves to its https address: the part after # never reaches a server)
-  const fromUrl = new URLSearchParams(location.search).get('t') || new URLSearchParams(location.hash.slice(1)).get('t') || '';
-  let t = fromUrl;
-  try { if (fromUrl) localStorage.setItem('jarvis_t', fromUrl); else t = localStorage.getItem('jarvis_t') || ''; } catch (e) {}
-  if (fromUrl || location.hash) { try { history.replaceState(null, '', location.pathname); } catch (e) {} }
-  return t;
-})();
-// no request waits forever: the computer asleep, another network or a lost packet ends in "нет связи" within seconds
-function fetchT(url, opts) {
-  const c = new AbortController(); const t = setTimeout(() => c.abort(), 6000);
-  return fetch(url, Object.assign({}, opts || {}, { signal: c.signal })).finally(() => clearTimeout(t));
-}
-const $ = id => document.getElementById(id);
-// no secret on this phone yet: the code that the computer shows pairs it (the phone gets its own secret)
-if (!token) {
-  const box = document.createElement('div');
-  box.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#0b0b0dee;display:flex;align-items:center;justify-content:center;padding:20px';
-  box.innerHTML = '<div style="max-width:340px;width:100%;background:#17171a;border:1px solid #3a3a40;border-radius:16px;padding:20px;color:#ececee;font:15px system-ui"><b style="font-size:18px">Привязать телефон</b><p style="color:#9a9aa2">На компьютере в Jarvis: Настройки → Телефон → «Привязать телефон по коду». Введите код оттуда.</p><input id="pcode" inputmode="numeric" maxlength="6" placeholder="Код из 6 цифр" style="width:100%;box-sizing:border-box;padding:12px;border-radius:10px;border:1px solid #3a3a40;background:#101012;color:#fff;font-size:20px;letter-spacing:.2em;text-align:center"><button id="pgo" style="margin-top:12px;width:100%;padding:12px;border-radius:10px;border:0;background:#f2f2f4;color:#0a0a0b;font-weight:600;font-size:15px">Привязать</button><div id="pmsg" style="margin-top:10px;color:#ff9aa6;min-height:20px"></div></div>';
-  document.body.appendChild(box);
-  box.querySelector('#pgo').onclick = async () => {
-    const m = box.querySelector('#pmsg'); m.textContent = '…';
-    try {
-      const name = (/Android/.test(navigator.userAgent) ? 'Android' : /iPhone|iPad/.test(navigator.userAgent) ? 'iPhone/iPad' : 'Телефон') + ' · ' + (navigator.userAgent.match(/(Chrome|Firefox|Safari|Edg)\/?/) || ['браузер'])[0].replace('/', '');
-      const r = await fetch('/pair', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'code=' + encodeURIComponent(box.querySelector('#pcode').value.trim()) + '&name=' + encodeURIComponent(name) });
-      const j = await r.json().catch(() => ({}));
-      if (j.ok && j.token) { try { localStorage.setItem('jarvis_t', j.token); } catch (e) {} location.reload(); } else { m.textContent = j.message || (r.status === 429 ? 'Слишком много попыток, подождите минуту.' : 'Не получилось привязать.'); }
-    } catch (e) { m.textContent = 'Нет связи с компьютером.'; }
-  };
-}
-// the screen of the computer (needs the permission on the computer; one picture on each press)
-(function () {
-  const b = document.createElement('button'); b.textContent = '🖥 Экран ПК'; b.style.cssText = 'position:fixed;right:10px;bottom:10px;z-index:900;padding:10px 14px;border-radius:12px;border:1px solid #3a3a40;background:#17171a;color:#ececee;font:14px system-ui';
-  b.onclick = async () => {
-    try {
-      const r = await fetchT('/screen', { headers: { 'X-Token': token } });
-      if (!r.ok) { alert(await r.text()); return; }
-      const j = await r.json();
-      let box = document.getElementById('scrbox');
-      if (!box) { box = document.createElement('div'); box.id = 'scrbox'; box.style.cssText = 'position:fixed;inset:0;z-index:99998;background:#000d;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px'; box.onclick = () => box.remove(); document.body.appendChild(box); }
-      box.innerHTML = '<img style="max-width:96vw;max-height:88vh;border-radius:8px" src="data:image/jpeg;base64,' + j.jpeg + '"><span style="color:#aaa">Нажмите, чтобы закрыть. Это один снимок, не трансляция.</span>';
-    } catch (e) { alert('Нет связи с компьютером'); }
-  };
-  document.addEventListener('DOMContentLoaded', () => document.body.appendChild(b)); if (document.body) document.body.appendChild(b);
-})();
-const rid = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-const quick = [
-  ['поставь таймер на 5 минут', '⏱', 'Таймер 5 мин', 'hot'], ['отмени таймер', '⏹', 'Отмена таймера', ''], ['сколько времени', '🕐', 'Сколько времени', ''], ['отмени выключение', '⛔', 'Отмена выкл.', ''],
-  ['выключи компьютер через 10 минут', '⏻', 'Выкл. через 10 мин', ''], ['заблокируй компьютер', '🔒', 'Блокировка', ''], ['да', '✔', 'Да', 'yes'], ['нет', '✖', 'Нет', 'no']];
-const status = $('status');
-async function send(text) {
-  status.textContent = '…';
-  try {
-    const r = await fetchT('/cmd', {method:'POST', headers:{'X-Token':token, 'X-Rid':rid()}, body:text});
-    status.textContent = r.ok ? '✓ ' + text : r.status === 503 ? 'Компьютер пока не принимает команды (Jarvis запускается или пульт выключен)'
-      : r.status === 403 ? 'Ссылка не подходит: откройте новую ссылку или QR-код на компьютере' : 'Ошибка: ' + r.status;
-    if (r.ok) connected();
-  } catch (e) { status.textContent = 'Нет связи с компьютером'; }
-}
-for (const [cmd, icon, label, cls] of quick) {
-  const b = document.createElement('button'); b.type = 'button'; b.className = 'tile ' + cls; b.title = cmd;
-  const i = document.createElement('span'); i.textContent = icon; const e = document.createElement('em'); e.textContent = label;
-  b.append(i, e); b.onclick = () => send(cmd); $('quick').appendChild(b);
-}
-// the music and the sound of the computer: one player, the same eight commands as before
-const player = [['ctrl', [['предыдущий трек', '⏮', 'Предыдущий трек', ''], ['пауза', '⏸', 'Пауза', ''], ['продолжи', '⏯', 'Продолжить', 'main'], ['следующий трек', '⏭', 'Следующий трек', '']]],
-  ['vol', [['тише', '🔉', 'Тише', ''], ['громче', '🔊', 'Громче', ''], ['выключи звук', '🔇', 'Выключить звук', ''], ['включи звук', '🔈', 'Включить звук', '']]]];
-for (const [kind, items] of player) {
-  const row = document.createElement('div'); row.className = kind;
-  for (const [cmd, icon, label, cls] of items) {
-    const b = document.createElement('button'); b.type = 'button'; b.textContent = icon; b.title = label; b.setAttribute('aria-label', label); if (cls) b.className = cls; b.onclick = () => send(cmd); row.appendChild(b);
-  }
-  $('media').appendChild(row);
-}
-$('f').onsubmit = e => { e.preventDefault(); const i = $('t'); if (i.value.trim()) send(i.value.trim()); i.value=''; };
-
-// ---------- connection: the page asks the computer for news every 2 seconds ----------
-let lastId = 0, lastOk = 0, failures = 0, timer = null, polling = false, shownId = 0;
-const hhmm = t => new Date(t).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
-function connected() { lastOk = Date.now(); failures = 0; $('c-state').textContent = 'есть'; $('c-state').className = 'ok'; $('c-err').textContent = ''; $('c-last').textContent = hhmm(lastOk); }
-function lost(why) { failures++; $('c-state').textContent = 'нет связи'; $('c-state').className = 'bad'; $('c-err').textContent = why; }
-async function poll() {
-  clearTimeout(timer);
-  if (polling) return; // one request at a time: two at once would show the same message twice
-  polling = true;
-  try {
-    const r = await fetchT('/poll?after=' + lastId, {headers:{'X-Token':token}});
-    if (r.status === 403) { lost('Ссылка больше не действует (на компьютере сделали новую): отсканируйте QR-код в окне Jarvis ещё раз.'); try { localStorage.removeItem('jarvis_t'); } catch (e) {} }
-    else if (r.status === 503) { lost('Пульт выключен на компьютере. Включите его на главной странице Jarvis.'); }
-    else if (!r.ok) { lost('Компьютер ответил ошибкой ' + r.status + '.'); }
-    else { const j = await r.json(); connected(); for (const m of j.msgs) { if (m.id > shownId || j.last < shownId) { handle(m); shownId = m.id; } } lastId = j.last; if (j.last < shownId) shownId = j.last; }
-  } catch (e) { lost('Компьютер не отвечает: Jarvis закрыт, компьютер спит, пульт выключен или телефон в другой сети. Из другой сети пульт открывается по адресу «Доступ из любой сети» (включается в окне Jarvis или кнопкой в Telegram-боте). Повторяю автоматически.' + (lastOk ? ' Последняя связь: ' + hhmm(lastOk) + '.' : '')); }
-  polling = false;
-  timer = setTimeout(poll, failures ? Math.min(2000 * (failures + 1), 10000) : 2000);
-}
-$('c-retry').onclick = () => { failures = 0; $('c-state').textContent = 'проверяю…'; $('c-state').className = ''; poll(); reportSoon(); };
-
-// ---------- what the phone tells the computer: battery, screen, voice ----------
-let battery = null, reportTimer = null, place = null, geoWatch = null;
-const state = { voice: 'off', voice_error: '' };
-async function report() {
-  const conn = navigator.connection || {};
-  const net = navigator.onLine === false ? 'offline' : (conn.type || conn.effectiveType || 'online');
-  const body = { battery: battery ? battery.level : null, charging: battery ? battery.charging : null, net: net,
-    lat: place ? place.lat : null, lon: place ? place.lon : null, acc: place ? place.acc : null,
-    visible: document.visibilityState === 'visible', ringing: ringing, voice: state.voice, voice_error: state.voice_error };
-  try { await fetchT('/state', {method:'POST', headers:{'X-Token':token, 'Content-Type':'application/json'}, body: JSON.stringify(body)}); } catch (e) {}
-}
-function reportSoon() { clearTimeout(reportTimer); reportTimer = setTimeout(report, 200); }
-setInterval(report, 15000);
-document.addEventListener('visibilitychange', () => { reportSoon(); if (document.visibilityState === 'visible') { poll(); keepAwake(); } });
-function showBattery() {
-  if (!battery) return;
-  $('p-bat').textContent = Math.round(battery.level * 100) + '%' + (battery.charging ? ' ⚡ заряжается' : '');
-  reportSoon();
-}
-if (navigator.getBattery) navigator.getBattery().then(b => { battery = b; b.onlevelchange = b.onchargingchange = showBattery; showBattery(); }).catch(() => { $('p-note').textContent = 'Браузер не сообщает заряд.'; });
-else $('p-note').textContent = 'Этот браузер не сообщает заряд (умеет Chrome на Android).';
-
-// the place of the phone: only while the switch is on (the browser asks for the permission itself; it needs the protected page)
-$('loc').onchange = () => {
-  if (geoWatch !== null) { navigator.geolocation.clearWatch(geoWatch); geoWatch = null; }
-  place = null;
-  if (!$('loc').checked) { $('loc-note').textContent = 'Выключено: место не передаётся.'; reportSoon(); return; }
-  if (!navigator.geolocation || !window.isSecureContext) { $('loc').checked = false; $('loc-note').textContent = 'Нужна защищённая страница пульта (ссылка https из раздела «Из любой сети»).'; return; }
-  $('loc-note').textContent = 'Определяю место…';
-  geoWatch = navigator.geolocation.watchPosition(p => { place = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy }; $('loc-note').textContent = 'Место передаётся (точность около ' + Math.round(p.coords.accuracy) + ' м).'; reportSoon(); },
-    e => { place = null; $('loc').checked = false; $('loc-note').textContent = 'Не удалось определить место: ' + e.message; reportSoon(); }, { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 });
-};
-
-// keep the screen on while the remote is open (Screen Wake Lock: Chrome, secure page only)
-let wakeLock = null;
-async function keepAwake() { if ($('wl').checked && 'wakeLock' in navigator && !wakeLock) { try { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.onrelease = () => { wakeLock = null; }; } catch (e) { $('c-err').textContent = 'Не удалось держать экран включённым: ' + e.message; $('wl').checked = false; } } }
-if ('wakeLock' in navigator && window.isSecureContext) $('wl-row').style.display = 'flex';
-$('wl').onchange = () => { if ($('wl').checked) keepAwake(); else if (wakeLock) wakeLock.release(); };
-
-// ---------- messages from the computer ----------
-let audio = null, ringing = false, ringTimer = null;
-function unlockSound() { try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch (e) {} }
-$('snd').onclick = () => { unlockSound(); beep(0); $('snd').textContent = '🔔 Сигнал разрешён'; $('snd-note').textContent = 'Готово. Команда «Найди телефон» на компьютере включит здесь громкий сигнал.'; };
-document.addEventListener('pointerdown', unlockSound, {once: true});
-function beep(i) {
-  if (!audio) return;
-  const o = audio.createOscillator(), g = audio.createGain();
-  o.type = 'square'; o.frequency.value = i % 2 ? 1320 : 880; g.gain.value = 0.6;
-  o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + 0.35);
-}
-function ring() {
-  if (ringing) return;
-  ringing = true; $('ringbox').style.display = 'block'; reportSoon();
-  let i = 0; const started = Date.now();
-  const tick = () => { if (!ringing) return; beep(i++); if (navigator.vibrate) navigator.vibrate(300);
-    if (Date.now() - started > 60000) { stopRing(); return; } ringTimer = setTimeout(tick, 450); };
-  tick();
-  if (!audio || audio.state !== 'running') $('ringbox').firstChild.textContent = '📢 Компьютер ищет этот телефон (звук не разрешён: нажмите «Разрешить сигнал» заранее) ';
-}
-function stopRing() { ringing = false; clearTimeout(ringTimer); if (navigator.vibrate) navigator.vibrate(0); $('ringbox').style.display = 'none'; reportSoon(); }
-$('ringstop').onclick = () => { stopRing(); send('останови сигнал телефона'); };
-function copy(text, btn) {
-  const done = () => { btn.textContent = 'Скопировано'; };
-  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, () => fallback());
-  else fallback();
-  function fallback() { const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); done(); } catch (e) { btn.textContent = 'Выделите текст и скопируйте'; } t.remove(); }
-}
-function card(title, body, buttons) {
-  const d = document.createElement('div'); d.className = 'msg';
-  const h = document.createElement('div'); h.textContent = title + ' · ' + hhmm(Date.now()); h.className = 'dim';
-  const b = document.createElement('div'); b.className = 'body'; b.textContent = body;
-  const a = document.createElement('div'); a.className = 'acts';
-  for (const [label, fn] of buttons) { const x = document.createElement('button'); x.type = 'button'; x.textContent = label; x.onclick = () => fn(x); a.appendChild(x); }
-  const close = document.createElement('button'); close.type = 'button'; close.className = 'sec'; close.textContent = '✕'; close.onclick = () => d.remove(); a.appendChild(close);
-  d.append(h, b, a); $('inbox').prepend(d);
-  // no history of messages on the page: only the one thing that can be tapped (a link, a text) stays, until it is closed or replaced
-  while ($('inbox').children.length > 1) $('inbox').lastChild.remove();
-  if (navigator.vibrate) navigator.vibrate(120);
-}
-// the answers and events of the computer are said by the phone itself (its own voice), and always shown as a card
-function speakHere(text) {
-  if (!$('spk').checked || !('speechSynthesis' in window)) return;
-  try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang = /^(en|uk)/i.test(navigator.language || '') ? navigator.language : 'ru-RU'; u.onstart = () => { speakingHere = true; setOrb('speaking'); if (rec) { try { rec.abort(); } catch (e) {} } }; u.onend = u.onerror = () => { speakingHere = false; setOrb(state.voice === 'listening' ? 'listening' : 'idle'); if (wantVoice && !rec) setTimeout(() => { if (wantVoice && !rec && !speakingHere) listen(); }, 400); }; speechSynthesis.speak(u); } catch (e) {}
-}
-try { $('spk').checked = localStorage.getItem('jarvis_spk') !== '0'; } catch (e) {}
-$('spk').onchange = () => { try { localStorage.setItem('jarvis_spk', $('spk').checked ? '1' : '0'); } catch (e) {} if ($('spk').checked) speakHere('Озвучка на телефоне включена'); else if ('speechSynthesis' in window) speechSynthesis.cancel(); };
-// what Jarvis said is not kept on the page (no list of messages): one short line that goes out by itself
-let flashTimer = 0;
-function flash(text) {
-  const st = $('status'); st.textContent = String(text || '').slice(0, 160);
-  clearTimeout(flashTimer); flashTimer = setTimeout(() => { st.textContent = ''; }, 8000);
-}
-function handle(m) {
-  if (m.kind === 'say') { flash('Jarvis: ' + m.data); speakHere(m.data); askIfQuestion(m.data); }
-  else if (m.kind === 'note') {
-    let n = {}; try { n = JSON.parse(m.data); } catch (e) { n = { title: 'Jarvis', text: m.data }; }
-    flash((n.title ? n.title + ': ' : '') + (n.text || ''));
-    askIfQuestion((n.title ? n.title + '. ' : '') + (n.text || ''));
-    if (['timer', 'alarm', 'reminder'].includes(n.kind)) { unlockSound(); beep(0); setTimeout(() => beep(1), 450); if (navigator.vibrate) navigator.vibrate([300, 150, 300]); }
-    speakHere((n.title ? n.title + '. ' : '') + (n.text || ''));
-  }
-  else if (m.kind === 'ring') ring();
-  else if (m.kind === 'stop') stopRing();
-  else if (m.kind === 'link' && /^https?:\/\//i.test(m.data)) card('Ссылка с компьютера', m.data, [['Открыть', () => window.open(m.data, '_blank', 'noopener')], ['Копировать', x => copy(m.data, x)]]);
-  else if (m.kind === 'text') card('Текст с компьютера', m.data, [['Копировать', x => copy(m.data, x)]]);
-}
-
-// ---------- the sphere (as on the computer): dots on a sphere; it breathes while listening and ripples while speaking ----------
-let oState = 'idle', oLevel = 0, oYaw = 0;
-const orbCanvas = $('orb'), octx = orbCanvas.getContext('2d');
-const orbPts = [];
-for (let i = 0, N = 520; i < N; i++) {
-  const y = 1 - (i / (N - 1)) * 2, r = Math.sqrt(1 - y * y), th = Math.PI * (3 - Math.sqrt(5)) * i;
-  orbPts.push([Math.cos(th) * r, y, Math.sin(th) * r, Math.random() * Math.PI * 2, Math.atan2(Math.sin(th) * r, Math.cos(th) * r), Math.asin(y)]);
-}
-function setOrb(st) { oState = st; }
-function orbPalette() { return oState === 'error' ? [352, 75] : oState === 'off' ? [220, 6] : oState === 'listening' ? [172, 70] : oState === 'speaking' ? [186, 55] : [176, 45]; }
-function drawOrb(t) {
-  const W = orbCanvas.width, H = orbCanvas.height, [hue, sat] = orbPalette();
-  octx.clearRect(0, 0, W, H);
-  const cx = W / 2, cy = H / 2, R = W * 0.33, tilt = 0.38, ct = Math.cos(tilt), st = Math.sin(tilt), cyaw = Math.cos(oYaw), syaw = Math.sin(oYaw);
-  const active = oState === 'listening' || oState === 'speaking';
-  oLevel += ((active ? 0.55 + 0.45 * Math.sin(t / 190) : 0) - oLevel) * 0.12;
-  const glow = octx.createRadialGradient(cx, cy, R * 0.05, cx, cy, R * 1.25);
-  glow.addColorStop(0, `hsla(${hue},${sat}%,55%,${0.16 + oLevel * 0.22})`); glow.addColorStop(0.55, `hsla(${hue},${sat}%,40%,${0.05 + oLevel * 0.06})`); glow.addColorStop(1, `hsla(${hue},${sat}%,30%,0)`);
-  octx.fillStyle = glow; octx.fillRect(0, 0, W, H);
-  const breath = 1 + Math.sin(t / 900) * 0.012 + (oState === 'listening' ? Math.sin(t / 160) * 0.025 * oLevel : 0);
-  for (const [x0, y0, z0, ph, lon, lat] of orbPts) {
-    let k = breath; if (oState === 'speaking') k += 0.075 * oLevel * Math.sin(3 * lon + t / 170) * Math.sin(2 * lat + t / 230); k += 0.012 * Math.sin(ph + t / 700);
-    const x = (x0 * cyaw + z0 * syaw) * k, z1 = (-x0 * syaw + z0 * cyaw) * k, y1 = y0 * k;
-    const y = y1 * ct - z1 * st, z = y1 * st + z1 * ct, persp = 3.2 / (3.2 - z), depth = (z + 1) / 2;
-    octx.fillStyle = `hsla(${hue},${sat * (1 - depth * 0.8)}%,${62 + depth * 36}%,${(0.10 + depth * 0.9) * (oState === 'off' ? 0.45 : 1)})`;
-    const r = 2.6 + depth * 3.2; octx.fillRect(cx + x * R * persp - r / 2, cy + y * R * persp - r / 2, r, r);
-  }
-}
-let orbLast = 0;
-function orbLoop(t) { if (document.visibilityState === 'visible' && t - orbLast > 33) { orbLast = t; oYaw += 0.006 * (oState === 'listening' ? 2 : 1); drawOrb(t); } requestAnimationFrame(orbLoop); }
-requestAnimationFrame(orbLoop);
-
-// ---------- voice: the browser listens through the phone microphone and sends the recognized text ----------
-// Browsers allow the microphone only on secure pages (https); on plain http over Wi-Fi it may be refused.
-const micBtn = $('mic'), heard = $('heard');
-const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let rec = null, wantVoice = false, speakingHere = false;
-// the https address of the same computer and port; the secret goes after # (never sent to a server, removed at once)
-$('to-https').onclick = () => { location.href = 'https://' + location.host + '/#t=' + encodeURIComponent(token); };
-if (location.protocol === 'https:') $('to-https').style.display = 'none';
-if (/YaBrowser/i.test(navigator.userAgent)) $('yandex').style.display = 'inline';
-$('howto').onclick = () => { $('help').style.display = $('help').style.display === 'none' ? 'block' : 'none'; };
-function voice(st, err) {
-  state.voice = st; state.voice_error = err || '';
-  const names = { off: 'выключен', listening: 'слушаю', error: 'ошибка', unavailable: 'недоступен' };
-  setOrb(st === 'listening' ? 'listening' : st === 'error' ? 'error' : st === 'unavailable' ? 'off' : 'idle');
-  $('v-state').textContent = names[st] || st; $('v-state').className = st === 'listening' ? 'ok' : (st === 'error' || st === 'unavailable') ? 'bad' : '';
-  if (err) heard.textContent = err;
-  reportSoon();
-}
-if (!window.isSecureContext) { voice('unavailable', 'Голос: нужна защищённая страница пульта (кнопка ниже). Текстом всё работает.'); }
-else if (!SR) { voice('unavailable', 'Этот браузер не умеет распознавать речь. Используйте Chrome или микрофон на клавиатуре.'); }
-function listen() {
-  // the lock to the voice of the owner (or the user's choice): the computer recognizes the speech, not the browser
-  if (usePc()) { pcListen(); return; }
-  if (!window.isSecureContext) { $('help').style.display = 'block'; voice('unavailable', 'Браузер не разрешает микрофон на этой странице. Откройте защищённую страницу (ниже).'); wantVoice = false; return; }
-  if (!SR) { voice('unavailable', 'Браузер не умеет слушать. Нажмите значок микрофона на клавиатуре в поле команды.'); wantVoice = false; return; }
-  rec = new SR(); rec.lang = navigator.language && !/^ru/i.test(navigator.language) && /^(en|uk)/i.test(navigator.language) ? navigator.language : 'ru-RU'; rec.interimResults = true; rec.continuous = false;
-  micBtn.classList.add('on'); heard.textContent = 'Слушаю… (нажмите на сферу, чтобы остановить)'; voice('listening');
-  let final = '', fatal = false;
-  rec.onresult = e => { let t = ''; for (const r of e.results) { t += r[0].transcript; if (r.isFinal) final = t; } heard.textContent = '«' + t + '»'; };
-  rec.onerror = e => {
-    if (e.error === 'no-speech' || e.error === 'aborted') return; // silence: in the continuous mode just listen again
-    fatal = true; wantVoice = false; $('cont').checked = false;
-    voice('error', (e.error === 'not-allowed' || e.error === 'service-not-allowed')
-      ? 'Нет доступа к микрофону. Разрешите микрофон для этой страницы в настройках сайта или сделайте настройку из подсказки ниже.'
-      : e.error === 'network' ? 'Распознавание речи недоступно: у телефона нет интернета.' : 'Ошибка микрофона: ' + e.error);
-  };
-  rec.onend = () => {
-    rec = null; micBtn.classList.remove('on');
-    if (final.trim()) send(final.trim());
-    if (wantVoice && !fatal) setTimeout(() => { if (wantVoice && !rec && !speakingHere) listen(); }, 300);
-    else if (!fatal) voice('off');
-  };
-  try { rec.start(); } catch (e) { rec = null; micBtn.classList.remove('on'); voice('error', 'Не удалось включить микрофон: ' + e.message); wantVoice = false; }
-}
-micBtn.onclick = () => { if (pcMic) { wantVoice = false; $('cont').checked = false; pcStop(); return; } if (rec) { wantVoice = false; $('cont').checked = false; rec.stop(); return; } wantVoice = $('cont').checked; listen(); };
-$('cont').onchange = () => { wantVoice = $('cont').checked; if (wantVoice && !rec) listen(); if (!wantVoice && rec) rec.stop(); };
-
-// ---------- the microphone of this page for the computer: «Мой голос» and offline recognition on the computer ----------
-// The page records speech itself, cuts it into phrases (by pauses) and sends every phrase to the computer: it keeps or checks the
-// voiceprint (recording the voice), or compares the voice with the print and recognizes the phrase offline and runs it as a command.
-let pcMic = null, vp = { enrolled: false, enabled: false, enrolling: false, testing: false };
-const usePc = () => $('pcrec').checked || vp.enabled;
-function toPcm16(frames, rate) {
-  let n = 0; for (const f of frames) n += f.length;
-  const all = new Float32Array(n); let o = 0; for (const f of frames) { all.set(f, o); o += f.length; }
-  const ratio = rate / 16000, m = Math.floor(n / ratio), out = new Int16Array(m);
-  for (let i = 0; i < m; i++) { const a = Math.floor(i * ratio), b = Math.min(n, Math.floor((i + 1) * ratio)); let s = 0; for (let j = a; j < b; j++) s += all[j]; const v = s / Math.max(1, b - a); out[i] = Math.max(-1, Math.min(1, v)) * 32767; }
-  const bytes = new Uint8Array(out.buffer); let bin = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-  return btoa(bin);
-}
-async function pcMicStart(onPhrase) {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-  const AC = window.AudioContext || window.webkitAudioContext; const ctx = new AC();
-  const src = ctx.createMediaStreamSource(stream), proc = ctx.createScriptProcessor(4096, 1, 1), mute = ctx.createGain(); mute.gain.value = 0;
-  const blockSec = 4096 / ctx.sampleRate;
-  let pre = [], buf = [], voiced = 0, silent = 0, floor = 0.004, on = false;
-  proc.onaudioprocess = e => {
-    // while the answer is played by this page the microphone hears it: nothing is taken then
-    if (speakingHere) { pre = []; buf = []; on = false; return; }
-    const x = e.inputBuffer.getChannelData(0); let sum = 0; for (let i = 0; i < x.length; i++) sum += x[i] * x[i];
-    const rms = Math.sqrt(sum / x.length), thr = Math.max(0.012, floor * 3.5), copy = new Float32Array(x);
-    if (!on) {
-      floor = floor * 0.95 + rms * 0.05; pre.push(copy); if (pre.length > 3) pre.shift();
-      if (rms > thr) { on = true; buf = pre.slice(); pre = []; voiced = 1; silent = 0; }
-      return;
-    }
-    buf.push(copy); if (rms > thr) { voiced++; silent = 0; } else silent++;
-    if (silent * blockSec > 0.8 || buf.length * blockSec > 8) {
-      const frames = buf, v = voiced; on = false; buf = []; voiced = 0; silent = 0;
-      if (v * blockSec >= 0.4) onPhrase(toPcm16(frames, ctx.sampleRate));
-    }
-  };
-  src.connect(proc); proc.connect(mute); mute.connect(ctx.destination);
-  return { stop() { try { proc.onaudioprocess = null; proc.disconnect(); src.disconnect(); stream.getTracks().forEach(t => t.stop()); ctx.close(); } catch (e) {} } };
-}
-function pcStop() { if (pcMic) { pcMic.stop(); pcMic = null; } micBtn.classList.remove('on'); if (state.voice === 'listening') voice('off'); }
-async function pcSend(b64) {
-  const c = new AbortController(), t = setTimeout(() => c.abort(), 25000);
-  try {
-    const r = await fetch('/voice-audio', { method: 'POST', headers: { 'X-Token': token, 'X-Rid': rid() }, body: b64, signal: c.signal });
-    const j = await r.json().catch(() => ({ ok: false, message: 'Ошибка ' + r.status }));
-    connected(); return j;
-  } catch (e) { return { ok: false, kind: 'error', message: 'Нет связи с компьютером.' }; } finally { clearTimeout(t); }
-}
-// a phrase of the command mode: the answer of the computer is shown
-async function pcCommandPhrase(b64) {
-  heard.textContent = 'Распознаю на компьютере…';
-  const j = await pcSend(b64);
-  if (j.kind === 'command') { heard.textContent = '«' + j.text + '» ✓'; status.textContent = '✓ ' + j.text; }
-  else if (j.kind === 'echo') heard.textContent = '';
-  else heard.textContent = (j.message || 'Не получилось.');
-  if (!$('cont').checked) pcStop();
-}
-async function pcListen() {
-  if (pcMic) return;
-  if (!window.isSecureContext || !navigator.mediaDevices) { voice('unavailable', 'Браузер не разрешает микрофон на этой странице. Откройте защищённую страницу (ниже).'); return; }
-  try { pcMic = await pcMicStart(pcCommandPhrase); micBtn.classList.add('on'); heard.textContent = 'Слушаю (голос обрабатывает компьютер)… Нажмите на сферу, чтобы остановить.'; voice('listening'); }
-  catch (e) { pcMic = null; voice('error', 'Нет доступа к микрофону: разрешите его для этой страницы.'); }
-}
-// ---- the card «Мой голос» ----
-async function vpLoad() {
-  try {
-    const r = await fetchT('/voiceprint', { headers: { 'X-Token': token } }); if (!r.ok) return;
-    vp = await r.json();
-    $('vp-note').textContent = vp.note || (vp.enrolled ? 'Образец голоса записан.' : 'Образец не записан.');
-    $('vp-on').checked = !!vp.enabled; $('vp-on').disabled = !vp.enrolled; $('vp-strict').value = String(vp.strictness);
-    $('vp-rec').hidden = !!vp.enrolling; $('vp-cancel').hidden = !vp.enrolling; $('vp-rec').textContent = vp.enrolled ? 'Записать заново' : 'Записать мой голос';
-    $('vp-test').disabled = !vp.enrolled || !!vp.enrolling; $('vp-del').disabled = !vp.enrolled && !vp.enrolling;
-    $('vp-stat').textContent = vp.enrolled ? 'Принято фраз: ' + vp.accepted + ', отклонено: ' + vp.rejected + (vp.last ? ' · последняя: ' + (vp.last.ok ? 'принята' : 'отклонена') + ' (' + vp.last.distance.toFixed(2) + ' при пороге ' + vp.last.threshold.toFixed(2) + ')' : '') : '';
-  } catch (e) {}
-}
-async function vpDo(op) { try { await fetchT('/voiceprint-do', { method: 'POST', headers: { 'X-Token': token, 'X-Rid': rid() }, body: op }); } catch (e) {} await vpLoad(); }
-// recording the voice or testing it: the microphone of the page sends every phrase; it stops when the computer says it is done
-async function vpCapture(op) {
-  if (!window.isSecureContext || !navigator.mediaDevices) { $('vp-note').textContent = 'Нужна защищённая страница пульта (кнопка ниже в подсказке).'; return; }
-  wantVoice = false; $('cont').checked = false; if (rec) { try { rec.abort(); } catch (e) {} } pcStop();
-  await vpDo(op);
-  try {
-    pcMic = await pcMicStart(async b64 => {
-      $('vp-note').textContent = 'Обрабатываю…';
-      const j = await pcSend(b64);
-      await vpLoad();
-      if (j.message) $('vp-note').textContent = j.message;
-      if (!vp.enrolling && !vp.testing) pcStop();
-    });
-    micBtn.classList.add('on');
-  } catch (e) { pcMic = null; $('vp-note').textContent = 'Нет доступа к микрофону: разрешите его для этой страницы.'; await vpDo('cancel'); }
-}
-$('vp-rec').onclick = () => vpCapture('start'); $('vp-test').onclick = () => vpCapture('test');
-$('vp-cancel').onclick = async () => { pcStop(); await vpDo('cancel'); };
-$('vp-del').onclick = async () => { if (confirm('Удалить записанный образец голоса? Jarvis снова будет слушать всех.')) { pcStop(); await vpDo('delete'); } };
-$('vp-on').onchange = e => vpDo(e.target.checked ? 'enable:1' : 'enable:0'); $('vp-strict').onchange = e => vpDo('strict:' + e.target.value);
-$('pcrec').checked = (() => { try { return localStorage.getItem('jarvis_pcrec') === '1'; } catch (e) { return false; } })();
-$('pcrec').onchange = () => { try { localStorage.setItem('jarvis_pcrec', $('pcrec').checked ? '1' : '0'); } catch (e) {} if (pcMic) pcStop(); };
-vpLoad(); setInterval(() => { if ($('t-more').classList.contains('on')) vpLoad(); }, 2500);
-
-// ---------- what plays on the computer now (AIMP, YouTube in a browser ...), asked while the sound tab is open ----------
-let npTimer = 0;
-async function loadNow() {
-  clearTimeout(npTimer);
-  if (!$('t-media').classList.contains('on')) return;
-  try {
-    const r = await fetchT('/media', {headers:{'X-Token':token}});
-    if (!r.ok) throw new Error(r.status);
-    const j = await r.json(); const box = $('np-list'); box.textContent = '';
-    for (const it of j.items) {
-      const d = document.createElement('div'); d.className = 'np-item';
-      const a = document.createElement('b'); a.textContent = it.app; const t = document.createElement('span'); t.textContent = it.title ? ' — ' + it.title : ' запущен';
-      d.append(a, t); box.appendChild(d);
-    }
-    $('np-note').textContent = j.items.length ? 'по заголовкам окон плееров и браузера' : 'AIMP, VLC, Spotify и YouTube в браузере не найдены. Ролик в фоновой вкладке браузера не виден.';
-  } catch (e) { $('np-note').textContent = 'Нет связи с компьютером.'; }
-  npTimer = setTimeout(loadNow, 4000);
-}
-
-// ---------- tabs ----------
-document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
-  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 't-' + b.dataset.tab));
-  if (b.dataset.tab === 'more') loadVoices();
-  if (b.dataset.tab === 'media') loadNow();
-});
-
-// ---------- the signs at the top mirror the lines below ----------
-function chip(id, cls, text) { const c = $(id); c.className = 'chip ' + cls; c.lastChild.textContent = text; }
-function syncChips() {
-  const st = $('c-state').textContent;
-  chip('chip-conn', $('c-state').className === 'ok' ? 'ok' : $('c-state').className === 'bad' ? 'bad' : '', st === 'есть' ? 'Связь есть' : st === 'нет связи' ? 'Нет связи' : 'Связь…');
-  const bat = $('p-bat').textContent; chip('chip-bat', bat === '—' ? '' : 'ok', bat === '—' ? 'Заряд —' : '🔋 ' + bat.replace(' ⚡ заряжается', ' ⚡'));
-  const v = state.voice; chip('chip-voice', v === 'listening' ? 'ok' : (v === 'error' || v === 'unavailable') ? 'bad' : 'warn', 'Голос: ' + ({ off: 'выкл', listening: 'слушаю', error: 'ошибка', unavailable: 'нет' }[v] || v));
-}
-setInterval(syncChips, 700); syncChips();
-
-// ---------- the voice of Jarvis (the list and the choice of the computer) ----------
-let voicesLoaded = 0;
-async function loadVoices() {
-  if (Date.now() - voicesLoaded < 30000) return;
-  try {
-    const r = await fetchT('/voices', {headers:{'X-Token':token}});
-    if (!r.ok) throw new Error(r.status);
-    const j = await r.json(); const sel = $('vsel'); sel.textContent = '';
-    for (const v of j.voices) sel.add(new Option(v.label, v.id));
-    sel.value = j.current; if (sel.value !== j.current) sel.value = '';
-    voicesLoaded = Date.now(); $('vmsg').textContent = '';
-  } catch (e) { $('vmsg').textContent = 'Не удалось получить список голосов с компьютера.'; }
-}
-$('vsel').onchange = async () => {
-  $('vmsg').textContent = 'Сохраняю…';
-  try {
-    const r = await fetchT('/voice', {method:'POST', headers:{'X-Token':token}, body:$('vsel').value});
-    $('vmsg').textContent = r.ok ? 'Готово: компьютер отвечает этим голосом.' : 'Компьютер не принял этот голос.';
-  } catch (e) { $('vmsg').textContent = 'Нет связи с компьютером.'; }
-};
-
-// ---------- a question "Подтвердить? да / нет": the answer is two big buttons ----------
-let confirmTimer = 0;
-function askIfQuestion(text) {
-  if (!/подтверд|скажите «?да»? или «?нет|да или нет|да\/нет/i.test(String(text || ''))) return;
-  $('confirm-q').textContent = String(text).slice(0, 140); $('confirm').classList.add('on');
-  clearTimeout(confirmTimer); confirmTimer = setTimeout(() => $('confirm').classList.remove('on'), 30000);
-}
-for (const [id, word] of [['cy', 'да'], ['cn', 'нет']]) $(id).onclick = () => { $('confirm').classList.remove('on'); clearTimeout(confirmTimer); send(word); };
-
-poll(); report();
-</script></body></html>
-"#;
+// the page of the phone: src/remote_page.html (the build puts the shared sphere code of src/orbkit.js into it)
+const PAGE: &str = include_str!(concat!(env!("OUT_DIR"), "/remote_page.html"));
 
 #[cfg(test)]
 mod tests {
@@ -2460,6 +1829,24 @@ mod tests {
         crate::voiceprint::delete();
     }
 
+    // the history of the two sections, the look of the window and the Android home-screen files: the first two need the secret, the last two do not
+    #[test]
+    fn the_phone_reads_the_history_and_the_look_with_the_secret_and_the_install_files_without() {
+        let _g = PHONE_TEST_LOCK.lock();
+        let _s = crate::uistate::TEST_LOCK.lock();
+        phone_for_tests(true, true);
+        let t = token();
+        assert!(phone_get("/history?door=phone", "wrong-token").starts_with("HTTP/1.1 403"));
+        let h = phone_get("/history?door=phone", &t);
+        assert!(h.starts_with("HTTP/1.1 200") && h.contains("\"items\"") && h.contains("\"phone\""), "{}", h);
+        let l = phone_get("/look", &t);
+        assert!(l.starts_with("HTTP/1.1 200") && l.contains("\"theme\""), "{}", l);
+        assert!(phone_get("/look", "wrong-token").starts_with("HTTP/1.1 403"));
+        let m = phone_get("/manifest.webmanifest", "");
+        assert!(m.starts_with("HTTP/1.1 200") && m.contains("\"standalone\""), "{}", m);
+        assert!(phone_get("/icon.png", "").starts_with("HTTP/1.1 200"));
+    }
+
         // the phone chooses the voice of the answers from the list of the computer; nothing else can be set, and a wrong secret sets nothing
     #[test]
     fn the_phone_chooses_a_voice_from_the_list_only_and_only_with_the_secret() {
@@ -2478,7 +1865,7 @@ mod tests {
         assert!(phone_request("/voice", "wrong-token", "piper").starts_with("HTTP/1.1 403"));
         assert_eq!(crate::uistate::voice_name(), before, "a wrong secret changes nothing");
         assert!(phone_request("/voice", &t, "win:../../evil").starts_with("HTTP/1.1 400"));
-        assert!(phone_request("/voice", &t, "silero:aidar; calc").starts_with("HTTP/1.1 400"), "only the names of the list");
+        assert!(phone_request("/voice", &t, "silero:xenia; calc").starts_with("HTTP/1.1 400"), "only the names of the list");
         assert_eq!(crate::uistate::voice_name(), before);
         assert!(phone_request("/voice", &t, "piper").starts_with("HTTP/1.1 200"));
         assert_eq!(crate::uistate::voice_name(), "piper");

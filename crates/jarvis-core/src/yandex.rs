@@ -15,13 +15,11 @@ const RATE: u32 = 48_000;
 
 // (voice id of the service, name shown in the settings). The list of voices of the service changes: a voice that the service
 // no longer knows is answered with an error, which the user sees.
-pub const VOICES: [(&str, &str); 6] = [
+pub const VOICES: [(&str, &str); 4] = [
     ("alena", "Алёна (женский, Яндекс, облако)"),
     ("jane", "Джейн (женский, Яндекс, облако)"),
     ("oksana", "Оксана (женский, Яндекс, облако)"),
-    ("filipp", "Филипп (мужской, Яндекс, облако)"),
-    ("ermil", "Ермил (мужской, Яндекс, облако)"),
-    ("zahar", "Захар (мужской, Яндекс, облако)"),
+    ("omazh", "Омаж (женский, Яндекс, облако)"),
 ];
 
 // "yandex:alena" -> "alena" (only the known voices: the id becomes a part of a request)
@@ -126,7 +124,8 @@ mod tests {
     #[test]
     fn only_known_voices_are_taken() {
         assert_eq!(voice_of("yandex:alena"), Some("alena"));
-        assert_eq!(voice_of("yandex:zahar"), Some("zahar"));
+        assert_eq!(voice_of("yandex:zahar"), None, "male voices are not offered");
+        assert_eq!(voice_of("yandex:omazh"), Some("omazh"));
         assert_eq!(voice_of("yandex:../x"), None);
         assert_eq!(voice_of("yandex:"), None);
         assert_eq!(voice_of("piper:denis"), None);

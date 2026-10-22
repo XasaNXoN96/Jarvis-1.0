@@ -224,6 +224,10 @@ pub fn load_from(path: &std::path::Path) -> UiSettings {
     if let Some(p) = problem {
         add_load_problem(&p);
     }
+    // the male voices were removed: a saved choice of one of them becomes the automatic (female) voice
+    if ["piper:denis", "piper:dmitri", "piper:ruslan", "silero:aidar", "silero:eugene", "yandex:filipp", "yandex:ermil", "yandex:zahar"].contains(&s.voice_name.as_str()) {
+        s.voice_name.clear();
+    }
     if !s.ext_social_init {
         let all: Vec<String> = crate::social::NETWORKS.iter().map(|n| n.key.to_string()).collect();
         if s.ext_social.is_empty() {
@@ -1055,6 +1059,18 @@ mod settings_tests {
         update_settings(&json!({ "ai_enabled": false }));
         assert_eq!(crate::ai::conf_from_settings().unwrap_err(), crate::ai::AiError::Disabled);
         set_for_tests(UiSettings::default());
+    }
+
+    #[test]
+    fn a_saved_male_voice_becomes_the_automatic_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("ui_settings.json");
+        for gone in ["piper:denis", "silero:aidar", "yandex:zahar"] {
+            std::fs::write(&p, format!(r#"{{"voice_name":"{}"}}"#, gone)).unwrap();
+            assert_eq!(load_from(&p).voice_name, "", "{}", gone);
+        }
+        std::fs::write(&p, r#"{"voice_name":"silero:xenia"}"#).unwrap();
+        assert_eq!(load_from(&p).voice_name, "silero:xenia", "a female voice stays");
     }
 
     #[test]
