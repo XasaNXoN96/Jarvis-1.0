@@ -85,7 +85,9 @@ jobs:
         run: |
           BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
           "$BT/aapt" dump badging dist/*.apk | grep -E "^package:|sdkVersion|uses-permission"
-          "$BT/apksigner" verify --print-certs dist/*.apk | grep -E "Signer #1 certificate (DN|SHA-256)"
+          # the package must verify; the certificate lines are shown to compare the key with the one that was expected (the values of the key itself are never printed)
+          "$BT/apksigner" verify --print-certs dist/*.apk | tee sig.txt
+          test "${PIPESTATUS[0]}" -eq 0
 
       - uses: actions/upload-artifact@v4
         with:

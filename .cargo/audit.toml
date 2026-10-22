@@ -1,0 +1,15 @@
+# cargo-audit: only advisories that were looked at one by one and accepted for a written reason may be listed here
+# (docs/implementation/SECURITY_AUDIT.md, section 6). A new advisory is NOT in this list, so it fails the audit.
+[advisories]
+ignore = [
+    # zip 1.1.4 comes only through candle-core <- rustpotter (the wake-word engine). It reads model files; the functions of the advisories
+    # (`extract`, `ZipStreamReader::extract`) are not called anywhere in Jarvis or in that path. The fix is zip >= 9 (a new major of a library that
+    # we do not use directly): it needs an update of rustpotter/candle upstream. Revisit when they move.
+    "RUSTSEC-2026-0367",
+    "RUSTSEC-2026-0368",
+    "RUSTSEC-2026-0369",
+    # quick-xml 0.38.4 comes only through plist <- tauri (jarvis-gui, the old desktop shell, which is not the shipped program). It parses plist
+    # files of macOS bundles at build time. The fix is quick-xml >= 0.41: it needs a newer tauri.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+]
