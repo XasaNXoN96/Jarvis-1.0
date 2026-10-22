@@ -790,6 +790,15 @@
   .nt-box { margin: 2px 0 10px; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--field-bg); } .nt-box[hidden] { display: none; }
   .nt-h { font-size: var(--fs-md); margin-bottom: 6px; } .nt-h.ok { color: var(--ok); } .nt-h.bad { color: var(--warn); }
   .nt-row { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; border-top: 1px solid var(--row-line); font-size: var(--fs-sm); color: var(--dim); } .nt-row.ok { color: var(--ok); } .nt-row b { font-weight: 600; }
+
+  /* the lock screen: with a password of the owner set, the window asks for it at the start (the real protection is in the program: the guarded actions refuse until it is unlocked) */
+  #lockscr { position: fixed; inset: 0; z-index: 10000; display: none; align-items: center; justify-content: center; background: color-mix(in srgb, var(--bg1) 92%, transparent); backdrop-filter: blur(14px); }
+  #lockscr.on { display: flex; }
+  #lockscr .box { width: min(380px, 92vw); padding: 26px 24px; border: 1px solid var(--line2); border-radius: var(--radius-lg); background: var(--panel2); box-shadow: 0 20px 60px #000a; display: grid; gap: 12px; }
+  #lockscr h2 { margin: 0; font-size: 20px; letter-spacing: var(--ls, 0); text-transform: var(--head-tf, none); }
+  #lockscr input { width: 100%; } #lockscr .msgline { min-height: 18px; }
+  #lockscr #ls-rec { display: grid; gap: 8px; } #lockscr #ls-rec[hidden] { display: none; }
+  #lockscr a { color: var(--accent); cursor: pointer; font-size: var(--fs-sm); }
 </style>
 </head>
 <body>
@@ -806,6 +815,14 @@
   <button type="button" class="mb" id="mini-stop" title="Замолчать">&#9632;</button>
   <button type="button" class="mb" id="mini-open" title="Вернуть обычное окно">&#10530;</button>
 </div>
+<div id="lockscr" role="dialog" aria-modal="true" aria-label="Вход"><div class="box">
+  <h2>Jarvis заблокирован</h2><div class="dim" id="ls-hint">Введите пароль владельца. Без него защищённые действия (сообщения, память, расписание, разрешения…) не выполняются.</div>
+  <input type="password" id="ls-pw" autocomplete="off" placeholder="Пароль владельца">
+  <button class="btn primary" id="ls-go" type="button">Войти</button>
+  <div class="msgline" id="ls-msg"></div>
+  <a id="ls-forgot">Забыли пароль? Войти по коду восстановления</a>
+  <div id="ls-rec" hidden><input type="text" id="ls-code" autocomplete="off" placeholder="Код восстановления"><input type="password" id="ls-new" autocomplete="off" placeholder="Новый пароль (от 6 символов)"><button class="btn" id="ls-recgo" type="button">Заменить пароль</button></div>
+</div></div>
 <div class="shell">
   <nav>
     <div class="brand"><img class="brand-logo" src="/icon.png" alt=""><span class="dot" id="dot"></span><b>JARVIS</b><button type="button" class="nav-fold" id="nav-fold" title="Свернуть меню" data-ico="fold"></button></div>
@@ -1473,6 +1490,11 @@
         <div class="setrow"><div class="l">Что отвечать чужому<small>фраза, когда без пароля просят защищённое</small></div><div class="r"><input type="text" id="ow-msg" maxlength="120"><button class="btn" id="ow-msg-save" type="button">Сохранить</button></div></div>
         <div class="setrow"><div class="l">Снять пароль</div><div class="r"><input type="password" id="ow-rm" autocomplete="off" placeholder="Текущий пароль"><button class="btn" id="ow-remove" type="button">Снять</button></div></div>
         <div class="msgline" id="ow-msgline"></div>
+      </div>
+      <div class="card acc" data-cat="more" id="audit-card" data-tab="Журнал безопасности"><h3><span class="ei">📜</span>Журнал безопасности</h3>
+        <div class="setrow"><div class="l">Что здесь записано<small>кто просил (голос, окно, телефон, Telegram), какое действие, риск, разрешено или отказано и почему. Текст команд, пути, пароли и ключи сюда не попадают. Хранится только на этом компьютере, последние 500 записей.</small></div>
+          <div class="r"><button class="btn" id="au-refresh" type="button">Обновить</button><button class="btn" id="au-clear" type="button">Очистить</button></div></div>
+        <div class="hi-list" id="au-list"></div>
       </div>
       <div class="card acc" data-cat="more" id="perm-card" data-tab="Разрешения"><h3><span class="ei">🛡</span>Центр разрешений</h3>
         <div class="setrow"><div class="l">Что Jarvis может делать сам<small>выключенное действительно останавливает способность: обработчик проверяет переключатель перед тем, как что-то сделать.</small></div></div>
@@ -4084,6 +4106,18 @@ async function saveAssistantName(name, msg) {
   else { msg.className = 'msgline ok'; msg.textContent = 'Имя «' + shown + '» сохранено: скажите «' + shown + ', …» или напишите так в строке ввода.'; }
   return true;
 }
+// the journal of critical actions (Settings → Additionally → Журнал безопасности)
+const AU_DOOR = { voice: 'голос', window: 'окно', phone: 'телефон', telegram: 'Telegram', console: 'консоль', ipc: 'приложение', script: 'сценарий', internal: 'программа', system: 'система' };
+const AU_DEC = { allowed: 'разрешено', refused: 'отказано', asked: 'ждёт подтверждения' };
+async function auLoad() {
+  const r = await action('audit_get').catch(() => null); if (!r || !r.ok) return;
+  const l = (r.log && r.log.entries) || [];
+  $('#au-list').innerHTML = l.length ? l.map(e => '<div class="hi-item"><small>' + esc(hiWhen(e.at)) + ' · ' + esc(AU_DOOR[e.door] || e.door) + ' · ' + esc(e.kind) + (e.risk ? ' · риск ' + esc(e.risk) : '') + '</small><div><b>' + esc(e.subject) + '</b> — ' + esc(AU_DEC[e.decision] || e.decision) + (e.confirmed ? ' (подтверждено)' : '') + '</div>' + (e.reason ? '<div class="hi-a">' + esc(e.reason) + '</div>' : '') + '</div>').join('') : '<div class="empty">Записей пока нет.</div>';
+}
+$('#au-refresh').onclick = auLoad;
+$('#au-clear').onclick = async () => { if (!confirm('Очистить журнал безопасности?')) return; const r = await action('audit_clear').catch(() => null); if (r && !r.ok) alert(r.message || 'Не получилось'); auLoad(); };
+$('#set-main').addEventListener('click', e => { if (e.target.closest('#audit-card > h3')) setTimeout(auLoad, 60); });
+
 // history of the two sections (PC / phone)
 let hiDoor = 'pc';
 const hiWhen = s => { const d = new Date(s * 1000), n = new Date(); const hm = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }); return d.toDateString() === n.toDateString() ? hm : d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) + ' ' + hm; };
@@ -5289,7 +5323,23 @@ function frame(t) {
 }
 requestAnimationFrame(frame);
 // the sphere shows «защита включена» while a password of the owner is set and the program is locked
-async function ownerPoll() { const r = await action('owner_status').catch(() => null); if (r) OWNER_LOCKED = !!(r.set && !r.unlocked); }
+async function ownerPoll() {
+  const r = await action('owner_status').catch(() => null);
+  if (r) { OWNER_LOCKED = !!(r.set && !r.unlocked); $('#lockscr').classList.toggle('on', OWNER_LOCKED); if (OWNER_LOCKED && document.activeElement !== $('#ls-pw') && !$('#ls-pw').value) setTimeout(() => $('#ls-pw').focus(), 50); }
+}
+async function lockGo() {
+  const m = $('#ls-msg'); m.className = 'msgline'; m.textContent = '…';
+  const r = await action('owner_unlock', { password: $('#ls-pw').value }).catch(() => null);
+  if (r && r.ok) { $('#ls-pw').value = ''; m.textContent = ''; ownerPoll(); } else { m.className = 'msgline bad'; m.textContent = (r && r.message) || 'Нет связи с Джарвисом'; }
+}
+$('#ls-go').onclick = lockGo; $('#ls-pw').onkeydown = e => { if (e.key === 'Enter') lockGo(); };
+$('#ls-forgot').onclick = () => { $('#ls-rec').hidden = !$('#ls-rec').hidden; };
+$('#ls-recgo').onclick = async () => {
+  const m = $('#ls-msg'); m.className = 'msgline'; m.textContent = '…';
+  const r = await action('owner_recover', { code: $('#ls-code').value, new: $('#ls-new').value }).catch(() => null);
+  if (r && r.ok) { $('#ls-code').value = ''; $('#ls-new').value = ''; $('#ls-rec').hidden = true; m.className = 'msgline ok'; m.textContent = 'Пароль заменён. Новый код восстановления' + (r.recovery ? ': ' + r.recovery + ' (запишите его, он показан один раз)' : ' показан в настройках.'); ownerPoll(); }
+  else { m.className = 'msgline bad'; m.textContent = (r && r.message) || 'Нет связи с Джарвисом'; }
+};
 ownerPoll(); setInterval(ownerPoll, 30000);
 loadAvatar();
 applyLook();

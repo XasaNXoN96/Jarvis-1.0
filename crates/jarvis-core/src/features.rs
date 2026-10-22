@@ -144,7 +144,7 @@ pub fn set_announcer(f: Box<dyn Fn(&str) + Send + Sync>) {
 fn announce_later(text: &str) {
     match ANNOUNCER.get() {
         Some(f) => f(text),
-        None => log::info!("{}", text),
+        None => log::info!("{} chars", text.chars().count()),
     }
 }
 

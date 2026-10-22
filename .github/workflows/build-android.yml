@@ -31,9 +31,43 @@ jobs:
         shell: bash
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
+      - name: Test the Java part of the application
+        working-directory: android
+        run: gradle --no-daemon testReleaseUnitTest
+
+      # The key of the package comes from the protected secrets of the repository (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
+      # ANDROID_KEY_ALIAS): their values are never printed. Without them the OLD key of the repository is used and the package is named
+      # "LEGACY-KEY": that key and its password are public, so such a package must be replaced (docs/implementation/SECURITY_FIXES.md).
+      - name: Choose the signing key
+        id: key
+        shell: bash
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -n "$KS_B64" ] && [ -n "$KS_PASS" ]; then
+            umask 077
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "::add-mask::$KS_PASS"
+            echo "JARVIS_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "JARVIS_KEYSTORE_PASSWORD=$KS_PASS" >> "$GITHUB_ENV"
+            echo "JARVIS_KEY_ALIAS=${KS_ALIAS:-jarvis}" >> "$GITHUB_ENV"
+            echo "suffix=" >> "$GITHUB_OUTPUT"
+            echo "The package is signed with the key from the protected secrets."
+          else
+            echo "JARVIS_ALLOW_LEGACY_KEY=1" >> "$GITHUB_ENV"
+            echo "suffix=-LEGACY-KEY" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Android signing::no key in the protected secrets: the OLD public key of the repository is used. Make your own key and add ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS (see docs/implementation/SECURITY_FIXES.md)."
+          fi
+
       - name: Build the APK
         working-directory: android
         run: gradle --no-daemon assembleRelease
+
+      - name: List the libraries of the application (there must be no third-party one)
+        working-directory: android
+        run: gradle --no-daemon -q app:dependencies --configuration releaseRuntimeClasspath
 
       - name: Name the package with the date and the time (Tashkent, UTC+5)
         id: s
@@ -41,16 +75,17 @@ jobs:
         run: |
           label="$(TZ=Asia/Tashkent date +%d.%m.%Y_%H-%M)_${GITHUB_SHA::7}"
           mkdir -p dist
-          cp android/app/build/outputs/apk/release/app-release.apk "dist/Jarvis-Android-${label}.apk"
-          echo "label=${label}" >> "$GITHUB_OUTPUT"
+          SUFFIX="${{ steps.key.outputs.suffix }}"
+          cp android/app/build/outputs/apk/release/app-release.apk "dist/Jarvis-Android-${label}${SUFFIX}.apk"
+          echo "label=${label}${SUFFIX}" >> "$GITHUB_OUTPUT"
           ls -la dist
 
       - name: Check the APK (a signed package of the right application)
         shell: bash
         run: |
           BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
-          "$BT/aapt" dump badging dist/*.apk | grep -E "^package:|sdkVersion|uses-permission" 
-          "$BT/apksigner" verify --print-certs dist/*.apk | head -3
+          "$BT/aapt" dump badging dist/*.apk | grep -E "^package:|sdkVersion|uses-permission"
+          "$BT/apksigner" verify --print-certs dist/*.apk | grep -E "Signer #1 certificate (DN|SHA-256)"
 
       - uses: actions/upload-artifact@v4
         with:

@@ -41,6 +41,8 @@ struct State {
 }
 
 static UNLOCKED_UNTIL: parking_lot::Mutex<u64> = parking_lot::const_mutex(0);
+// every check of a password or of a recovery code runs alone: two parallel requests cannot both try before the counter of wrong tries moves
+static TRY_LOCK: parking_lot::Mutex<()> = parking_lot::const_mutex(());
 
 fn hmac(key: &[u8], msg: &[u8]) -> [u8; 32] {
     let mut k = [0u8; 64];
@@ -155,12 +157,17 @@ pub fn set_password(new: &str, old: &str) -> Result<String, String> {
     let code = hash_into(&mut s, new);
     save(&s)?;
     *UNLOCKED_UNTIL.lock() = store::now() + UNLOCK_SECS;
+    crate::audit::record("owner", "set_password", "", "allowed", false, "пароль задан или изменён");
     Ok(code)
 }
 
 fn verify_inner(s: &mut State, pw: &str) -> Result<(), String> {
+    let _one_at_a_time = TRY_LOCK.lock();
+    // the state is read again under the lock: a try that ran just before this one has already counted
+    *s = load();
     let now = store::now();
     if s.blocked_until > now {
+        crate::audit::record_rate_limited("owner-blocked", 60, "owner", "unlock", "refused", "пауза после неверных попыток");
         return Err(format!("Слишком много попыток. Подождите {} с.", s.blocked_until - now));
     }
     if check(s, pw) {
@@ -172,6 +179,7 @@ fn verify_inner(s: &mut State, pw: &str) -> Result<(), String> {
     s.fails += 1;
     s.blocked_until = now + wait_after(s.fails);
     let _ = save(s);
+    crate::audit::record("owner", "unlock", "", "refused", false, if s.blocked_until > now { "неверный пароль, включена пауза" } else { "неверный пароль" });
     Err(if s.blocked_until > now { format!("Неверный пароль. Следующая попытка через {} с.", s.blocked_until - now) } else { "Неверный пароль.".to_string() })
 }
 
@@ -182,11 +190,13 @@ pub fn unlock(pw: &str) -> Result<(), String> {
     }
     verify_inner(&mut s, pw)?;
     *UNLOCKED_UNTIL.lock() = store::now() + UNLOCK_SECS;
+    crate::audit::record("owner", "unlock", "", "allowed", false, "программа разблокирована");
     Ok(())
 }
 
 pub fn lock() {
     *UNLOCKED_UNTIL.lock() = 0;
+    crate::audit::record("owner", "lock", "", "allowed", false, "программа заблокирована");
 }
 
 pub fn unlocked() -> bool {
@@ -204,6 +214,7 @@ pub fn remove_password(pw: &str) -> Result<(), String> {
     s.hash.clear();
     s.salt.clear();
     s.recovery_hash.clear();
+    crate::audit::record("owner", "remove_password", "", "allowed", false, "пароль удалён");
     save(&s)
 }
 
@@ -212,9 +223,11 @@ pub fn recover(code: &str, new: &str) -> Result<String, String> {
     if new.chars().count() < MIN_LEN {
         return Err(format!("Пароль короче {} символов.", MIN_LEN));
     }
+    let _one_at_a_time = TRY_LOCK.lock();
     let mut s = load();
     let now = store::now();
     if s.blocked_until > now {
+        crate::audit::record_rate_limited("owner-blocked", 60, "owner", "recover", "refused", "пауза после неверных попыток");
         return Err(format!("Слишком много попыток. Подождите {} с.", s.blocked_until - now));
     }
     let ok = !s.recovery_hash.is_empty() && same(&pbkdf2(code.trim().to_uppercase().as_bytes(), &unhex(&s.recovery_salt), s.rounds.max(1)), &unhex(&s.recovery_hash));
@@ -222,11 +235,13 @@ pub fn recover(code: &str, new: &str) -> Result<String, String> {
         s.fails += 1;
         s.blocked_until = now + wait_after(s.fails);
         let _ = save(&s);
+        crate::audit::record("owner", "recover", "", "refused", false, "код восстановления не подошёл");
         return Err("Код восстановления не подошёл.".into());
     }
     let new_code = hash_into(&mut s, new);
     save(&s)?;
     *UNLOCKED_UNTIL.lock() = now + UNLOCK_SECS;
+    crate::audit::record("owner", "recover", "", "allowed", false, "пароль заменён по коду восстановления");
     Ok(new_code)
 }
 
@@ -238,6 +253,58 @@ pub fn reset_for_tests() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wrong_passwords_are_counted_slowed_and_the_right_one_waits_too() {
+        store::with_temp(|| {
+            reset_for_tests();
+            set_password("правильный-пароль", "").unwrap();
+            lock();
+            assert_eq!(guard().unwrap_err(), DEFAULT_MESSAGE, "a locked program refuses");
+            for i in 0..FREE_TRIES {
+                let e = unlock("неверный").unwrap_err();
+                assert!(e.contains("Неверный пароль"), "try {}: {}", i, e);
+            }
+            // the sixth try: a pause, even for the right password
+            let e = unlock("правильный-пароль").unwrap_err();
+            assert!(e.contains("Подождите") || e.contains("Следующая попытка"), "{}", e);
+            assert!(!unlocked());
+            assert!(load().blocked_until > store::now(), "the pause is written: a restart does not reset it");
+        });
+    }
+
+    #[test]
+    fn parallel_tries_cannot_get_more_than_the_free_number_of_guesses() {
+        store::with_temp(|| {
+            reset_for_tests();
+            set_password("правильный-пароль", "").unwrap();
+            lock();
+            let handles: Vec<_> = (0..16).map(|i| std::thread::spawn(move || unlock(&format!("попытка-{}", i)))).collect();
+            let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+            assert!(results.iter().all(|r| r.is_err()));
+            let checked = results.iter().filter(|r| r.as_ref().unwrap_err().contains("Неверный пароль")).count();
+            assert_eq!(checked as u32, FREE_TRIES, "only the free tries were really checked; the others met the pause");
+            assert_eq!(load().fails, FREE_TRIES);
+        });
+    }
+
+    #[test]
+    fn the_password_and_the_recovery_code_are_in_no_file() {
+        store::with_temp(|| {
+            reset_for_tests();
+            let code = set_password("секретный-пароль-777", "").unwrap();
+            let _ = unlock("не тот пароль");
+            let _ = recover("не тот код", "новый-пароль-888");
+            for f in ["owner.json", "audit_log.json"] {
+                let raw = std::fs::read_to_string(store::file(f)).unwrap_or_default();
+                for secret in ["секретный-пароль-777", "не тот пароль", "новый-пароль-888", &code] {
+                    assert!(!raw.contains(secret), "{} holds a secret: {}", f, secret);
+                }
+            }
+            // and the journal knows that tries were refused
+            assert!(crate::audit::list(20).iter().any(|e| e.kind == "owner" && e.decision == "refused"));
+        });
+    }
 
     #[test]
     fn pbkdf2_matches_the_known_vectors() {

@@ -163,7 +163,7 @@ pub fn classify(text: &str) -> Result<(String, f64), String> {
     }
 
     let best_id = state.intents[best_idx].id.clone();
-    debug!("Embedding classify: '{}' -> '{}' ({:.2}%)", text, best_id, best_score * 100.0);
+    debug!("Embedding classify: {} chars -> '{}' ({:.2}%)", text.chars().count(), best_id, best_score * 100.0);
 
     Ok((best_id, best_score))
 }

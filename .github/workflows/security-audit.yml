@@ -1,0 +1,55 @@
+name: Security audit
+
+# The audit of the dependencies of Rust (RustSec database) and a check that no key or password was committed. It is a separate workflow:
+# a finding is a red mark on its own and never stops the build of the installers.
+on:
+  push:
+    branches: [main, "dev/**"]
+    paths:
+      - "Cargo.lock"
+      - "**/Cargo.toml"
+      - ".github/workflows/security-audit.yml"
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+jobs:
+  cargo-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      # exit code: 0 = no known vulnerability (warnings about unmaintained or yanked crates are listed, they do not fail); 1 = a vulnerability
+      - name: Audit Cargo.lock
+        run: cargo audit --deny warnings 2>&1 | tee audit.txt || true
+      - name: Fail on a vulnerability
+        run: |
+          cargo audit > /dev/null 2>&1 && echo "no known vulnerabilities" || { echo "::error title=cargo-audit::known vulnerabilities, see the log of 'Audit Cargo.lock'"; exit 1; }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cargo-audit-report
+          path: audit.txt
+
+  secrets-in-repo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No private key, token or password in the files of the repository
+        shell: bash
+        run: |
+          set -e
+          bad=0
+          # a private key block, a token of a known service, a long key of an AI provider
+          if git grep -nIE -e '-----BEGIN [A-Z ]*PRIVATE KEY-----' -e 'ghp_[A-Za-z0-9]{36}' -e 'AKIA[0-9A-Z]{16}' -e 'xox[bp]-[A-Za-z0-9-]{20,}' -e 'AIza[0-9A-Za-z_-]{35}' -- . ':!*.md' ':!.github/workflows/*' ':!crates/**/tests*' ':!crates/**/*tests.rs' ; then
+            echo "::error::a secret looks committed (see above)"; bad=1
+          fi
+          # a keystore other than the one that is known and being replaced (docs/implementation/SECURITY_FIXES.md)
+          extra="$(git ls-files | grep -iE '\.(jks|keystore|p12|pfx)$' | grep -v '^android/keystore/jarvis-sideload.jks$' || true)"
+          if [ -n "$extra" ]; then echo "::error::a key file is committed: $extra"; bad=1; fi
+          # the known legacy key: a reminder on every run until it is removed
+          if git ls-files --error-unmatch android/keystore/jarvis-sideload.jks >/dev/null 2>&1; then
+            echo "::warning title=Android key::the OLD sideload key (with a public password) is still in the repository: replace it and remove the file (docs/implementation/SECURITY_FIXES.md)"
+          fi
+          exit $bad

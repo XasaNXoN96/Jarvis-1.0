@@ -18,7 +18,7 @@ pub fn data_callback(frame_buffer: &[i16]) -> Option<i32> {
             return None;
         }
         
-        info!("Wake word candidate: '{}'", recognized);
+        info!("Wake word candidate: {} chars", recognized.chars().count());
         
         // language-specific wake phrase
         let lang = i18n::get_language();
@@ -37,7 +37,7 @@ pub fn data_callback(frame_buffer: &[i16]) -> Option<i32> {
                 let similarity = seqdiff::ratio(&wake_chars, &word_chars);
                 
                 if similarity >= config::VOSK_MIN_RATIO {
-                    info!("Wake word match: '{}' ~ '{}' ({:.1}%)", word, wake_phrase, similarity);
+                    info!("Wake word match ({:.1}%)", similarity);
                     return Some(0);
                 }
             }

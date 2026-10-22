@@ -222,7 +222,7 @@ fn display(note: &Note) {
 
 #[cfg(not(target_os = "windows"))]
 fn display(note: &Note) {
-    info!("Notification: {} — {}", note.title, note.text);
+    info!("Notification: {} chars", note.text.chars().count());
 }
 
 #[cfg(target_os = "windows")]

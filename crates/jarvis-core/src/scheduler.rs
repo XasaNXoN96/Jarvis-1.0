@@ -38,6 +38,10 @@ pub struct Job {
     // how many times it ran (the window shows it)
     #[serde(default)]
     pub runs: u32,
+    // the door that asked for this job ("phone" / "telegram" when it was a remote one, else ""): the job runs through the same door, so a job
+    // made from the phone is not a way to get the trust of a script (origin.rs). A job saved by an older version has none.
+    #[serde(default)]
+    pub door: String,
 }
 fn yes() -> bool {
     true
@@ -71,7 +75,11 @@ pub fn add(text: &str, at: u64, repeat: Repeat) -> Result<Job, String> {
     if jobs.len() >= MAX_JOBS {
         return Err("Слишком много заданий.".into());
     }
-    let job = Job { id: store::new_id(), text: text.to_string(), at, repeat, enabled: true, last_run: 0, runs: 0 };
+    let door = match crate::origin::current() {
+        Some(s) if s.is_remote() => s.as_str().to_string(),
+        _ => String::new(),
+    };
+    let job = Job { id: store::new_id(), text: text.to_string(), at, repeat, enabled: true, last_run: 0, runs: 0, door };
     jobs.push(job.clone());
     save(&jobs)?;
     Ok(job)
@@ -120,6 +128,11 @@ pub fn due(jobs: &[Job], now: u64) -> Vec<Due> {
 
 // writes the new state of a due job BEFORE it runs. Returns the phrase to run, or None when the run is skipped (too old / not due / gone).
 pub fn claim(id: &str, now: u64) -> Option<String> {
+    claim_with_door(id, now).map(|(t, _)| t)
+}
+
+// the same, with the door of the job
+pub fn claim_with_door(id: &str, now: u64) -> Option<(String, String)> {
     let mut jobs = list();
     let i = jobs.iter().position(|j| j.id == id)?;
     let j = &mut jobs[i];
@@ -128,6 +141,7 @@ pub fn claim(id: &str, now: u64) -> Option<String> {
     }
     let too_old = now - j.at > MISSED_WINDOW;
     let text = j.text.clone();
+    let door = j.door.clone();
     match next_after(j.at, j.repeat, now) {
         Some(n) => j.at = n,
         None => j.enabled = false,
@@ -138,15 +152,28 @@ pub fn claim(id: &str, now: u64) -> Option<String> {
     }
     // (if the state cannot be written the job does not run: better a missed run than a repeated one)
     save(&jobs).ok()?;
-    if too_old { None } else { Some(text) }
+    if too_old { None } else { Some((text, door)) }
+}
+
+// the door a job runs through: the remote one it came from, else «script»
+pub fn source_of(door: &str) -> crate::origin::Source {
+    match door {
+        "phone" => crate::origin::Source::Phone,
+        "telegram" => crate::origin::Source::Telegram,
+        _ => crate::origin::Source::Script,
+    }
 }
 
 // one pass: every due job is claimed and its phrase handed to `run`; returns the phrases that were run
 pub fn tick(now: u64, run: &mut dyn FnMut(&str)) -> Vec<String> {
+    tick_with_door(now, &mut |t, _| run(t))
+}
+
+pub fn tick_with_door(now: u64, run: &mut dyn FnMut(&str, &str)) -> Vec<String> {
     let mut done = Vec::new();
     for d in due(&list(), now) {
-        if let Some(text) = claim(&d.id, now) {
-            run(&text);
+        if let Some((text, door)) = claim_with_door(&d.id, now) {
+            run(&text, &door);
             done.push(text);
         }
     }
@@ -161,9 +188,10 @@ pub fn start() {
     }
     std::thread::spawn(|| loop {
         std::thread::sleep(std::time::Duration::from_secs(15));
-        tick(store::now(), &mut |t| {
-            log::info!("Scheduler runs: {}", t);
-            crate::remote::submit(crate::origin::Source::Script, t);
+        tick_with_door(store::now(), &mut |t, door| {
+            log::info!("Scheduler runs a job ({} chars)", t.chars().count());
+            crate::audit::record_door(if door.is_empty() { "script" } else { door }, "scheduler", "job_run", "", "allowed", false, "задание запущено по расписанию");
+            crate::remote::submit(source_of(door), t);
         });
     });
 }
@@ -315,6 +343,26 @@ pub fn describe(j: &Job, offset: i64) -> String {
 mod tests {
     use super::*;
     use chrono::NaiveDate;
+
+    // a job keeps the door that asked for it: the phone cannot get the trust of a script by scheduling
+    #[test]
+    fn a_job_from_a_remote_door_runs_through_that_door_and_an_old_job_has_none() {
+        store::with_temp(|| {
+            let from_phone = crate::origin::run_as(crate::origin::Source::Phone, || add("открой блокнот", 100, Repeat::Once)).unwrap();
+            let from_window = crate::origin::run_as(crate::origin::Source::Window, || add("открой почту", 100, Repeat::Once)).unwrap();
+            assert_eq!((from_phone.door.as_str(), from_window.door.as_str()), ("phone", ""));
+            assert_eq!(claim_with_door(&from_phone.id, 100), Some(("открой блокнот".to_string(), "phone".to_string())));
+            assert_eq!(source_of("phone"), crate::origin::Source::Phone);
+            assert_eq!(source_of("telegram"), crate::origin::Source::Telegram);
+            assert_eq!(source_of(""), crate::origin::Source::Script);
+            assert_eq!(source_of("../x"), crate::origin::Source::Script, "an unknown name is nobody special");
+            // a file of an older version has no door
+            let mut v = serde_json::to_value(&from_window).unwrap();
+            v.as_object_mut().unwrap().remove("door");
+            let old: Job = serde_json::from_value(v).unwrap();
+            assert_eq!(old.door, "");
+        });
+    }
 
     fn t(h: u32, m: u32) -> NaiveDateTime {
         NaiveDate::from_ymd_opt(2026, 10, 22, ).unwrap().and_hms_opt(h, m, 0).unwrap()

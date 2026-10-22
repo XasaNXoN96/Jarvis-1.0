@@ -359,7 +359,7 @@ pub fn fetch_command_min<'a>(
                 
                 // early exit on perfect match
                 if score >= 99.0 {
-                    debug!("Perfect match: '{}' -> '{}'", phrase, cmd_phrase_lower);
+                    debug!("Perfect match of a phrase of {} chars", phrase.chars().count());
                     return Some((&cmd_list.path, cmd));
                 }
                 
@@ -372,9 +372,9 @@ pub fn fetch_command_min<'a>(
     }
 
     if let Some((_, cmd)) = result {
-        info!("Fuzzy match: '{}' -> cmd '{}' (score: {:.1}%)", phrase, cmd.id, best_score);
+        info!("Fuzzy match: a phrase of {} chars -> cmd '{}' (score: {:.1}%)", phrase.chars().count(), cmd.id, best_score);
     } else {
-        debug!("No match for '{}' (best: {:.1}%)", phrase, best_score);
+        debug!("No match for a phrase of {} chars (best: {:.1}%)", phrase.chars().count(), best_score);
     }
     
     result

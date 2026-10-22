@@ -265,7 +265,8 @@ fn poll(after: u64) -> serde_json::Value {
         .filter(|m| if after == 0 { !matches!(m.kind, "ring" | "say" | "note") || now.saturating_sub(m.at) <= 30 } else { m.id > after })
         .map(|m| serde_json::json!({ "id": m.id, "kind": m.kind, "data": m.data }))
         .collect();
-    serde_json::json!({ "last": ob.0, "msgs": msgs })
+    // "now": the clock of the computer; the page keeps the difference to its own clock, so a phone whose clock is wrong still sends valid times (replay.rs)
+    serde_json::json!({ "last": ob.0, "msgs": msgs, "now": now })
 }
 
 // POST /state: what the page knows about its phone
@@ -814,8 +815,9 @@ struct Request {
     method: String,
     path: String,
     token_header: Option<String>,
-    // request id of the phone page: a request that arrives twice is handled once
+    // the unique number of the request (nonce) and the time of the phone: see replay.rs
     rid: String,
+    ts: String,
     // the address of the phone from Cloudflare (empty for a connection from the home network)
     client_ip: String,
     body: String,
@@ -857,6 +859,7 @@ fn read_request<S: Read>(stream: &mut S) -> std::io::Result<Request> {
     let mut content_length = 0usize;
     let mut token_header = None;
     let mut rid = String::new();
+    let mut ts = String::new();
     let mut client_ip = String::new();
     for line in lines {
         if let Some((k, v)) = line.split_once(':') {
@@ -867,7 +870,9 @@ fn read_request<S: Read>(stream: &mut S) -> std::io::Result<Request> {
             } else if k == "x-token" {
                 token_header = Some(v.to_string());
             } else if k == "x-rid" {
-                rid = v.chars().take(64).collect();
+                rid = v.chars().take(80).collect();
+            } else if k == "x-ts" {
+                ts = v.chars().take(20).collect();
             } else if k == "cf-connecting-ip" {
                 // the address of the phone as Cloudflare saw it (only a request through the tunnel has it)
                 client_ip = v.chars().take(64).collect();
@@ -900,6 +905,7 @@ fn read_request<S: Read>(stream: &mut S) -> std::io::Result<Request> {
         path,
         token_header,
         rid,
+        ts,
         client_ip,
         body: String::from_utf8_lossy(body_bytes).to_string(),
     })
@@ -1180,6 +1186,34 @@ fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
     if !key.is_empty() {
         note_success(&key);
     }
+    // a request that CHANGES something carries the time and a unique number: a recorded request played again is not run again (replay.rs)
+    if req.method == "POST" && REPLAY_PROTECTED.contains(&req.path.split('?').next().unwrap_or("")) {
+        let who = paired.clone().unwrap_or_else(|| "shared".to_string());
+        let route_name = req.path.split('?').next().unwrap_or("").trim_start_matches('/').to_string();
+        match crate::replay::accept(&who, &req.ts, &req.rid, now_secs()) {
+            crate::replay::Verdict::Accept => {}
+            crate::replay::Verdict::Duplicate => {
+                crate::audit::record_door("phone", "remote", &route_name, "", "refused", false, "повтор запроса: второй раз не выполняется");
+                respond(stream, "200 OK", "application/json", &serde_json::json!({ "ok": true, "duplicate": true, "message": "Этот запрос уже выполнен." }).to_string());
+                return Ok(());
+            }
+            crate::replay::Verdict::Stale => {
+                crate::audit::record_rate_limited("replay-stale", 60, "remote", &route_name, "refused", "запрос устарел или время телефона не совпадает");
+                respond(stream, "409 Conflict", "application/json", &serde_json::json!({ "ok": false, "stale": true, "now": now_secs(), "message": "Время телефона не совпадает со временем компьютера." }).to_string());
+                return Ok(());
+            }
+            crate::replay::Verdict::Malformed => {
+                crate::audit::record_rate_limited("replay-malformed", 60, "remote", &route_name, "refused", "в запросе нет времени или номера");
+                respond(stream, "400 Bad Request", "application/json", &serde_json::json!({ "ok": false, "message": "Нужны заголовки X-Ts и X-Rid. Обновите страницу пульта." }).to_string());
+                return Ok(());
+            }
+            crate::replay::Verdict::TooMany => {
+                crate::audit::record_rate_limited("remote-rate", 60, "remote", &route_name, "refused", "слишком много запросов с устройства");
+                respond(stream, "429 Too Many Requests", "text/plain", "too many requests");
+                return Ok(());
+            }
+        }
+    }
     LAST_CLIENT.store(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(1), Ordering::SeqCst);
     let route = req.path.split('?').next().unwrap_or("/");
     match (req.method.as_str(), route) {
@@ -1199,8 +1233,6 @@ fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
             let text = req.body.trim().to_string();
             if text.is_empty() || text.chars().count() > 300 {
                 respond(stream, "400 Bad Request", "text/plain", "bad command");
-            } else if crate::guard::request_seen(&req.rid) {
-                respond(stream, "200 OK", "text/plain", "ok");
             } else if queue_ready_for_phone() {
                 // what the user typed on the phone is private: only its size goes to the log
                 info!("Remote control command: {} chars", text.chars().count());
@@ -1296,6 +1328,9 @@ fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
 
 const APP_ICON: &[u8] = include_bytes!("../../../resources/icons/icon.png");
 const MANIFEST: &str = r##"{"name":"Jarvis","short_name":"Jarvis","description":"Пульт Jarvis для компьютера","start_url":"/","scope":"/","display":"standalone","orientation":"portrait","background_color":"#08090b","theme_color":"#08090b","icons":[{"src":"/icon.png","sizes":"512x512","type":"image/png","purpose":"any"}]}"##;
+
+// the requests of the phone that change something; each carries X-Ts and X-Rid (replay.rs)
+const REPLAY_PROTECTED: [&str; 5] = ["/cmd", "/act", "/voice", "/voiceprint-do", "/voice-audio"];
 
 // the page of the phone: src/remote_page.html (the build puts the shared sphere code of src/orbkit.js into it)
 const PAGE: &str = include_str!(concat!(env!("OUT_DIR"), "/remote_page.html"));
@@ -1786,8 +1821,23 @@ mod tests {
         }
     }
 
+    // a request of the page as it is: the time of the phone and a number that was never used (replay.rs)
     fn phone_request(path: &str, token: &str, body: &str) -> String {
-        let mut p = Pipe { input: std::io::Cursor::new(format!("POST {} HTTP/1.1\r\nHost: x\r\nX-Token: {}\r\nContent-Length: {}\r\n\r\n{}", path, token, body.len(), body).into_bytes()), output: Vec::new() };
+        static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let rid = format!("test-{}-{}", std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+        phone_request_with(path, token, body, &now_secs().to_string(), &rid)
+    }
+
+    // the same with the time and the number chosen by the test ("" = the header is missing)
+    fn phone_request_with(path: &str, token: &str, body: &str, ts: &str, rid: &str) -> String {
+        let mut extra = String::new();
+        if !ts.is_empty() {
+            extra.push_str(&format!("X-Ts: {}\r\n", ts));
+        }
+        if !rid.is_empty() {
+            extra.push_str(&format!("X-Rid: {}\r\n", rid));
+        }
+        let mut p = Pipe { input: std::io::Cursor::new(format!("POST {} HTTP/1.1\r\nHost: x\r\nX-Token: {}\r\n{}Content-Length: {}\r\n\r\n{}", path, token, extra, body.len(), body).into_bytes()), output: Vec::new() };
         handle(&mut p).unwrap();
         String::from_utf8_lossy(&p.output).to_string()
     }
@@ -1839,6 +1889,83 @@ mod tests {
         let owner = phone_request("/voice-audio", &t, &pcm_base64(&voice(110.0, 1.0, 31, 2.5)));
         assert!(!owner.contains("refused"), "the owner is not refused: {}", owner);
         crate::voiceprint::delete();
+    }
+
+    // replay: a request is run once; an old one, a repeated one (also after a restart of the server) and one without time or number are not run
+    #[test]
+    fn a_repeated_old_or_unsigned_request_of_the_phone_is_not_run() {
+        let _g = PHONE_TEST_LOCK.lock();
+        let _s = crate::uistate::TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            crate::replay::reset_for_tests();
+            phone_for_tests(true, true);
+            let t = token();
+            let now = now_secs().to_string();
+            let cap = Capture::start();
+            // the first delivery runs
+            let a = phone_request_with("/cmd", &t, "открой блокнот", &now, "nonce-first-delivery-1");
+            assert!(a.starts_with("HTTP/1.1 200"), "{}", a);
+            assert_eq!(cap.taken().len(), 1);
+            // the same request again (a retry or a recorded copy): the answer is «ok, already done», nothing runs
+            let b = phone_request_with("/cmd", &t, "открой блокнот", &now, "nonce-first-delivery-1");
+            assert!(b.starts_with("HTTP/1.1 200") && b.contains("duplicate"), "{}", b);
+            assert!(cap.taken().is_empty(), "a repeated delivery does not run the command twice");
+            // the same number with another text and another time is the same request for the computer
+            let c = phone_request_with("/cmd", &t, "выключи компьютер", &now, "nonce-first-delivery-1");
+            assert!(c.contains("duplicate") && cap.taken().is_empty());
+            // after a restart of the server the file remembers the number
+            crate::replay::forget_memory_for_tests();
+            let d = phone_request_with("/cmd", &t, "открой блокнот", &now, "nonce-first-delivery-1");
+            assert!(d.contains("duplicate") && cap.taken().is_empty(), "{}", d);
+            // an expired request (recorded long ago) and a request from the future
+            let old = (now_secs() - crate::replay::WINDOW - 30).to_string();
+            let e = phone_request_with("/cmd", &t, "открой блокнот", &old, "nonce-expired-0001");
+            assert!(e.starts_with("HTTP/1.1 409") && e.contains("stale") && e.contains("\"now\""), "{}", e);
+            let future = (now_secs() + crate::replay::WINDOW + 30).to_string();
+            assert!(phone_request_with("/cmd", &t, "открой блокнот", &future, "nonce-future-0001").starts_with("HTTP/1.1 409"));
+            // no time, no number, a broken number, an empty body
+            for (ts, rid) in [("", "nonce-no-time-0001"), (now.as_str(), ""), (now.as_str(), "short"), (now.as_str(), "бумага-кириллица-1"), ("abc", "nonce-bad-time-01")] {
+                let r = phone_request_with("/cmd", &t, "открой блокнот", ts, rid);
+                assert!(r.starts_with("HTTP/1.1 400"), "{:?} {:?}: {}", ts, rid, r);
+            }
+            assert!(phone_request_with("/cmd", &t, "   ", &now, "nonce-empty-body-01").starts_with("HTTP/1.1 400"));
+            assert!(cap.taken().is_empty(), "none of those ran anything");
+            // the gateway is protected the same way: the second delivery of an action is not run
+            let act = "{\"name\":\"setting\",\"key\":\"ai_key\",\"value\":\"x\"}";
+            assert!(phone_request_with("/act", &t, act, &now, "nonce-gateway-0001").contains("недоступно"));
+            assert!(phone_request_with("/act", &t, act, &now, "nonce-gateway-0001").contains("duplicate"));
+            assert!(phone_request_with("/act", &t, "not json {", &now, "nonce-gateway-0002").contains("недоступно"), "a broken body is an answer");
+            // the journal knows about the repeats and holds no text of the commands
+            let raw = std::fs::read_to_string(crate::store::file("audit_log.json")).unwrap_or_default();
+            assert!(raw.contains("повтор запроса") && !raw.contains("открой блокнот") && !raw.contains("выключи компьютер"), "{}", raw);
+        });
+    }
+
+    // a paired device works, a revoked one is nobody at once, a wrong one too, and the shared link is not a device
+    #[test]
+    fn a_revoked_or_unknown_device_secret_is_refused_by_the_server() {
+        let _g = PHONE_TEST_LOCK.lock();
+        let _s = crate::uistate::TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            crate::replay::reset_for_tests();
+            phone_for_tests(true, true);
+            let code = crate::pairing::start_code(now_secs());
+            let secret = crate::pairing::redeem(&code, "Тестовый телефон", now_secs()).unwrap();
+            let id = crate::pairing::list()[0].id.clone();
+            let act = "{\"name\":\"task\",\"op\":\"clear\"}";
+            assert!(phone_request("/act", &secret, act).starts_with("HTTP/1.1 200"), "a paired device is let in");
+            assert!(phone_request("/act", &(secret.clone() + "0"), act).starts_with("HTTP/1.1 403"), "a changed secret is not the device");
+            assert!(phone_request("/act", &"0".repeat(64), act).starts_with("HTTP/1.1 403"));
+            assert!(phone_request("/act", "", act).starts_with("HTTP/1.1 403"));
+            assert!(crate::pairing::revoke(&id));
+            assert!(phone_request("/act", &secret, act).starts_with("HTTP/1.1 403"), "a revoked device stops at once");
+            assert!(phone_get("/api/apps", &secret).starts_with("HTTP/1.1 403"));
+            // a device that was not seen for 90 days is no longer accepted
+            let code = crate::pairing::start_code(now_secs());
+            let s2 = crate::pairing::redeem(&code, "Старый телефон", now_secs()).unwrap();
+            assert!(crate::pairing::check(&s2, now_secs()).is_some());
+            assert!(crate::pairing::check(&s2, now_secs() + crate::pairing::IDLE_TTL + 10).is_none());
+        });
     }
 
     // the sections of the phone: reading and acting only what ui::phone_get / phone_act name; nothing about keys, the password, the license or files

@@ -47,7 +47,6 @@ import java.util.ArrayList;
 public class MainActivity extends Activity {
     private static final String PREFS = "jarvis";
     private static final String KEY_URL = "url";
-    private static final int PORT = 9713;
     private static final int REQ_MIC = 7;
 
     private SharedPreferences prefs;
@@ -110,7 +109,7 @@ public class MainActivity extends Activity {
         Button go = new Button(this);
         go.setText("Подключиться");
         go.setOnClickListener(v -> {
-            String url = normalize(input.getText().toString());
+            String url = Address.normalize(input.getText().toString());
             if (url == null) {
                 msg.setText("Не похоже на адрес. Пример: 192.168.1.10");
                 return;
@@ -122,25 +121,10 @@ public class MainActivity extends Activity {
         setContentView(setup);
     }
 
-    /** "192.168.1.10", "192.168.1.10:9713" or a whole link (with ?t=…) -> a link to the page of the remote; null when it is not an address. */
-    static String normalize(String raw) {
-        String s = raw == null ? "" : raw.trim();
-        if (s.isEmpty() || s.length() > 300 || s.contains(" ")) return null;
-        if (!s.startsWith("http://") && !s.startsWith("https://")) s = "http://" + s;
-        Uri u = Uri.parse(s);
-        String h = u.getHost();
-        if (h == null || h.isEmpty() || !h.matches("[A-Za-z0-9._-]+")) return null;
-        int port = u.getPort() > 0 ? u.getPort() : PORT;
-        String scheme = "https".equals(u.getScheme()) ? "https" : "http";
-        String t = u.getQueryParameter("t");
-        String tail = t == null || t.isEmpty() ? "" : "?t=" + Uri.encode(t);
-        return scheme + "://" + h + ":" + port + "/" + tail;
-    }
-
     // ---------------------------------------------------------------- the page of the remote
     private void openRemote(String url) {
         destroyWeb();
-        host = Uri.parse(url).getHost();
+        host = Address.hostOf(url);
         web = new WebView(this);
         web.setBackgroundColor(Color.parseColor("#08090b"));
         WebSettings st = web.getSettings();

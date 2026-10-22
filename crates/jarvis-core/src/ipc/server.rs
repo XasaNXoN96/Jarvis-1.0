@@ -201,7 +201,7 @@ async fn handle_client(
                         match serde_json::from_str::<IpcAction>(&text) {
                             Ok(action) => handle_action(action),
                             Err(e) => {
-                                warn!("IPC: Invalid action from {}: {} ({})", peer_addr, text, e);
+                                warn!("IPC: Invalid action from {}: {} chars ({})", peer_addr, text.chars().count(), e);
                             }
                         }
                     }

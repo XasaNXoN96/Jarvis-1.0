@@ -49,7 +49,7 @@ fn run(cmd: &str, rest: &[String]) -> Result<(), String> {
             let cfg = config::Config::from_env()?;
             let store = Store::open(&cfg.db_path, cfg.pepper.clone(), cfg.signing.clone(), cfg.grace_hours, cfg.default_activation_days)?;
             let token = store.admin_create(name, http::now())?;
-            println!("токен администратора «{}» (показан один раз, сервер хранит только хеш):\n{}", name, token);
+            println!("токен администратора «{}» (показан один раз, сервер хранит только хеш):\n{}", name, token); // safe-log: the one-time print of the administrator's tool, not a log
             Ok(())
         }
         "backup" => {
@@ -88,7 +88,7 @@ fn run(cmd: &str, rest: &[String]) -> Result<(), String> {
                 let mut f = std::fs::OpenOptions::new().create(true).append(true).open(log).map_err(|e| format!("журнал: {}", e))?;
                 let _ = writeln!(f, "{}\t{}\t{}\t{}\t{}", now, claims.lid, plan, term, inst);
             }
-            println!("{}", token);
+            println!("{}", token); // safe-log: the one-time print of the administrator's tool, not a log
             eprintln!("ключ {} для компьютера {}…, тариф {}, срок {}; работает без сервера только на этом компьютере", claims.lid, &inst[..8], plan, term);
             Ok(())
         }

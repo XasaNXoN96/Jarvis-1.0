@@ -265,7 +265,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         }
     }
     // with a password of the owner set, the actions that change what Jarvis keeps or does need the unlocked program
-    if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message" | "ca_apply" | "pl_add" | "pl_remove" | "persona_set" | "pair_start" | "pair_revoke" | "comp_do" | "sync_folder" | "sync_run" | "sync_clear" | "wol_add" | "wol_remove" | "wol_wake" | "mem_use_ai") {
+    if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message" | "audit_clear" | "ca_apply" | "pl_add" | "pl_remove" | "persona_set" | "pair_start" | "pair_revoke" | "comp_do" | "sync_folder" | "sync_run" | "sync_clear" | "wol_add" | "wol_remove" | "wol_wake" | "mem_use_ai") {
         if let Err(m) = crate::owner::guard() {
             return json!({ "ok": false, "locked": true, "message": m });
         }
@@ -481,6 +481,9 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             let door = match body.get("door").and_then(|v| v.as_str()) { Some("pc") => "pc", Some("phone") => "phone", _ => "all" };
             json!({ "ok": true, "removed": crate::devhist::clear(door) })
         }
+        // the journal of critical actions (audit.rs): the window reads it; clearing needs the unlocked program
+        "audit_get" => json!({ "ok": true, "log": crate::audit::json(100) }),
+        "audit_clear" => json!({ "ok": true, "removed": crate::audit::clear() }),
         "name_test_start" => { crate::nametest::start(); json!({ "ok": true, "status": crate::nametest::status_json() }) }
         "name_test_stop" => { crate::nametest::stop(); json!({ "ok": true, "status": crate::nametest::status_json() }) }
         "name_test_status" => json!({ "ok": true, "status": crate::nametest::status_json() }),
@@ -2029,6 +2032,21 @@ pub fn phone_get(route: &str, query: &str) -> Option<serde_json::Value> {
 // or a change of the few voice settings
 pub fn phone_act(body: &serde_json::Value) -> serde_json::Value {
     let _door = crate::origin::enter(crate::origin::Source::Phone);
+    let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let result = phone_act_inner(body);
+    // the journal of critical actions: what the phone asked for (the name of the action, never its parameters) and what was decided
+    let refused = result.get("ok").and_then(|v| v.as_bool()) == Some(false);
+    let not_allowed = refused && result.get("message").and_then(|v| v.as_str()).map(|m| m.contains("недоступно с телефона")).unwrap_or(false);
+    let sub = body.get("op").and_then(|v| v.as_str()).map(|o| format!("{}.{}", name, o)).unwrap_or_else(|| name.clone());
+    if not_allowed {
+        crate::audit::record("gateway", &sub, "", "refused", false, "действие не входит в список разрешённых для телефона");
+    } else if PHONE_ACTIONS.contains(&name.as_str()) || matches!(name.as_str(), "task" | "scenario" | "setting" | "message") {
+        crate::audit::record("gateway", &sub, "medium", if refused { "refused" } else { "allowed" }, false, if refused { "не выполнено" } else { "выполнено" });
+    }
+    result
+}
+
+fn phone_act_inner(body: &serde_json::Value) -> serde_json::Value {
     let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("");
     let bad = json!({ "ok": false, "message": "Это действие недоступно с телефона." });
     match name {
@@ -2061,6 +2079,47 @@ pub fn phone_act(body: &serde_json::Value) -> serde_json::Value {
 
 #[cfg(test)]
 mod tests {
+    // the program is locked: the guarded actions of the window refuse, the phone cannot unlock it or change the password, and the journal says so
+    #[test]
+    fn a_locked_program_refuses_and_the_phone_cannot_unlock_it() {
+        let _s = crate::uistate::TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            crate::owner::reset_for_tests();
+            crate::owner::set_password("пароль-для-теста", "").unwrap();
+            crate::owner::lock();
+            let r = run_action(&json!({ "name": "mem_delete", "id": "1" }));
+            assert_eq!((r["ok"].as_bool(), r["locked"].as_bool()), (Some(false), Some(true)), "{}", r);
+            let r = run_action(&json!({ "name": "audit_clear" }));
+            assert_eq!(r["locked"].as_bool(), Some(true), "the journal cannot be wiped by a locked program: {}", r);
+            for body in [
+                json!({ "name": "owner_unlock", "password": "пароль-для-теста" }), json!({ "name": "owner_set", "new": "другой-пароль", "old": "" }),
+                json!({ "name": "owner_recover", "code": "X", "new": "другой-пароль" }), json!({ "name": "audit_clear" }), json!({ "name": "perms_set", "id": "memory", "on": false }),
+                json!({ "name": "pair_start" }), json!({ "name": "sync_run" }), json!({ "name": "home_act" }),
+            ] {
+                let r = phone_act(&body);
+                assert!(r["message"].as_str().unwrap_or("").contains("недоступно с телефона"), "{} -> {}", body, r);
+            }
+            assert!(!crate::owner::unlocked(), "nothing the phone sent unlocked the program");
+            let log = crate::audit::list(50);
+            assert!(log.iter().any(|e| e.kind == "gateway" && e.decision == "refused" && e.door == "phone"), "{:?}", log);
+        });
+    }
+
+    // missing and broken parameters of the gateway are an answer, not a crash, and nothing of them reaches the journal
+    #[test]
+    fn the_gateway_survives_missing_and_broken_parameters() {
+        let _s = crate::uistate::TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            for body in [json!({}), json!(null), json!("текст"), json!([1, 2]), json!({ "name": 5 }), json!({ "name": "task" }), json!({ "name": "task", "op": "add" }), json!({ "name": "setting", "key": "city" }), json!({ "name": "scenario", "op": "test" })] {
+                let r = phone_act(&body);
+                assert!(r.get("ok").is_some(), "{} -> {}", body, r);
+            }
+            assert!(phone_get("../../etc/passwd", "").is_none() && phone_get("", "").is_none() && phone_get("chat", "").is_none());
+            let raw = std::fs::read_to_string(crate::store::file("audit_log.json")).unwrap_or_default();
+            assert!(!raw.contains("текст"), "the parameters are not written to the journal");
+        });
+    }
+
     // «Мой голос» through the window: the buttons start the recording at once (without the wake word) and the lock cannot be on without a print
     #[test]
     fn the_voice_buttons_start_the_recording_the_listening_and_refuse_the_lock_without_a_print() {

@@ -129,6 +129,8 @@ pub mod scheduler;
 pub mod notes;
 pub mod nametest;
 pub mod devhist;
+pub mod audit;
+pub mod replay;
 pub mod owner;
 pub mod perms;
 pub mod progsearch;

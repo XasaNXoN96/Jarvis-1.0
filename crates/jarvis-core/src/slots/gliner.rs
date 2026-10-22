@@ -295,7 +295,7 @@ pub fn extract(
 
     let labels: Vec<&str> = label_to_slots.keys().copied().collect();
 
-    debug!("GLiNER extract: text='{}', labels={:?}", text, labels);
+    debug!("GLiNER extract: {} chars, labels={:?}", text.chars().count(), labels);
 
     let words = split_words(text, &model, Some(MAX_LENGTH));
     if words.is_empty() {

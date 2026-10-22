@@ -12,6 +12,8 @@ const FILE: &str = "paired_devices.json";
 pub const CODE_TTL: u64 = 300;
 pub const MAX_TRIES: u32 = 5;
 pub const MAX_DEVICES: usize = 20;
+// a device that was not seen for this long is no longer accepted (a lost phone does not stay a key forever); the owner pairs it again
+pub const IDLE_TTL: u64 = 90 * 24 * 3600;
 // last-seen is written at most this often
 const SEEN_EVERY: u64 = 60;
 
@@ -72,6 +74,7 @@ pub fn start_code(now: u64) -> String {
     let v: u32 = rand::rngs::OsRng.gen_range(0..1_000_000);
     let value = format!("{:06}", v);
     *CODE.lock() = Some(Code { value: value.clone(), expires: now + CODE_TTL, tries: 0 });
+    crate::audit::record("pairing", "code_started", "", "allowed", false, "показан код привязки");
     value
 }
 
@@ -101,6 +104,7 @@ pub fn redeem(code: &str, name: &str, now: u64) -> Result<String, String> {
         if c.tries >= MAX_TRIES {
             *g = None;
         }
+        crate::audit::record_door("phone", "pairing", "redeem", "", "refused", false, "неверный код привязки");
         return Err("Неверный код.".into());
     }
     // the code works once
@@ -114,6 +118,7 @@ pub fn redeem(code: &str, name: &str, now: u64) -> Result<String, String> {
     let name: String = name.trim().chars().filter(|c| !c.is_control()).take(40).collect();
     devs.push(Dev { id: random_hex(4), name: if name.is_empty() { "Телефон".into() } else { name }, hash: hash(&secret), created: now, last_seen: now, revoked: false });
     save(&devs)?;
+    crate::audit::record_door("phone", "pairing", "redeem", "", "allowed", false, "устройство привязано");
     Ok(secret)
 }
 
@@ -126,6 +131,10 @@ pub fn check(secret: &str, now: u64) -> Option<String> {
     let mut devs = load();
     let i = devs.iter().position(|d| !d.revoked && same(&d.hash, &h))?;
     let id = devs[i].id.clone();
+    if now.saturating_sub(devs[i].last_seen) > IDLE_TTL {
+        crate::audit::record_rate_limited("pair-idle", 3600, "pairing", "idle_expired", "refused", "устройство не появлялось 90 дней: привяжите заново");
+        return None;
+    }
     if now.saturating_sub(devs[i].last_seen) >= SEEN_EVERY {
         devs[i].last_seen = now;
         let _ = save(&devs);
@@ -143,6 +152,7 @@ pub fn revoke(id: &str) -> bool {
     match devs.iter_mut().find(|d| d.id == id && !d.revoked) {
         Some(d) => {
             d.revoked = true;
+            crate::audit::record("pairing", "revoke", "", "allowed", false, "устройство отозвано");
             save(&devs).is_ok()
         }
         None => false,

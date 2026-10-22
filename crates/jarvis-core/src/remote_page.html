@@ -346,7 +346,23 @@ if (!token) {
   };
   const put = () => { const box = document.getElementById('t-media'); if (box) box.appendChild(b); }; document.addEventListener('DOMContentLoaded', put); put();
 })();
-const rid = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const rid = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
+// every request that changes something carries the time (by the clock of the COMPUTER: the difference is learned from /poll) and a number that is never used twice;
+// the computer runs a request once and refuses an old or a repeated one (replay.rs)
+let clockOff = 0;
+const stamp = () => ({ 'X-Token': token, 'X-Rid': rid(), 'X-Ts': String(Math.floor((Date.now() + clockOff) / 1000)) });
+// a request with the time and the number; when the computer says the time is wrong, the difference is learned from its answer and the request is sent once more (with a NEW number)
+async function postSigned(url, body, extra, fetcher) {
+  const f = fetcher || fetchT;
+  for (let i = 0; i < 2; i++) {
+    const r = await f(url, { method: 'POST', headers: Object.assign(stamp(), extra || {}), body });
+    if (r.status !== 409) return r;
+    let j = {}; try { j = await r.clone().json(); } catch (e) {}
+    if (!j.stale || !j.now) return r;
+    clockOff = j.now * 1000 - Date.now();
+  }
+  return f(url, { method: 'POST', headers: Object.assign(stamp(), extra || {}), body });
+}
 const quick = [
   ['поставь таймер на 5 минут', '⏱', 'Таймер 5 мин', 'hot'], ['отмени таймер', '⏹', 'Отмена таймера', ''], ['сколько времени', '🕐', 'Сколько времени', ''], ['отмени выключение', '⛔', 'Отмена выкл.', ''],
   ['выключи компьютер через 10 минут', '⏻', 'Выкл. через 10 мин', ''], ['заблокируй компьютер', '🔒', 'Блокировка', ''], ['да', '✔', 'Да', 'yes'], ['нет', '✖', 'Нет', 'no']];
@@ -354,7 +370,7 @@ const status = $('status');
 async function send(text) {
   status.textContent = '…';
   try {
-    const r = await fetchT('/cmd', {method:'POST', headers:{'X-Token':token, 'X-Rid':rid()}, body:text});
+    const r = await postSigned('/cmd', text);
     status.textContent = r.ok ? '✓ ' + text : r.status === 503 ? 'Компьютер пока не принимает команды (Jarvis запускается или пульт выключен)'
       : r.status === 403 ? 'Ссылка не подходит: откройте новую ссылку или QR-код на компьютере' : 'Ошибка: ' + r.status;
     if (r.ok) connected();
@@ -391,7 +407,7 @@ async function poll() {
     if (r.status === 403) { lost('Ссылка больше не действует (на компьютере сделали новую): отсканируйте QR-код в окне Jarvis ещё раз.'); try { localStorage.removeItem('jarvis_t'); } catch (e) {} }
     else if (r.status === 503) { lost('Пульт выключен на компьютере. Включите его на главной странице Jarvis.'); }
     else if (!r.ok) { lost('Компьютер ответил ошибкой ' + r.status + '.'); }
-    else { const j = await r.json(); connected(); for (const m of j.msgs) { if (m.id > shownId || j.last < shownId) { handle(m); shownId = m.id; } } lastId = j.last; if (j.last < shownId) shownId = j.last; }
+    else { const j = await r.json(); if (j.now) clockOff = j.now * 1000 - Date.now(); connected(); for (const m of j.msgs) { if (m.id > shownId || j.last < shownId) { handle(m); shownId = m.id; } } lastId = j.last; if (j.last < shownId) shownId = j.last; }
   } catch (e) { lost('Компьютер не отвечает: Jarvis закрыт, компьютер спит, пульт выключен или телефон в другой сети. Из другой сети пульт открывается по адресу «Доступ из любой сети» (включается в окне Jarvis или кнопкой в Telegram-боте). Повторяю автоматически.' + (lastOk ? ' Последняя связь: ' + hhmm(lastOk) + '.' : '')); }
   polling = false;
   timer = setTimeout(poll, failures ? Math.min(2000 * (failures + 1), 10000) : 2000);
@@ -723,7 +739,7 @@ function pcStop() { if (pcMic) { pcMic.stop(); pcMic = null; } micBtn.classList.
 async function pcSend(b64) {
   const c = new AbortController(), t = setTimeout(() => c.abort(), 25000);
   try {
-    const r = await fetch('/voice-audio', { method: 'POST', headers: { 'X-Token': token, 'X-Rid': rid() }, body: b64, signal: c.signal });
+    const r = await postSigned('/voice-audio', b64, null, (u, o) => fetch(u, Object.assign({}, o, { signal: c.signal })));
     const j = await r.json().catch(() => ({ ok: false, message: 'Ошибка ' + r.status }));
     connected(); return j;
   } catch (e) { return { ok: false, kind: 'error', message: 'Нет связи с компьютером.' }; } finally { clearTimeout(t); }
@@ -755,7 +771,7 @@ async function vpLoad() {
     $('vp-stat').textContent = vp.enrolled ? 'Принято фраз: ' + vp.accepted + ', отклонено: ' + vp.rejected + (vp.last ? ' · последняя: ' + (vp.last.ok ? 'принята' : 'отклонена') + ' (' + vp.last.distance.toFixed(2) + ' при пороге ' + vp.last.threshold.toFixed(2) + ')' : '') : '';
   } catch (e) {}
 }
-async function vpDo(op) { try { await fetchT('/voiceprint-do', { method: 'POST', headers: { 'X-Token': token, 'X-Rid': rid() }, body: op }); } catch (e) {} await vpLoad(); }
+async function vpDo(op) { try { await postSigned('/voiceprint-do', op); } catch (e) {} await vpLoad(); }
 // recording the voice or testing it: the microphone of the page sends every phrase; it stops when the computer says it is done
 async function vpCapture(op) {
   if (!window.isSecureContext || !navigator.mediaDevices) { $('vp-note').textContent = 'Нужна защищённая страница пульта (кнопка ниже в подсказке).'; return; }
@@ -820,7 +836,7 @@ async function api(name) {
   return r.json();
 }
 async function act(body) {
-  const r = await fetchT('/act', { method: 'POST', headers: { 'X-Token': token, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const r = await postSigned('/act', JSON.stringify(body), { 'Content-Type': 'application/json' });
   if (!r.ok) throw new Error(r.status);
   return r.json();
 }
@@ -1005,7 +1021,7 @@ async function loadVoices() {
 $('vsel').onchange = async () => {
   $('vmsg').textContent = 'Сохраняю…';
   try {
-    const r = await fetchT('/voice', {method:'POST', headers:{'X-Token':token}, body:$('vsel').value});
+    const r = await postSigned('/voice', $('vsel').value);
     $('vmsg').textContent = r.ok ? 'Готово: компьютер отвечает этим голосом.' : 'Компьютер не принял этот голос.';
   } catch (e) { $('vmsg').textContent = 'Нет связи с компьютером.'; }
 };

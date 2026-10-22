@@ -63,7 +63,7 @@ pub fn set_notifier(f: Notifier) {
 fn notify(r: &Reply) {
     match NOTIFY.lock().as_ref() {
         Some(f) => f(&r.text, &r.speech),
-        None => info!("[code] {}", r.text),
+        None => info!("[code] {} chars", r.text.chars().count()),
     }
 }
 

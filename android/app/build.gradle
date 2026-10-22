@@ -14,20 +14,32 @@ android {
         versionName '1.0.0'
     }
 
-    // The APK is signed with the sideload key of the project (keystore/jarvis-sideload.jks), so a new build installs OVER the old one.
-    // A real release key can be given with the environment variables JARVIS_KEYSTORE / JARVIS_KEYSTORE_PASSWORD / JARVIS_KEY_ALIAS.
+    // The key of the release comes ONLY from the environment (the protected secrets of CI): JARVIS_KEYSTORE (a file), JARVIS_KEYSTORE_PASSWORD,
+    // JARVIS_KEY_ALIAS, optionally JARVIS_KEY_PASSWORD. No key and no password are written here.
+    // JARVIS_ALLOW_LEGACY_KEY=1 uses the OLD sideload key of the repository (keystore/jarvis-sideload.jks): that key and its password are PUBLIC
+    // (the repository is public), so a package signed with it proves nothing. It stays only until the owner has made his own key and moved to it
+    // (docs/implementation/SECURITY_FIXES.md, "Ключ подписи Android"). Without any key the package is built unsigned.
+    def envKey = System.getenv('JARVIS_KEYSTORE')
+    def legacy = System.getenv('JARVIS_ALLOW_LEGACY_KEY') == '1'
     signingConfigs {
         release {
-            storeFile file(System.getenv('JARVIS_KEYSTORE') ?: '../keystore/jarvis-sideload.jks')
-            storePassword System.getenv('JARVIS_KEYSTORE_PASSWORD') ?: 'jarvis-sideload'
-            keyAlias System.getenv('JARVIS_KEY_ALIAS') ?: 'jarvis'
-            keyPassword System.getenv('JARVIS_KEYSTORE_PASSWORD') ?: 'jarvis-sideload'
+            if (envKey) {
+                storeFile file(envKey)
+                storePassword System.getenv('JARVIS_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('JARVIS_KEY_ALIAS') ?: 'jarvis'
+                keyPassword System.getenv('JARVIS_KEY_PASSWORD') ?: System.getenv('JARVIS_KEYSTORE_PASSWORD')
+            } else if (legacy) {
+                storeFile file('../keystore/jarvis-sideload.jks')
+                storePassword 'jarvis-sideload'
+                keyAlias 'jarvis'
+                keyPassword 'jarvis-sideload'
+            }
         }
     }
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig signingConfigs.release
+            if (envKey || legacy) signingConfig signingConfigs.release
         }
     }
     compileOptions {
@@ -37,4 +49,9 @@ android {
     lint {
         abortOnError false
     }
+}
+
+dependencies {
+    // the tests of the pure Java part (the address typed by the user); the application itself has no third-party library
+    testImplementation 'junit:junit:4.13.2'
 }

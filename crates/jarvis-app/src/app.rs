@@ -519,7 +519,7 @@ fn recognize_command(
                     recognized_voice = recognized_voice.trim().to_string();
                     
                     if recognized_voice.len() < 5 && !in_session {
-                        debug!("Ignoring too short recognition: '{}'", recognized_voice);
+                        debug!("Ignoring too short recognition ({} chars)", recognized_voice.chars().count());
                         continue;
                     }
 
@@ -770,10 +770,13 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
     if jarvis_core::session::kind().is_none() {
         if let Some(reply) = jarvis_core::features::handle(&original_text) {
             if let Some(phrase) = reply.rerun {
-                info!("Clarified phrase is run: {}", phrase);
+                info!("Clarified phrase is run ({} chars)", phrase.chars().count());
                 return execute_command(&phrase, source, rt);
             }
             let msg = reply.text;
+            if source.is_remote() {
+                jarvis_core::audit::record("feature", "jarvis_features", "", "allowed", false, "функция Jarvis выполнена по команде с удалённого входа");
+            }
             open_request(text, "command");
             say(&msg);
             ipc::send(IpcEvent::Output { text: msg.clone() });
@@ -799,7 +802,7 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
     // command knows and the typed one gives none, the other one is used (exact words of a command only, nothing is guessed)
     let layout_fixed = commands::fix_layout(text, commands_list);
     if let Some(f) = &layout_fixed {
-        info!("Keyboard layout fixed: '{}' -> '{}'", text, f);
+        info!("Keyboard layout fixed ({} chars)", f.chars().count());
         say(&format!("Раскладка: «{}»", f));
         return execute_command(f, source, rt);
     }
@@ -835,7 +838,7 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
     if let Some(kind) = jarvis_core::session::kind() {
         let session_cmd = commands_list.iter().flat_map(|l| l.commands.iter().map(move |c| (&l.path, c))).find(|(_, c)| c.id == "assistant_session");
         if let Some((path, cfg)) = session_cmd {
-            info!("Session '{}' input: {}", kind, text);
+            info!("Session '{}' input: {} chars", kind, text.chars().count());
             jarvis_core::session::touch();
             // the questions and answers of a dialog (what to do with the file, save / delete / continue) are part of the
             // conversation; the dictated text itself is not (it goes into the document)
@@ -1006,6 +1009,7 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
         if let Err(denied) = jarvis_core::access::check(&cmd_config.id) {
             let msg = denied.message.clone();
             info!("Command {} refused: {:?}", cmd_config.id, denied.why);
+            jarvis_core::audit::record("command", &cmd_config.id, "", "refused", false, "нужна лицензия");
             say(&msg);
             ipc::send(IpcEvent::Output { text: msg.clone() });
             open_request(text, "command");
@@ -1026,6 +1030,7 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
         if risk == jarvis_core::policy::Risk::High {
             if let Err(msg) = jarvis_core::owner::guard() {
                 info!("Command {} refused: the program is locked", cmd_config.id);
+                jarvis_core::audit::record("command", &cmd_config.id, risk.as_str(), "refused", false, "программа заблокирована паролем владельца");
                 say(&msg);
                 ipc::send(IpcEvent::Output { text: msg.clone() });
                 open_request(text, "command");
@@ -1043,6 +1048,7 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
             jarvis_core::confirm::Gate::Run { confirmed } => confirmed,
             jarvis_core::confirm::Gate::Ask { question } => {
                 info!("Command {} (high risk) waits for the confirmation from the {} door", cmd_config.id, source.as_str());
+                jarvis_core::audit::record("command", &cmd_config.id, risk.as_str(), "asked", false, "ждёт подтверждения «да» с того же входа");
                 say(&question);
                 open_request(text, "command");
                 ipc::send(IpcEvent::Output { text: question.clone() });
@@ -1058,6 +1064,10 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
             }
         };
         let _confirmed_run = jarvis_core::confirm::confirmed_run(&cmd_config.id, confirmed);
+        // the journal of critical actions (audit.rs): every dangerous command, and every command that came through a remote door
+        if risk == jarvis_core::policy::Risk::High || source.is_remote() {
+            jarvis_core::audit::record("command", &cmd_config.id, risk.as_str(), "allowed", confirmed, if confirmed { "подтверждено пользователем" } else { "выполняется" });
+        }
 
         // extract slots if needed
         let extracted_slots = if !cmd_config.slots.is_empty() {

@@ -142,13 +142,22 @@ pub fn authorize(op: &Op) -> Result<Verdict, String> {
         if v.risk == Risk::High && !crate::confirm::is_confirmed(&cmd.id) {
             let why = format!("операция «{}» опасна и не подтверждена пользователем (команда {})", v.canonical, cmd.id);
             warn!("Operation refused: {}", why);
+            crate::audit::record("policy", &cmd.id, "high", "refused", false, "опасная операция без подтверждения");
             return Err(why);
         }
         if v.risk > cmd.risk {
             let why = format!("команда {} имеет риск «{}», а операция «{}» — «{}»", cmd.id, cmd.risk.as_str(), v.canonical, v.risk.as_str());
             warn!("Operation refused: {}", why);
+            crate::audit::record("policy", &cmd.id, v.risk.as_str(), "refused", false, "риск операции выше риска команды");
             return Err(why);
         }
+    } else if v.risk == Risk::High && crate::origin::current().map(|s| s.is_remote()).unwrap_or(false) {
+        // no command is running (a button of the page, a scenario step, a scheduled job): such a place has nobody who confirmed anything,
+        // so a dangerous operation is never done on the word of a remote door (the phone, Telegram)
+        let why = "опасная операция не выполняется по команде с удалённого входа вне подтверждённой команды".to_string();
+        warn!("Operation refused: {}", why);
+        crate::audit::record("policy", "no_command", "high", "refused", false, "удалённый вход вне подтверждённой команды");
+        return Err(why);
     }
     Ok(v)
 }
@@ -850,6 +859,26 @@ pub fn authorize_open(target: &str) -> Result<(), String> {
 pub(crate) mod tests {
     use super::*;
     use std::fs;
+
+    // a dangerous operation outside of a running command (a button, a scenario, a scheduled job) is never done on the word of a remote door
+    #[test]
+    fn a_remote_door_cannot_do_a_dangerous_operation_outside_a_confirmed_command() {
+        let _g = LOCK.lock();
+        let dangerous = Op::Open("C:\\Users\\x\\Downloads\\run.bat".into());
+        assert_eq!(judge(&dangerous).unwrap().risk, Risk::High);
+        // no door (a test, the command line): as before
+        assert!(authorize(&dangerous).is_ok());
+        crate::origin::run_as(crate::origin::Source::Window, || assert!(authorize(&dangerous).is_ok(), "the window is the owner's own hands"));
+        for door in [crate::origin::Source::Phone, crate::origin::Source::Telegram] {
+            let r = crate::origin::run_as(door, || authorize(&dangerous));
+            assert!(r.unwrap_err().contains("удалённого входа"), "{:?}", door);
+            // a harmless operation from the same door still works
+            assert!(crate::origin::run_as(door, || authorize(&Op::Open("https://example.org".into()))).is_ok());
+        }
+        // inside a command the old rules stay: a low command cannot do it even from the window
+        let _r = enter_command("x", "low", Path::new("/tmp"));
+        assert!(crate::origin::run_as(crate::origin::Source::Window, || authorize(&dangerous)).is_err());
+    }
 
     // (the running command and the test places are per thread; this lock is for the process-wide list of programs)
     static LOCK: parking_lot::Mutex<()> = parking_lot::const_mutex(());
