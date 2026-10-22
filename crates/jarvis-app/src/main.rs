@@ -256,6 +256,7 @@ fn main() -> Result<(), String> {
     jarvis_core::licensing::start_background();
     jarvis_core::notify::ext_apply();
     jarvis_core::lua::init_timers();
+    jarvis_core::scheduler::start();
 
     // init voices
     let voice_id = settings.lock().voice.clone();

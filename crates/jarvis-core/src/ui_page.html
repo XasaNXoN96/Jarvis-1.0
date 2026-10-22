@@ -305,6 +305,7 @@
   .mem-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; } .mem-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 10px; background: #ffffff06; font-size: 13px; }
   .mem-item span { flex: 1; min-width: 0; word-break: break-word; } .mem-item small { opacity: .6; display: block; } .ct-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; margin: 8px 0; }
   .ct-form input, .ct-form select, #mem-new, #mem-q { padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: #ffffff06; color: var(--text); font: inherit; min-width: 0; }
+  #page-apps [hidden] { display: none !important; }
   .gm-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: #ffffff06; color: var(--text); cursor: pointer; font: inherit; font-size: 13px; }
   .gm-chip:hover { border-color: var(--line2); } .gm-chip[aria-pressed="true"] { border-color: var(--accent); background: #ffffff14; }
   .composer input:focus { border-color: var(--line2); background: #ffffff0a; box-shadow: 0 0 0 3px #ffffff0d; }
@@ -992,6 +993,15 @@
     <section class="page ds" id="page-apps">
       <h1>Программы</h1>
       <p class="lead">Скажите «Джарвис, открой …» или нажмите «Запустить». «Обновить список» ищет заново: новые программы попадут в раздел «Новые» и в свой раздел.</p>
+      <div class="ap-tabs" id="ap-mode" role="tablist"><button type="button" class="chip on" data-m="list">Установленные</button><button type="button" class="chip" data-m="catalog">Каталог Windows</button></div>
+      <div id="ap-catalog" hidden>
+        <p class="lead">Программы из официального каталога Windows (winget). Установщик скачивается и сверяется winget по контрольной сумме из каталога; запускается с обычным окном, молча ничего не ставится. Нужны разрешение «Скачивать и ставить программы» в центре разрешений и ваш клик «Установить».</p>
+        <div class="ap-tools"><input type="text" id="pc-q" maxlength="60" placeholder="Что найти, например: vlc"><button class="btn primary" id="pc-find" type="button">Найти</button></div>
+        <div class="msgline" id="pc-msg"></div>
+        <div id="pc-prog" class="mem-item" hidden><span id="pc-prog-t"></span><button class="btn small" id="pc-cancel" type="button">Отменить</button></div>
+        <div id="pc-list" class="mem-list"></div>
+        <h4 style="margin:14px 0 6px">История установок</h4><div id="pc-hist" class="mem-list"></div>
+      </div>
       <div class="ap-tools"><input type="text" id="ap-search" placeholder="Поиск программы, например: commander"><button class="btn" id="ap-rescan" type="button">Обновить список</button></div>
       <div class="msgline" id="ap-status"></div>
       <div class="ap-tabs" id="ap-tabs" role="tablist"></div>
@@ -1350,6 +1360,48 @@
         <div class="setrow"><div class="l">Отвечать ИИ на непонятные фразы, сказанные голосом<small>Всё, что вы напечатали и что не является командой, идёт выбранному ИИ, если он подключён. Вопросы голосом («что такое…», «объясни…») тоже. Этот переключатель добавляет к ним остальные непонятные фразы, сказанные голосом.</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="ai-fallback"><span></span></label></div></div>
       </div>
+      <div class="card" data-cat="privacy" id="owner-card" data-tab="Пароль владельца"><h3><span class="ei">🔐</span>Пароль владельца</h3>
+        <div class="setrow"><div class="l">Состояние<small id="ow-state"></small></div><div class="r"><button class="btn" id="ow-lock" type="button">Заблокировать</button></div></div>
+        <div class="setrow"><div class="l">Войти<small>пока пароль задан, отправка сообщений, удаление памяти и контактов, расписание, разрешения и установка программ работают только после ввода пароля (на 15 минут). Голосом пароль не вводится.</small></div>
+          <div class="r"><input type="password" id="ow-pw" autocomplete="off" placeholder="Пароль"><button class="btn primary" id="ow-unlock" type="button">Разблокировать</button></div></div>
+        <div class="setrow"><div class="l">Задать или сменить пароль<small>не короче 6 символов. Пароль нигде не хранится, только его защищённая сверка. После задания покажется код восстановления — запишите его.</small></div>
+          <div class="r"><input type="password" id="ow-old" autocomplete="off" placeholder="Старый (если есть)"><input type="password" id="ow-new" autocomplete="off" placeholder="Новый"><button class="btn" id="ow-set" type="button">Сохранить</button></div></div>
+        <div class="setrow"><div class="l">Забыл пароль<small>нужен код восстановления</small></div><div class="r"><input type="text" id="ow-code" autocomplete="off" placeholder="Код восстановления"><input type="password" id="ow-new2" autocomplete="off" placeholder="Новый пароль"><button class="btn" id="ow-rec" type="button">Восстановить</button></div></div>
+        <div class="setrow"><div class="l">Что отвечать чужому<small>фраза, когда без пароля просят защищённое</small></div><div class="r"><input type="text" id="ow-msg" maxlength="120"><button class="btn" id="ow-msg-save" type="button">Сохранить</button></div></div>
+        <div class="setrow"><div class="l">Снять пароль</div><div class="r"><input type="password" id="ow-rm" autocomplete="off" placeholder="Текущий пароль"><button class="btn" id="ow-remove" type="button">Снять</button></div></div>
+        <div class="msgline" id="ow-msgline"></div>
+      </div>
+      <div class="card" data-cat="privacy" id="perm-card" data-tab="Разрешения"><h3><span class="ei">🛡</span>Центр разрешений</h3>
+        <div class="setrow"><div class="l">Что Jarvis может делать сам<small>выключенное действительно останавливает способность: обработчик проверяет переключатель перед тем, как что-то сделать.</small></div></div>
+        <div id="perm-list"></div><div class="msgline" id="perm-msg"></div>
+      </div>
+      <div class="card" data-cat="privacy" id="kb-card" data-tab="База знаний"><h3><span class="ei">📚</span>База знаний (мои документы)</h3>
+        <div class="setrow"><div class="l">Папки<small>Читаются только добавленные вами папки (txt, md, csv, rtf, docx, xlsx, pptx, odt). Вопросы: «найди в моих документах …», «ответь по документам …». Ответ всегда с источниками; тексты файлов для ИИ — только данные, не приказы.</small></div>
+          <div class="r"><input type="text" id="kb-path" placeholder="C:\Users\Вы\Documents\Заметки"><button class="btn" id="kb-add" type="button">Добавить папку</button></div></div>
+        <div id="kb-folders" class="mem-list"></div>
+        <div class="setrow"><div class="l">Индекс<small id="kb-state"></small></div><div class="r"><button class="btn" id="kb-reindex" type="button">Обновить индекс</button><button class="btn" id="kb-clear" type="button">Очистить индекс</button></div></div>
+        <div class="setrow"><div class="l">Проверить поиск</div><div class="r"><input type="text" id="kb-q" placeholder="что искать"><button class="btn" id="kb-find" type="button">Найти</button></div></div>
+        <div id="kb-hits" class="mem-list"></div><div class="msgline" id="kb-msg"></div>
+      </div>
+      <div class="card" data-cat="privacy" id="undo-card" data-tab="История действий"><h3><span class="ei">↩</span>История действий</h3>
+        <div class="setrow"><div class="l">Что Jarvis сделал сам<small>«Отменить» есть только у действий, которые можно честно вернуть (запись, задание, созданная картинка). Отправленное сообщение или запущенную программу вернуть нельзя. Голосом: «верни как было».</small></div></div>
+        <div id="undo-list" class="mem-list"></div><div class="msgline" id="undo-msg"></div>
+      </div>
+      <div class="card" data-cat="connect" id="home-card" data-tab="Умный дом"><h3><span class="ei">🏠</span>Умный дом (Home Assistant)</h3>
+        <div class="setrow"><div class="l">Подключение<small id="home-state">Нужен ваш сервер Home Assistant и долгосрочный токен из профиля. Устройства берутся с сервера, выдуманных нет. Замки, двери и сигнализация голосом не управляются.</small></div>
+          <div class="r"><input type="text" id="home-url" placeholder="http://homeassistant.local:8123"><input type="password" id="home-token" autocomplete="off" placeholder="Токен (пусто — оставить прежний)"><button class="btn primary" id="home-save" type="button">Сохранить</button><button class="btn" id="home-forget" type="button">Забыть</button></div></div>
+        <div class="setrow"><div class="l">Устройства<small>включите разрешение «Управлять умным домом» в центре разрешений</small></div><div class="r"><button class="btn" id="home-load" type="button">Показать устройства</button></div></div>
+        <div id="home-list" class="mem-list"></div><div class="msgline" id="home-msg"></div>
+      </div>
+      <div class="card" data-cat="general" id="sched-card" data-tab="Расписание"><h3><span class="ei">⏰</span>Расписание заданий</h3>
+        <div class="setrow"><div class="l">Новое задание<small>Фраза с временем: «каждый день в 9:00 открой почту», «завтра в 8:30 напомни про встречу», «каждые 30 минут пей воду», «каждую пятницу в 18:00 …». Задание выполняется так, будто вы сказали фразу. Пропущенное при выключенном Jarvis: выполняется один раз, если опоздание до часа, иначе пропускается.</small></div>
+          <div class="r"><input type="text" id="sch-text" maxlength="300" placeholder="каждый день в 9:00 открой почту"><button class="btn primary" id="sch-add" type="button">Поставить</button></div></div>
+        <div id="sch-list" class="mem-list"></div><div class="msgline" id="sch-msg"></div>
+      </div>
+      <div class="card" data-cat="ai" id="notes-card" data-tab="Дневник"><h3><span class="ei">📓</span>Голосовой дневник и заметки</h3>
+        <div class="setrow"><div class="l">Записи<small>«запиши в дневник: …», «заметка: …», «что я записывал вчера», «найди в дневнике …». Пишется только то, что вы сами сказали записать.</small></div></div>
+        <div id="notes-list" class="mem-list"></div>
+      </div>
       <div class="card" data-cat="ai" id="mem-card" data-tab="Память"><h3><span class="ei">🧠</span>Память Jarvis</h3>
         <div class="setrow"><div class="l">Что я помню<small>Скажите «запомни, что …», «что ты помнишь про …», «забудь …». Пароли, ключи, токены и номера карт не запоминаются. Файл лежит только на этом компьютере.</small></div>
           <div class="r"><label class="sw" title="ИИ сам предлагает запомнить важное (пока только хранит выбор)"><input type="checkbox" id="mem-auto"><span></span></label></div></div>
@@ -1639,7 +1691,7 @@ function show(name) {
   if (name === 'games') gpSummary();
   if (name === 'files') filesLoad();
   if (name === 'devices') devicesLoad();
-  if (name === 'settings') { memLoad(); ctLoad(); loadSettings(); refreshRemote(); tgLoad(); setTimeout(() => { if (typeof setView === 'function') setView(); }, 60); }
+  if (name === 'settings') { memLoad(); ctLoad(); ownerLoad(); permLoad(); kbLoad(); undoLoad(); homeLoad(); schLoad(); notesLoad(); loadSettings(); refreshRemote(); tgLoad(); setTimeout(() => { if (typeof setView === 'function') setView(); }, 60); }
   if (name === 'tasks') { tkEdit = -1; tasksLoad(); }
   if (name === 'home') { homeSig = ''; }
   if (name === 'messages') msgsLoad(true);
@@ -2986,6 +3038,61 @@ $('#aim-on').onclick = async () => { const r = await action('game_aim', { value:
 $('#aim-off').onclick = async () => { const r = await action('game_aim', { value: false }).catch(() => ({})); const m = $('#game-msg'); m.className = 'msgline ok'; m.textContent = (r && r.message) || ''; gameRefresh(); };
 gameRefresh(); setInterval(gameRefresh, 4000);
 
+// ---------- owner password, permissions, knowledge base, history, smart home, scheduler, diary ----------
+const lineMsg = (id, r, okText) => { const m = $(id); m.className = 'msgline ' + (r && r.ok === false ? 'bad' : 'ok'); m.textContent = (r && r.message) || (r && r.ok !== false ? (okText || '') : 'Не получилось'); };
+async function ownerLoad() {
+  const r = await action('owner_status').catch(() => ({}));
+  $('#ow-state').textContent = r.set ? (r.unlocked ? 'пароль задан, сейчас разблокировано' : 'пароль задан, защищённое заблокировано') : 'пароль не задан: защита выключена';
+  $('#ow-msg').value = r.message || ''; $('#ow-lock').disabled = !r.set || !r.unlocked;
+}
+function showRecovery(r) { if (r && r.recovery) alert('Код восстановления (покажется один раз, запишите):\n\n' + r.recovery); }
+$('#ow-unlock').onclick = async () => { const r = await action('owner_unlock', { password: $('#ow-pw').value }).catch(() => ({})); lineMsg('#ow-msgline', r); $('#ow-pw').value = ''; ownerLoad(); };
+$('#ow-lock').onclick = async () => { await action('owner_lock'); ownerLoad(); };
+$('#ow-set').onclick = async () => { const r = await action('owner_set', { old: $('#ow-old').value, new: $('#ow-new').value }).catch(() => ({})); lineMsg('#ow-msgline', r); showRecovery(r); $('#ow-old').value = ''; $('#ow-new').value = ''; ownerLoad(); };
+$('#ow-rec').onclick = async () => { const r = await action('owner_recover', { code: $('#ow-code').value, new: $('#ow-new2').value }).catch(() => ({})); lineMsg('#ow-msgline', r); showRecovery(r); $('#ow-code').value = ''; $('#ow-new2').value = ''; ownerLoad(); };
+$('#ow-remove').onclick = async () => { const r = await action('owner_remove', { password: $('#ow-rm').value }).catch(() => ({})); lineMsg('#ow-msgline', r); $('#ow-rm').value = ''; ownerLoad(); };
+$('#ow-msg-save').onclick = async () => { const r = await action('owner_message', { value: $('#ow-msg').value }).catch(() => ({})); lineMsg('#ow-msgline', r, 'Сохранено.'); };
+async function permLoad() {
+  const r = await action('perms_list').catch(() => ({ items: [] }));
+  $('#perm-list').innerHTML = (r.items || []).map(p => '<div class="setrow"><div class="l">' + gpEsc(p.title) + '</div><div class="r"><label class="sw"><input type="checkbox" data-perm="' + gpEsc(p.id) + '"' + (p.on ? ' checked' : '') + '><span></span></label></div></div>').join('');
+}
+$('#perm-list').onchange = async e => { const c = e.target.closest('input[data-perm]'); if (!c) return; const r = await action('perms_set', { id: c.dataset.perm, value: c.checked }).catch(() => ({})); lineMsg('#perm-msg', r, 'Сохранено.'); if (r.ok === false) permLoad(); };
+async function kbLoad() {
+  const r = await action('kb_status').catch(() => ({ folders: [] }));
+  $('#kb-folders').innerHTML = (r.folders || []).length ? r.folders.map(f => '<div class="mem-item" data-path="' + gpEsc(f) + '"><span>' + gpEsc(f) + '</span><button class="btn small" type="button">Убрать</button></div>').join('') : '<small class="dim">Папок нет.</small>';
+  $('#kb-state').textContent = r.files ? 'Файлов: ' + r.files + ', отрывков: ' + r.passages + (r.updated ? ' · обновлён ' + new Date(r.updated * 1000).toLocaleString('ru-RU') : '') : 'индекс пуст';
+}
+$('#kb-add').onclick = async () => { const r = await action('kb_add', { path: $('#kb-path').value }).catch(() => ({})); lineMsg('#kb-msg', r, 'Папка добавлена. Нажмите «Обновить индекс».'); if (r.ok) $('#kb-path').value = ''; kbLoad(); };
+$('#kb-folders').onclick = async e => { const b = e.target.closest('button'); if (!b) return; await action('kb_remove', { path: b.closest('.mem-item').dataset.path }); kbLoad(); };
+$('#kb-reindex').onclick = async () => { $('#kb-msg').className = 'msgline'; $('#kb-msg').textContent = 'Читаю документы…'; const r = await action('kb_reindex').catch(() => ({})); lineMsg('#kb-msg', r); kbLoad(); };
+$('#kb-clear').onclick = async () => { if (confirm('Очистить индекс? Сами файлы не трогаются.')) { await action('kb_clear'); kbLoad(); } };
+$('#kb-find').onclick = async () => { const r = await action('kb_search', { q: $('#kb-q').value }).catch(() => ({ items: [] })); $('#kb-hits').innerHTML = (r.items || []).length ? r.items.map((h, i) => '<div class="mem-item"><span>[' + (i + 1) + '] ' + gpEsc(h.text.slice(0, 220)) + '<small>' + gpEsc(h.path) + ' · часть ' + h.part + '</small></span></div>').join('') : '<small class="dim">Ничего не нашлось.</small>'; };
+async function undoLoad() {
+  const r = await action('undo_list').catch(() => ({ items: [] }));
+  $('#undo-list').innerHTML = (r.items || []).length ? r.items.map(e => '<div class="mem-item" data-id="' + gpEsc(e.id) + '"><span>' + gpEsc(e.what) + '<small>' + new Date(e.at * 1000).toLocaleString('ru-RU') + (e.undone ? ' · отменено' : e.can_undo ? '' : ' · нельзя отменить') + '</small></span>' + (e.can_undo ? '<button class="btn small" type="button">Отменить</button>' : '') + '</div>').join('') : '<small class="dim">Пока ничего.</small>';
+}
+$('#undo-list').onclick = async e => { const b = e.target.closest('button'); if (!b) return; const r = await action('undo_do', { id: b.closest('.mem-item').dataset.id }).catch(() => ({})); lineMsg('#undo-msg', r); undoLoad(); };
+async function homeLoad() { const r = await action('home_status').catch(() => ({})); const s = r.status || {}; $('#home-url').value = s.url || ''; $('#home-token').placeholder = s.has_token ? 'Токен сохранён (пусто — оставить)' : 'Токен'; }
+$('#home-save').onclick = async () => { const r = await action('home_config', { url: $('#home-url').value, token: $('#home-token').value }).catch(() => ({})); lineMsg('#home-msg', r); $('#home-token').value = ''; homeLoad(); };
+$('#home-forget').onclick = async () => { if (confirm('Забыть адрес и токен?')) { await action('home_forget'); $('#home-list').innerHTML = ''; homeLoad(); } };
+$('#home-load').onclick = async () => {
+  const r = await action('home_devices').catch(() => ({}));
+  if (!r.ok) { lineMsg('#home-msg', r); return; }
+  $('#home-list').innerHTML = (r.items || []).length ? r.items.map(d => '<div class="mem-item" data-id="' + gpEsc(d.entity_id) + '"><span>' + gpEsc(d.name) + '<small>' + gpEsc(d.entity_id) + ' · ' + gpEsc(d.state) + '</small></span><button class="btn small" data-v="1" type="button">Вкл</button><button class="btn small" data-v="0" type="button">Выкл</button></div>').join('') : '<small class="dim">Устройств не найдено.</small>';
+};
+$('#home-list').onclick = async e => { const b = e.target.closest('button[data-v]'); if (!b) return; const r = await action('home_act', { entity_id: b.closest('.mem-item').dataset.id, value: b.dataset.v === '1' }).catch(() => ({})); lineMsg('#home-msg', r); };
+async function schLoad() {
+  const r = await action('sched_list').catch(() => ({ items: [] }));
+  $('#sch-list').innerHTML = (r.items || []).length ? r.items.map(j => '<div class="mem-item" data-id="' + gpEsc(j.id) + '"><span>' + gpEsc(j.line) + '<small>запусков: ' + j.runs + (j.enabled ? '' : ' · выключено') + '</small></span><button class="btn small" data-op="toggle" data-on="' + (j.enabled ? '0' : '1') + '" type="button">' + (j.enabled ? 'Выключить' : 'Включить') + '</button><button class="btn small" data-op="del" type="button">Удалить</button></div>').join('') : '<small class="dim">Заданий нет.</small>';
+}
+$('#sch-add').onclick = async () => { const r = await action('sched_add', { text: $('#sch-text').value }).catch(() => ({})); lineMsg('#sch-msg', r); if (r.ok) $('#sch-text').value = ''; schLoad(); };
+$('#sch-list').onclick = async e => { const b = e.target.closest('button[data-op]'); if (!b) return; const id = b.closest('.mem-item').dataset.id; if (b.dataset.op === 'del') await action('sched_remove', { id }); else await action('sched_toggle', { id, value: b.dataset.on === '1' }); schLoad(); };
+async function notesLoad() {
+  const r = await action('notes_list').catch(() => ({ items: [] }));
+  $('#notes-list').innerHTML = (r.items || []).length ? r.items.map(n => '<div class="mem-item" data-id="' + gpEsc(n.id) + '"><span>' + gpEsc(n.text) + '<small>' + (n.kind === 'diary' ? 'дневник' : 'заметка') + ' · ' + new Date(n.at * 1000).toLocaleString('ru-RU') + '</small></span><button class="btn small" type="button">Удалить</button></div>').join('') : '<small class="dim">Записей нет.</small>';
+}
+$('#notes-list').onclick = async e => { const b = e.target.closest('button'); if (!b) return; await action('notes_delete', { id: b.closest('.mem-item').dataset.id }); notesLoad(); };
+
 // ---------- memory, contacts and the messages written by voice ----------
 const memMsg = (t, ok) => { const m = $('#mem-msg'); m.className = 'msgline ' + (ok === false ? 'bad' : 'ok'); m.textContent = t || ''; };
 async function memLoad() {
@@ -3036,6 +3143,43 @@ $('#ct-save').onclick = async () => {
   if (r.ok) { ctEditId = ''; for (const i of ['#ct-name', '#ct-alias', '#ct-phone', '#ct-tg']) $(i).value = ''; $('#ct-pref').value = ''; ctLoad(); }
 };
 $('#out-clear').onclick = async () => { if (confirm('Очистить историю сообщений?')) { await action('out_clear'); ctLoad(); } };
+
+// ---------- «Каталог Windows» on the Programs page ----------
+let pcTimer = null;
+function apMode(m) {
+  document.querySelectorAll('#ap-mode .chip').forEach(c => c.classList.toggle('on', c.dataset.m === m));
+  const cat = m === 'catalog'; $('#ap-catalog').hidden = !cat;
+  for (const id of ['#ap-tabs', '#ap-list', '#ap-status']) $(id).hidden = cat;
+  document.querySelectorAll('#page-apps > .ap-tools').forEach(t => { t.hidden = cat; });
+  if (cat) { pcHist(); pcPoll(); }
+}
+document.querySelectorAll('#ap-mode .chip').forEach(c => c.onclick = () => apMode(c.dataset.m));
+$('#pc-find').onclick = async () => {
+  $('#pc-msg').className = 'msgline'; $('#pc-msg').textContent = 'Ищу в каталоге…';
+  const r = await action('prog_search', { q: $('#pc-q').value }).catch(() => ({}));
+  if (!r.ok) { lineMsg('#pc-msg', r); $('#pc-list').innerHTML = ''; return; }
+  $('#pc-msg').textContent = (r.items || []).length ? '' : 'В каталоге такого нет.';
+  $('#pc-list').innerHTML = (r.items || []).map(p => '<div class="mem-item" data-id="' + gpEsc(p.id) + '" data-name="' + gpEsc(p.name) + '"><span><b>' + gpEsc(p.name) + '</b><small>' + gpEsc(p.id) + ' · версия ' + gpEsc(p.version) + '</small></span><button class="btn small primary" type="button">Установить</button></div>').join('');
+};
+$('#pc-list').onclick = async e => {
+  const b = e.target.closest('button'); if (!b) return; const row = b.closest('.mem-item');
+  if (!confirm('Установить «' + row.dataset.name + '» из каталога Windows?\nОткроется окно установщика.')) return;
+  const r = await action('prog_install', { id: row.dataset.id, name: row.dataset.name }).catch(() => ({}));
+  lineMsg('#pc-msg', r); pcPoll();
+};
+$('#pc-cancel').onclick = async () => { await action('prog_cancel'); pcPoll(); };
+async function pcPoll() {
+  clearTimeout(pcTimer);
+  const r = await action('prog_status').catch(() => ({})); const s = r.status || {};
+  const busy = ['downloading', 'installing', 'searching'].includes(s.state);
+  $('#pc-prog').hidden = !busy; if (busy) $('#pc-prog-t').textContent = s.id + ': ' + (s.state === 'installing' ? 'установка' : 'скачивание') + (s.percent != null ? ' ' + s.percent + '%' : '') + (s.line ? ' — ' + s.line : '');
+  if (!busy && ['done', 'failed', 'cancelled'].includes(s.state)) { $('#pc-msg').className = 'msgline ' + (s.state === 'done' ? 'ok' : 'bad'); $('#pc-msg').textContent = s.id + ': ' + ({ done: 'установлено', failed: 'не удалось (' + s.line + ')', cancelled: 'отменено' })[s.state]; pcHist(); }
+  if (busy && currentPage === 'apps') pcTimer = setTimeout(pcPoll, 1000);
+}
+async function pcHist() {
+  const r = await action('prog_history').catch(() => ({ items: [] }));
+  $('#pc-hist').innerHTML = (r.items || []).length ? r.items.map(h => '<div class="mem-item"><span>' + gpEsc(h.name) + ' <small>' + gpEsc(h.id) + ' · ' + new Date(h.at * 1000).toLocaleString('ru-RU') + ' · ' + ({ ok: 'установлено', failed: 'ошибка ' + h.detail, cancelled: 'отменено' })[h.result] + '</small></span></div>').join('') : '<small class="dim">Пока ничего.</small>';
+}
 
 // ---------- the corner block «Мой ПК» ----------
 let monBusy = false;

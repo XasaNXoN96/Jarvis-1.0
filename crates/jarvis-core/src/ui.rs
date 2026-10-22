@@ -259,6 +259,12 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             return json!({ "ok": false, "message": d.message, "premium": premium_reason(&d) });
         }
     }
+    // with a password of the owner set, the actions that change what Jarvis keeps or does need the unlocked program
+    if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message") {
+        if let Err(m) = crate::owner::guard() {
+            return json!({ "ok": false, "locked": true, "message": m });
+        }
+    }
     match name {
         // the «Стоп» button of the work with an object: ends the dictation, cancels a running generation (its late result
         // is dropped), keeps the object. The answer says what really happened.
@@ -353,6 +359,120 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             let ok = false;
             json!({ "ok": ok, "message": if ok { "Windows просят обновить значки. Если старые остались: удалите ярлык и создайте заново, а при необходимости удалите файлы IconCache.db и iconcache_*.db в %localappdata% и перезапустите проводник." } else { "Доступно только в Windows" } })
         }
+        // permissions centre, owner password
+        "perms_list" => json!({ "ok": true, "items": crate::perms::json() }),
+        "perms_set" => match crate::perms::Cap::from_id(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) {
+            Some(c) => match crate::perms::set(c, body.get("value").and_then(|v| v.as_bool()).unwrap_or(false)) {
+                Ok(()) => json!({ "ok": true }),
+                Err(e) => json!({ "ok": false, "message": e }),
+            },
+            None => json!({ "ok": false, "message": "Неизвестное разрешение." }),
+        },
+        "owner_status" => json!({ "ok": true, "set": crate::owner::is_set(), "unlocked": crate::owner::unlocked(), "message": crate::owner::message() }),
+        "owner_set" => match crate::owner::set_password(body.get("new").and_then(|v| v.as_str()).unwrap_or(""), body.get("old").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(code) => json!({ "ok": true, "recovery": code, "message": "Пароль сохранён. Запишите код восстановления: он показан один раз." }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "owner_unlock" => match crate::owner::unlock(body.get("password").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(()) => json!({ "ok": true, "message": "Разблокировано на 15 минут." }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "owner_lock" => { crate::owner::lock(); json!({ "ok": true }) }
+        "owner_remove" => match crate::owner::remove_password(body.get("password").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(()) => json!({ "ok": true, "message": "Пароль снят." }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "owner_recover" => match crate::owner::recover(body.get("code").and_then(|v| v.as_str()).unwrap_or(""), body.get("new").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(code) => json!({ "ok": true, "recovery": code, "message": "Пароль заменён. Новый код восстановления показан один раз." }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "owner_message" => match crate::owner::set_message(body.get("value").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(()) => json!({ "ok": true }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        // scheduler
+        "sched_list" => {
+            let off = chrono::Local::now().offset().local_minus_utc() as i64;
+            json!({ "ok": true, "items": crate::scheduler::list().iter().map(|j| json!({ "id": j.id, "text": j.text, "enabled": j.enabled, "runs": j.runs, "line": crate::scheduler::describe(j, off) })).collect::<Vec<_>>() })
+        }
+        "sched_add" => {
+            let l = chrono::Local::now();
+            match crate::scheduler::parse(body.get("text").and_then(|v| v.as_str()).unwrap_or(""), l.naive_local(), l.offset().local_minus_utc() as i64) {
+                Some(p) => match crate::perms::check(crate::perms::Cap::Scheduler).and_then(|_| crate::scheduler::add(&p.text, p.at, p.repeat)) {
+                    Ok(j) => { crate::actionlog::record(&format!("Задание: {}", p.text), crate::actionlog::Undo::JobAdd(j.id)); json!({ "ok": true, "message": "Поставил в расписание." }) }
+                    Err(e) => json!({ "ok": false, "message": e }),
+                },
+                None => json!({ "ok": false, "message": "Не понял время. Примеры: «каждый день в 9:00 открой почту», «завтра в 8:30 напомни про встречу», «каждые 30 минут пей воду»." }),
+            }
+        }
+        "sched_remove" => json!({ "ok": crate::scheduler::remove(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) }),
+        "sched_toggle" => json!({ "ok": crate::scheduler::set_enabled(body.get("id").and_then(|v| v.as_str()).unwrap_or(""), body.get("value").and_then(|v| v.as_bool()).unwrap_or(false)) }),
+        // history of actions and undo
+        "undo_list" => json!({ "ok": true, "items": crate::actionlog::list().iter().rev().take(50).map(|e| json!({ "id": e.id, "at": e.at, "what": e.what, "undone": e.undone, "can_undo": crate::actionlog::can_undo(e) })).collect::<Vec<_>>() }),
+        "undo_do" => match crate::actionlog::undo(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(m) => json!({ "ok": true, "message": m }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        // notes and diary
+        "notes_list" => { let mut n = crate::notes::list(); n.reverse(); json!({ "ok": true, "items": n.into_iter().take(200).collect::<Vec<_>>() }) }
+        "notes_delete" => json!({ "ok": crate::notes::delete(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) }),
+        // smart home
+        "home_status" => json!({ "ok": true, "status": crate::smarthome::status_json() }),
+        "home_config" => match crate::smarthome::configure(body.get("url").and_then(|v| v.as_str()).unwrap_or(""), body.get("token").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(()) => json!({ "ok": true, "message": "Сохранено. Включите разрешение «Управлять умным домом» в центре разрешений." }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "home_forget" => json!({ "ok": crate::smarthome::forget() }),
+        "home_devices" => match crate::smarthome::devices() {
+            Ok(d) => json!({ "ok": true, "items": d }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "home_act" => {
+            let id = body.get("entity_id").and_then(|v| v.as_str()).unwrap_or("");
+            match crate::smarthome::devices().and_then(|l| l.into_iter().find(|d| d.entity_id == id).ok_or_else(|| "Такого устройства нет в Home Assistant.".to_string())) {
+                Ok(d) => match crate::smarthome::act(&d, if body.get("value").and_then(|v| v.as_bool()).unwrap_or(false) { crate::smarthome::Act::On } else { crate::smarthome::Act::Off }) {
+                    Ok(()) => json!({ "ok": true, "message": "Сервер принял команду." }),
+                    Err(e) => json!({ "ok": false, "message": e }),
+                },
+                Err(e) => json!({ "ok": false, "message": e }),
+            }
+        }
+        // knowledge base
+        "kb_status" => { let i = crate::kb::load(); json!({ "ok": true, "folders": i.folders, "files": i.docs.len(), "passages": i.docs.iter().map(|d| d.chunks.len()).sum::<usize>(), "updated": i.updated }) }
+        "kb_add" => match crate::kb::add_folder(body.get("path").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(()) => json!({ "ok": true }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "kb_remove" => json!({ "ok": crate::kb::remove_folder(body.get("path").and_then(|v| v.as_str()).unwrap_or("")) }),
+        "kb_clear" => json!({ "ok": crate::kb::clear() }),
+        "kb_reindex" => match crate::kb::reindex() {
+            Ok((f, p)) => json!({ "ok": true, "message": format!("Прочитано файлов: {}, отрывков: {}.", f, p) }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "kb_search" => json!({ "ok": true, "items": crate::kb::search(body.get("q").and_then(|v| v.as_str()).unwrap_or(""), 8) }),
+        // catalogue of programs (winget)
+        "prog_search" => match crate::progsearch::search(body.get("q").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(l) => json!({ "ok": true, "items": l }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "prog_install" => {
+            if let Err(e) = crate::perms::check(crate::perms::Cap::Install) {
+                return json!({ "ok": false, "message": e });
+            }
+            let id = body.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            if !crate::progsearch::valid_id(&id) {
+                return json!({ "ok": false, "message": "Неверный идентификатор программы." });
+            }
+            if matches!(crate::progsearch::status().state.as_str(), "downloading" | "installing" | "searching") {
+                return json!({ "ok": false, "message": "Уже идёт другая установка." });
+            }
+            let p = crate::progsearch::Package { name: body.get("name").and_then(|v| v.as_str()).unwrap_or(&id).chars().take(80).collect(), id, version: String::new(), source: "winget".into() };
+            std::thread::spawn(move || { let _ = crate::progsearch::install(&p); });
+            json!({ "ok": true, "message": "Запускаю установку. Окно установщика покажется само: молча ничего не ставится." })
+        }
+        "prog_status" => json!({ "ok": true, "status": crate::progsearch::status() }),
+        "prog_cancel" => json!({ "ok": crate::progsearch::cancel() }),
+        "prog_history" => { let mut h = crate::progsearch::history(); h.reverse(); json!({ "ok": true, "items": h.into_iter().take(50).collect::<Vec<_>>() }) }
         // memory, contacts and the messenger (memory.rs, contacts.rs, messenger.rs)
         "mem_list" => { let m = crate::memory::load(); json!({ "ok": true, "items": m.items, "auto": m.auto_remember }) }
         "mem_add" => match crate::memory::add_with(body.get("text").and_then(|v| v.as_str()).unwrap_or(""), "window", body.get("replace").and_then(|v| v.as_bool()).unwrap_or(false)) {

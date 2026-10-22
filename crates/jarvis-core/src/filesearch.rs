@@ -509,7 +509,7 @@ pub fn content_supported(ext: &str) -> bool {
 }
 
 // the text of a file, for the formats that can really be read; None when it cannot be read
-fn file_text(path: &Path, ext: &str) -> Option<String> {
+pub(crate) fn file_text(path: &Path, ext: &str) -> Option<String> {
     let meta = std::fs::metadata(path).ok()?;
     if meta.len() > CONTENT_MAX_BYTES || cloud_only(&meta) {
         return None;

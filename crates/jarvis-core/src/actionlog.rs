@@ -1,0 +1,148 @@
+//! The history of what Jarvis did on its own, with an undo for the actions that CAN be undone: a remembered fact, a note, a job of the
+//! scheduler, a picture that Jarvis created. Actions that cannot be taken back (a message that was opened in a messenger, a
+//! program that was started) are written to the history as «нельзя отменить» and never offered for undo. An undo is applied once, and
+//! only when the thing is still as Jarvis left it.
+
+use crate::{memory, notes, scheduler, store};
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+
+const FILE: &str = "action_log.json";
+const MAX: usize = 300;
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(tag = "op", content = "arg", rename_all = "snake_case")]
+pub enum Undo {
+    // nothing to take back
+    None,
+    MemoryAdd(String),
+    NoteAdd(String),
+    JobAdd(String),
+    // a file Jarvis created
+    FileCreated(String),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Entry {
+    pub id: String,
+    pub at: u64,
+    pub what: String,
+    pub undo: Undo,
+    #[serde(default)]
+    pub undone: bool,
+}
+
+pub fn list() -> Vec<Entry> {
+    store::read::<Vec<Entry>>(FILE).0
+}
+
+pub fn record(what: &str, undo: Undo) {
+    let mut l = list();
+    l.push(Entry { id: store::new_id(), at: store::now(), what: what.chars().take(200).collect(), undo, undone: false });
+    let n = l.len();
+    if n > MAX {
+        l.drain(..n - MAX);
+    }
+    let _ = store::write(FILE, &l);
+}
+
+pub fn can_undo(e: &Entry) -> bool {
+    !e.undone && e.undo != Undo::None
+}
+
+fn apply(u: &Undo) -> Result<String, String> {
+    match u {
+        Undo::None => Err("Это действие нельзя отменить.".into()),
+        Undo::MemoryAdd(id) => if memory::delete(id) { Ok("Убрал запись из памяти.".into()) } else { Err("Записи уже нет в памяти.".into()) },
+        Undo::NoteAdd(id) => if notes::delete(id) { Ok("Убрал запись из дневника.".into()) } else { Err("Записи уже нет.".into()) },
+        Undo::JobAdd(id) => if scheduler::remove(id) { Ok("Убрал задание из расписания.".into()) } else { Err("Задания уже нет.".into()) },
+        Undo::FileCreated(p) => {
+            let path = PathBuf::from(p);
+            // only inside the folder where Jarvis puts its own files
+            if !path.starts_with(crate::imagegen::out_dir()) && !cfg!(test) {
+                return Err("Этот файл не в папке Jarvis, его я не трогаю.".into());
+            }
+            std::fs::remove_file(&path).map(|_| "Удалил созданный файл.".to_string()).map_err(|_| "Файла уже нет или он занят.".to_string())
+        }
+    }
+}
+
+// undoes the entry (or the last one that can be undone when `id` is empty); marks it undone only when it worked
+pub fn undo(id: &str) -> Result<String, String> {
+    let mut l = list();
+    let i = if id.is_empty() { l.iter().rposition(can_undo) } else { l.iter().position(|e| e.id == id) }.ok_or("Нечего отменять.")?;
+    if l[i].undone {
+        return Err("Это уже отменено.".into());
+    }
+    let r = apply(&l[i].undo)?;
+    l[i].undone = true;
+    store::write(FILE, &l)?;
+    Ok(format!("{} ({})", r, l[i].what))
+}
+
+pub fn clear() -> bool {
+    store::write(FILE, &Vec::<Entry>::new()).is_ok()
+}
+
+// «верни как было» / «откати последнее действие» / «undo last action»; «покажи историю действий»
+pub fn parse(text: &str) -> Option<bool> {
+    let n = crate::textnorm::normalize(text);
+    match n.as_str() {
+        "верни как было" | "откати последнее действие" | "откати последнее" | "undo last action" | "undo that" | "отмени последнее действие джарвиса" => Some(true),
+        "покажи историю действий" | "что ты сделал" | "история действий" | "show action history" => Some(false),
+        _ => None,
+    }
+}
+
+pub fn summary(n: usize) -> String {
+    let l = list();
+    if l.is_empty() {
+        return "История действий пуста.".into();
+    }
+    l.iter().rev().take(n).map(|e| format!("— {}{}", e.what, if e.undone { " (отменено)" } else if e.undo == Undo::None { " (нельзя отменить)" } else { "" })).collect::<Vec<_>>().join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn undo_takes_back_the_last_undoable_action_once() {
+        store::with_temp(|| {
+            let id = match memory::add("мой кот — Барсик", "t").unwrap() { memory::Added::Added(i) => i, _ => panic!() };
+            record("Запомнил: кот", Undo::MemoryAdd(id));
+            record("Открыл чат с Маликой", Undo::None);
+            // the last action cannot be undone: the one before it is
+            let r = undo("").unwrap();
+            assert!(r.contains("Убрал запись из памяти"), "{}", r);
+            assert!(memory::load().items.is_empty());
+            assert!(undo("").is_err(), "nothing left, and the same one is not undone twice");
+            assert!(summary(5).contains("Открыл чат") && summary(5).contains("(нельзя отменить)") && summary(5).contains("(отменено)"));
+        });
+    }
+
+    #[test]
+    fn a_job_and_a_file_can_be_undone_and_a_vanished_thing_is_reported() {
+        store::with_temp(|| {
+            let j = scheduler::add("открой почту", 10, scheduler::Repeat::Daily).unwrap();
+            record("Задание", Undo::JobAdd(j.id.clone()));
+            assert!(undo("").is_ok() && scheduler::list().is_empty());
+            let d = tempfile::tempdir().unwrap();
+            let f = d.path().join("a.png");
+            std::fs::write(&f, b"x").unwrap();
+            record("Картинка", Undo::FileCreated(f.to_string_lossy().into()));
+            assert!(undo("").is_ok() && !f.exists());
+            // already gone
+            record("Картинка 2", Undo::FileCreated(f.to_string_lossy().into()));
+            assert!(undo("").is_err());
+            assert!(!list().last().unwrap().undone, "a failed undo is not marked as done");
+        });
+    }
+
+    #[test]
+    fn phrases() {
+        assert_eq!(parse("Верни как было"), Some(true));
+        assert_eq!(parse("покажи историю действий"), Some(false));
+        assert_eq!(parse("отмени последнее действие"), None, "that phrase belongs to the document sessions");
+    }
+}

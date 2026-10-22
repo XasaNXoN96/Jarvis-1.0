@@ -125,6 +125,15 @@ pub mod translate;
 pub mod contacts;
 pub mod messenger;
 pub mod features;
+pub mod scheduler;
+pub mod notes;
+pub mod owner;
+pub mod perms;
+pub mod progsearch;
+pub mod smarthome;
+pub mod imagegen;
+pub mod kb;
+pub mod actionlog;
 #[cfg(target_os = "windows")]
 pub mod notify_win;
 pub mod diag;

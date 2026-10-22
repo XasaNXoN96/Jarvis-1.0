@@ -744,19 +744,35 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
     }
     // memory, translation, messenger (features.rs): answered locally, nothing is sent without a confirmation
     let original_text = ORIGINAL.lock().trim().to_string();
-    if let Some(reply) = jarvis_core::features::handle(&original_text) {
-        let msg = reply.text;
-        open_request(text, "command");
-        say(&msg);
-        ipc::send(IpcEvent::Output { text: msg.clone() });
-        jarvis_core::dialog::reply(&msg, "local");
-        jarvis_core::dialog::end(true);
-        jarvis_core::uistate::log_action(text, "функции Jarvis", true);
-        if jarvis_core::tts::is_enabled() {
-            jarvis_core::tts::speak(&msg);
+    // (not while a session waits for its own «да» / dictation: the session takes the phrase)
+    if jarvis_core::session::kind().is_none() {
+        // results that come later (a picture): said and shown like any answer
+        jarvis_core::features::set_announcer(Box::new(|msg| {
+            say(msg);
+            ipc::send(IpcEvent::Output { text: msg.to_string() });
+            jarvis_core::dialog::begin("(задание Jarvis)", "command");
+            jarvis_core::dialog::reply(msg, "local");
+            jarvis_core::dialog::end(true);
+            if jarvis_core::tts::is_enabled() {
+                jarvis_core::tts::speak(msg);
+            }
+        }));
+    }
+    if jarvis_core::session::kind().is_none() {
+        if let Some(reply) = jarvis_core::features::handle(&original_text) {
+            let msg = reply.text;
+            open_request(text, "command");
+            say(&msg);
+            ipc::send(IpcEvent::Output { text: msg.clone() });
+            jarvis_core::dialog::reply(&msg, "local");
+            jarvis_core::dialog::end(true);
+            jarvis_core::uistate::log_action(text, "функции Jarvis", true);
+            if jarvis_core::tts::is_enabled() {
+                jarvis_core::tts::speak(&msg);
+            }
+            ipc::send(IpcEvent::Idle);
+            return false;
         }
-        ipc::send(IpcEvent::Idle);
-        return false;
     }
     let commands_list = match COMMANDS_LIST.get() {
         Some(c) => c,

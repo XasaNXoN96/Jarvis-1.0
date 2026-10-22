@@ -2,7 +2,7 @@
 //! `None` = not for these features, the normal command search goes on. Nothing here executes silently: the messenger always waits
 //! for a confirmation, and every answer says what really happened.
 
-use crate::{confirm, contacts, memory, messenger, store, textnorm, translate};
+use crate::{actionlog, confirm, contacts, imagegen, kb, memory, messenger, notes, owner, perms, progsearch, scheduler, smarthome, store, translate};
 use parking_lot::Mutex;
 
 pub struct Reply {
@@ -95,7 +95,22 @@ fn answer_pending(text: &str) -> Option<Reply> {
     }
 }
 
+// a result that comes later (a picture is drawn for a minute): the app says it the way it says everything
+static ANNOUNCER: once_cell::sync::OnceCell<Box<dyn Fn(&str) + Send + Sync>> = once_cell::sync::OnceCell::new();
+pub fn set_announcer(f: Box<dyn Fn(&str) + Send + Sync>) {
+    let _ = ANNOUNCER.set(f);
+}
+fn announce_later(text: &str) {
+    match ANNOUNCER.get() {
+        Some(f) => f(text),
+        None => log::info!("{}", text),
+    }
+}
+
 fn do_translate(req: &translate::Request) -> String {
+    if let Err(e) = perms::check(perms::Cap::AiNetwork) {
+        return e;
+    }
     let cancel = std::sync::atomic::AtomicBool::new(false);
     let ask = |system: &str, user: &str| crate::ai::complete(system, user, &cancel).map_err(|e| e.user_text());
     match translate::translate(req, &ask) {
@@ -105,6 +120,9 @@ fn do_translate(req: &translate::Request) -> String {
 }
 
 fn do_messenger(p: &messenger::Parsed) -> Option<Reply> {
+    if let Err(e) = perms::check(perms::Cap::Messenger).and_then(|_| owner::guard()) {
+        return r(e);
+    }
     match messenger::prepare(p) {
         messenger::Prepared::Ask(q) => r(q),
         messenger::Prepared::Ready(o) => {
@@ -119,8 +137,14 @@ fn do_messenger(p: &messenger::Parsed) -> Option<Reply> {
 
 fn do_memory(text: &str) -> Option<Reply> {
     if let Some(fact) = memory::parse_remember(text) {
+        if let Err(e) = perms::check(perms::Cap::Memory) {
+            return r(e);
+        }
         return match memory::add(&fact, "command") {
-            Ok(memory::Added::Added(_)) => r(format!("Запомнил: {}.", fact)),
+            Ok(memory::Added::Added(id)) => {
+                actionlog::record(&format!("Запомнил: {}", fact), actionlog::Undo::MemoryAdd(id));
+                r(format!("Запомнил: {}.", fact))
+            }
             Ok(memory::Added::Duplicate(_)) => r("Это я уже помню."),
             Ok(memory::Added::Conflict(_, old)) => {
                 // the old fact is replaced only when the user says so
@@ -138,6 +162,9 @@ fn do_memory(text: &str) -> Option<Reply> {
         };
     }
     if let Some(q) = memory::parse_forget(text) {
+        if let Err(e) = owner::guard() {
+            return r(e);
+        }
         let hits = memory::search(&q);
         return match hits.len() {
             0 => r("Такого в памяти нет."),
@@ -151,10 +178,93 @@ fn do_memory(text: &str) -> Option<Reply> {
     None
 }
 
+fn local_now() -> (chrono::NaiveDateTime, i64) {
+    let l = chrono::Local::now();
+    (l.naive_local(), l.offset().local_minus_utc() as i64)
+}
+
+fn do_notes(text: &str) -> Option<Reply> {
+    use notes::Cmd;
+    let cmd = notes::parse(text)?;
+    if let Err(e) = perms::check(perms::Cap::Memory) {
+        return r(e);
+    }
+    let (now, off) = local_now();
+    match cmd {
+        Cmd::Write { text, kind } => match notes::add(&text, kind, store::now()) {
+            Ok(n) => {
+                actionlog::record(&format!("Записал в {}: {}", if kind == "diary" { "дневник" } else { "заметки" }, text), actionlog::Undo::NoteAdd(n.id));
+                r(if kind == "diary" { "Записал в дневник." } else { "Записал заметку." })
+            }
+            Err(e) => r(e),
+        },
+        Cmd::Read { days_back } => {
+            let list = notes::on_day(notes::day_for(now.date(), days_back), off);
+            if list.is_empty() {
+                r(format!("За {} записей нет.", if days_back == 0 { "сегодня" } else { "вчера" }))
+            } else {
+                r(list.iter().map(|n| n.text.clone()).collect::<Vec<_>>().join(". "))
+            }
+        }
+        Cmd::Find(q) => {
+            let h = notes::search(&q);
+            if h.is_empty() { r("В дневнике этого нет.") } else { r(h.iter().take(5).map(|n| n.text.clone()).collect::<Vec<_>>().join(". ")) }
+        }
+    }
+}
+
+fn do_scheduler(text: &str) -> Option<Reply> {
+    let (now, off) = local_now();
+    let plan = scheduler::parse(text, now, off)?;
+    if let Err(e) = perms::check(perms::Cap::Scheduler).and_then(|_| owner::guard()) {
+        return r(e);
+    }
+    match scheduler::add(&plan.text, plan.at, plan.repeat) {
+        Ok(j) => {
+            actionlog::record(&format!("Задание: {}", plan.text), actionlog::Undo::JobAdd(j.id.clone()));
+            r(format!("Поставил: {}.", scheduler::describe(&j, off)))
+        }
+        Err(e) => r(e),
+    }
+}
+
+fn do_images(text: &str) -> Option<Reply> {
+    let (video, prompt) = imagegen::parse(text)?;
+    if video {
+        return r(imagegen::generate_video(&prompt).unwrap_err());
+    }
+    if let Err(e) = perms::check(perms::Cap::AiNetwork) {
+        return r(e);
+    }
+    std::thread::spawn(move || match imagegen::generate(&prompt) {
+        Ok(p) => {
+            actionlog::record(&format!("Нарисовал: {}", prompt), actionlog::Undo::FileCreated(p.to_string_lossy().into()));
+            announce_later(&format!("Готово, картинка сохранена: {}", p.display()));
+        }
+        Err(e) => announce_later(&format!("Не получилось нарисовать: {}", e)),
+    });
+    r("Рисую, это может занять минуту. Скажу, когда будет готово.")
+}
+
+fn do_programs(text: &str) -> Option<Reply> {
+    let n = crate::textnorm::normalize(text);
+    let q = ["найди программу ", "найди приложение ", "find program "].iter().find_map(|p| n.strip_prefix(p))?.to_string();
+    Some(Reply {
+        text: match progsearch::search(&q) {
+            Ok(l) if l.is_empty() => "В каталоге Windows такой программы нет.".into(),
+            Ok(l) => format!("Нашёл в каталоге Windows: {}. Чтобы поставить, откройте Программы → Каталог и нажмите «Установить»: молча я ничего не ставлю.", l.iter().take(3).map(|p| format!("{} ({})", p.name, p.version)).collect::<Vec<_>>().join(", ")),
+            Err(e) => e,
+        },
+    })
+}
+
 // `text` is the original phrase of the user (capitals and punctuation kept)
 pub fn handle(text: &str) -> Option<Reply> {
     if let Some(a) = answer_pending(text) {
         return Some(a);
+    }
+    if let Some(undo) = actionlog::parse(text) {
+        return r(if undo { match owner::guard().and_then(|_| actionlog::undo("")) { Ok(m) => m, Err(e) => e } } else { actionlog::summary(5) });
     }
     if let Some(req) = translate::parse(text) {
         return r(do_translate(&req));
@@ -162,7 +272,25 @@ pub fn handle(text: &str) -> Option<Reply> {
     if let Some(p) = messenger::parse(text) {
         return do_messenger(&p);
     }
-    let _ = (&contacts::list, &textnorm::normalize);
+    if let Some(r) = do_images(text) {
+        return Some(r);
+    }
+    if let Some(a) = kb::handle(text) {
+        return r(a);
+    }
+    if let Some(r) = do_notes(text) {
+        return Some(r);
+    }
+    if let Some(r) = do_scheduler(text) {
+        return Some(r);
+    }
+    if let Some(r) = do_programs(text) {
+        return Some(r);
+    }
+    if let Some(m) = smarthome::handle(text) {
+        return r(m);
+    }
+    let _ = &contacts::list;
     do_memory(text)
 }
 
