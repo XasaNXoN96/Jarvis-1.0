@@ -211,8 +211,12 @@ fn do_memory(text: &str) -> Option<Reply> {
         return match hits.len() {
             0 => r("Такого в памяти нет."),
             1 => {
-                memory::delete(&hits[0].id);
-                r(format!("Забыл: {}.", hits[0].text))
+                if memory::delete(&hits[0].id) {
+                    actionlog::record(&format!("Забыл: {}", hits[0].text), actionlog::Undo::MemoryRestore(hits[0].clone()));
+                    r(format!("Забыл: {}. Если это ошибка, скажите «верни как было».", hits[0].text))
+                } else {
+                    r("Не получилось забыть: запись не удалилась.")
+                }
             }
             n => r(format!("Подходит {} записей, уточните, какую забыть: {}.", n, hits.iter().take(3).map(|e| format!("«{}»", e.text)).collect::<Vec<_>>().join(", "))),
         };

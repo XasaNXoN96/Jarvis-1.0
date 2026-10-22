@@ -835,9 +835,10 @@ mod tests {
     // «поставь таймер на 2 секунды» -> after two seconds the notification of the timer exists (and is meant to be said)
     #[test]
     fn a_timer_set_by_voice_ends_with_a_notification() {
-        let _u = crate::uistate::TEST_LOCK.lock();
-        // the phone is off while the timer rings: its note must not land in the queue a phone test is reading
+        // (the phone first, then the settings: the order of every other test, the opposite one is a deadlock)
         let _p = crate::remote::PHONE_TEST_LOCK.lock();
+        // the phone is off while the timer rings: its note must not land in the queue a phone test is reading
+        let _u = crate::uistate::TEST_LOCK.lock();
         crate::remote::phone_for_tests(false, false);
         crate::tts::set_enabled(true);
         let marker = format!("{}", rand::random::<u32>());

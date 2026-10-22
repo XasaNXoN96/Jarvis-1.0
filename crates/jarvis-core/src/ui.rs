@@ -265,7 +265,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         }
     }
     // with a password of the owner set, the actions that change what Jarvis keeps or does need the unlocked program
-    if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message" | "audit_clear" | "ca_apply" | "pl_add" | "pl_remove" | "persona_set" | "pair_start" | "pair_revoke" | "comp_do" | "sync_folder" | "sync_run" | "sync_clear" | "wol_add" | "wol_remove" | "wol_wake" | "mem_use_ai") {
+    if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "notes_edit" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message" | "audit_clear" | "ca_apply" | "pl_add" | "pl_remove" | "persona_set" | "pair_start" | "pair_revoke" | "comp_do" | "sync_folder" | "sync_run" | "sync_clear" | "wol_add" | "wol_remove" | "wol_wake" | "mem_use_ai") {
         if let Err(m) = crate::owner::guard() {
             return json!({ "ok": false, "locked": true, "message": m });
         }
@@ -485,7 +485,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         "audit_get" => {
             let g = |k: &str| body.get(k).and_then(|v| v.as_str()).unwrap_or("").chars().take(60).collect::<String>();
             let within = body.get("within").and_then(|v| v.as_u64()).unwrap_or(0);
-            json!({ "ok": true, "log": crate::audit::json_filtered(&g("q"), &g("door"), &g("risk"), &g("decision"), within) })
+            json!({ "ok": true, "log": crate::audit::json_filtered(&g("q"), &g("door"), &g("risk"), &g("decision"), within, body.get("op").and_then(|v| v.as_u64()).unwrap_or(0)) })
         }
         "audit_clear" => json!({ "ok": true, "removed": crate::audit::clear() }),
         "name_test_start" => { crate::nametest::start(); json!({ "ok": true, "status": crate::nametest::status_json() }) }
@@ -582,7 +582,27 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         },
         // notes and diary
         "notes_list" => { let mut n = crate::notes::list(); n.reverse(); json!({ "ok": true, "items": n.into_iter().take(200).collect::<Vec<_>>() }) }
-        "notes_delete" => json!({ "ok": crate::notes::delete(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) }),
+        "notes_delete" => {
+            let id = body.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let note = crate::notes::get(id);
+            let done = crate::notes::delete(id);
+            match (done, note) {
+                (true, Some(n)) => json!({ "ok": true, "message": "Удалено.", "undo": crate::actionlog::record("Удалена запись дневника", crate::actionlog::Undo::NoteRestore(n)) }),
+                _ => json!({ "ok": done }),
+            }
+        }
+        "notes_edit" => {
+            let (id, text) = (body.get("id").and_then(|v| v.as_str()).unwrap_or(""), body.get("text").and_then(|v| v.as_str()).unwrap_or(""));
+            match crate::notes::update(id, text) {
+                Ok(old) => {
+                    let now = crate::notes::get(id).map(|n| n.text).unwrap_or_default();
+                    let undo = crate::actionlog::record("Правка записи дневника", crate::actionlog::Undo::NoteRevert(id.to_string(), old, now));
+                    json!({ "ok": true, "message": "Сохранено.", "undo": undo })
+                }
+                Err(e) => json!({ "ok": false, "message": e }),
+            }
+        }
+        "notes_export" => json!({ "ok": true, "text": crate::notes::export_text() }),
         // smart home
         "home_status" => json!({ "ok": true, "status": crate::smarthome::status_json() }),
         "home_config" => match crate::smarthome::configure(body.get("url").and_then(|v| v.as_str()).unwrap_or(""), body.get("token").and_then(|v| v.as_str()).unwrap_or("")) {
@@ -648,11 +668,26 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             Ok(crate::memory::Added::Conflict(id, old)) => json!({ "ok": false, "conflict": true, "id": id, "message": format!("Раньше было иначе: «{}». Заменить?", old) }),
             Err(e) => json!({ "ok": false, "message": e }),
         },
-        "mem_edit" => match crate::memory::edit(body.get("id").and_then(|v| v.as_str()).unwrap_or(""), body.get("text").and_then(|v| v.as_str()).unwrap_or("")) {
-            Ok(()) => json!({ "ok": true, "message": "Сохранено." }),
-            Err(e) => json!({ "ok": false, "message": e }),
-        },
-        "mem_delete" => json!({ "ok": crate::memory::delete(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) }),
+        "mem_edit" => {
+            let (id, text) = (body.get("id").and_then(|v| v.as_str()).unwrap_or(""), body.get("text").and_then(|v| v.as_str()).unwrap_or(""));
+            match crate::memory::update(id, text) {
+                Ok(old) => {
+                    let now = crate::memory::get(id).map(|e| e.text).unwrap_or_default();
+                    let undo = crate::actionlog::record("Правка записи памяти", crate::actionlog::Undo::MemoryRevert(id.to_string(), old, now));
+                    json!({ "ok": true, "message": "Сохранено.", "undo": undo })
+                }
+                Err(e) => json!({ "ok": false, "message": e }),
+            }
+        }
+        "mem_delete" => {
+            let id = body.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let entry = crate::memory::get(id);
+            let done = crate::memory::delete(id);
+            match (done, entry) {
+                (true, Some(e)) => json!({ "ok": true, "message": "Удалено.", "undo": crate::actionlog::record("Удалена запись памяти", crate::actionlog::Undo::MemoryRestore(e)) }),
+                _ => json!({ "ok": done }),
+            }
+        }
         "mem_export" => json!({ "ok": true, "text": crate::memory::export_text() }),
         "mem_auto" => match crate::memory::set_auto(body.get("value").and_then(|v| v.as_bool()).unwrap_or(false)) {
             Ok(()) => json!({ "ok": true }),

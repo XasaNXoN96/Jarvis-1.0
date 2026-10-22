@@ -18,6 +18,21 @@ pub struct Sample {
     // the system drive
     pub disk_used_gb: Option<f32>,
     pub disk_total_gb: Option<f32>,
+    // the current mode of the main display (Windows reports it; a display with a variable rate shows its mode, not the live rate)
+    pub refresh_hz: Option<u32>,
+}
+
+// two readings closer than this are one: the numbers are shared by the window, the phone and the game line, and the load of the
+// processor between two readings a few milliseconds apart is noise
+pub const MIN_GAP_MS: u64 = 800;
+
+pub fn reuse_cached(age_ms: u64) -> bool {
+    age_ms < MIN_GAP_MS
+}
+
+// the frequency that Windows reports for the current mode: 0 and 1 mean «the default of the hardware», which is not a number
+pub fn real_hz(v: u32) -> Option<u32> {
+    if v > 1 && v <= 1000 { Some(v) } else { None }
 }
 
 // the load of the processor between two readings of (idle, kernel + user) times
@@ -132,8 +147,31 @@ mod win {
     });
 
     pub fn sample() -> Sample {
+        static CACHE: Lazy<Mutex<Option<(std::time::Instant, Sample)>>> = Lazy::new(|| Mutex::new(None));
+        // (held during the reading: two callers at once get one reading and the load of the processor stays meaningful)
+        let mut c = CACHE.lock();
+        if let Some((at, s)) = c.as_ref() {
+            if reuse_cached(at.elapsed().as_millis() as u64) {
+                return s.clone();
+            }
+        }
+        let s = read();
+        *c = Some((std::time::Instant::now(), s.clone()));
+        s
+    }
+
+    fn read() -> Sample {
         let mut s = Sample::default();
         unsafe {
+            {
+                use winapi::um::wingdi::DEVMODEW;
+                use winapi::um::winuser::{EnumDisplaySettingsW, ENUM_CURRENT_SETTINGS};
+                let mut dm: DEVMODEW = std::mem::zeroed();
+                dm.dmSize = std::mem::size_of::<DEVMODEW>() as u16;
+                if EnumDisplaySettingsW(std::ptr::null(), ENUM_CURRENT_SETTINGS, &mut dm) != 0 {
+                    s.refresh_hz = real_hz(dm.dmDisplayFrequency);
+                }
+            }
             let mut m: MEMORYSTATUSEX = std::mem::zeroed();
             m.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
             GlobalMemoryStatusEx(&mut m);
@@ -226,12 +264,26 @@ pub fn monitor_json(s: &Sample, available: bool) -> serde_json::Value {
     });
     items.push(match s.gpu_temp_c { Some(t) => ok("gpu_temp", "Температура видеокарты", format!("{} °C", t), Some(t.min(100))), None => na("gpu_temp", "Температура видеокарты", nv) });
     items.push(match s.gpu_clock_mhz { Some(c) => ok("gpu_clock", "Частота видеокарты", format!("{} МГц", c), None), None => na("gpu_clock", "Частота видеокарты", nv) });
+    items.push(match s.refresh_hz { Some(h) => ok("refresh", "Частота экрана", format!("{} Гц", h), None), None => na("refresh", "Частота экрана", "Windows не сообщил частоту режима экрана") });
     json!({ "items": items })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn readings_are_shared_and_the_display_rate_is_never_invented() {
+        assert!(reuse_cached(0) && reuse_cached(MIN_GAP_MS - 1));
+        assert!(!reuse_cached(MIN_GAP_MS), "after the gap a new reading is made");
+        assert_eq!((real_hz(0), real_hz(1), real_hz(60), real_hz(144), real_hz(99_999)), (None, None, Some(60), Some(144), None));
+        let na = monitor_json(&Sample { cpu_pct: 1, ram_total_gb: 8.0, ..Default::default() }, true);
+        let r = na["items"].as_array().unwrap().iter().find(|i| i["id"] == "refresh").unwrap();
+        assert_eq!((r["value"].as_str(), r["available"].as_bool()), (Some("Недоступно"), Some(false)));
+        let yes = monitor_json(&Sample { cpu_pct: 1, ram_total_gb: 8.0, refresh_hz: Some(144), ..Default::default() }, true);
+        let r = yes["items"].as_array().unwrap().iter().find(|i| i["id"] == "refresh").unwrap();
+        assert_eq!(r["value"], "144 Гц");
+    }
 
     #[test]
     fn the_load_of_the_processor_is_the_busy_part_of_the_time_between_two_readings() {

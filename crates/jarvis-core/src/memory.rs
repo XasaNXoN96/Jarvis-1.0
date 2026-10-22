@@ -132,14 +132,60 @@ pub fn add_with(text: &str, source: &str, replace: bool) -> Result<Added, String
 }
 
 pub fn edit(id: &str, text: &str) -> Result<(), String> {
+    update(id, text).map(|_| ())
+}
+
+// edits an entry; returns the text it had before (for the undo). An empty text, a secret and a text that another entry already has are refused.
+pub fn update(id: &str, text: &str) -> Result<String, String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("Запись не может быть пустой: чтобы убрать её, нажмите «Удалить».".into());
+    }
     if looks_secret(text) {
         return Err("Пароли, ключи, токены и номера карт я не запоминаю.".into());
     }
     let mut m = load();
+    let norm = textnorm::normalize(text);
+    if m.items.iter().any(|e| e.id != id && textnorm::normalize(&e.text) == norm) {
+        return Err("Такая запись уже есть.".into());
+    }
     let e = m.items.iter_mut().find(|e| e.id == id).ok_or("такой записи нет")?;
-    e.text = text.trim().chars().take(MAX_LEN).collect();
+    let old = e.text.clone();
+    e.text = text.chars().take(MAX_LEN).collect();
     e.updated = store::now();
+    save(&m)?;
+    Ok(old)
+}
+
+pub fn get(id: &str) -> Option<Entry> {
+    load().items.into_iter().find(|e| e.id == id)
+}
+
+// puts a deleted entry back (the undo of a delete): not when it is there again, when the same fact was written anew, or when the memory is full
+pub fn restore(e: Entry) -> Result<(), String> {
+    let mut m = load();
+    if m.items.iter().any(|x| x.id == e.id) {
+        return Err("Эта запись уже в памяти.".into());
+    }
+    let norm = textnorm::normalize(&e.text);
+    if m.items.iter().any(|x| textnorm::normalize(&x.text) == norm) {
+        return Err("Такая запись уже есть, возвращать нечего.".into());
+    }
+    if m.items.len() >= MAX_ITEMS {
+        return Err("Память заполнена.".into());
+    }
+    m.items.push(e);
     save(&m)
+}
+
+// the text of an entry back to what it was, only if it is still what the edit made it
+pub fn revert(id: &str, old: &str, expect_now: &str) -> Result<(), String> {
+    let m = load();
+    let cur = m.items.iter().find(|e| e.id == id).ok_or("Записи уже нет.")?;
+    if cur.text != expect_now {
+        return Err("Запись уже изменена после этой правки, вернуть нельзя.".into());
+    }
+    update(id, old).map(|_| ())
 }
 
 pub fn delete(id: &str) -> bool {
@@ -371,5 +417,29 @@ mod tests {
         assert_eq!(parse_recall("что ты помнишь про день рождения").unwrap(), "день рождения");
         assert_eq!(parse_forget("забудь про чай").unwrap(), "чай");
         assert!(parse_remember("привет").is_none());
+    }
+
+    #[test]
+    fn an_edit_cannot_make_an_empty_entry_a_duplicate_or_hold_a_secret() {
+        store::with_temp(|| {
+            add("Я живу в Ташкенте", "t").unwrap();
+            add("У меня есть кошка", "t").unwrap();
+            let items = load().items;
+            let (a, b) = (items[0].id.clone(), items[1].id.clone());
+            assert!(update(&a, "   ").unwrap_err().contains("пустой"), "an empty text is refused, the old one stays");
+            assert_eq!(get(&a).unwrap().text, "Я живу в Ташкенте");
+            assert!(update(&a, "у меня есть кошка").unwrap_err().contains("уже есть"), "no duplicate through an edit");
+            assert!(update(&a, "мой пароль: hunter2hunter2").unwrap_err().contains("не запоминаю"));
+            assert_eq!(get(&a).unwrap().text, "Я живу в Ташкенте");
+            assert!(update("нет-такого", "что-то").is_err());
+            assert_eq!(update(&b, "У меня есть собака").unwrap(), "У меня есть кошка");
+            // a restore does not make a duplicate and does not replace what is there
+            let e = get(&b).unwrap();
+            assert!(restore(e.clone()).is_err(), "the entry is there");
+            assert!(delete(&b));
+            assert!(restore(e.clone()).is_ok());
+            assert!(restore(e).is_err());
+            assert_eq!(load().items.len(), 2);
+        });
     }
 }

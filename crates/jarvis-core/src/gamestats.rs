@@ -10,6 +10,9 @@ const FILE: &str = "game_sessions.json";
 const MAX_SESSIONS: usize = 300;
 // the game must be away this long to end the session (alt-tab for a moment does not split it)
 pub const AWAY_SECS: u64 = 60;
+// the tracker is fed every 2 s: a longer silence with the same game «in front» means the computer slept (or Jarvis was frozen);
+// the hours of sleep are not game time, so the session ends where it was last seen
+pub const SLEEP_GAP_SECS: u64 = 30;
 pub const MIN_SESSION_SECS: u64 = 30;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
@@ -114,6 +117,13 @@ impl Tracker {
     // `front` = the exe of the game in front (None: no game). Returns a finished session, if one just ended.
     pub fn tick(&mut self, now: u64, front: Option<&str>, s: &sysstat::Sample, fps: Option<u32>) -> Option<Session> {
         match (&mut self.current, front) {
+            (Some(cur), Some(exe)) if cur.exe.eq_ignore_ascii_case(exe) && now.saturating_sub(cur.end) > SLEEP_GAP_SECS && self.away_since.is_none() => {
+                let done = self.current.take();
+                let mut n = Session::new(exe, now);
+                n.add(now, s, fps);
+                self.current = Some(n);
+                done
+            }
             (Some(cur), Some(exe)) if cur.exe.eq_ignore_ascii_case(exe) => {
                 self.away_since = None;
                 cur.add(now, s, fps);
@@ -300,6 +310,22 @@ mod tests {
         let done = t.tick(120, None, &s, None).unwrap();
         assert_eq!((done.exe.as_str(), done.start), ("a.exe", 0));
         assert!(t.current.is_none());
+    }
+
+    #[test]
+    fn hours_of_sleep_are_not_game_time() {
+        let mut t = Tracker::default();
+        let s = smp(10, None);
+        t.tick(0, Some("a.exe"), &s, None);
+        t.tick(2, Some("a.exe"), &s, None);
+        t.tick(4, Some("a.exe"), &s, None);
+        // the computer sleeps for 8 hours with the game in front, then wakes up
+        let done = t.tick(4 + 8 * 3600, Some("a.exe"), &s, None).expect("the old session ends where it was last seen");
+        assert_eq!((done.start, done.end, done.secs()), (0, 4, 4));
+        assert_eq!(t.current.as_ref().unwrap().start, 4 + 8 * 3600, "a new session starts after the wake-up");
+        // the ordinary ticks every 2 seconds (and a short stutter) do not split a session
+        t.tick(4 + 8 * 3600 + 2, Some("a.exe"), &s, None);
+        assert!(t.tick(4 + 8 * 3600 + 20, Some("a.exe"), &s, None).is_none());
     }
 
     #[test]

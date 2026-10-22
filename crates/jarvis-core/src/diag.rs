@@ -785,13 +785,24 @@ pub fn json() -> Value {
 // events of the program that carry no personal text: start, voice, AI state, errors. Events that quote what the user
 // said («…») and notifications are left out.
 fn safe_events(n: usize) -> Vec<Value> {
-    crate::uistate::recent_events(80)
+    let base: Vec<Value> = crate::uistate::recent_events(80)
         .into_iter()
         .filter(|e| matches!(e.kind.as_str(), "start" | "voice" | "ai" | "error"))
         .filter(|e| !e.text.contains('«') && !e.text.starts_with("Уведомление") && !e.text.starts_with("Вопрос"))
-        .take(n)
         .map(|e| json!({ "time": e.time, "kind": e.kind, "text": sanitize(&e.text) }))
-        .collect()
+        .collect();
+    merge_mic_events(base, crate::voicediag::recent(40), n)
+}
+
+// the microphone journal (voicediag.rs: states and errors of the audio path, never sound or words) joins the events as «voice»,
+// newest first
+pub fn merge_mic_events(mut base: Vec<Value>, mic: Vec<crate::voicediag::Event>, n: usize) -> Vec<Value> {
+    for e in mic {
+        base.push(json!({ "time": e.at, "kind": "voice", "text": format!("Микрофон: {}", sanitize(&e.text)) }));
+    }
+    base.sort_by(|a, b| b["time"].as_u64().unwrap_or(0).cmp(&a["time"].as_u64().unwrap_or(0)));
+    base.truncate(n);
+    base
 }
 
 // removes anything that looks like a secret: the saved AI key, the remote token, keys and tokens in URLs and headers

@@ -1,0 +1,39 @@
+name: UI check (Chromium)
+
+# The page of the window is a single HTML file. These checks open it in Chromium with a mocked server and look at it at the sizes and
+# Windows scales that matter (100/125/150/200 %): no horizontal overflow, the security journal (search, filters, empty state, keyboard).
+# They do NOT replace a look at the real WebView2 window on Windows.
+on:
+  push:
+    branches: [main, "dev/**"]
+    paths:
+      - "crates/jarvis-core/src/ui_page.html"
+      - "crates/jarvis-core/src/orbkit.js"
+      - "tests/ui/**"
+      - ".github/workflows/ui-check.yml"
+  workflow_dispatch:
+
+jobs:
+  chromium:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save playwright@1.49.1
+          npx playwright install --with-deps chromium
+      - name: Overflow of every page at every scale
+        run: node tests/ui/pages_overflow.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright
+      - name: Memory delete / edit / undo
+        run: node tests/ui/memory_undo.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright
+      - name: Security journal page
+        run: node tests/ui/audit_page.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright

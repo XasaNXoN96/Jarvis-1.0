@@ -544,7 +544,7 @@
   .sw span::after { content: ""; position: absolute; left: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: .2s; }
   .sw input:checked + span { background: #e9e9ec; } .sw input:checked + span::after { transform: translateX(20px); }
   .msgline { font-size: 13px; color: var(--dim); min-height: 18px; } .msgline.ok { color: var(--ok); } .msgline.bad { color: #ff9aa6; }
-  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  .seg { display: inline-flex; flex-wrap: wrap; max-width: 100%; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
   .seg button { background: transparent; border: 0; color: var(--dim); padding: 6px 14px; font: inherit; cursor: pointer; }
   .seg button.active { background: rgba(255,255,255,0.093); color: var(--accent); }
   .cmd { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; background: var(--panel); }
@@ -1500,6 +1500,7 @@
             <select id="au-risk"><option value="">Риск: любой</option><option value="low">низкий</option><option value="medium">средний</option><option value="high">высокий</option></select>
             <select id="au-dec"><option value="">Результат: любой</option><option value="allowed">разрешено</option><option value="refused">отказано</option><option value="asked">ждёт подтверждения</option></select>
             <select id="au-within"><option value="0">За всё время</option><option value="3600">За час</option><option value="86400">За сутки</option></select></div></div>
+        <div class="msgline ok" id="au-opbar" hidden>Показаны записи одной операции, по порядку. <button class="btn" id="au-opoff" type="button">Показать все</button></div>
         <div class="hi-list" id="au-list"></div>
       </div>
       <div class="card acc" data-cat="more" id="perm-card" data-tab="Разрешения"><h3><span class="ei">🛡</span>Центр разрешений</h3>
@@ -1565,6 +1566,7 @@
       </div>
       <div class="card acc" data-cat="more" id="notes-card" data-tab="Дневник"><h3><span class="ei">📓</span>Голосовой дневник и заметки</h3>
         <div class="setrow"><div class="l">Записи<small>«запиши в дневник: …», «заметка: …», «что я записывал вчера», «найди в дневнике …». Пишется только то, что вы сами сказали записать.</small></div></div>
+        <div class="setrow"><div class="l">Экспорт<small>скопировать все записи текстом</small></div><div class="r"><button class="btn" id="notes-export" type="button">Копировать всё</button></div></div>
         <div id="notes-list" class="mem-list"></div>
       </div>
       <div class="card acc" data-cat="more" id="mem-card" data-tab="Память"><h3><span class="ei">🧠</span>Память Jarvis</h3>
@@ -3481,12 +3483,26 @@ $('#sch-add').onclick = async () => { const r = await action('sched_add', { text
 $('#sch-list').onclick = async e => { const b = e.target.closest('button[data-op]'); if (!b) return; const id = b.closest('.mem-item').dataset.id; if (b.dataset.op === 'del') await action('sched_remove', { id }); else await action('sched_toggle', { id, value: b.dataset.on === '1' }); schLoad(); };
 async function notesLoad() {
   const r = await action('notes_list').catch(() => ({ items: [] }));
-  $('#notes-list').innerHTML = (r.items || []).length ? r.items.map(n => '<div class="mem-item" data-id="' + gpEsc(n.id) + '"><span>' + gpEsc(n.text) + '<small>' + (n.kind === 'diary' ? 'дневник' : 'заметка') + ' · ' + new Date(n.at * 1000).toLocaleString('ru-RU') + '</small></span><button class="btn small" type="button">Удалить</button></div>').join('') : '<small class="dim">Записей нет.</small>';
+  $('#notes-list').innerHTML = (r.items || []).length ? r.items.map(n => '<div class="mem-item" data-id="' + gpEsc(n.id) + '"><span>' + gpEsc(n.text) + '<small>' + (n.kind === 'diary' ? 'дневник' : 'заметка') + ' · ' + new Date(n.at * 1000).toLocaleString('ru-RU') + '</small></span><button class="btn small" data-op="edit" type="button">Изменить</button><button class="btn small" data-op="del" type="button">Удалить</button></div>').join('') : '<small class="dim">Записей нет.</small>';
 }
-$('#notes-list').onclick = async e => { const b = e.target.closest('button'); if (!b) return; await action('notes_delete', { id: b.closest('.mem-item').dataset.id }); notesLoad(); };
+$('#notes-list').onclick = async e => {
+  const b = e.target.closest('button[data-op]'); if (!b) return; const row = b.closest('.mem-item'), id = row.dataset.id;
+  if (b.dataset.op === 'del') { const r = await action('notes_delete', { id }).catch(() => ({})); undoMsg(r, 'Запись удалена.'); notesLoad(); return; }
+  const t = prompt('Изменить запись:', row.querySelector('span').firstChild.textContent);
+  if (t != null) { const r = await action('notes_edit', { id, text: t }).catch(() => ({})); undoMsg(r, 'Сохранено.'); notesLoad(); }
+};
+$('#notes-export').onclick = async () => { const r = await action('notes_export').catch(() => ({})); try { await navigator.clipboard.writeText(r.text || ''); memMsg('Скопировано.'); } catch (e) { memMsg('Не удалось скопировать.', false); } };
 
 // ---------- memory, contacts and the messages written by voice ----------
 const memMsg = (t, ok) => { const m = $('#mem-msg'); m.className = 'msgline ' + (ok === false ? 'bad' : 'ok'); m.textContent = t || ''; };
+// the answer of a delete / an edit: the message and, when the change can be taken back, the button «Отменить» (the undo of the action history)
+function undoMsg(r, fallback) {
+  memMsg((r && r.message) || (r && r.ok ? fallback : 'Не получилось.'), !!(r && r.ok));
+  if (!(r && r.ok && r.undo)) return;
+  const m = $('#mem-msg'), b = document.createElement('button'); b.className = 'btn small'; b.type = 'button'; b.id = 'mem-undo'; b.textContent = 'Отменить'; b.style.marginLeft = '10px';
+  b.onclick = async () => { const u = await action('undo_do', { id: r.undo }).catch(() => ({})); memMsg(u.message || (u.ok ? 'Вернул.' : 'Не получилось вернуть.'), !!u.ok); memLoad(); notesLoad(); };
+  m.appendChild(b);
+}
 async function memLoad() {
   const r = await action('mem_list').catch(() => ({ items: [] })); const q = $('#mem-q').value.trim().toLowerCase();
   $('#mem-auto').checked = !!r.auto; $('#mem-useai').checked = r.use_in_ai !== false;
@@ -3495,9 +3511,9 @@ async function memLoad() {
 }
 $('#mem-list').onclick = async e => {
   const b = e.target.closest('button[data-op]'); if (!b) return; const row = b.closest('.mem-item'), id = row.dataset.id;
-  if (b.dataset.op === 'del') { await action('mem_delete', { id }); memLoad(); return; }
+  if (b.dataset.op === 'del') { const r = await action('mem_delete', { id }).catch(() => ({})); undoMsg(r, 'Запись удалена.'); memLoad(); return; }
   const cur = row.querySelector('span').textContent, t = prompt('Изменить запись:', cur);
-  if (t != null && t.trim()) { const r = await action('mem_edit', { id, text: t }).catch(() => ({})); memMsg(r.message, r.ok); memLoad(); }
+  if (t != null) { const r = await action('mem_edit', { id, text: t }).catch(() => ({})); undoMsg(r, 'Сохранено.'); memLoad(); }
 };
 $('#mem-add').onclick = async () => {
   const text = $('#mem-new').value; if (!text.trim()) return;
@@ -4115,14 +4131,17 @@ async function saveAssistantName(name, msg) {
 // the journal of critical actions (Settings → Additionally → Журнал безопасности)
 const AU_DOOR = { voice: 'голос', window: 'окно', phone: 'телефон', telegram: 'Telegram', console: 'консоль', ipc: 'приложение', script: 'сценарий', internal: 'программа', system: 'система' };
 const AU_DEC = { allowed: 'разрешено', refused: 'отказано', asked: 'ждёт подтверждения' };
+let auOp = 0;
 async function auLoad() {
-  const r = await action('audit_get', { q: $('#au-q').value, door: $('#au-door').value, risk: $('#au-risk').value, decision: $('#au-dec').value, within: +$('#au-within').value }).catch(() => null); if (!r || !r.ok) return;
+  const r = await action('audit_get', { q: $('#au-q').value, door: $('#au-door').value, risk: $('#au-risk').value, decision: $('#au-dec').value, within: +$('#au-within').value, op: auOp }).catch(() => null); if (!r || !r.ok) return;
   const l = (r.log && r.log.entries) || [];
   const filtered = !!($('#au-q').value || $('#au-door').value || $('#au-risk').value || $('#au-dec').value || +$('#au-within').value);
-  $('#au-list').innerHTML = l.length ? l.map(e => '<div class="hi-item"><small>' + esc(hiWhen(e.at)) + ' · ' + esc(AU_DOOR[e.door] || e.door) + ' · ' + esc(e.kind) + (e.risk ? ' · риск ' + esc(e.risk) : '') + '</small><div><b>' + esc(e.subject) + '</b> — ' + esc(AU_DEC[e.decision] || e.decision) + (e.confirmed ? ' (подтверждено)' : '') + '</div>' + (e.reason ? '<div class="hi-a">' + esc(e.reason) + '</div>' : '') + '</div>').join('') : '<div class="empty">' + (filtered && r.log.total ? 'По этим условиям ничего не найдено (всего записей: ' + r.log.total + ').' : 'Записей пока нет.') + '</div>';
+  $('#au-list').innerHTML = l.length ? l.map(e => '<div class="hi-item"><small>' + esc(hiWhen(e.at)) + ' · ' + esc(AU_DOOR[e.door] || e.door) + ' · ' + esc(e.kind) + (e.risk ? ' · риск ' + esc(e.risk) : '') + (e.op && !auOp ? ' · <a href="#" class="au-op" data-op="' + e.op + '">вся операция</a>' : '') + '</small><div><b>' + esc(e.subject) + '</b> — ' + esc(AU_DEC[e.decision] || e.decision) + (e.confirmed ? ' (подтверждено)' : '') + '</div>' + (e.reason ? '<div class="hi-a">' + esc(e.reason) + '</div>' : '') + '</div>').join('') : '<div class="empty">' + (filtered && r.log.total ? 'По этим условиям ничего не найдено (всего записей: ' + r.log.total + ').' : 'Записей пока нет.') + '</div>';
 }
 ['au-door', 'au-risk', 'au-dec', 'au-within'].forEach(id => $('#' + id).onchange = auLoad);
 $('#au-q').oninput = () => { clearTimeout(auLoad.t); auLoad.t = setTimeout(auLoad, 250); };
+$('#au-list').addEventListener('click', e => { const a = e.target.closest('.au-op'); if (!a) return; e.preventDefault(); auOp = +a.dataset.op; $('#au-opbar').hidden = false; auLoad(); });
+$('#au-opoff').onclick = () => { auOp = 0; $('#au-opbar').hidden = true; auLoad(); };
 $('#au-refresh').onclick = auLoad;
 $('#au-clear').onclick = async () => { if (!confirm('Очистить журнал безопасности?')) return; const r = await action('audit_clear').catch(() => null); if (r && !r.ok) alert(r.message || 'Не получилось'); auLoad(); };
 $('#set-main').addEventListener('click', e => { if (e.target.closest('#audit-card > h3')) setTimeout(auLoad, 60); });

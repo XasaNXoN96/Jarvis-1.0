@@ -27,6 +27,9 @@ pub struct Entry {
     pub decision: String,
     pub confirmed: bool,
     pub reason: String,
+    // the number of the operation (origin::op): entries of one command / one request share it; 0 = none (old entries)
+    #[serde(default)]
+    pub op: u64,
 }
 
 static LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
@@ -56,7 +59,7 @@ pub fn record_door(door: &str, kind: &str, subject: &str, risk: &str, decision: 
     if store::TEST_DIR.lock().is_none() {
         return;
     }
-    let e = Entry { at: store::now(), door: name(door), kind: name(kind), subject: name(subject), risk: name(risk), decision: name(decision), confirmed, reason: reason_text(reason) };
+    let e = Entry { at: store::now(), door: name(door), kind: name(kind), subject: name(subject), risk: name(risk), decision: name(decision), confirmed, reason: reason_text(reason), op: origin::op() };
     let _g = LOCK.lock();
     let mut l = store::read::<Vec<Entry>>(FILE).0;
     l.push(e);
@@ -90,10 +93,20 @@ pub fn filter(list: Vec<Entry>, q: &str, door: &str, risk: &str, decision: &str,
         .collect()
 }
 
-pub fn json_filtered(q: &str, door: &str, risk: &str, decision: &str, within_secs: u64) -> Value {
+/// All entries of one operation, oldest first (the story of one command: asked, confirmed, allowed…).
+pub fn of_operation(list: Vec<Entry>, op: u64) -> Vec<Entry> {
+    if op == 0 {
+        return Vec::new();
+    }
+    let mut v: Vec<Entry> = list.into_iter().filter(|e| e.op == op).collect();
+    v.sort_by_key(|e| e.at);
+    v
+}
+
+pub fn json_filtered(q: &str, door: &str, risk: &str, decision: &str, within_secs: u64, op: u64) -> Value {
     let all = list(200);
     let total = all.len();
-    let shown = filter(all, q, door, risk, decision, within_secs, store::now());
+    let shown = if op != 0 { of_operation(all, op) } else { filter(all, q, door, risk, decision, within_secs, store::now()) };
     json!({ "entries": shown, "total": total })
 }
 
@@ -116,7 +129,20 @@ mod tests {
     use super::*;
 
     fn e(at: u64, door: &str, subject: &str, risk: &str, decision: &str, reason: &str) -> Entry {
-        Entry { at, door: door.into(), kind: "command".into(), subject: subject.into(), risk: risk.into(), decision: decision.into(), confirmed: false, reason: reason.into() }
+        Entry { at, door: door.into(), kind: "command".into(), subject: subject.into(), risk: risk.into(), decision: decision.into(), confirmed: false, reason: reason.into(), op: 0 }
+    }
+
+    #[test]
+    fn the_entries_of_one_operation_are_found_together() {
+        let mut a = e(10, "voice", "x", "low", "asked", "");
+        let mut b = e(20, "voice", "x", "low", "allowed", "");
+        let mut c = e(15, "phone", "y", "low", "allowed", "");
+        a.op = 7;
+        b.op = 7;
+        c.op = 8;
+        let got = of_operation(vec![b.clone(), c, a.clone()], 7);
+        assert_eq!(got, vec![a, b], "only that operation, in the order it happened");
+        assert!(of_operation(vec![e(1, "voice", "x", "low", "allowed", "")], 0).is_empty(), "entries without a number are never glued together");
     }
 
     #[test]

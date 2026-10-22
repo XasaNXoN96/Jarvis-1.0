@@ -77,19 +77,34 @@ pub fn clean(text: &str) -> String {
 thread_local! {
     // the door of the command that runs on this thread now (Lua scripts run on the thread of the command)
     static CURRENT: Cell<Option<Source>> = Cell::new(None);
+    // the number of the operation that runs on this thread (0 = none): every journal entry of one operation carries it
+    static OP: Cell<u64> = Cell::new(0);
 }
 
-pub struct Entered(Option<Source>);
+static OP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+pub struct Entered(Option<Source>, u64);
 
 impl Drop for Entered {
     fn drop(&mut self) {
         CURRENT.with(|c| c.set(self.0));
+        OP.with(|c| c.set(self.1));
     }
 }
 
-// from here until the guard is dropped the commands of this thread come through `source`
+// from here until the guard is dropped the commands of this thread come through `source`.
+// A new operation number is given unless this thread already runs an operation (a script of a command is the same operation).
 pub fn enter(source: Source) -> Entered {
-    Entered(CURRENT.with(|c| c.replace(Some(source))))
+    let prev_op = OP.with(|c| c.get());
+    if prev_op == 0 {
+        OP.with(|c| c.set(OP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
+    }
+    Entered(CURRENT.with(|c| c.replace(Some(source))), prev_op)
+}
+
+// the number of the operation running on this thread; 0 outside of one
+pub fn op() -> u64 {
+    OP.with(|c| c.get())
 }
 
 pub fn run_as<R>(source: Source, f: impl FnOnce() -> R) -> R {
@@ -112,6 +127,25 @@ mod tests {
         assert_eq!(clean("  привет\r\nмир\t"), "привет  мир");
         let i = Incoming::new(Source::Phone, "\u{1}выключи компьютер");
         assert_eq!((i.source, i.text.as_str(), i.via_script), (Source::Phone, "выключи компьютер", false));
+    }
+
+    #[test]
+    fn one_operation_has_one_number_and_nested_doors_keep_it() {
+        assert_eq!(op(), 0);
+        let (a, b);
+        {
+            let _g = enter(Source::Phone);
+            a = op();
+            assert!(a > 0);
+            run_as(Source::Window, || assert_eq!(op(), a, "a script of the command is the same operation"));
+            assert_eq!(op(), a);
+        }
+        assert_eq!(op(), 0);
+        {
+            let _g = enter(Source::Voice);
+            b = op();
+        }
+        assert_ne!(a, b, "the next operation has its own number");
     }
 
     #[test]

@@ -1641,9 +1641,18 @@ mod tests {
     fn https_and_http_on_one_port() {
         let _g = PHONE_TEST_LOCK.lock();
         // every failure names the stage, the port and what the program thought it was doing (the secret is never printed)
+        // other tests set the flag by hand (no listener behind it): with it left on, start() would return at once and nothing would listen.
+        // The flag is cleared and the old accept loop, if there is one, is given the time to see it and close its listener.
+        RUNNING.store(false, Ordering::SeqCst);
+        std::thread::sleep(Duration::from_millis(400));
         let started = start();
         assert!(started.is_ok(), "stage=start port={} error={:?} running={}", PORT, started.as_ref().err(), is_running());
-        std::thread::sleep(Duration::from_millis(500));
+        // wait until the port really accepts connections (up to 15 s): on a loaded runner the start (certificate, bind) is not instant
+        let addr = std::net::SocketAddr::from(([127, 0, 0, 1], PORT));
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        while std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_err() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(100));
+        }
         for scheme in ["https", "http"] {
             let out = std::process::Command::new("curl")
                 .args(["-sk", "--max-time", "5", &format!("{}://127.0.0.1:{}/?t={}", scheme, PORT, token())])
@@ -1746,8 +1755,9 @@ mod tests {
     }
     #[test]
     fn answers_reach_the_phone_that_asked_and_events_reach_it_always() {
-        let _u = crate::uistate::TEST_LOCK.lock();
+        // (the order of the test locks is everywhere: the phone first, then the settings; the other order is a deadlock with the tests that take them the usual way)
         let _g = PHONE_TEST_LOCK.lock();
+        let _u = crate::uistate::TEST_LOCK.lock();
         phone_for_tests(true, true);
         LAST_PHONE_CMD.store(0, Ordering::SeqCst);
         // an answer to a command typed on the computer is not sent to the phone

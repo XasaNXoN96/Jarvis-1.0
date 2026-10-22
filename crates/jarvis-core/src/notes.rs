@@ -58,6 +58,61 @@ pub fn add(text: &str, kind: &str, at: u64) -> Result<Note, String> {
     Ok(n)
 }
 
+pub fn get(id: &str) -> Option<Note> {
+    list().into_iter().find(|n| n.id == id)
+}
+
+// edits the text of a note; returns the old text (for the undo)
+pub fn update(id: &str, text: &str) -> Result<String, String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("Запись не может быть пустой: чтобы убрать её, нажмите «Удалить».".into());
+    }
+    if text.chars().count() > MAX_LEN {
+        return Err(format!("Слишком длинно: до {} символов.", MAX_LEN));
+    }
+    if memory::looks_secret(text) {
+        return Err("Пароли, ключи, токены и номера карт я не записываю.".into());
+    }
+    let mut all = list();
+    let n = all.iter_mut().find(|n| n.id == id).ok_or("такой записи нет")?;
+    let old = std::mem::replace(&mut n.text, text.to_string());
+    n.updated = store::now();
+    store::write(FILE, &all)?;
+    Ok(old)
+}
+
+// puts a deleted note back (the undo of a delete)
+pub fn restore(n: Note) -> Result<(), String> {
+    let mut all = list();
+    if all.iter().any(|x| x.id == n.id) {
+        return Err("Эта запись уже на месте.".into());
+    }
+    if all.len() >= MAX_ITEMS {
+        return Err("Дневник заполнен.".into());
+    }
+    all.push(n);
+    store::write(FILE, &all)
+}
+
+pub fn revert(id: &str, old: &str, expect_now: &str) -> Result<(), String> {
+    let cur = get(id).ok_or("Записи уже нет.")?;
+    if cur.text != expect_now {
+        return Err("Запись уже изменена после этой правки, вернуть нельзя.".into());
+    }
+    update(id, old).map(|_| ())
+}
+
+// all notes as text, oldest first, with the date (UTC) and the kind
+pub fn export_text() -> String {
+    let mut v = list();
+    v.sort_by_key(|n| n.at);
+    v.iter()
+        .map(|n| format!("[{}] {}: {}", chrono::DateTime::from_timestamp(n.at as i64, 0).map(|d| d.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_default(), if n.kind == "diary" { "дневник" } else { "заметка" }, n.text))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 pub fn delete(id: &str) -> bool {
     let mut all = list();
     let n = all.len();
@@ -147,5 +202,20 @@ mod tests {
         assert_eq!(parse("найди в дневнике поездка"), Some(Cmd::Find("поездка".into())));
         assert_eq!(parse("открой браузер"), None);
         assert_eq!(parse("заметка: "), None);
+    }
+
+    #[test]
+    fn notes_can_be_edited_exported_and_a_bad_edit_changes_nothing() {
+        store::with_temp(|| {
+            let a = add("первая", "note", 1_700_000_000).unwrap();
+            add("вторая", "diary", 1_700_000_100).unwrap();
+            assert!(update(&a.id, "").is_err());
+            assert!(update(&a.id, "пароль: hunter2hunter2").is_err());
+            assert_eq!(get(&a.id).unwrap().text, "первая", "a refused edit changes nothing");
+            assert_eq!(update(&a.id, "первая, исправлено").unwrap(), "первая");
+            assert!(get(&a.id).unwrap().updated >= a.updated);
+            let t = export_text();
+            assert!(t.starts_with("[2023-11-14") && t.contains("заметка: первая, исправлено") && t.lines().nth(1).unwrap().contains("дневник: вторая"), "{}", t);
+        });
     }
 }
