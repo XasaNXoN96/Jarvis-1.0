@@ -431,6 +431,45 @@ pub fn lifecycle_check(data_dir: Result<(), String>, autostart_on: bool, autosta
     check(key, name, Status::Ok, format!("Папка данных доступна для записи; автозапуск {}.{} Закрытие, трей и обновление поверх запущенной программы проверяются в CI установщика.", if autostart_on { "включён" } else { "выключен" }, mem), "")
 }
 
+// the stream of sound from the microphone (wakewatch.rs): flowing, paused on purpose, silent, or stalled
+pub fn watch_check(w: &Value) -> Check {
+    let (name, key) = ("Поток звука с микрофона", "mic_watch");
+    let text = w["text"].as_str().unwrap_or("").to_string();
+    match w["state"].as_str().unwrap_or("") {
+        "ok" => check(key, name, Status::Ok, format!("{}. Это проверка потока звука, а не распознавания слова «Джарвис».", text), ""),
+        "paused" => check(key, name, Status::Unchecked, text, "Включите микрофон в трее или командой «включи микрофон»."),
+        "silent" => check(key, name, Status::Warn, text, "Параметры Windows → Звук → Ввод: проверьте уровень и что микрофон не отключён."),
+        _ if w["gave_up"].as_bool().unwrap_or(false) => check(key, name, Status::Error, text, "Подключите микрофон заново и перезапустите Джарвиса."),
+        _ => check(key, name, Status::Warn, text, "Подождите несколько секунд: Джарвис переоткрывает микрофон сам."),
+    }
+}
+
+// the password of the owner and the permissions switched off
+pub fn security_check(owner_set: bool, unlocked: bool, off: &[&str]) -> Check {
+    let (name, key) = ("Защита и разрешения", "security");
+    let perms = if off.is_empty() { "Все способности включены по умолчанию.".to_string() } else { format!("Выключено в центре разрешений: {}.", off.join(", ")) };
+    if owner_set {
+        check(key, name, Status::Ok, format!("Пароль владельца задан, сейчас {}. {}", if unlocked { "разблокировано" } else { "заблокировано" }, perms), "")
+    } else {
+        check(key, name, Status::Ok, format!("Пароль владельца не задан: отправка сообщений и удаление данных доступны без пароля. {}", perms), "Задайте пароль в Настройки → Безопасность и данные, если компьютером пользуются другие.")
+    }
+}
+
+pub fn scheduler_check(total: usize, enabled: usize, next_in_secs: Option<u64>) -> Check {
+    let (name, key) = ("Расписание заданий", "scheduler");
+    let next = next_in_secs.map(|s| if s < 90 { "ближайшее меньше чем через минуту".to_string() } else if s < 5400 { format!("ближайшее через {} мин", s / 60) } else { format!("ближайшее через {} ч", s / 3600) }).unwrap_or_else(|| "ближайшего запуска нет".into());
+    check(key, name, Status::Ok, format!("Заданий: {}, включено: {}; {}.", total, enabled, next), "")
+}
+
+pub fn smarthome_check(configured: bool, permission_on: bool) -> Check {
+    let (name, key) = ("Умный дом", "smarthome");
+    match (configured, permission_on) {
+        (false, _) => check(key, name, Status::Unchecked, "Home Assistant не подключён (необязательно).", ""),
+        (true, false) => check(key, name, Status::Warn, "Адрес и токен сохранены, но управление выключено в центре разрешений.", "Включите «Управлять умным домом» в Настройки → Безопасность и данные."),
+        (true, true) => check(key, name, Status::Ok, "Подключение настроено. Доступность сервера проверяется кнопкой «Показать устройства».", ""),
+    }
+}
+
 pub fn monitor_check(mem_total_gb: f32, cpu: f32, disk_total_gb: f32) -> Check {
     let (name, key) = ("Системный мониторинг", "monitor");
     if mem_total_gb <= 0.0 {
@@ -699,7 +738,18 @@ pub fn run() -> Vec<Check> {
     let remote = measure_remote();
     let st = crate::uistate::stats();
     let monitor = monitor_check(st.mem_total_gb, st.cpu, st.disk_total_gb);
+    let off: Vec<&str> = crate::perms::ALL.iter().filter(|c| !crate::perms::allowed(**c)).map(|c| c.title()).collect();
+    let jobs = crate::scheduler::list();
+    let next = jobs.iter().filter(|j| j.enabled).map(|j| j.at).min().map(|t| t.saturating_sub(crate::store::now()));
+    let mut extra = vec![watch_check(&crate::wakewatch::status_json()), security_check(crate::owner::is_set(), crate::owner::unlocked(), &off)];
+    if !jobs.is_empty() {
+        extra.push(scheduler_check(jobs.len(), jobs.iter().filter(|j| j.enabled).count(), next));
+    }
+    if crate::smarthome::is_configured() {
+        extra.push(smarthome_check(true, crate::perms::allowed(crate::perms::Cap::SmartHome)));
+    }
     let mut checks = vec![build, integrity_check(), mic, audio, piper, windows_voice, powershell, ai, latency, internet, remote, measure_tunnel(), measure_telegram(), measure_notify(), monitor, measure_resources(), measure_syscmds(), measure_lifecycle(), game_check(&crate::gamemode::facts()), measure_aim()];
+    checks.extend(extra);
     if let Some(c) = piper_lang {
         // (right after the card of Piper)
         let at = checks.iter().position(|c| c.key == "piper").map(|i| i + 1).unwrap_or(checks.len());
@@ -865,3 +915,31 @@ pub fn internet_uses(s: &crate::uistate::UiSettings) -> Value {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod new_checks {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn the_microphone_stream_is_judged_by_what_wakewatch_says() {
+        assert_eq!(watch_check(&json!({"state":"ok","text":"Звук идёт"})).status, Status::Ok);
+        assert_eq!(watch_check(&json!({"state":"paused","text":"выкл"})).status, Status::Unchecked);
+        assert_eq!(watch_check(&json!({"state":"silent","text":"тишина"})).status, Status::Warn);
+        assert_eq!(watch_check(&json!({"state":"stalled","text":"нет звука","gave_up":false})).status, Status::Warn);
+        assert_eq!(watch_check(&json!({"state":"stalled","text":"нет звука","gave_up":true})).status, Status::Error);
+        assert!(watch_check(&json!({"state":"ok","text":"x"})).detail.contains("а не распознавания"));
+    }
+
+    #[test]
+    fn security_scheduler_and_smart_home_say_what_is_true() {
+        let c = security_check(false, true, &["Писать сообщения контактам"]);
+        assert!(c.detail.contains("не задан") && c.detail.contains("Выключено") && !c.fix.is_empty());
+        assert!(security_check(true, false, &[]).detail.contains("заблокировано"));
+        assert!(scheduler_check(3, 2, Some(300)).detail.contains("через 5 мин"));
+        assert!(scheduler_check(0, 0, None).detail.contains("нет"));
+        assert_eq!(smarthome_check(false, false).status, Status::Unchecked);
+        assert_eq!(smarthome_check(true, false).status, Status::Warn);
+        assert_eq!(smarthome_check(true, true).status, Status::Ok);
+    }
+}

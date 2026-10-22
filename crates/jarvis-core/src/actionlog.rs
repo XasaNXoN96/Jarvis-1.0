@@ -20,6 +20,8 @@ pub enum Undo {
     JobAdd(String),
     // a file Jarvis created
     FileCreated(String),
+    // a file Jarvis changed: (the file, the copy made before the change)
+    FileRestore(String, String),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -56,6 +58,7 @@ fn apply(u: &Undo) -> Result<String, String> {
         Undo::MemoryAdd(id) => if memory::delete(id) { Ok("Убрал запись из памяти.".into()) } else { Err("Записи уже нет в памяти.".into()) },
         Undo::NoteAdd(id) => if notes::delete(id) { Ok("Убрал запись из дневника.".into()) } else { Err("Записи уже нет.".into()) },
         Undo::JobAdd(id) => if scheduler::remove(id) { Ok("Убрал задание из расписания.".into()) } else { Err("Задания уже нет.".into()) },
+        Undo::FileRestore(p, b) => crate::codeassist::restore(p, b).map(|_| "Вернул файл как был.".to_string()),
         Undo::FileCreated(p) => {
             let path = PathBuf::from(p);
             // only inside the folder where Jarvis puts its own files
@@ -136,6 +139,19 @@ mod tests {
             record("Картинка 2", Undo::FileCreated(f.to_string_lossy().into()));
             assert!(undo("").is_err());
             assert!(!list().last().unwrap().undone, "a failed undo is not marked as done");
+        });
+    }
+
+    #[test]
+    fn a_changed_file_is_restored_from_its_copy() {
+        store::with_temp(|| {
+            let d = tempfile::tempdir().unwrap();
+            let (f, b) = (d.path().join("a.txt"), d.path().join("a.txt.jarvis-bak"));
+            std::fs::write(&f, "new").unwrap();
+            std::fs::write(&b, "old").unwrap();
+            record("Правка a.txt", Undo::FileRestore(f.to_string_lossy().into(), b.to_string_lossy().into()));
+            assert!(undo("").is_ok());
+            assert_eq!(std::fs::read_to_string(&f).unwrap(), "old");
         });
     }
 

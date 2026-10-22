@@ -8,6 +8,7 @@
 // The same port speaks https (self-signed certificate made on this PC, the browser warns once) and
 // plain http. Browsers give the microphone only to https pages, so the phone page uses https for voice.
 
+use crate::pairing;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -64,6 +65,29 @@ static TOKEN: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(load_or_create_token
 // whether the page is on screen, the state of its voice mode. The PC can send the phone only what a page can do:
 // a sound signal to find it, a link to open, a text to copy. Media of other apps, locking the phone and its
 // notifications are out of reach of a web page and are not offered.
+
+// %XX and + of a form field
+fn url_decode(v: &str) -> String {
+    let b = v.as_bytes();
+    let hex = |c: u8| (c as char).to_digit(16).map(|d| d as u8);
+    let mut out: Vec<u8> = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'+' => out.push(b' '),
+            b'%' if i + 2 < b.len() => match (hex(b[i + 1]), hex(b[i + 2])) {
+                (Some(h), Some(l)) => {
+                    out.push(h * 16 + l);
+                    i += 2;
+                }
+                _ => out.push(b'%'),
+            },
+            c => out.push(c),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).to_string()
+}
 
 fn now_secs() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(1)
@@ -1092,11 +1116,40 @@ fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
     let supplied = req.token_header.clone().or_else(|| token_in_path(&req.path));
     let key = throttle_key(&req.client_ip);
     let now = std::time::Instant::now();
+    // pairing with the one-time code (pairing.rs): the only request that needs no secret, and it is throttled like a wrong secret
+    if req.method == "POST" && route0 == "/pair" {
+        if !key.is_empty() && throttled(&key, now) {
+            respond(stream, "429 Too Many Requests", "text/plain", "too many wrong tries, wait a minute");
+            return Ok(());
+        }
+        let field = |name: &str| -> String {
+            req.body.split('&').find_map(|kv| kv.strip_prefix(&format!("{}=", name))).map(|v| url_decode(v)).unwrap_or_default()
+        };
+        match pairing::redeem(&field("code"), &field("name"), now_secs()) {
+            Ok(secret) => {
+                if !key.is_empty() {
+                    note_success(&key);
+                }
+                info!("Remote control: a device was paired with a code");
+                respond(stream, "200 OK", "application/json", &serde_json::json!({ "ok": true, "token": secret }).to_string());
+            }
+            Err(e) => {
+                if !key.is_empty() {
+                    note_failure(&key, now);
+                }
+                note_failure(if key.is_empty() { LAN_KEY } else { GLOBAL_KEY }, now);
+                respond(stream, "403 Forbidden", "application/json", &serde_json::json!({ "ok": false, "message": e }).to_string());
+            }
+        }
+        return Ok(());
+    }
     if !key.is_empty() && throttled(&key, now) {
         respond(stream, "429 Too Many Requests", "text/plain", "too many wrong tries, wait a minute");
         return Ok(());
     }
-    if !token_matches(supplied.as_deref(), &token()) {
+    // the shared link, or the own secret of a paired device
+    let paired = supplied.as_deref().and_then(|t| pairing::check(t, now_secs()));
+    if paired.is_none() && !token_matches(supplied.as_deref(), &token()) {
         let shared = if key.is_empty() { LAN_KEY } else { GLOBAL_KEY };
         if throttled_at(shared, now, SHARED_TRIES) {
             respond(stream, "429 Too Many Requests", "text/plain", "too many wrong tries, wait a minute");
@@ -1408,6 +1461,22 @@ function fetchT(url, opts) {
   return fetch(url, Object.assign({}, opts || {}, { signal: c.signal })).finally(() => clearTimeout(t));
 }
 const $ = id => document.getElementById(id);
+// no secret on this phone yet: the code that the computer shows pairs it (the phone gets its own secret)
+if (!token) {
+  const box = document.createElement('div');
+  box.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#0b0b0dee;display:flex;align-items:center;justify-content:center;padding:20px';
+  box.innerHTML = '<div style="max-width:340px;width:100%;background:#17171a;border:1px solid #3a3a40;border-radius:16px;padding:20px;color:#ececee;font:15px system-ui"><b style="font-size:18px">Привязать телефон</b><p style="color:#9a9aa2">На компьютере в Jarvis: Настройки → Телефон → «Привязать телефон по коду». Введите код оттуда.</p><input id="pcode" inputmode="numeric" maxlength="6" placeholder="Код из 6 цифр" style="width:100%;box-sizing:border-box;padding:12px;border-radius:10px;border:1px solid #3a3a40;background:#101012;color:#fff;font-size:20px;letter-spacing:.2em;text-align:center"><button id="pgo" style="margin-top:12px;width:100%;padding:12px;border-radius:10px;border:0;background:#f2f2f4;color:#0a0a0b;font-weight:600;font-size:15px">Привязать</button><div id="pmsg" style="margin-top:10px;color:#ff9aa6;min-height:20px"></div></div>';
+  document.body.appendChild(box);
+  box.querySelector('#pgo').onclick = async () => {
+    const m = box.querySelector('#pmsg'); m.textContent = '…';
+    try {
+      const name = (/Android/.test(navigator.userAgent) ? 'Android' : /iPhone|iPad/.test(navigator.userAgent) ? 'iPhone/iPad' : 'Телефон') + ' · ' + (navigator.userAgent.match(/(Chrome|Firefox|Safari|Edg)\/?/) || ['браузер'])[0].replace('/', '');
+      const r = await fetch('/pair', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'code=' + encodeURIComponent(box.querySelector('#pcode').value.trim()) + '&name=' + encodeURIComponent(name) });
+      const j = await r.json().catch(() => ({}));
+      if (j.ok && j.token) { try { localStorage.setItem('jarvis_t', j.token); } catch (e) {} location.reload(); } else { m.textContent = j.message || (r.status === 429 ? 'Слишком много попыток, подождите минуту.' : 'Не получилось привязать.'); }
+    } catch (e) { m.textContent = 'Нет связи с компьютером.'; }
+  };
+}
 const rid = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const quick = [
   ['поставь таймер на 5 минут', '⏱', 'Таймер 5 мин', 'hot'], ['отмени таймер', '⏹', 'Отмена таймера', ''], ['сколько времени', '🕐', 'Сколько времени', ''], ['отмени выключение', '⛔', 'Отмена выкл.', ''],
@@ -1989,6 +2058,51 @@ mod tests {
         assert!(status_of("198.51.100.249", "0000000000000000").contains("403"), "another sender's wrong secret is a plain 403");
         note_success(&throttle_key(guesser));
         RUNNING.store(false, Ordering::SeqCst);
+    }
+
+    fn post_pair(ip: &str, body: &str) -> (String, String) {
+        let raw = format!("POST /pair HTTP/1.1\r\nHost: x.trycloudflare.com\r\nCf-Connecting-Ip: {}\r\nContent-Length: {}\r\n\r\n{}", ip, body.len(), body);
+        let mut m = Mock { inp: std::io::Cursor::new(raw.into_bytes()), out: Vec::new() };
+        handle(&mut m).unwrap();
+        let text = String::from_utf8_lossy(&m.out).to_string();
+        (text.lines().next().unwrap_or("").to_string(), text.split("\r\n\r\n").nth(1).unwrap_or("").to_string())
+    }
+
+    #[test]
+    fn a_phone_pairs_with_the_code_and_then_works_with_its_own_secret_until_revoked() {
+        let _g = PHONE_TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            RUNNING.store(true, Ordering::SeqCst);
+            pairing::reset_for_tests();
+            let ip = "203.0.113.77";
+            note_success(&throttle_key(ip));
+            // no code asked: refused
+            assert!(post_pair(ip, "code=123456&name=Pixel").0.contains("403"));
+            let code = pairing::start_code(now_secs());
+            let (st, body) = post_pair(ip, &format!("code={}&name=Pixel+8%20Pro", code));
+            assert!(st.contains("200"), "{} {}", st, body);
+            let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+            let secret = v["token"].as_str().unwrap().to_string();
+            assert_eq!(pairing::list()[0].name, "Pixel 8 Pro");
+            // the own secret opens the data, a made-up one does not, the shared link keeps working
+            assert!(status_of("203.0.113.78", &secret).contains("200"));
+            assert!(status_of("203.0.113.79", &"ab".repeat(32)).contains("403"));
+            assert!(status_of("203.0.113.80", &token()).contains("200"));
+            // the code worked once
+            assert!(post_pair(ip, &format!("code={}&name=x", code)).0.contains("403"));
+            // revoked: at once
+            assert!(pairing::revoke(&pairing::list()[0].id));
+            assert!(status_of("203.0.113.81", &secret).contains("403"));
+            note_success(&throttle_key(ip));
+            RUNNING.store(false, Ordering::SeqCst);
+        });
+    }
+
+    #[test]
+    fn form_fields_are_decoded() {
+        assert_eq!(url_decode("Pixel+8%20Pro%D0%B0"), "Pixel 8 Proа");
+        assert_eq!(url_decode("100%"), "100%");
+        assert_eq!(url_decode("%zz"), "%zz");
     }
 
     #[test]

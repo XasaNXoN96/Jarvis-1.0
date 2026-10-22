@@ -143,6 +143,12 @@ impl JCommand {
                 all.extend(ru.iter().cloned());
             }
         }
+        // English commands work whatever the language of the program is (their words are Latin, they cannot meet a Russian phrase)
+        if lang != "en" {
+            if let Some(en) = self.triggers.get("en") {
+                all.extend(en.iter().cloned());
+            }
+        }
         all
     }
 

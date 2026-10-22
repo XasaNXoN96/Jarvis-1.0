@@ -700,6 +700,8 @@ pub fn system_prompt() -> String {
     } else {
         format!("Ты — {}, голосовой ассистент на компьютере пользователя. Отвечай на языке пользователя, кратко и по делу. Код оформляй в блоках Markdown.", ai_name())
     };
+    // humor, the language of the answers, the natural manner (persona.rs): right after the base, so a mode or a length only add to it
+    let base = format!("{} {}", base, crate::persona::prompt());
     let st = crate::uistate::settings();
     let base = match mode_prompt(&st.ai_mode) {
         Some(extra) => format!("{} {}", base, extra),

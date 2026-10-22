@@ -764,6 +764,10 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
     }
     if jarvis_core::session::kind().is_none() {
         if let Some(reply) = jarvis_core::features::handle(&original_text) {
+            if let Some(phrase) = reply.rerun {
+                info!("Clarified phrase is run: {}", phrase);
+                return execute_command(&phrase, source, rt);
+            }
             let msg = reply.text;
             open_request(text, "command");
             say(&msg);
@@ -786,6 +790,14 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
             return false;
         }
     };
+    // a phrase typed in the wrong keyboard layout («ghbdtn» for «привет», «фдуч» for «alex»): when the other layout gives a phrase that a
+    // command knows and the typed one gives none, the other one is used (exact words of a command only, nothing is guessed)
+    let layout_fixed = commands::fix_layout(text, commands_list);
+    if let Some(f) = &layout_fixed {
+        info!("Keyboard layout fixed: '{}' -> '{}'", text, f);
+        say(&format!("Раскладка: «{}»", f));
+        return execute_command(f, source, rt);
+    }
     
     // an open session (dictation, "what to do with the file?") takes every phrase before the command search
     if let Some(kind) = jarvis_core::session::kind() {
@@ -941,7 +953,27 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
             // a merely similar-looking command is not guessed
             commands::fetch_command_min(text, commands_list, config::CMD_RATIO_THRESHOLD.max(88.0))
         } else {
-            commands::fetch_command(text, commands_list)
+            // a phrase that is only SIMILAR to a command phrase is not run on a guess: a close one runs, a vaguer one is asked about
+            match commands::fuzzy_decide(text, commands_list) {
+                commands::FuzzyDecision::Run(p, c) => Some((p, c)),
+                commands::FuzzyDecision::Nothing => None,
+                commands::FuzzyDecision::Ask(options) => {
+                    let msg = jarvis_core::features::clarify(&options);
+                    info!("Phrase not understood exactly, asking ({} option(s))", options.len());
+                    open_request(text, "command");
+                    say(&msg);
+                    ipc::send(IpcEvent::Output { text: msg.clone() });
+                    jarvis_core::dialog::reply(&msg, "local");
+                    jarvis_core::dialog::end(true);
+                    jarvis_core::uistate::log_action(text, "уточнение фразы", true);
+                    if jarvis_core::tts::is_enabled() {
+                        jarvis_core::tts::speak(&msg);
+                    }
+                    ipc::send(IpcEvent::Idle);
+                    // by voice the answer is heard without the wake word
+                    return source == Source::Voice;
+                }
+            }
         }
     };
     

@@ -305,6 +305,14 @@
   .mem-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; } .mem-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 10px; background: #ffffff06; font-size: 13px; }
   .mem-item span { flex: 1; min-width: 0; word-break: break-word; } .mem-item small { opacity: .6; display: block; } .ct-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; margin: 8px 0; }
   .ct-form input, .ct-form select, #mem-new, #mem-q { padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: #ffffff06; color: var(--text); font: inherit; min-width: 0; }
+  /* floating result windows: panels inside the Jarvis window (not windows of Windows); several at once, moved by the title, resized by the corner */
+  #fw-layer { position: fixed; inset: 0; z-index: 400; pointer-events: none; }
+  .fw { position: absolute; pointer-events: auto; width: 380px; height: 260px; min-width: 240px; min-height: 120px; max-width: 94vw; max-height: 86vh; resize: both; overflow: hidden; display: flex; flex-direction: column; background: var(--panel2); border: 1px solid var(--line2); border-radius: 12px; box-shadow: 0 10px 40px #000a; }
+  .fw.min { height: auto !important; min-height: 0; resize: none; } .fw.min .fw-body { display: none; }
+  .fw-bar { display: flex; align-items: center; gap: 4px; padding: 6px 8px 6px 12px; background: #ffffff0a; border-bottom: 1px solid var(--line); cursor: move; user-select: none; touch-action: none; }
+  .fw-bar b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; } .fw-bar button { border: 0; background: transparent; color: var(--dim); cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 6px; } .fw-bar button:hover { color: var(--text); background: #ffffff14; }
+  .fw-body { flex: 1; min-height: 0; overflow: auto; padding: 10px 12px; font-size: 14px; line-height: 1.5; }
+  .pair-code { font-size: 26px; letter-spacing: .3em; font-variant-numeric: tabular-nums; margin-left: 8px; }
   .rg-dlg { position: fixed; inset: 0; z-index: 9990; background: rgba(0,0,0,.65); display: none; align-items: center; justify-content: center; } .rg-dlg.on { display: flex; }
   .rg-box { width: min(940px, 96vw); max-height: 94vh; overflow: auto; background: var(--panel2); border: 1px solid var(--line2); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
   #rg-canvas { width: 100%; height: auto; border-radius: 10px; cursor: crosshair; touch-action: none; background: #000; } .rg-box .r { display: flex; gap: 8px; } .rg-box .r input { flex: 1; min-width: 0; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: #ffffff06; color: var(--text); font: inherit; }
@@ -312,6 +320,14 @@
   :root[data-theme="ocean"] { --accent: #8bd8ff; } :root[data-theme="amber"] { --accent: #ffd48a; } :root[data-theme="ruby"] { --accent: #ff9aa8; }
   :root[data-theme="violet"] { --accent: #c9b3ff; } :root[data-theme="lime"] { --accent: #c4f08a; }
   body.reduced #bgfx { display: none; } body.reduced * { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+  .pc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .pc-card { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px 10px 10px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); text-align: center; min-width: 0; }
+  .pc-card:hover { border-color: var(--line2); background: var(--panel2); } .pc-card.off { opacity: .55; }
+  .pc-mono { width: 52px; height: 52px; border-radius: 14px; border: 1px solid var(--line2); background: #ffffff0a; display: inline-flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 600; color: var(--accent); }
+  .pc-card b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; } .pc-card small { color: var(--dim); font-size: 11.5px; min-height: 16px; }
+  .pc-act { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; justify-content: center; }
+  .ca-diff { margin: 8px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #0b0b0d; font: 12.5px/1.5 Consolas, monospace; white-space: pre-wrap; max-height: 360px; overflow: auto; }
+  .ca-diff .dl { color: #ff9aa6; } .ca-diff .da { color: #8fe0b0; } .ca-diff .dh { color: var(--dim); }
   #page-apps [hidden] { display: none !important; }
   .gm-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: #ffffff06; color: var(--text); cursor: pointer; font: inherit; font-size: 13px; }
   .gm-chip:hover { border-color: var(--line2); } .gm-chip[aria-pressed="true"] { border-color: var(--accent); background: #ffffff14; }
@@ -403,7 +419,7 @@
   .b-item small { display: block; color: var(--dim); } .b-item.off { opacity: .55; } .b-item .st { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--dim); } .b-item .st.ok { background: var(--ok); } .b-item .st.bad { background: var(--err); }
   .b-tpl { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; } .b-tpl button { display: block; width: 100%; text-align: left; background: transparent; border: 0; color: var(--text); padding: 6px 4px; font: inherit; cursor: pointer; border-radius: 7px; } .b-tpl button:hover { background: #ffffff0d; color: var(--accent); }
   .b-label { font-size: 11px; letter-spacing: .14em; color: var(--dim); margin-top: 4px; }
-  .b-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; } .b-row input { width: 100%; }
+  .b-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; } .b-row input { width: 100%; } .b-row > div, .b-main { min-width: 0; }
   .b-chainhead { display: flex; justify-content: space-between; align-items: baseline; margin-top: 6px; }
   .b-kinds { display: flex; flex-wrap: wrap; gap: 6px; } .b-kinds button { border: 1px solid var(--line); background: #ffffff08; color: var(--text); border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer; } .b-kinds button:hover { border-color: var(--accent); }
   .b-steps { min-height: 160px; border: 1px dashed var(--line); border-radius: 12px; padding: 14px; display: flex; flex-wrap: wrap; gap: 14px 34px; align-content: flex-start; align-items: center; background-image: radial-gradient(#ffffff10 1px, transparent 1px); background-size: 16px 16px; }
@@ -423,9 +439,10 @@
   .b-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; } .b-en { display: flex; align-items: center; gap: 6px; color: var(--dim); }
   .b-last { color: var(--dim); font-size: 13px; } .b-edit input, .b-edit select { width: 100%; } .b-stepbtns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
   @media (max-width: 1100px) { .b-grid { grid-template-columns: 220px minmax(0, 1fr); } .b-edit { grid-column: 1 / -1; } }
-  @media (max-width: 760px) { .b-grid { grid-template-columns: 1fr; } .b-row { grid-template-columns: 1fr; } }
+  @media (max-width: 1000px) { .b-grid { grid-template-columns: 1fr; } .b-row { grid-template-columns: 1fr; } }
 
   /* diagnostics */
+  .diag-sum { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; } .diag-sum[hidden] { display: none; }
   .diag-acts { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
   .diag-grid { display: flex; flex-direction: column; border-bottom: 1px solid var(--row-line); margin-bottom: var(--sp-5); }
   .drow { border-top: 1px solid var(--row-line); }
@@ -571,6 +588,7 @@
   @media (max-width: 640px) { .ap-row, .fs-row { flex-direction: column; align-items: stretch; } .fs-row .acts { justify-content: flex-start; } }
   .ccard { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 10px 14px; display: flex; gap: 10px; align-items: flex-start; }
   .ccard .cb { flex: 1; min-width: 0; } .ccard .cb > b { font-size: 15px; cursor: pointer; } .ccard .cb > b:hover { color: var(--accent); } .ccard .cd { color: var(--dim); font-size: 12.5px; margin-top: 2px; }
+  #commands.cgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; align-items: stretch; } #commands.cgrid .ccard { flex-direction: column; } .cmarks { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; } .cmarks .pill { position: static; }
   .ccard.off { opacity: .55; } .ccard .chip { font-size: 12px; }
   @media (max-width: 760px) { .cat-grid { grid-template-columns: 1fr; } .cat-side { flex-direction: row; flex-wrap: wrap; } .cat-side button { flex: 1 1 45%; } }
   details.grp { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); margin-bottom: 10px; }
@@ -724,6 +742,7 @@
 </head>
 <body>
 <div id="bgfx" aria-hidden="true"><canvas id="embers"></canvas></div>
+<div id="fw-layer" aria-live="polite"></div>
 <div id="rg-dlg" class="rg-dlg" role="dialog" aria-label="Область экрана"><div class="rg-box"><b>Выделите область экрана</b><small class="dim">Потяните мышью по снимку. Без выделения уйдёт весь снимок. Ответ ИИ только показывается: найденные в нём «команды» Jarvis не выполняет.</small>
   <canvas id="rg-canvas" width="900" height="500"></canvas>
   <div class="r"><input type="text" id="rg-q" maxlength="300" placeholder="Что спросить об этой области?"><button class="btn primary" id="rg-send" type="button">Спросить ИИ</button><button class="btn" id="rg-cancel" type="button">Отмена</button></div></div></div>
@@ -858,6 +877,11 @@
               <div class="qrbox"><img id="rm-qr" alt="QR-код пульта"></div>
               <button class="btn small" id="rm-copy" type="button">Копировать ссылку</button>
               <button class="btn small" id="rm-renew" type="button" title="Старая ссылка перестанет работать на всех телефонах">Новая ссылка</button>
+              <details class="gp-more" id="pair-box"><summary>Привязанные устройства (по коду)</summary>
+                <small class="dim">Каждый телефон получает свой доступ и отзывается отдельно. Откройте на телефоне ссылку пульта без секрета, введите код и нажмите «Привязать». Код действует 5 минут и одну привязку.</small>
+                <div class="rmrow"><button class="btn small primary" id="pair-start" type="button">Привязать телефон по коду</button><b id="pair-code" class="pair-code"></b></div>
+                <div id="pair-list" class="mem-list"></div><div class="msgline" id="pair-msg"></div>
+              </details>
               <details class="gp-more"><summary>Адрес и подсказки</summary>
               <div class="rmlink" id="rm-url"></div>
               <div class="rmaddrs" id="rm-addrs"></div>
@@ -948,7 +972,7 @@
       <div class="cat-head"><div><h1>Команды</h1><p class="lead" style="margin:0">«Джарвис» + фраза. Нажмите на фразу — она вставится в поле ввода. Свои цепочки действий — в «Конструкторе».</p></div><b id="cmd-count" class="dim"></b></div>
       <div class="cat-tools">
         <input type="text" id="cmd-search" placeholder="Поиск по фразам, описанию и разделам, например: вкладка">
-        <select id="cmd-status" title="Статус"><option value="">Все статусы</option><option value="on">Работают</option><option value="partial">Частично (нужны условия)</option><option value="unavailable">Недоступны</option><option value="duplicate">Дубли</option><option value="off">Раздел выключен</option></select>
+        <select id="cmd-risk" title="Какие команды показать"><option value="">Все</option><option value="confirm">Нужно подтверждение</option><option value="premium">Только Premium</option><option value="free">Бесплатные</option></select><div class="seg" id="cmd-view"><button type="button" data-v="grid">Сетка</button><button type="button" data-v="list">Список</button></div><select id="cmd-status" title="Статус"><option value="">Все статусы</option><option value="on">Работают</option><option value="partial">Частично (нужны условия)</option><option value="unavailable">Недоступны</option><option value="duplicate">Дубли</option><option value="off">Раздел выключен</option></select>
       </div>
       <div class="qa quick" id="quick">
         <button data-cmd="таймер на 5 минут">Таймер 5 минут<small>запустить сразу</small></button>
@@ -1012,6 +1036,7 @@
         <div id="pc-list" class="mem-list"></div>
         <h4 style="margin:14px 0 6px">История установок</h4><div id="pc-hist" class="mem-list"></div>
       </div>
+      <div class="ap-tools" id="ap-tools2"><select id="ap-sort" title="Порядок"><option value="name">По названию</option><option value="recent">Недавние</option></select><div class="seg" id="ap-view"><button type="button" data-v="cards">Карточки</button><button type="button" data-v="list">Список</button></div><button class="btn" id="ap-addsc" type="button">Добавить программу</button><button class="btn" id="ap-unhide" type="button" hidden>Показать скрытые</button></div>
       <div class="ap-tools"><input type="text" id="ap-search" placeholder="Поиск программы, например: commander"><button class="btn" id="ap-rescan" type="button">Обновить список</button></div>
       <div class="msgline" id="ap-status"></div>
       <div class="ap-tabs" id="ap-tabs" role="tablist"></div>
@@ -1162,6 +1187,7 @@
       <h1>Диагностика</h1>
       <p class="lead">Реальное состояние частей Джарвиса. Проверка ничего не меняет на компьютере, не запускает опасных команд и не отправляет запросов к ИИ. «Не проверено» значит, что подтвердить работу пока нечем — это не догадка.</p>
       <div class="diag-acts"><button class="btn primary" id="diag-run" type="button">Проверить всё</button><button class="btn" id="diag-copy" type="button">Копировать диагностический отчёт</button><button class="btn" id="diag-games" type="button">Копировать отчёт по играм</button><span class="msgline" id="diag-msg"></span></div>
+      <div class="diag-sum" id="diag-sum" hidden><span class="seg" id="diag-filter"><button type="button" data-f="all" class="active">Все</button><button type="button" data-f="bad">Проблемы</button><button type="button" data-f="ok">В порядке</button></span><span id="diag-counts" class="dim"></span></div>
       <div class="diag-grid" id="diag-list"><div class="empty">Нажмите «Проверить всё».</div></div>
       <div class="card" style="margin-top:14px"><h3><span class="ei">📜</span>Последние события программы</h3><div id="diag-events"><div class="empty">Событий пока нет.</div></div>
         <small class="dim">Без личных данных: фразы, диалоги и тексты уведомлений сюда не попадают. Отчёт не содержит ключей, токенов и паролей.</small></div>
@@ -1403,6 +1429,10 @@
         <div class="setrow"><div class="l">Что Jarvis может делать сам<small>выключенное действительно останавливает способность: обработчик проверяет переключатель перед тем, как что-то сделать.</small></div></div>
         <div id="perm-list"></div><div class="msgline" id="perm-msg"></div>
       </div>
+      <div class="card" data-cat="privacy" id="comp-card" data-tab="Компоненты"><h3><span class="ei">🧩</span>Компоненты и модули</h3>
+        <div class="setrow"><div class="l">Что скачивается отдельно<small>Файлы с фиксированных официальных адресов (голоса Piper, модель помощи прицела). Здесь видно, что установлено, чем гарантирована целостность, и можно установить, проверить или удалить. Включить и выключить разделы команд можно на странице «Команды».</small></div></div>
+        <div id="comp-list" class="mem-list"></div><div class="msgline" id="comp-msg"></div>
+      </div>
       <div class="card" data-cat="privacy" id="kb-card" data-tab="База знаний"><h3><span class="ei">📚</span>База знаний (мои документы)</h3>
         <div class="setrow"><div class="l">Папки<small>Читаются только добавленные вами папки (txt, md, csv, rtf, docx, xlsx, pptx, odt). Вопросы: «найди в моих документах …», «ответь по документам …». Ответ всегда с источниками; тексты файлов для ИИ — только данные, не приказы.</small></div>
           <div class="r"><input type="text" id="kb-path" placeholder="C:\Users\Вы\Documents\Заметки"><button class="btn" id="kb-add" type="button">Добавить папку</button></div></div>
@@ -1425,6 +1455,21 @@
         <div class="setrow"><div class="l">Новое задание<small>Фраза с временем: «каждый день в 9:00 открой почту», «завтра в 8:30 напомни про встречу», «каждые 30 минут пей воду», «каждую пятницу в 18:00 …». Задание выполняется так, будто вы сказали фразу. Пропущенное при выключенном Jarvis: выполняется один раз, если опоздание до часа, иначе пропускается.</small></div>
           <div class="r"><input type="text" id="sch-text" maxlength="300" placeholder="каждый день в 9:00 открой почту"><button class="btn primary" id="sch-add" type="button">Поставить</button></div></div>
         <div id="sch-list" class="mem-list"></div><div class="msgline" id="sch-msg"></div>
+      </div>
+      <div class="card" data-cat="ai" id="persona-card" data-tab="Характер"><h3><span class="ei">🎭</span>Характер ответов</h3>
+        <div class="setrow"><div class="l">Юмор<small>только манера ответа; о здоровье, деньгах, безопасности и горе Jarvis не шутит ни на каком уровне</small></div>
+          <div class="r"><select id="pe-humor"><option value="0">Серьёзно</option><option value="1">Чуть-чуть</option><option value="2">Умеренно</option><option value="3">Весело</option></select></div></div>
+        <div class="setrow"><div class="l">Язык ответов<small>«Как вопрос» — на языке вашего вопроса (русский, английский, узбекский)</small></div>
+          <div class="r"><select id="pe-lang"><option value="auto">Как вопрос</option><option value="ru">Русский</option><option value="en">English</option><option value="uz">Oʻzbekcha</option></select></div></div>
+        <div class="setrow"><div class="l">Живая речь<small>короткие фразы без канцелярита; при неясном запросе — один уточняющий вопрос вместо догадок</small></div><div class="r"><label class="sw"><input type="checkbox" id="pe-natural"><span></span></label></div></div>
+        <div class="msgline" id="pe-msg"></div>
+      </div>
+      <div class="card" data-cat="ai" id="ca-card" data-tab="Правка кода"><h3><span class="ei">🧑‍💻</span>Помощник программиста</h3>
+        <div class="setrow"><div class="l">Файл и просьба<small>Укажите полный путь к текстовому файлу и что изменить. Jarvis покажет, какие строки уйдут и какие появятся, и ничего не запишет, пока вы не нажмёте «Применить». Перед записью рядом кладётся копия <code>.jarvis-bak</code>, вернуть можно в «Истории действий». Текст файла уходит ИИ-провайдеру, который вы настроили.</small></div></div>
+        <div class="ct-form"><input type="text" id="ca-path" maxlength="260" placeholder="C:\\Проекты\\script.py"><input type="text" id="ca-text" maxlength="400" placeholder="Что изменить, например: добавь проверку на пустой ввод"><button class="btn primary" id="ca-go" type="button">Предложить правку</button></div>
+        <pre id="ca-diff" class="ca-diff" hidden></pre>
+        <div class="r" id="ca-actions" hidden><button class="btn primary" id="ca-apply" type="button">Применить</button><button class="btn" id="ca-discard" type="button">Отклонить</button></div>
+        <div class="msgline" id="ca-msg"></div>
       </div>
       <div class="card" data-cat="ai" id="notes-card" data-tab="Дневник"><h3><span class="ei">📓</span>Голосовой дневник и заметки</h3>
         <div class="setrow"><div class="l">Записи<small>«запиши в дневник: …», «заметка: …», «что я записывал вчера», «найди в дневнике …». Пишется только то, что вы сами сказали записать.</small></div></div>
@@ -1730,7 +1775,7 @@ function show(name) {
   if (name === 'games') { gpSummary(); gsLoad(); }
   if (name === 'files') filesLoad();
   if (name === 'devices') devicesLoad();
-  if (name === 'settings') { smsLoad(); micwLoad(); memLoad(); ctLoad(); ownerLoad(); permLoad(); kbLoad(); undoLoad(); homeLoad(); schLoad(); notesLoad(); loadSettings(); refreshRemote(); tgLoad(); setTimeout(() => { if (typeof setView === 'function') setView(); }, 60); }
+  if (name === 'settings') { compLoad(); pairLoad(); personaLoad(); smsLoad(); micwLoad(); memLoad(); ctLoad(); ownerLoad(); permLoad(); kbLoad(); undoLoad(); homeLoad(); schLoad(); notesLoad(); loadSettings(); refreshRemote(); tgLoad(); setTimeout(() => { if (typeof setView === 'function') setView(); }, 60); }
   if (name === 'tasks') { tkEdit = -1; tasksLoad(); }
   if (name === 'home') { homeSig = ''; }
   if (name === 'messages') msgsLoad(true);
@@ -1954,6 +1999,7 @@ $('#wbox').onclick = () => { show('settings'); setTimeout(() => { const el = rev
 let appsList = [], appsTimer = null;
 async function appsLoad() {
   clearTimeout(appsTimer);
+  plLoad();
   try {
     const r = await (await fetch('/apps')).json();
     appsList = r.apps || [];
@@ -1991,26 +2037,60 @@ function apMarkNew(list) {
   apKnown = names;
 }
 function apRememberKnown() { try { if (apKnown) localStorage.setItem('jv_apps_known', JSON.stringify(apKnown)); } catch (e) {} }
+let plLib = { shortcuts: [], hidden: [], launches: {} }, apView = 'cards', apSort = 'name';
+try { apView = localStorage.getItem('jv_ap_view') || 'cards'; apSort = localStorage.getItem('jv_ap_sort') || 'name'; } catch (e) {}
+async function plLoad() { const r = await action('pl_get').catch(() => null); if (r && r.lib) { plLib = r.lib; appsRender(); } }
 function appsRender() {
   const q = $('#ap-search').value.trim().toLowerCase();
-  appsList.forEach(a => { a.kind = apKind(a); });
+  // the programs found on the computer (minus the hidden cards) and the shortcuts the user added
+  const hidden = new Set((plLib.hidden || []).map(x => x.toLowerCase()));
+  const all = appsList.filter(a => !hidden.has(a.name.toLowerCase())).concat((plLib.shortcuts || []).map(sc => ({ name: sc.name, launch: 'sc:' + sc.id, ok: true, category: 'user', sc: sc.id })));
+  all.forEach(a => { a.kind = apKind(a); });
   const counts = {};
-  AP_TABS.forEach(t => { counts[t[0]] = appsList.filter(a => t[0] === 'all' || (t[0] === 'new' ? a.isNew : a.kind === t[0])).length; });
+  AP_TABS.forEach(t => { counts[t[0]] = all.filter(a => t[0] === 'all' || (t[0] === 'new' ? a.isNew : a.kind === t[0])).length; });
   $('#ap-tabs').innerHTML = AP_TABS.filter(t => t[0] === 'all' || counts[t[0]] || t[0] === apTab).map(t => '<button type="button" class="chip' + (t[0] === apTab ? ' on' : '') + '" data-t="' + t[0] + '">' + t[1] + ' <small>' + counts[t[0]] + '</small></button>').join('');
   $('#ap-tabs').querySelectorAll('button').forEach(b => b.onclick = () => { apTab = b.dataset.t; appsRender(); });
-  const shown = appsList.filter(a => (apTab === 'all' || (apTab === 'new' ? a.isNew : a.kind === apTab)) && (!q || a.name.toLowerCase().includes(q)));
+  $('#ap-unhide').hidden = !hidden.size; $('#ap-unhide').textContent = 'Показать скрытые (' + hidden.size + ')';
+  $('#ap-sort').value = apSort; document.querySelectorAll('#ap-view button').forEach(b => b.classList.toggle('active', b.dataset.v === apView));
+  const last = a => ((plLib.launches || {})[a.name.toLowerCase()] || { last: 0 }).last;
+  const shown = all.filter(a => (apTab === 'all' || (apTab === 'new' ? a.isNew : a.kind === apTab)) && (!q || a.name.toLowerCase().includes(q)))
+    .sort((x, y) => apSort === 'recent' ? (last(y) - last(x)) || x.name.localeCompare(y.name) : x.name.localeCompare(y.name));
   const box = $('#ap-list');
-  if (!shown.length) { box.innerHTML = '<div class="empty">' + (appsList.length ? 'В этом разделе ничего не найдено. Если программа установлена недавно, нажмите «Обновить список».' : 'Список пуст. Нажмите «Обновить список».') + '</div>'; return; }
+  if (!shown.length) { box.innerHTML = '<div class="empty">' + (all.length ? 'В этом разделе ничего не найдено. Если программа установлена недавно, нажмите «Обновить список».' : 'Список пуст. Нажмите «Обновить список».') + '</div>'; return; }
   const part = shown.slice(0, 300);
-  box.innerHTML = '<div class="ap-group">' + part.map((a, i) =>
-    '<div class="ap-row' + (a.ok ? '' : ' off') + '"><span class="ap-mono" aria-hidden="true">' + esc((a.name.trim()[0] || '?').toUpperCase()) + '</span><div><b>' + esc(a.name) + (a.isNew ? ' <span class="chip on" style="font-size:11px;padding:1px 7px">новое</span>' : '') + '</b><small>' + esc((AP_TABS.find(t => t[0] === a.kind) || [0, 'Установленные'])[1]) + (a.ok ? '' : ' · файл запуска не найден') + '</small></div>' +
-    '<button class="btn small" type="button" data-i="' + i + '"' + (a.ok ? '' : ' disabled') + '>Запустить</button></div>').join('') + '</div>' + (shown.length > 300 ? '<div class="empty">Показаны первые 300 из ' + shown.length + '. Уточните поиск.</div>' : '');
+  const kindName = a => (AP_TABS.find(t => t[0] === a.kind) || [0, 'Установленные'])[1];
+  if (apView === 'cards') {
+    box.innerHTML = '<div class="pc-grid">' + part.map((a, i) => '<div class="pc-card' + (a.ok ? '' : ' off') + '"><span class="pc-mono" aria-hidden="true">' + esc((a.name.trim()[0] || '?').toUpperCase()) + '</span><b title="' + esc(a.name) + '">' + esc(a.name) + '</b><small>' + esc(kindName(a)) + (a.sc ? ' · мой ярлык' : '') + (a.ok ? '' : ' · файл не найден') + '</small>' +
+      '<div class="pc-act"><button class="btn small primary" type="button" data-i="' + i + '"' + (a.ok ? '' : ' disabled') + '>Запустить</button><button class="btn small" type="button" data-rm="' + i + '" title="' + (a.sc ? 'Убрать ярлык (сама программа остаётся)' : 'Скрыть карточку (программа остаётся на компьютере)') + '">Убрать</button></div></div>').join('') + '</div>';
+  } else {
+    box.innerHTML = '<div class="ap-group">' + part.map((a, i) =>
+      '<div class="ap-row' + (a.ok ? '' : ' off') + '"><span class="ap-mono" aria-hidden="true">' + esc((a.name.trim()[0] || '?').toUpperCase()) + '</span><div><b>' + esc(a.name) + (a.isNew ? ' <span class="chip on" style="font-size:11px;padding:1px 7px">новое</span>' : '') + '</b><small>' + esc(kindName(a)) + (a.ok ? '' : ' · файл запуска не найден') + '</small></div>' +
+      '<span><button class="btn small" type="button" data-i="' + i + '"' + (a.ok ? '' : ' disabled') + '>Запустить</button> <button class="btn small" type="button" data-rm="' + i + '">Убрать</button></span></div>').join('') + '</div>';
+  }
+  if (shown.length > 300) box.insertAdjacentHTML('beforeend', '<div class="empty">Показаны первые 300 из ' + shown.length + '. Уточните поиск.</div>');
   box.querySelectorAll('button[data-i]').forEach(b => b.onclick = async () => {
     const a = part[+b.dataset.i]; b.disabled = true;
-    try { const r = await action('app_launch', { launch: a.launch }); $('#ap-status').textContent = r.message || ''; } catch (e) { $('#ap-status').textContent = 'Нет связи с Джарвисом'; }
+    try { const r = a.sc ? await action('pl_launch', { id: a.sc }) : await action('app_launch', { launch: a.launch }); $('#ap-status').textContent = r.message || ''; setTimeout(plLoad, 500); } catch (e) { $('#ap-status').textContent = 'Нет связи с Джарвисом'; }
     setTimeout(() => { b.disabled = false; }, 4000);
   });
+  // «Убрать» removes only the card: a shortcut of the user is forgotten, a found program is hidden; no program is ever uninstalled
+  box.querySelectorAll('button[data-rm]').forEach(b => b.onclick = async () => {
+    const a = part[+b.dataset.rm];
+    await (a.sc ? action('pl_remove', { id: a.sc }) : action('pl_hide', { name: a.name })); plLoad();
+  });
 }
+$('#ap-sort').onchange = e => { apSort = e.target.value; try { localStorage.setItem('jv_ap_sort', apSort); } catch (x) {} appsRender(); };
+document.querySelectorAll('#ap-view button').forEach(b => b.onclick = () => { apView = b.dataset.v; try { localStorage.setItem('jv_ap_view', apView); } catch (x) {} appsRender(); });
+$('#ap-unhide').onclick = async () => { await action('pl_unhide'); plLoad(); };
+$('#ap-addsc').onclick = async () => {
+  const pk = await action('pl_pick').catch(() => ({}));
+  if (pk.cancelled) return;
+  if (!pk.ok) { $('#ap-status').textContent = pk.message || 'Не получилось выбрать файл'; return; }
+  const name = prompt('Название карточки:', pk.name || '');
+  if (name == null) return;
+  const r = await action('pl_add', { path: pk.path, name }).catch(() => ({}));
+  $('#ap-status').textContent = r.message || ''; plLoad();
+};
 $('#gp-tabs').querySelectorAll('button').forEach(b => b.onclick = () => {
   $('#gp-tabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
   document.querySelectorAll('#page-games .gp-tab').forEach(t => { t.hidden = t.dataset.gt !== b.dataset.gt; });
@@ -2485,7 +2565,10 @@ function msgEl(m) {
       const cp = document.createElement('button'); cp.type = 'button'; cp.textContent = '⧉ Копировать ответ'; cp.onclick = () => copyText(m.content, cp); tools.appendChild(cp);
       const sp = document.createElement('button'); sp.type = 'button'; sp.textContent = '🔊 Озвучить'; sp.title = 'Прочитать ответ голосом Джарвиса';
       sp.onclick = async () => { try { const r = await action('speak_text', { text: m.content }); if (!r.ok) showToast(r.message || 'Не удалось озвучить'); } catch (e) { showToast('Нет связи с Джарвисом'); } };
-      tools.appendChild(sp); d.appendChild(tools);
+      tools.appendChild(sp);
+      const fb = document.createElement('button'); fb.type = 'button'; fb.textContent = '🗗 В окно'; fb.title = 'Открыть ответ в плавающем окне внутри Jarvis (не отдельное окно Windows): можно держать несколько и двигать';
+      fb.onclick = () => fwOpen('Ответ Джарвиса', m.content, 'msg:' + (m.id || m.content.slice(0, 40)));
+      tools.appendChild(fb); d.appendChild(tools);
     }
   } else {
     d.textContent = m.content;
@@ -3075,6 +3158,73 @@ $('#game-on').onclick = () => gameSet(true); $('#game-off').onclick = () => game
 $('#aim-on').onclick = async () => { const r = await action('game_aim', { value: true }).catch(() => ({})); const m = $('#game-msg'); m.className = 'msgline ok'; m.textContent = (r && r.message) || ''; gameRefresh(); };
 $('#aim-off').onclick = async () => { const r = await action('game_aim', { value: false }).catch(() => ({})); const m = $('#game-msg'); m.className = 'msgline ok'; m.textContent = (r && r.message) || ''; gameRefresh(); };
 gameRefresh(); setInterval(gameRefresh, 4000);
+
+// ---------- pairing of phones with a one-time code ----------
+let pairTimer = null;
+async function pairLoad() {
+  const r = await action('pair_list').catch(() => ({ items: [] }));
+  const c = $('#pair-code');
+  if (r.code) { c.textContent = r.code + ' · ещё ' + Math.floor(r.left / 60) + ':' + String(r.left % 60).padStart(2, '0'); } else { c.textContent = ''; }
+  $('#pair-list').innerHTML = (r.items || []).length ? r.items.map(d => '<div class="mem-item" data-id="' + gpEsc(d.id) + '"><span><b>' + gpEsc(d.name) + '</b><small>' + (d.revoked ? 'отозвано' : 'привязан ' + new Date(d.created * 1000).toLocaleDateString('ru-RU') + ' · был на связи ' + (d.last_seen ? new Date(d.last_seen * 1000).toLocaleString('ru-RU') : 'ещё не был')) + '</small></span>' + (d.revoked ? '' : '<button class="btn small" type="button">Отозвать</button>') + '</div>').join('') : '<small class="dim">Устройств, привязанных по коду, нет.</small>';
+  clearTimeout(pairTimer); if (r.code && currentPage === 'settings') pairTimer = setTimeout(pairLoad, 1000);
+}
+$('#pair-start').onclick = async () => { const r = await action('pair_start').catch(() => ({})); if (!r.ok) lineMsg('#pair-msg', r); else $('#pair-msg').textContent = ''; pairLoad(); };
+$('#pair-list').onclick = async e => { const b = e.target.closest('button'); if (!b) return; if (!confirm('Отозвать это устройство? Оно сразу потеряет доступ.')) return; const r = await action('pair_revoke', { id: b.closest('.mem-item').dataset.id }).catch(() => ({})); lineMsg('#pair-msg', r, 'Отозвано.'); pairLoad(); };
+
+// ---------- components ----------
+let compTimer = null;
+const COMP_OPS = { install: 'Установить', check: 'Проверить', remove: 'Удалить' };
+async function compLoad() {
+  const r = await action('comp_list').catch(() => ({ items: [] }));
+  $('#comp-list').innerHTML = (r.items || []).map(c => '<div class="mem-item" data-id="' + gpEsc(c.id) + '"><span><b>' + gpEsc(c.name) + '</b> · ' + (c.busy ? 'идёт работа…' : c.installed ? 'установлено' + (c.size_mb ? ' (' + c.size_mb + ' МБ)' : '') : 'не установлено') + '<small>' + gpEsc(c.about) + ' · Целостность: ' + gpEsc(c.integrity) + '</small></span>' +
+    c.ops.filter(o => !(o === 'install' && c.installed && c.id !== 'aim-model') && !((o === 'remove' || o === 'check') && !c.installed)).map(o => '<button class="btn small" data-op="' + o + '" type="button"' + (c.busy ? ' disabled' : '') + '>' + COMP_OPS[o] + '</button>').join('') + '</div>').join('');
+  clearTimeout(compTimer); if ((r.items || []).some(c => c.busy) && currentPage === 'settings') compTimer = setTimeout(compLoad, 1500);
+}
+$('#comp-list').onclick = async e => {
+  const b = e.target.closest('button[data-op]'); if (!b) return;
+  if (b.dataset.op === 'remove' && !confirm('Удалить этот компонент с компьютера? Его можно будет скачать снова.')) return;
+  const r = await action('comp_do', { id: b.closest('.mem-item').dataset.id, op: b.dataset.op }).catch(() => ({}));
+  lineMsg('#comp-msg', r); setTimeout(compLoad, 500);
+};
+
+// ---------- floating result windows (inside Jarvis) ----------
+const FW = { n: 0, z: 410, wins: new Map() };
+function fwOpen(title, text, key) {
+  const layer = $('#fw-layer');
+  // the same result is raised, not opened twice
+  if (key && FW.wins.has(key)) { const w = FW.wins.get(key); w.style.zIndex = ++FW.z; w.classList.remove('min'); return w; }
+  while (FW.wins.size >= 6) { const first = FW.wins.keys().next().value; fwClose(first); }
+  const w = document.createElement('div'); w.className = 'fw'; w.style.zIndex = ++FW.z;
+  const off = (FW.n++ % 6) * 28; w.style.left = Math.min(innerWidth - 400, 120 + off) + 'px'; w.style.top = Math.min(innerHeight - 280, 90 + off) + 'px';
+  w.innerHTML = '<div class="fw-bar"><b></b><button type="button" data-a="copy" title="Копировать">⧉</button><button type="button" data-a="min" title="Свернуть">—</button><button type="button" data-a="close" title="Закрыть">✕</button></div><div class="fw-body"></div>';
+  w.querySelector('b').textContent = title; w.querySelector('.fw-body').innerHTML = md(String(text));
+  const id = key || ('w' + FW.n); w.dataset.key = id; FW.wins.set(id, w);
+  w.addEventListener('pointerdown', () => { w.style.zIndex = ++FW.z; });
+  const bar = w.querySelector('.fw-bar'); let drag = null;
+  bar.onpointerdown = e => { if (e.target.closest('button')) return; drag = [e.clientX - w.offsetLeft, e.clientY - w.offsetTop]; bar.setPointerCapture(e.pointerId); };
+  bar.onpointermove = e => { if (!drag) return; w.style.left = Math.max(0, Math.min(innerWidth - 80, e.clientX - drag[0])) + 'px'; w.style.top = Math.max(0, Math.min(innerHeight - 40, e.clientY - drag[1])) + 'px'; };
+  bar.onpointerup = () => { drag = null; };
+  bar.querySelector('[data-a="close"]').onclick = () => fwClose(id);
+  bar.querySelector('[data-a="min"]').onclick = () => w.classList.toggle('min');
+  bar.querySelector('[data-a="copy"]').onclick = e => copyText(String(text), e.currentTarget);
+  layer.appendChild(w); return w;
+}
+function fwClose(id) { const w = FW.wins.get(id); if (w) { w.remove(); FW.wins.delete(id); } }
+
+// ---------- character of the AI, the programmer's assistant ----------
+async function personaLoad() { const r = await action('persona_get').catch(() => ({})); if (r.ok) { $('#pe-humor').value = String(r.humor); $('#pe-lang').value = r.reply_lang; $('#pe-natural').checked = !!r.natural; } }
+const personaSave = async () => { const r = await action('persona_set', { humor: +$('#pe-humor').value, reply_lang: $('#pe-lang').value, natural: $('#pe-natural').checked }).catch(() => ({})); lineMsg('#pe-msg', r, 'Сохранено.'); };
+$('#pe-humor').onchange = personaSave; $('#pe-lang').onchange = personaSave; $('#pe-natural').onchange = personaSave;
+$('#ca-go').onclick = async () => {
+  $('#ca-msg').className = 'msgline'; $('#ca-msg').textContent = 'Прошу ИИ предложить правку…'; $('#ca-diff').hidden = true; $('#ca-actions').hidden = true;
+  const r = await action('ca_propose', { path: $('#ca-path').value, text: $('#ca-text').value }).catch(() => ({}));
+  if (!r.ok) { lineMsg('#ca-msg', r); return; }
+  $('#ca-diff').innerHTML = r.diff.split('\n').map(l => '<div class="' + (l.startsWith('+ ') ? 'da' : l.startsWith('- ') ? 'dl' : l.startsWith('@@') ? 'dh' : '') + '">' + gpEsc(l) + '</div>').join('');
+  $('#ca-diff').hidden = false; $('#ca-actions').hidden = false;
+  const m = $('#ca-msg'); m.className = 'msgline ' + (r.check_ok ? 'ok' : 'bad'); m.textContent = '+' + r.added + ' / −' + r.removed + ' строк. Проверка: ' + r.check + (r.checked ? '' : '.');
+};
+$('#ca-apply').onclick = async () => { const r = await action('ca_apply').catch(() => ({})); lineMsg('#ca-msg', r); if (r.ok) { $('#ca-diff').hidden = true; $('#ca-actions').hidden = true; undoLoad(); } };
+$('#ca-discard').onclick = async () => { await action('ca_discard'); $('#ca-diff').hidden = true; $('#ca-actions').hidden = true; $('#ca-msg').textContent = ''; };
 
 // ---------- game statistics, reading of messages, microphone watch, region of the screen ----------
 const gsDur = sec => sec >= 3600 ? Math.floor(sec / 3600) + ' ч ' + Math.floor(sec % 3600 / 60) + ' мин' : Math.max(1, Math.round(sec / 60)) + ' мин';
@@ -4334,6 +4484,8 @@ $('#b-file').onchange = async e => {
 // ---------- diagnostics ----------
 const DST = { ok: ['Работает', 'ok'], warn: ['Предупреждение', 'warn'], error: ['Ошибка', 'bad'], unchecked: ['Не проверено', ''] };
 let diagTimer = 0;
+let diagFilter = 'all';
+document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('#diag-filter button'); if (!b) return; diagFilter = b.dataset.f; document.querySelectorAll('#diag-filter button').forEach(x => x.classList.toggle('active', x === b)); diagLoad(); });
 async function diagLoad() {
   let d; try { d = await (await fetch('/diag')).json(); } catch (e) { return; }
   const list = $('#diag-list');
@@ -4342,7 +4494,11 @@ async function diagLoad() {
     // a row per component: the status and the first sentence on the line; the whole text and what to do — on request
     const open = new Set([...list.querySelectorAll('details[open]')].map(x => x.dataset.key));
     list.textContent = '';
-    for (const c of d.checks) {
+    // the summary and the filter: «Проблемы» shows only the warnings and the errors
+    const nBad = d.checks.filter(c => c.status === 'warn' || c.status === 'error').length, nOk = d.checks.filter(c => c.status === 'ok').length;
+    $('#diag-sum').hidden = false; $('#diag-counts').textContent = 'Работает: ' + nOk + ' · требует внимания: ' + nBad + ' · всего: ' + d.checks.length;
+    const flt = diagFilter;
+    for (const c of d.checks.filter(c => flt === 'all' || (flt === 'bad' ? (c.status === 'warn' || c.status === 'error') : c.status === 'ok'))) {
       const el = document.createElement('details'); el.className = 'drow ' + c.status; el.dataset.key = c.key || c.name; if (open.has(el.dataset.key)) el.open = true;
       el.innerHTML = '<summary><i class="dstat"></i><b></b><span class="dsum"></span><span class="pill"></span></summary><div class="dbody"><div class="dd"></div><div class="df"></div></div>';
       el.querySelector('b').textContent = c.name; const p = el.querySelector('.pill'); p.textContent = DST[c.status][0]; p.className = 'pill ' + DST[c.status][1];
@@ -4427,8 +4583,14 @@ async function loadCommands(force) {
     commandsLoaded = true; renderCommands();
   } catch (e) { $('#commands').textContent = 'Не удалось загрузить список команд'; }
 }
+let cmdView = 'grid';
+try { cmdView = localStorage.getItem('jv_cmd_view') || 'grid'; } catch (e) {}
 function cmdMatches(c, q, st) {
   if (st && c.status !== st) return false;
+  const rf = $('#cmd-risk') ? $('#cmd-risk').value : '';
+  if (rf === 'confirm' && c.risk !== 'high') return false;
+  if (rf === 'premium' && c.level !== 'premium') return false;
+  if (rf === 'free' && c.level !== 'free') return false;
   if (!q) return true;
   const g = cmdData.groups.find(x => x.key === c.group);
   const norm = t => t.toLowerCase().replace(/ё/g, 'е');
@@ -4466,6 +4628,7 @@ function renderCommands() {
   for (const c of cmds) {
     const grp = cmdData.groups.find(x => x.key === c.group) || {};
     const card = document.createElement('div'); card.className = 'ccard' + (c.status === 'off' ? ' off' : '');
+    list.classList.toggle('cgrid', cmdView === 'grid');
     card.innerHTML = '<div class="cb"><b></b><div class="cd"></div><div class="ph"></div></div><span class="pill"></span>';
     const insert = p => { const i = $('#h-input'); i.value = p.replace(/\{[^}]*\}/g, '').trim(); show('home'); i.focus(); updateComposers(); };
     const main = card.querySelector('b'); main.textContent = c.phrases[0]; main.title = 'Вставить в поле ввода'; main.onclick = () => insert(c.phrases[0]);
@@ -4475,12 +4638,17 @@ function renderCommands() {
     const PILL = { on: ['РАБОТАЕТ', 'ok'], partial: ['ЧАСТИЧНО', 'warn'], unavailable: ['НЕДОСТУПНО', 'bad'], duplicate: ['ДУБЛЬ', ''], off: ['РАЗДЕЛ ВЫКЛЮЧЕН', ''] };
     const pl = PILL[c.status] || PILL.on;
     const pill = card.querySelector('.pill'); pill.textContent = pl[0]; pill.className = 'pill ' + pl[1];
+    // marks: asks before it runs / needs the paid version / works in the Admin version only
+    const marks = []; if (c.risk === 'high') marks.push(['нужно подтверждение', 'warn']); if (c.level === 'premium') marks.push(['Premium', '']); if (c.level === 'admin') marks.push(['Admin', '']);
+    if (marks.length) { const mm = document.createElement('div'); mm.className = 'cmarks'; marks.forEach(m => { const sp = document.createElement('span'); sp.className = 'pill ' + m[1]; sp.textContent = m[0]; mm.appendChild(sp); }); card.querySelector('.cb').appendChild(mm); }
     if (c.note) { const n = document.createElement('small'); n.className = 'cnote'; n.textContent = c.note; card.querySelector('.cb').appendChild(n); }
     list.appendChild(card);
   }
 }
 $('#cmd-search').oninput = renderCommands;
 $('#cmd-status').onchange = renderCommands;
+$('#cmd-risk').onchange = renderCommands;
+document.querySelectorAll('#cmd-view button').forEach(b => { b.classList.toggle('active', b.dataset.v === cmdView); b.onclick = () => { cmdView = b.dataset.v; try { localStorage.setItem('jv_cmd_view', cmdView); } catch (x) {} document.querySelectorAll('#cmd-view button').forEach(x => x.classList.toggle('active', x === b)); renderCommands(); }; });
 $('#cat-switch').onchange = async e => {
   if (!cmdCat) return;
   const r = await action('group', { key: cmdCat, disabled: !e.target.checked });

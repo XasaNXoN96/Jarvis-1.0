@@ -87,6 +87,9 @@ fn commands_json() -> String {
                     // duplicate = a newer command does the same; off = its section is switched off by the user
                     "status": if crate::uistate::is_group_disabled(group) { "off" } else { crate::uistate::command_status(&cmd.id).map(|s| s.0).unwrap_or("on") },
                     "note": crate::uistate::command_status(&cmd.id).map(|s| s.1).unwrap_or(""),
+                    // «нужно подтверждение»: a command of a high risk asks «да / нет» before it runs; the level says who may run it
+                    "risk": format!("{:?}", crate::commands::effective_risk(&pack.path, cmd)).to_lowercase(),
+                    "level": format!("{:?}", crate::access::level_of(&cmd.id)).to_lowercase(),
                 }));
             }
         }
@@ -251,6 +254,8 @@ fn premium_reason(d: &crate::access::Denied) -> &'static str {
     }
 }
 
+static CODE_PROPOSAL: parking_lot::Mutex<Option<crate::codeassist::Proposal>> = parking_lot::const_mutex(None);
+
 fn run_action(body: &serde_json::Value) -> serde_json::Value {
     let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("");
     // the paid operations of the window (not commands, so they have their own ids in the access list): checked here, before anything runs
@@ -260,7 +265,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         }
     }
     // with a password of the owner set, the actions that change what Jarvis keeps or does need the unlocked program
-    if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message") {
+    if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message" | "ca_apply" | "pl_add" | "pl_remove" | "persona_set" | "pair_start" | "pair_revoke" | "comp_do") {
         if let Err(m) = crate::owner::guard() {
             return json!({ "ok": false, "locked": true, "message": m });
         }
@@ -359,6 +364,78 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             let ok = false;
             json!({ "ok": ok, "message": if ok { "Windows просят обновить значки. Если старые остались: удалите ярлык и создайте заново, а при необходимости удалите файлы IconCache.db и iconcache_*.db в %localappdata% и перезапустите проводник." } else { "Доступно только в Windows" } })
         }
+        // components (voices, the model of the aim assist)
+        "comp_list" => json!({ "ok": true, "items": crate::components::json() }),
+        "comp_do" => match crate::components::run(body.get("id").and_then(|v| v.as_str()).unwrap_or(""), body.get("op").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(m) => json!({ "ok": true, "message": m }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        // pairing of phones with a one-time code
+        "pair_start" => {
+            if !crate::remote::is_running() {
+                return json!({ "ok": false, "message": "Сначала включите пульт (переключатель выше): без него телефону некуда подключаться." });
+            }
+            let code = crate::pairing::start_code(crate::store::now());
+            json!({ "ok": true, "code": code })
+        }
+        "pair_list" => {
+            let now = crate::store::now();
+            let (code, left) = crate::pairing::active_code(now).map(|(c, l)| (Some(c), l)).unwrap_or((None, 0));
+            json!({ "ok": true, "items": crate::pairing::list(), "code": code, "left": left })
+        }
+        "pair_revoke" => json!({ "ok": crate::pairing::revoke(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) }),
+        // character of the AI (humor, language, manner)
+        "persona_get" => { let p = crate::persona::get(); json!({ "ok": true, "humor": p.humor, "reply_lang": p.reply_lang, "natural": p.natural }) }
+        "persona_set" => match crate::persona::set(body.get("humor").and_then(|v| v.as_u64()).unwrap_or(1) as u8, body.get("reply_lang").and_then(|v| v.as_str()).unwrap_or("auto"), body.get("natural").and_then(|v| v.as_bool()).unwrap_or(true)) {
+            Ok(()) => json!({ "ok": true }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        // the programmer's assistant: a proposal (diff), then apply or discard
+        "ca_propose" => match crate::codeassist::propose(body.get("path").and_then(|v| v.as_str()).unwrap_or(""), body.get("text").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(p) => {
+                let (add, del) = crate::codeassist::changed(&p.diff);
+                let (checked, ok, what) = crate::codeassist::quick_check(&p.path, &p.new);
+                let out = json!({ "ok": true, "diff": crate::codeassist::render(&p.diff), "added": add, "removed": del, "checked": checked, "check_ok": ok, "check": what, "path": p.path.to_string_lossy() });
+                *CODE_PROPOSAL.lock() = Some(p);
+                out
+            }
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "ca_apply" => {
+            let p = CODE_PROPOSAL.lock().take();
+            match p {
+                None => json!({ "ok": false, "message": "Нет предложенной правки: сделайте предложение." }),
+                Some(p) => match crate::codeassist::apply(&p) {
+                    Ok(bak) => {
+                        crate::actionlog::record(&format!("Правка файла {}", p.path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()), crate::actionlog::Undo::FileRestore(p.path.to_string_lossy().into(), bak.to_string_lossy().into()));
+                        json!({ "ok": true, "message": format!("Применено. Копия старого файла: {}. Вернуть можно в «Истории действий».", bak.display()) })
+                    }
+                    Err(e) => json!({ "ok": false, "message": e }),
+                },
+            }
+        }
+        "ca_discard" => { *CODE_PROPOSAL.lock() = None; json!({ "ok": true }) }
+        // library of programs
+        "pl_get" => json!({ "ok": true, "lib": crate::proglib::json() }),
+        "pl_pick" => match crate::gamedialog::pick_exe() {
+            Ok(None) => json!({ "ok": true, "cancelled": true }),
+            Ok(Some(path)) => match crate::proglib::check_path(&path) {
+                Ok(name) => json!({ "ok": true, "path": path, "name": name }),
+                Err(e) => json!({ "ok": false, "message": e }),
+            },
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "pl_add" => match crate::proglib::add_shortcut(body.get("name").and_then(|v| v.as_str()).unwrap_or(""), body.get("path").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(_) => json!({ "ok": true, "message": "Ярлык добавлен." }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "pl_remove" => json!({ "ok": crate::proglib::remove_shortcut(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) }),
+        "pl_hide" => json!({ "ok": crate::proglib::hide(body.get("name").and_then(|v| v.as_str()).unwrap_or("")) }),
+        "pl_unhide" => json!({ "ok": crate::proglib::unhide_all() }),
+        "pl_launch" => match crate::proglib::launch_shortcut(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(m) => json!({ "ok": true, "message": m }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
         // reading of messages, microphone watchdog, game statistics, screen region
         "sms_get" => { let c = crate::smsread::conf(); json!({ "ok": true, "privacy": c.privacy, "lang": c.lang }) }
         "sms_set" => {
@@ -716,7 +793,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             let launch = body.get("launch").and_then(|v| v.as_str()).unwrap_or("");
             match crate::appindex::apps().into_iter().find(|a| a.launch == launch) {
                 Some(a) => match crate::appindex::launch(&a) {
-                    Ok(()) => { crate::filesearch::note_launch(&a.name, true); json!({ "ok": true, "message": format!("Запускаю {}", a.name) }) }
+                    Ok(()) => { crate::filesearch::note_launch(&a.name, true); crate::proglib::note_launch(&a.name, crate::store::now()); json!({ "ok": true, "message": format!("Запускаю {}", a.name) }) }
                     Err(e) => { crate::filesearch::note_launch(&a.name, false); json!({ "ok": false, "message": e }) }
                 },
                 None => json!({ "ok": false, "message": "Этой программы нет в списке. Обновите список программ." }),

@@ -138,6 +138,11 @@ pub mod smsread;
 pub mod wakewatch;
 pub mod gamestats;
 pub mod autopilot;
+pub mod persona;
+pub mod codeassist;
+pub mod proglib;
+pub mod pairing;
+pub mod components;
 #[cfg(target_os = "windows")]
 pub mod notify_win;
 pub mod diag;

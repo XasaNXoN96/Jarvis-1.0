@@ -7,10 +7,12 @@ use parking_lot::Mutex;
 
 pub struct Reply {
     pub text: String,
+    // the phrase to run as if the user had said it (the answer «да» to «Вы имели в виду …?»)
+    pub rerun: Option<String>,
 }
 
 fn r(s: impl Into<String>) -> Option<Reply> {
-    Some(Reply { text: s.into() })
+    Some(Reply { text: s.into(), rerun: None })
 }
 
 // the message that waits for «да» / «нет» (and when it was prepared)
@@ -62,6 +64,45 @@ pub fn cancel_message(id: &str) -> Result<messenger::Outgoing, String> {
         *PENDING_MSG.lock() = None;
     }
     messenger::cancel(id)
+}
+
+// «Вы имели в виду «открой браузер»?»: the phrase waits for «да» (60 s)
+static PENDING_CLARIFY: Mutex<Option<(String, u64)>> = parking_lot::const_mutex(None);
+const CLARIFY_TTL: u64 = 60;
+
+// the question for a phrase that was not understood exactly (commands::fuzzy_decide)
+pub fn clarify(options: &[String]) -> String {
+    match options {
+        [one] => {
+            *PENDING_CLARIFY.lock() = Some((one.clone(), store::now()));
+            format!("Не расслышал точно. Вы имели в виду «{}»? Скажите «да» или «нет».", one)
+        }
+        [a, b, ..] => {
+            *PENDING_CLARIFY.lock() = None;
+            format!("Не расслышал точно: «{}» или «{}»? Назовите нужное.", a, b)
+        }
+        [] => String::new(),
+    }
+}
+
+fn answer_clarify(text: &str) -> Option<Reply> {
+    let pending = PENDING_CLARIFY.lock().clone().filter(|(_, t)| store::now().saturating_sub(*t) <= CLARIFY_TTL);
+    let (phrase, _) = pending?;
+    match confirm::classify(text) {
+        confirm::Answer::Yes => {
+            *PENDING_CLARIFY.lock() = None;
+            Some(Reply { text: String::new(), rerun: Some(phrase) })
+        }
+        confirm::Answer::No => {
+            *PENDING_CLARIFY.lock() = None;
+            r("Хорошо, не выполняю.")
+        }
+        // anything else is a new phrase: the question is dropped
+        confirm::Answer::Other => {
+            *PENDING_CLARIFY.lock() = None;
+            None
+        }
+    }
 }
 
 fn answer_pending(text: &str) -> Option<Reply> {
@@ -247,10 +288,22 @@ fn do_images(text: &str) -> Option<Reply> {
     r("Рисую, это может занять минуту. Скажу, когда будет готово.")
 }
 
+// «найди через Bixby …»: Samsung Bixby has no public search interface for a computer, so Jarvis says so and searches nowhere in its name
+fn do_bixby(text: &str) -> Option<Reply> {
+    let n = crate::textnorm::normalize(text);
+    let mentions = n.split(' ').any(|w| matches!(w, "bixby" | "биксби" | "бикпсби" | "бикси" | "биксбии"));
+    let asks = ["найди", "поищи", "ищи", "search", "find", "look", "izla", "top"].iter().any(|v| n.split(' ').any(|w| w == *v));
+    if !(mentions && asks) {
+        return None;
+    }
+    r("У Bixby нет открытого интерфейса поиска для компьютера, поэтому я не могу искать «через Bixby» и не буду делать вид, что искал им. Скажите «найди в интернете …», и я поищу обычным поиском, назвав, чем искал.")
+}
+
 fn do_programs(text: &str) -> Option<Reply> {
     let n = crate::textnorm::normalize(text);
     let q = ["найди программу ", "найди приложение ", "find program "].iter().find_map(|p| n.strip_prefix(p))?.to_string();
     Some(Reply {
+        rerun: None,
         text: match progsearch::search(&q) {
             Ok(l) if l.is_empty() => "В каталоге Windows такой программы нет.".into(),
             Ok(l) => format!("Нашёл в каталоге Windows: {}. Чтобы поставить, откройте Программы → Каталог и нажмите «Установить»: молча я ничего не ставлю.", l.iter().take(3).map(|p| format!("{} ({})", p.name, p.version)).collect::<Vec<_>>().join(", ")),
@@ -276,6 +329,9 @@ fn answer_plan(text: &str) -> Option<Reply> {
 
 // `text` is the original phrase of the user (capitals and punctuation kept)
 pub fn handle(text: &str) -> Option<Reply> {
+    if let Some(a) = answer_clarify(text) {
+        return Some(a);
+    }
     if let Some(a) = answer_pending(text) {
         return Some(a);
     }
@@ -300,6 +356,9 @@ pub fn handle(text: &str) -> Option<Reply> {
     }
     if let Some(p) = messenger::parse(text) {
         return do_messenger(&p);
+    }
+    if let Some(r) = do_bixby(text) {
+        return Some(r);
     }
     if let Some(r) = do_images(text) {
         return Some(r);
@@ -338,6 +397,36 @@ mod tests {
             assert!(handle("открой браузер").is_none());
         });
     }
+    #[test]
+    fn a_clarifying_question_runs_the_offered_phrase_only_on_yes() {
+        store::with_temp(|| {
+            assert!(clarify(&["открой браузер".into()]).contains("Вы имели в виду «открой браузер»"));
+            let r = handle("да").unwrap();
+            assert_eq!(r.rerun.as_deref(), Some("открой браузер"));
+            // answered once
+            assert!(handle("да").is_none());
+            clarify(&["закрой браузер".into()]);
+            assert_eq!(handle("нет").unwrap().text, "Хорошо, не выполняю.");
+            assert!(handle("да").is_none());
+            // another phrase drops the question
+            clarify(&["закрой браузер".into()]);
+            assert!(handle("что такое питон").is_none());
+            assert!(handle("да").is_none());
+            // two candidates: a question without a pending «да»
+            let q = clarify(&["открой браузер".into(), "закрой браузер".into()]);
+            assert!(q.contains("или"));
+            assert!(handle("да").is_none());
+        });
+    }
+
+    #[test]
+    fn bixby_is_not_pretended() {
+        let r = do_bixby("найди через Bixby рецепт борща").unwrap().text;
+        assert!(r.contains("нет открытого интерфейса") && r.contains("не буду делать вид"));
+        assert!(do_bixby("найди рецепт борща").is_none());
+        assert!(do_bixby("привет Bixby").is_none());
+    }
+
     #[test]
     fn messenger_waits_for_the_answer() {
         store::with_temp(|| {

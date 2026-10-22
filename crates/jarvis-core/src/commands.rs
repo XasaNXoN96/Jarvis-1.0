@@ -232,6 +232,87 @@ pub fn fetch_by_triggers<'a>(
     best.map(|(_, _, path, cmd)| (path, cmd))
 }
 
+// the phrase in the other keyboard layout, when only that one is a phrase of a command («ghbdtn» ↔ «привет», «фдуч» ↔ «alex»).
+// Exact words of a command only: nothing is guessed, and a phrase that already matches is left alone.
+pub fn fix_layout(phrase: &str, commands: &[JCommandsList]) -> Option<String> {
+    let t = phrase.trim();
+    if t.chars().count() < 3 || t.chars().count() > 80 {
+        return None;
+    }
+    let other = if crate::textnorm::has_cyrillic(t) { crate::textnorm::ru_to_en(t) } else { crate::textnorm::en_to_ru(t) };
+    if other == t.to_lowercase() || (!crate::textnorm::has_cyrillic(&other) && !crate::textnorm::has_latin(&other)) {
+        return None;
+    }
+    if fetch_by_triggers(t, commands).is_some() {
+        return None;
+    }
+    fetch_by_triggers(&other, commands).map(|_| other)
+}
+
+// ---- a misheard or mistyped phrase: the best command phrases, and whether to run or to ask ----
+pub struct Fuzzy<'a> {
+    pub score: f64,
+    pub path: &'a PathBuf,
+    pub cmd: &'a JCommand,
+    pub phrase: String,
+}
+
+// at most `n` different commands whose phrase is similar to the input (the best phrase of each), best first
+pub fn fuzzy_top<'a>(phrase: &str, commands: &'a [JCommandsList], min_score: f64, n: usize) -> Vec<Fuzzy<'a>> {
+    let lang = i18n::get_language();
+    let phrase = phrase.trim().to_lowercase();
+    if phrase.is_empty() {
+        return Vec::new();
+    }
+    let phrase_chars: Vec<char> = phrase.chars().collect();
+    let phrase_words: Vec<&str> = phrase.split_whitespace().collect();
+    let mut found: Vec<Fuzzy<'a>> = Vec::new();
+    for cmd_list in commands {
+        for cmd in &cmd_list.commands {
+            let mut best: Option<(f64, String)> = None;
+            for cmd_phrase in cmd.get_phrases(&lang).iter() {
+                let lower = cmd_phrase.trim().to_lowercase();
+                let chars: Vec<char> = lower.chars().collect();
+                let words: Vec<&str> = lower.split_whitespace().collect();
+                let score = ratio(&phrase_chars, &chars) * 0.6 + word_overlap_score(&phrase_words, &words) * 0.4;
+                if score > min_score && best.as_ref().map(|b| score > b.0).unwrap_or(true) {
+                    best = Some((score, lower));
+                }
+            }
+            if let Some((score, p)) = best {
+                found.push(Fuzzy { score, path: &cmd_list.path, cmd, phrase: p });
+            }
+        }
+    }
+    found.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap().then_with(|| a.cmd.id.cmp(&b.cmd.id)));
+    found.truncate(n);
+    found
+}
+
+// a phrase this close is run at once (a typo or a letter lost by the recognizer); a less close one is asked about, never guessed
+pub const FUZZY_AUTO: f64 = 92.0;
+// two candidates this close to each other are a question «A или B»
+pub const FUZZY_TIE: f64 = 6.0;
+
+pub enum FuzzyDecision<'a> {
+    Run(&'a PathBuf, &'a JCommand),
+    // the phrases to offer: one («Вы имели в виду …?») or two
+    Ask(Vec<String>),
+    Nothing,
+}
+
+pub fn fuzzy_decide<'a>(phrase: &str, commands: &'a [JCommandsList]) -> FuzzyDecision<'a> {
+    let top = fuzzy_top(phrase, commands, config::CMD_RATIO_THRESHOLD, 3);
+    match top.as_slice() {
+        [] => FuzzyDecision::Nothing,
+        [a] if a.score >= FUZZY_AUTO => FuzzyDecision::Run(a.path, a.cmd),
+        [a, b, ..] if a.score >= FUZZY_AUTO && a.score - b.score >= FUZZY_TIE => FuzzyDecision::Run(a.path, a.cmd),
+        [a] => FuzzyDecision::Ask(vec![a.phrase.clone()]),
+        [a, b, ..] if a.score - b.score < FUZZY_TIE => FuzzyDecision::Ask(vec![a.phrase.clone(), b.phrase.clone()]),
+        [a, ..] => FuzzyDecision::Ask(vec![a.phrase.clone()]),
+    }
+}
+
 pub fn fetch_command<'a>(
     phrase: &str,
     commands: &'a [JCommandsList],
@@ -527,5 +608,85 @@ fn execute_lua_command(
             };
             Err(short)
         }
+    }
+}
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+
+    fn pack() -> Vec<JCommandsList> {
+        let file: JCommandsList = toml::from_str(
+            r#"
+            [[commands]]
+            id = "browser_open"
+            type = "lua"
+            triggers.ru = ["открой браузер"]
+            triggers.en = ["open browser"]
+            "#,
+        )
+        .unwrap();
+        vec![JCommandsList { path: PathBuf::from("browser"), commands: file.commands }]
+    }
+
+    #[test]
+    fn english_commands_work_whatever_the_language_of_the_program_is() {
+        let p = pack();
+        // (the triggers of the English list count on a Russian program too)
+        for lang in ["ru", "en"] {
+            let t = p[0].commands[0].get_triggers_with_ru(lang);
+            assert!(t.contains(&"open browser".to_string()) && t.contains(&"открой браузер".to_string()), "{}", lang);
+        }
+        assert!(fetch_by_triggers("please open browser now", &p).is_some());
+        assert!(fetch_by_triggers("открой браузер", &p).is_some());
+    }
+
+    fn pack2() -> Vec<JCommandsList> {
+        let file: JCommandsList = toml::from_str(
+            r#"
+            [[commands]]
+            id = "browser_open"
+            type = "lua"
+            phrases.ru = ["открой браузер"]
+            [[commands]]
+            id = "browser_close"
+            type = "lua"
+            phrases.ru = ["закрой браузер"]
+            [[commands]]
+            id = "music_play"
+            type = "lua"
+            phrases.ru = ["включи музыку"]
+            "#,
+        )
+        .unwrap();
+        vec![JCommandsList { path: PathBuf::from("p"), commands: file.commands }]
+    }
+
+    #[test]
+    fn a_near_exact_phrase_runs_a_vaguer_one_asks_and_an_unrelated_one_does_nothing() {
+        let p = pack2();
+        // one letter off: runs
+        assert!(matches!(fuzzy_decide("включи музыкю", &p), FuzzyDecision::Run(_, c) if c.id == "music_play"));
+        // two commands differ by one word: «открой» and «закрой» are close to a half-heard word: a question, not a guess
+        match fuzzy_decide("ткрой браузер", &p) {
+            FuzzyDecision::Ask(v) => assert!(v.contains(&"открой браузер".to_string()), "{:?}", v),
+            FuzzyDecision::Run(_, c) => assert_eq!(c.id, "browser_open"),
+            FuzzyDecision::Nothing => panic!(),
+        }
+        assert!(matches!(fuzzy_decide("совсем другое дело", &p), FuzzyDecision::Nothing));
+        assert!(matches!(fuzzy_decide("", &p), FuzzyDecision::Nothing));
+        // never more than three candidates and a stable order
+        assert!(fuzzy_top("браузер", &p, 40.0, 3).len() <= 3);
+    }
+
+    #[test]
+    fn a_phrase_in_the_wrong_keyboard_layout_is_fixed_only_when_it_becomes_a_command() {
+        let p = pack();
+        assert_eq!(fix_layout("jnrhjq ,hfepth", &p).as_deref(), Some("открой браузер"));
+        assert_eq!(fix_layout("щзут икщцыук", &p).as_deref(), Some("open browser"));
+        // already a phrase of a command, or no command in the other layout: left alone
+        assert_eq!(fix_layout("открой браузер", &p), None);
+        assert_eq!(fix_layout("jnrhjq ytcetcndetn", &p), None);
+        assert_eq!(fix_layout("ab", &p), None);
+        assert_eq!(fix_layout("12345", &p), None);
     }
 }
