@@ -1017,6 +1017,23 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
         // a dangerous (high-risk) command is asked about first; only «да» from the same door runs this very command
         // (confirm.rs). What counts is the risk of a command whose files are the ones of this build.
         let risk = commands::effective_risk(&cmd_path, &cmd_config);
+        // with a password of the owner set, a dangerous command is not run until the program is unlocked in the window (a voice cannot unlock it)
+        if risk == jarvis_core::policy::Risk::High {
+            if let Err(msg) = jarvis_core::owner::guard() {
+                info!("Command {} refused: the program is locked", cmd_config.id);
+                say(&msg);
+                ipc::send(IpcEvent::Output { text: msg.clone() });
+                open_request(text, "command");
+                jarvis_core::dialog::reply(&msg, "local");
+                jarvis_core::dialog::end(false);
+                jarvis_core::uistate::log_action(text, &format!("{}: нужен пароль владельца", cmd_config.id), false);
+                if jarvis_core::tts::can_speak().is_ok() {
+                    jarvis_core::tts::speak(&msg);
+                }
+                ipc::send(IpcEvent::Idle);
+                return false;
+            }
+        }
         let confirmed = match jarvis_core::confirm::gate(&cmd_config.id, risk, text, source) {
             jarvis_core::confirm::Gate::Run { confirmed } => confirmed,
             jarvis_core::confirm::Gate::Ask { question } => {

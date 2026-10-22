@@ -170,6 +170,94 @@ pub fn generate(_prompt: &str) -> Result<PathBuf, String> {
     Err("нет сети в этой сборке".into())
 }
 
+// ---- the job shown in the window: one at a time, with a state; «Отмена» drops the result (the request itself cannot be recalled) ----
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct Job {
+    // "idle" | "running" | "done" | "error" | "cancelled"
+    pub state: String,
+    pub prompt: String,
+    pub path: String,
+    pub message: String,
+    pub started: u64,
+}
+
+static JOB: parking_lot::Mutex<Option<Job>> = parking_lot::const_mutex(None);
+static GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub fn job() -> Job {
+    JOB.lock().clone().unwrap_or(Job { state: "idle".into(), ..Default::default() })
+}
+
+pub fn cancel_job() -> bool {
+    let mut g = JOB.lock();
+    match g.as_mut() {
+        Some(j) if j.state == "running" => {
+            GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            j.state = "cancelled".into();
+            j.message = "Отменено: результат будет отброшен (запрос уже ушёл провайдеру, платный он или нет — решает провайдер).".into();
+            true
+        }
+        _ => false,
+    }
+}
+
+// `run` makes the picture (the real call in the program, a stub in tests); the answer is applied only if the job was not cancelled meanwhile
+pub fn start_job_with(prompt: &str, run: Box<dyn FnOnce(&str) -> Result<PathBuf, String> + Send>) -> Result<(), String> {
+    let prompt = prompt.trim().to_string();
+    if prompt.is_empty() || prompt.chars().count() > MAX_PROMPT {
+        return Err(format!("Описание картинки: от 1 до {} символов.", MAX_PROMPT));
+    }
+    {
+        let mut g = JOB.lock();
+        if g.as_ref().map(|j| j.state == "running").unwrap_or(false) {
+            return Err("Уже идёт генерация: дождитесь или отмените её.".into());
+        }
+        *g = Some(Job { state: "running".into(), prompt: prompt.clone(), path: String::new(), message: "Запрос отправлен провайдеру…".into(), started: crate::store::now() });
+    }
+    let my = GEN.load(std::sync::atomic::Ordering::SeqCst);
+    std::thread::spawn(move || {
+        let result = run(&prompt);
+        let mut g = JOB.lock();
+        if GEN.load(std::sync::atomic::Ordering::SeqCst) != my {
+            // cancelled: the file, if it was made, is removed
+            if let Ok(p) = &result {
+                let _ = std::fs::remove_file(p);
+            }
+            return;
+        }
+        if let Some(j) = g.as_mut() {
+            match result {
+                Ok(p) => {
+                    j.state = "done".into();
+                    j.path = p.to_string_lossy().to_string();
+                    j.message = "Готово: файл сохранён.".into();
+                }
+                Err(e) => {
+                    j.state = "error".into();
+                    j.message = e;
+                }
+            }
+        }
+    });
+    Ok(())
+}
+
+pub fn start_job(prompt: &str) -> Result<(), String> {
+    perms::check(perms::Cap::AiNetwork)?;
+    start_job_with(prompt, Box::new(|p| generate(p)))
+}
+
+// the finished picture for the window (small enough to carry in the answer)
+pub fn preview_b64(path: &str) -> Option<String> {
+    let p = Path::new(path);
+    if !p.starts_with(out_dir()) && !cfg!(test) {
+        return None;
+    }
+    let b = std::fs::read(p).ok().filter(|b| b.len() < 8_000_000)?;
+    image_kind(&b)?;
+    Some(crate::docai::b64_encode(&b))
+}
+
 // video: its own adapter. No supported provider has one common call, so the answer says what is needed.
 pub fn generate_video(_prompt: &str) -> Result<PathBuf, String> {
     Err("Создание видео пока недоступно: для него нужен отдельный сервис (например, Sora или Veo) и его ключ, а общего способа у подключённых ИИ-провайдеров нет. Картинки работают.".into())
@@ -220,6 +308,36 @@ mod tests {
         assert_eq!(parse("создай видео про океан"), Some((true, "про океан".into())));
         assert_eq!(parse("открой браузер"), None);
         assert!(generate_video("x").unwrap_err().contains("недоступно"));
+    }
+
+    #[test]
+    fn the_job_has_honest_states_and_a_cancelled_result_is_dropped() {
+        let d = tempfile::tempdir().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel::<()>();
+        let dir = d.path().to_path_buf();
+        start_job_with("кот", Box::new(move |_| { rx.recv().ok(); save(&PNG, "кот", &dir) })).unwrap();
+        assert_eq!(job().state, "running");
+        assert!(start_job_with("ещё", Box::new(|_| Err("x".into()))).unwrap_err().contains("Уже идёт"));
+        assert!(cancel_job());
+        tx.send(()).unwrap();
+        for _ in 0..50 {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            if std::fs::read_dir(d.path()).unwrap().next().is_none() { break; }
+        }
+        assert_eq!(job().state, "cancelled");
+        assert!(std::fs::read_dir(d.path()).unwrap().next().is_none(), "the file of a cancelled job is removed");
+        // a normal job
+        let dir = d.path().to_path_buf();
+        start_job_with("пёс", Box::new(move |_| save(&PNG, "пёс", &dir))).unwrap();
+        for _ in 0..100 { if job().state != "running" { break; } std::thread::sleep(std::time::Duration::from_millis(20)); }
+        let j = job();
+        assert_eq!(j.state, "done");
+        assert!(preview_b64(&j.path).is_some());
+        // an error is shown as it is
+        start_job_with("x", Box::new(|_| Err("лимит провайдера".into()))).unwrap();
+        for _ in 0..100 { if job().state != "running" { break; } std::thread::sleep(std::time::Duration::from_millis(20)); }
+        assert_eq!((job().state.as_str(), job().message.as_str()), ("error", "лимит провайдера"));
+        assert!(start_job_with("", Box::new(|_| Err("x".into()))).is_err());
     }
 
     #[test]

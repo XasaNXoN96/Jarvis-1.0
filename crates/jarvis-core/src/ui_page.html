@@ -313,6 +313,7 @@
   .fw-bar b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; } .fw-bar button { border: 0; background: transparent; color: var(--dim); cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 6px; } .fw-bar button:hover { color: var(--text); background: #ffffff14; }
   .fw-body { flex: 1; min-height: 0; overflow: auto; padding: 10px 12px; font-size: 14px; line-height: 1.5; }
   .pair-code { font-size: 26px; letter-spacing: .3em; font-variant-numeric: tabular-nums; margin-left: 8px; }
+  .img-out { max-width: 100%; max-height: 420px; border-radius: 12px; border: 1px solid var(--line); margin-top: 8px; } .img-out[hidden] { display: none; }
   .rg-dlg { position: fixed; inset: 0; z-index: 9990; background: rgba(0,0,0,.65); display: none; align-items: center; justify-content: center; } .rg-dlg.on { display: flex; }
   .rg-box { width: min(940px, 96vw); max-height: 94vh; overflow: auto; background: var(--panel2); border: 1px solid var(--line2); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
   #rg-canvas { width: 100%; height: auto; border-radius: 10px; cursor: crosshair; touch-action: none; background: #000; } .rg-box .r { display: flex; gap: 8px; } .rg-box .r input { flex: 1; min-width: 0; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: #ffffff06; color: var(--text); font: inherit; }
@@ -1189,7 +1190,7 @@
       <div class="diag-acts"><button class="btn primary" id="diag-run" type="button">Проверить всё</button><button class="btn" id="diag-copy" type="button">Копировать диагностический отчёт</button><button class="btn" id="diag-games" type="button">Копировать отчёт по играм</button><span class="msgline" id="diag-msg"></span></div>
       <div class="diag-sum" id="diag-sum" hidden><span class="seg" id="diag-filter"><button type="button" data-f="all" class="active">Все</button><button type="button" data-f="bad">Проблемы</button><button type="button" data-f="ok">В порядке</button></span><span id="diag-counts" class="dim"></span></div>
       <div class="diag-grid" id="diag-list"><div class="empty">Нажмите «Проверить всё».</div></div>
-      <div class="card" style="margin-top:14px"><h3><span class="ei">📜</span>Последние события программы</h3><div id="diag-events"><div class="empty">Событий пока нет.</div></div>
+      <div class="card" style="margin-top:14px"><h3><span class="ei">📜</span>Последние события программы</h3><div class="diag-sum"><input type="text" id="diag-q" placeholder="Поиск по событиям" maxlength="60"><span class="seg" id="diag-kind"><button type="button" data-k="" class="active">Все</button><button type="button" data-k="error">Ошибки</button><button type="button" data-k="ai">ИИ</button><button type="button" data-k="voice">Голос</button><button type="button" data-k="start">Запуск</button></span></div><div id="diag-events"><div class="empty">Событий пока нет.</div></div>
         <small class="dim">Без личных данных: фразы, диалоги и тексты уведомлений сюда не попадают. Отчёт не содержит ключей, токенов и паролей.</small></div>
     </section>
 
@@ -1480,6 +1481,11 @@
         <pre id="ca-diff" class="ca-diff" hidden></pre>
         <div class="r" id="ca-actions" hidden><button class="btn primary" id="ca-apply" type="button">Применить</button><button class="btn" id="ca-discard" type="button">Отклонить</button></div>
         <div class="msgline" id="ca-msg"></div>
+      </div>
+      <div class="card" data-cat="ai" id="img-card" data-tab="Картинки"><h3><span class="ei">🎨</span>Генерация картинок</h3>
+        <div class="setrow"><div class="l">Описание<small id="img-info">Картинка делается вашим ИИ-провайдером (OpenAI, Gemini или совместимым сервером) и сохраняется в Изображения\\Jarvis. Запрос может быть платным: решает провайдер. Видео пока недоступно: общего способа у провайдеров нет.</small></div></div>
+        <div class="ct-form"><input type="text" id="img-prompt" maxlength="1500" placeholder="например: рыжий кот на крыше ночью, акварель"><input type="text" id="img-model" maxlength="80" placeholder="модель (пусто — по умолчанию)"><button class="btn primary" id="img-go" type="button">Создать</button><button class="btn" id="img-cancel" type="button" disabled>Отмена</button></div>
+        <div class="msgline" id="img-msg"></div><img id="img-out" class="img-out" alt="" hidden>
       </div>
       <div class="card" data-cat="ai" id="notes-card" data-tab="Дневник"><h3><span class="ei">📓</span>Голосовой дневник и заметки</h3>
         <div class="setrow"><div class="l">Записи<small>«запиши в дневник: …», «заметка: …», «что я записывал вчера», «найди в дневнике …». Пишется только то, что вы сами сказали записать.</small></div></div>
@@ -1787,7 +1793,7 @@ function show(name) {
   if (name === 'games') { gpSummary(); gsLoad(); }
   if (name === 'files') filesLoad();
   if (name === 'devices') devicesLoad();
-  if (name === 'settings') { syncLoad(); wolLoad(); compLoad(); pairLoad(); personaLoad(); smsLoad(); micwLoad(); memLoad(); ctLoad(); ownerLoad(); permLoad(); kbLoad(); undoLoad(); homeLoad(); schLoad(); notesLoad(); loadSettings(); refreshRemote(); tgLoad(); setTimeout(() => { if (typeof setView === 'function') setView(); }, 60); }
+  if (name === 'settings') { imgPoll(); syncLoad(); wolLoad(); compLoad(); pairLoad(); personaLoad(); smsLoad(); micwLoad(); memLoad(); ctLoad(); ownerLoad(); permLoad(); kbLoad(); undoLoad(); homeLoad(); schLoad(); notesLoad(); loadSettings(); refreshRemote(); tgLoad(); setTimeout(() => { if (typeof setView === 'function') setView(); }, 60); }
   if (name === 'tasks') { tkEdit = -1; tasksLoad(); }
   if (name === 'home') { homeSig = ''; }
   if (name === 'messages') msgsLoad(true);
@@ -3195,6 +3201,28 @@ async function wolLoad() {
 $('#wol-add').onclick = async () => { const r = await action('wol_add', { name: $('#wol-name').value, mac: $('#wol-mac').value }).catch(() => ({})); lineMsg('#wol-msg', r); if (r.ok) { $('#wol-name').value = ''; $('#wol-mac').value = ''; } wolLoad(); };
 $('#wol-list').onclick = async e => { const b = e.target.closest('button[data-op]'); if (!b) return; const id = b.closest('.mem-item').dataset.id; if (b.dataset.op === 'del') { await action('wol_remove', { id }); wolLoad(); return; } const r = await action('wol_wake', { id }).catch(() => ({})); lineMsg('#wol-msg', r); };
 
+// ---------- picture generation ----------
+let imgTimer = null;
+async function imgPoll() {
+  clearTimeout(imgTimer);
+  const r = await action('img_status').catch(() => null); if (!r) return;
+  const j = r.job || {}, m = $('#img-msg');
+  if (document.activeElement !== $('#img-model') && !$('#img-model').value) $('#img-model').placeholder = 'модель (сейчас: ' + (r.model || 'не выбрана') + ')';
+  $('#img-go').disabled = j.state === 'running'; $('#img-cancel').disabled = j.state !== 'running';
+  if (j.state === 'running') { m.className = 'msgline'; m.textContent = 'Идёт генерация… ' + Math.max(0, Math.round(Date.now() / 1000 - j.started)) + ' с'; }
+  else if (j.state === 'done') { m.className = 'msgline ok'; m.textContent = j.message + ' ' + j.path; if (r.preview) { const im = $('#img-out'); im.src = 'data:image/*;base64,' + r.preview; im.hidden = false; } }
+  else if (j.state === 'error' || j.state === 'cancelled') { m.className = 'msgline bad'; m.textContent = j.message; }
+  if (j.state === 'running' && currentPage === 'settings') imgTimer = setTimeout(imgPoll, 1500);
+}
+$('#img-go').onclick = async () => {
+  if ($('#img-model').value.trim()) await action('img_model', { value: $('#img-model').value.trim() });
+  $('#img-out').hidden = true;
+  const r = await action('img_start', { prompt: $('#img-prompt').value }).catch(() => ({}));
+  if (!r.ok) { lineMsg('#img-msg', r); return; }
+  imgPoll();
+};
+$('#img-cancel').onclick = async () => { await action('img_cancel'); imgPoll(); };
+
 // ---------- components ----------
 let compTimer = null;
 const COMP_OPS = { install: 'Установить', check: 'Проверить', remove: 'Удалить' };
@@ -4509,7 +4537,9 @@ $('#b-file').onchange = async e => {
 // ---------- diagnostics ----------
 const DST = { ok: ['Работает', 'ok'], warn: ['Предупреждение', 'warn'], error: ['Ошибка', 'bad'], unchecked: ['Не проверено', ''] };
 let diagTimer = 0;
-let diagFilter = 'all';
+let diagFilter = 'all', diagKind = '';
+document.addEventListener('input', e => { if (e.target.id === 'diag-q') diagLoad(); });
+document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('#diag-kind button'); if (!b) return; diagKind = b.dataset.k; document.querySelectorAll('#diag-kind button').forEach(x => x.classList.toggle('active', x === b)); diagLoad(); });
 document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('#diag-filter button'); if (!b) return; diagFilter = b.dataset.f; document.querySelectorAll('#diag-filter button').forEach(x => x.classList.toggle('active', x === b)); diagLoad(); });
 async function diagLoad() {
   let d; try { d = await (await fetch('/diag')).json(); } catch (e) { return; }
@@ -4536,7 +4566,8 @@ async function diagLoad() {
   $('#diag-run').disabled = !!d.running;
   const ev = $('#diag-events'); ev.textContent = '';
   if (!d.events || !d.events.length) ev.innerHTML = '<div class="empty">Событий пока нет.</div>';
-  for (const e of (d.events || [])) {
+  const dq = $('#diag-q').value.trim().toLowerCase();
+  for (const e of (d.events || []).filter(e => (!diagKind || e.kind === diagKind) && (!dq || e.text.toLowerCase().includes(dq)))) {
     const r = document.createElement('div'); r.className = 'ntrow' + (e.kind === 'error' ? ' err' : '');
     const tm = document.createElement('time'); tm.textContent = fmtTime(e.time); const sp = document.createElement('span'); sp.textContent = e.text; r.append(tm, sp); ev.appendChild(r);
   }

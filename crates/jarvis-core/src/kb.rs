@@ -1,4 +1,4 @@
-//! The personal knowledge base: the user chooses folders, Jarvis reads the text documents in them (txt, md, csv, rtf, docx, xlsx, pptx, odt),
+//! The personal knowledge base: the user chooses folders, Jarvis reads the text documents in them (txt, md, csv, rtf, docx, xlsx, pptx, odt and simple PDF),
 //! cuts them into passages and answers by search: «найди в моих документах …», «ответь по документам …». Every answer carries its sources
 //! (file and passage number). The documents are DATA: their text goes to the AI inside a fenced block with the order not to obey it, so
 //! a sentence like «забудь все инструкции» inside a file changes nothing. Only the folders the user added are read; nothing is
@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 const FILE: &str = "kb_index.json";
-pub const EXTS: [&str; 10] = ["txt", "md", "csv", "rtf", "docx", "xlsx", "pptx", "odt", "log", "json"];
+pub const EXTS: [&str; 11] = ["pdf", "txt", "md", "csv", "rtf", "docx", "xlsx", "pptx", "odt", "log", "json"];
 const CHUNK: usize = 700;
 const MAX_FILES: usize = 3000;
 const MAX_CHUNKS: usize = 60_000;
@@ -104,6 +104,94 @@ pub fn chunks_of(text: &str) -> Vec<String> {
     out
 }
 
+// The text of a SIMPLE PDF: the content streams (plain or Flate) are read and the strings of the text operators (Tj, TJ) are taken. A scan
+// (pictures), a PDF with embedded fonts that map letters to glyph numbers, or an encrypted one gives little or nothing: then None
+// (no OCR in this build) and the file is not indexed; a made-up text is never returned.
+pub fn pdf_text(bytes: &[u8]) -> Option<String> {
+    use std::io::Read;
+    if !bytes.starts_with(b"%PDF") || bytes.windows(8).any(|w| w == b"/Encrypt") {
+        return None;
+    }
+    let find = |h: &[u8], n: &[u8], from: usize| h[from.min(h.len())..].windows(n.len()).position(|w| w == n).map(|i| i + from);
+    let mut out = String::new();
+    let mut pos = 0;
+    while let Some(sp) = find(bytes, b"stream", pos) {
+        // «endstream» also contains «stream»
+        if sp >= 3 && &bytes[sp - 3..sp] == b"end" {
+            pos = sp + 6;
+            continue;
+        }
+        let mut start = sp + 6;
+        if bytes.get(start) == Some(&b'\r') {
+            start += 1;
+        }
+        if bytes.get(start) == Some(&b'\n') {
+            start += 1;
+        }
+        let Some(end) = find(bytes, b"endstream", start) else { break };
+        let dict_from = bytes[..sp].windows(2).rposition(|w| w == b"<<").unwrap_or(0);
+        let dict = &bytes[dict_from..sp];
+        let raw = &bytes[start..end];
+        let data: Vec<u8> = if dict.windows(12).any(|w| w == b"/FlateDecode") {
+            let mut d = Vec::new();
+            if flate2::read::ZlibDecoder::new(raw).take(8_000_000).read_to_end(&mut d).is_err() && d.is_empty() {
+                pos = end + 9;
+                continue;
+            }
+            d
+        } else {
+            raw.to_vec()
+        };
+        // only streams that look like page content (they have BT … ET)
+        if find(&data, b"BT", 0).is_some() && find(&data, b"ET", 0).is_some() {
+            let mut i = 0;
+            let mut line = String::new();
+            while i < data.len() {
+                if data[i] == b'(' {
+                    let mut depth = 1;
+                    let mut j = i + 1;
+                    let mut s = Vec::new();
+                    while j < data.len() && depth > 0 {
+                        match data[j] {
+                            b'\\' if j + 1 < data.len() => {
+                                j += 1;
+                                s.push(match data[j] { b'n' => b'\n', b'r' => b'\r', b't' => b' ', c => c });
+                            }
+                            b'(' => { depth += 1; s.push(b'('); }
+                            b')' => { depth -= 1; if depth > 0 { s.push(b')'); } }
+                            c => s.push(c),
+                        }
+                        j += 1;
+                    }
+                    line.push_str(&String::from_utf8_lossy(&s));
+                    i = j;
+                    continue;
+                }
+                // a text operator ends a piece: Tj / TJ / ' / " (a new line for T* and ET)
+                if data[i] == b'E' && data.get(i + 1) == Some(&b'T') || data[i] == b'T' && matches!(data.get(i + 1), Some(b'*') | Some(b'd') | Some(b'D')) {
+                    if !line.trim().is_empty() {
+                        out.push_str(line.trim());
+                        out.push('\n');
+                    }
+                    line.clear();
+                }
+                i += 1;
+            }
+            if !line.trim().is_empty() {
+                out.push_str(line.trim());
+                out.push('\n');
+            }
+        }
+        pos = end + 9;
+    }
+    // a readable result: mostly letters and spaces
+    let letters = out.chars().filter(|c| c.is_alphabetic() || c.is_whitespace()).count();
+    if out.chars().count() < 20 || letters * 10 < out.chars().count() * 7 {
+        return None;
+    }
+    Some(out)
+}
+
 fn walk(dir: &Path, out: &mut Vec<PathBuf>, depth: u32) {
     if depth > 8 || out.len() >= MAX_FILES {
         return;
@@ -147,7 +235,20 @@ pub fn reindex() -> Result<(usize, usize), String> {
             Some(d) if d.mtime == mtime && d.size == meta.len() => d.clone(),
             _ => {
                 let ext = p.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-                let Some(text) = crate::filesearch::file_text(&p, &ext) else { continue };
+                let text = if ext == "pdf" {
+                    if meta.len() > 20_000_000 {
+                        continue;
+                    }
+                    match std::fs::read(&p).ok().and_then(|b| pdf_text(&b)) {
+                        Some(t) => t,
+                        None => continue,
+                    }
+                } else {
+                    match crate::filesearch::file_text(&p, &ext) {
+                        Some(t) => t,
+                        None => continue,
+                    }
+                };
                 Doc { path: key, mtime, size: meta.len(), chunks: chunks_of(&text) }
             }
         };
@@ -340,6 +441,50 @@ mod tests {
             assert_eq!(search("оплатить счета", 3).len(), 1);
             assert!(remove_folder(&d.path().to_string_lossy()));
             assert!(load().docs.is_empty());
+        });
+    }
+
+    fn tiny_pdf(compress: bool) -> Vec<u8> {
+        use std::io::Write;
+        let content = b"BT /F1 12 Tf 72 700 Td (Dogovor arendy kvartiry) Tj T* [(Srok ) -20 (dvenadtsat mesyatsev)] TJ ET".to_vec();
+        let (body, filter) = if compress {
+            let mut e = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+            e.write_all(&content).unwrap();
+            (e.finish().unwrap(), " /Filter /FlateDecode")
+        } else {
+            (content, "")
+        };
+        let mut pdf = format!("%PDF-1.4\n1 0 obj\n<< /Length {}{} >>\nstream\n", body.len(), filter).into_bytes();
+        pdf.extend_from_slice(&body);
+        pdf.extend_from_slice(b"\nendstream\nendobj\ntrailer\n<< >>\n%%EOF");
+        pdf
+    }
+
+    #[test]
+    fn a_simple_pdf_gives_its_text_and_a_scan_or_encrypted_one_gives_nothing() {
+        for c in [false, true] {
+            let t = pdf_text(&tiny_pdf(c)).unwrap();
+            assert!(t.contains("Dogovor arendy kvartiry") && t.contains("dvenadtsat mesyatsev"), "{}: {:?}", c, t);
+        }
+        assert_eq!(pdf_text(b"not a pdf"), None);
+        let mut enc = tiny_pdf(false);
+        enc.extend_from_slice(b"/Encrypt");
+        assert_eq!(pdf_text(&enc), None);
+        // a page with only a picture: no text, nothing made up
+        assert_eq!(pdf_text(b"%PDF-1.4\n1 0 obj\n<< /Length 4 >>\nstream\nabcd\nendstream\nendobj\n"), None);
+    }
+
+    #[test]
+    fn a_pdf_in_a_folder_is_indexed_and_found() {
+        store::with_temp(|| {
+            let d = tempfile::tempdir().unwrap();
+            std::fs::write(d.path().join("contract.pdf"), tiny_pdf(true)).unwrap();
+            std::fs::write(d.path().join("scan.pdf"), b"%PDF-1.4 only pictures").unwrap();
+            add_folder(&d.path().to_string_lossy()).unwrap();
+            let (files, _) = reindex().unwrap();
+            assert_eq!(files, 1, "the scan is skipped, not faked");
+            let h = search("Dogovor arendy", 3);
+            assert!(h.len() == 1 && h[0].path.ends_with("contract.pdf"));
         });
     }
 

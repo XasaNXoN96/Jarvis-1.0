@@ -1219,6 +1219,24 @@ fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
             }
         }
         // what plays on the computer now (the window titles of the players and of YouTube in a browser)
+        // a picture of the screen of this computer for the phone: only with the permission «Показывать экран…» (off by default) and only for
+        // an authenticated device; one picture per request, nothing is recorded or kept
+        ("GET", "/screen") => {
+            if let Err(e) = crate::perms::check(crate::perms::Cap::RemoteScreen) {
+                respond(stream, "403 Forbidden", "text/plain", &e);
+            } else if !crate::guard::first("remote:screen", Duration::from_millis(700)) {
+                respond(stream, "429 Too Many Requests", "text/plain", "не чаще раза в секунду");
+            } else {
+                match crate::screen::capture() {
+                    Ok(jpeg) => {
+                        info!("Remote control: the screen was shown to a device");
+                        crate::uistate::log_event("info", "Экран показан на привязанном устройстве");
+                        respond(stream, "200 OK", "application/json", &serde_json::json!({ "ok": true, "jpeg": crate::docai::b64_encode(&jpeg) }).to_string());
+                    }
+                    Err(e) => respond(stream, "503 Service Unavailable", "text/plain", &e),
+                }
+            }
+        }
         ("GET", "/media") => {
             let items: Vec<serde_json::Value> = crate::media::now().into_iter().map(|n| serde_json::json!({ "app": n.app, "title": n.title })).collect();
             respond(stream, "200 OK", "application/json", &serde_json::json!({ "items": items }).to_string());
@@ -1477,6 +1495,21 @@ if (!token) {
     } catch (e) { m.textContent = 'Нет связи с компьютером.'; }
   };
 }
+// the screen of the computer (needs the permission on the computer; one picture on each press)
+(function () {
+  const b = document.createElement('button'); b.textContent = '🖥 Экран ПК'; b.style.cssText = 'position:fixed;right:10px;bottom:10px;z-index:900;padding:10px 14px;border-radius:12px;border:1px solid #3a3a40;background:#17171a;color:#ececee;font:14px system-ui';
+  b.onclick = async () => {
+    try {
+      const r = await fetchT('/screen', { headers: { 'X-Token': token } });
+      if (!r.ok) { alert(await r.text()); return; }
+      const j = await r.json();
+      let box = document.getElementById('scrbox');
+      if (!box) { box = document.createElement('div'); box.id = 'scrbox'; box.style.cssText = 'position:fixed;inset:0;z-index:99998;background:#000d;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px'; box.onclick = () => box.remove(); document.body.appendChild(box); }
+      box.innerHTML = '<img style="max-width:96vw;max-height:88vh;border-radius:8px" src="data:image/jpeg;base64,' + j.jpeg + '"><span style="color:#aaa">Нажмите, чтобы закрыть. Это один снимок, не трансляция.</span>';
+    } catch (e) { alert('Нет связи с компьютером'); }
+  };
+  document.addEventListener('DOMContentLoaded', () => document.body.appendChild(b)); if (document.body) document.body.appendChild(b);
+})();
 const rid = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const quick = [
   ['поставь таймер на 5 минут', '⏱', 'Таймер 5 мин', 'hot'], ['отмени таймер', '⏹', 'Отмена таймера', ''], ['сколько времени', '🕐', 'Сколько времени', ''], ['отмени выключение', '⛔', 'Отмена выкл.', ''],
@@ -2094,6 +2127,29 @@ mod tests {
             assert!(pairing::revoke(&pairing::list()[0].id));
             assert!(status_of("203.0.113.81", &secret).contains("403"));
             note_success(&throttle_key(ip));
+            RUNNING.store(false, Ordering::SeqCst);
+        });
+    }
+
+    #[test]
+    fn the_screen_is_shown_only_with_the_permission_and_a_secret() {
+        let _g = PHONE_TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            crate::owner::reset_for_tests();
+            RUNNING.store(true, Ordering::SeqCst);
+            let get = |ip: &str, tok: &str| {
+                let raw = format!("GET /screen HTTP/1.1\r\nHost: x.trycloudflare.com\r\nCf-Connecting-Ip: {}\r\nX-Token: {}\r\n\r\n", ip, tok);
+                let mut m = Mock { inp: std::io::Cursor::new(raw.into_bytes()), out: Vec::new() };
+                handle(&mut m).unwrap();
+                String::from_utf8_lossy(&m.out).to_string()
+            };
+            assert!(get("203.0.113.90", &"0".repeat(32)).contains("403"), "no secret");
+            let off = get("203.0.113.91", &token());
+            assert!(off.contains("403") && off.contains("центре разрешений"), "{}", off);
+            crate::perms::set(crate::perms::Cap::RemoteScreen, true).unwrap();
+            let on = get("203.0.113.92", &token());
+            // (no screen in this environment: an honest error, never a made-up picture)
+            assert!(on.contains("503") || on.contains("\"jpeg\""), "{}", on);
             RUNNING.store(false, Ordering::SeqCst);
         });
     }

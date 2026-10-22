@@ -27,9 +27,11 @@ pub enum Cap {
     SmartHome,
     // multi-step control of the computer by a plan
     Automation,
+    // the phone may look at the screen of this computer through the remote
+    RemoteScreen,
 }
 
-pub const ALL: [Cap; 9] = [Cap::AiNetwork, Cap::Messenger, Cap::Memory, Cap::ScreenCapture, Cap::FileSearch, Cap::Scheduler, Cap::Install, Cap::SmartHome, Cap::Automation];
+pub const ALL: [Cap; 10] = [Cap::AiNetwork, Cap::Messenger, Cap::Memory, Cap::ScreenCapture, Cap::FileSearch, Cap::Scheduler, Cap::Install, Cap::SmartHome, Cap::Automation, Cap::RemoteScreen];
 
 impl Cap {
     pub fn id(self) -> &'static str {
@@ -43,6 +45,7 @@ impl Cap {
             Cap::Install => "install",
             Cap::SmartHome => "smart_home",
             Cap::Automation => "automation",
+            Cap::RemoteScreen => "remote_screen",
         }
     }
     pub fn title(self) -> &'static str {
@@ -56,6 +59,7 @@ impl Cap {
             Cap::Install => "Скачивать и ставить программы",
             Cap::SmartHome => "Управлять умным домом",
             Cap::Automation => "Управлять компьютером по плану (многошаговые задачи)",
+            Cap::RemoteScreen => "Показывать экран компьютера на привязанном телефоне",
         }
     }
     pub fn from_id(s: &str) -> Option<Cap> {
@@ -63,7 +67,7 @@ impl Cap {
     }
     // on by default: what the program did before this centre existed, and the harmless ones. Installing and the smart home start OFF.
     fn default_on(self) -> bool {
-        !matches!(self, Cap::Install | Cap::SmartHome | Cap::Automation)
+        !matches!(self, Cap::Install | Cap::SmartHome | Cap::Automation | Cap::RemoteScreen)
     }
 }
 

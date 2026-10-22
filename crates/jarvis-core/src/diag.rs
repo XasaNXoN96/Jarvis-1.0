@@ -778,7 +778,7 @@ pub fn json() -> Value {
         "at": last.as_ref().map(|r| r.at),
         "checks": last.as_ref().map(|r| r.checks.clone()).unwrap_or_default(),
         "warm_piper": crate::tts::warm_status(),
-        "events": safe_events(25),
+        "events": safe_events(100),
     })
 }
 

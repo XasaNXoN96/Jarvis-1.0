@@ -364,6 +364,21 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             let ok = false;
             json!({ "ok": ok, "message": if ok { "Windows просят обновить значки. Если старые остались: удалите ярлык и создайте заново, а при необходимости удалите файлы IconCache.db и iconcache_*.db в %localappdata% и перезапустите проводник." } else { "Доступно только в Windows" } })
         }
+        // generation of pictures in the window
+        "img_start" => match crate::imagegen::start_job(body.get("prompt").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(()) => json!({ "ok": true }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "img_status" => {
+            let j = crate::imagegen::job();
+            let preview = if j.state == "done" { crate::imagegen::preview_b64(&j.path) } else { None };
+            json!({ "ok": true, "job": j, "preview": preview, "model": crate::imagegen::model_for(&crate::uistate::settings().ai_provider), "provider": crate::uistate::settings().ai_provider })
+        }
+        "img_cancel" => json!({ "ok": crate::imagegen::cancel_job() }),
+        "img_model" => match crate::imagegen::set_model(body.get("value").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(()) => json!({ "ok": true }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
         // sync of the memory, contacts and notes through a folder; Wake-on-LAN
         "sync_get" => json!({ "ok": true, "status": crate::wsync::status_json() }),
         "sync_folder" => match crate::wsync::set_folder(body.get("path").and_then(|v| v.as_str()).unwrap_or("")) {
