@@ -33,10 +33,12 @@ pub fn init() -> Result<(), ()> {
             ) {
                 false => {
                     error!("Recorder initialization failed.");
+                    crate::voicediag::note("device", "микрофон не открылся");
 
                     return Err(());
                 }
                 _ => {
+                    crate::voicediag::note("device", &format!("микрофон открыт: {}", get_audio_device_name(pvrecorder::active_index())));
                     info!(
                         "Recorder initialization success. Listening to microphone ({}): {}",
                         pvrecorder::active_index(),
@@ -236,6 +238,7 @@ pub fn get_selected_microphone_index() -> i32 {
     let validated = diag::validate_index(idx, get_audio_devices().len());
     if validated != idx {
         warn!("Microphone index {} is not available, using the system default", idx);
+        crate::voicediag::note("device", "выбранный микрофон недоступен, взят микрофон Windows по умолчанию");
     }
     validated
 }

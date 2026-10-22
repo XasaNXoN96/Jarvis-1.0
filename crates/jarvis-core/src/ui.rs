@@ -482,7 +482,11 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             json!({ "ok": true, "removed": crate::devhist::clear(door) })
         }
         // the journal of critical actions (audit.rs): the window reads it; clearing needs the unlocked program
-        "audit_get" => json!({ "ok": true, "log": crate::audit::json(100) }),
+        "audit_get" => {
+            let g = |k: &str| body.get(k).and_then(|v| v.as_str()).unwrap_or("").chars().take(60).collect::<String>();
+            let within = body.get("within").and_then(|v| v.as_u64()).unwrap_or(0);
+            json!({ "ok": true, "log": crate::audit::json_filtered(&g("q"), &g("door"), &g("risk"), &g("decision"), within) })
+        }
         "audit_clear" => json!({ "ok": true, "removed": crate::audit::clear() }),
         "name_test_start" => { crate::nametest::start(); json!({ "ok": true, "status": crate::nametest::status_json() }) }
         "name_test_stop" => { crate::nametest::stop(); json!({ "ok": true, "status": crate::nametest::status_json() }) }
@@ -505,7 +509,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             }
         }
         "sms_repeat" => { let m = crate::smsread::repeat_last(); if crate::tts::is_enabled() { crate::tts::speak(&m); } json!({ "ok": true, "message": m }) }
-        "mic_watch" => json!({ "ok": true, "watch": crate::wakewatch::status_json() }),
+        "mic_watch" => json!({ "ok": true, "watch": crate::wakewatch::status_json(), "diag": crate::voicediag::json_report() }),
         "gs_summary" => json!({ "ok": true, "stats": crate::gamestats::summary_json() }),
         "gs_report" => json!({ "ok": true, "text": crate::gamestats::report_text() }),
         "gs_clear" => json!({ "ok": crate::gamestats::clear() }),
@@ -626,7 +630,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             if !crate::progsearch::valid_id(&id) {
                 return json!({ "ok": false, "message": "Неверный идентификатор программы." });
             }
-            if matches!(crate::progsearch::status().state.as_str(), "downloading" | "installing" | "searching") {
+            if !crate::progsearch::begin(&id) {
                 return json!({ "ok": false, "message": "Уже идёт другая установка." });
             }
             let p = crate::progsearch::Package { name: body.get("name").and_then(|v| v.as_str()).unwrap_or(&id).chars().take(80).collect(), id, version: String::new(), source: "winget".into() };

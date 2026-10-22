@@ -138,6 +138,27 @@ static CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::ne
 pub fn status() -> Status {
     STATUS.lock().clone().unwrap_or(Status { state: "idle".into(), ..Default::default() })
 }
+/// Atomic claim of the single install slot: two clicks can no longer start two installs.
+pub fn begin(id: &str) -> bool {
+    let mut g = STATUS.lock();
+    if matches!(g.as_ref().map(|s| s.state.as_str()), Some("downloading") | Some("installing") | Some("searching")) {
+        return false;
+    }
+    *g = Some(Status { state: "downloading".into(), id: id.into(), percent: None, line: "Запуск winget…".into() });
+    true
+}
+
+/// The end state of an install: «cancelled» only if the cancel was really delivered, otherwise by the exit code.
+pub fn finish_state(cancelled: bool, success: bool) -> &'static str {
+    if cancelled {
+        "cancelled"
+    } else if success {
+        "done"
+    } else {
+        "failed"
+    }
+}
+
 fn set(state: &str, id: &str, percent: Option<u32>, line: &str) {
     *STATUS.lock() = Some(Status { state: state.into(), id: id.into(), percent, line: line.chars().take(200).collect() });
 }
@@ -175,11 +196,23 @@ mod win {
     // blocks until the end; the status is read by the window
     pub fn install(p: &Package) -> Result<(), String> {
         CANCEL.store(false, Ordering::SeqCst);
-        set("downloading", &p.id, None, "Запуск winget…");
+        let fail = |why: String| -> String {
+            set("failed", &p.id, None, &why);
+            log(Entry { id: p.id.clone(), name: p.name.clone(), at: store::now(), result: "failed".into(), detail: why.chars().take(120).collect() });
+            why
+        };
         // (no --silent: the installer shows its own window; no hidden install)
-        let mut child = winget().args(["install", "--id", &p.id, "--exact", "--source", "winget", "--accept-source-agreements", "--accept-package-agreements", "--interactive"]).spawn().map_err(|e| format!("winget не запустился: {}", e))?;
+        let mut child = winget().args(["install", "--id", &p.id, "--exact", "--source", "winget", "--accept-source-agreements", "--accept-package-agreements", "--interactive"]).spawn().map_err(|e| fail(format!("winget не запустился: {}", e)))?;
         CHILD_PID.store(child.id(), Ordering::SeqCst);
-        let mut stdout = child.stdout.take().ok_or("нет вывода winget")?;
+        let mut stdout = match child.stdout.take() {
+            Some(s) => s,
+            None => {
+                let _ = child.kill();
+                let _ = child.wait();
+                CHILD_PID.store(0, Ordering::SeqCst);
+                return Err(fail("нет вывода winget".into()));
+            }
+        };
         let mut buf = [0u8; 2048];
         let mut pending = String::new();
         loop {
@@ -201,9 +234,9 @@ mod win {
                 }
             }
         }
-        let status = child.wait().map_err(|e| e.to_string())?;
+        let status = child.wait().map_err(|e| fail(e.to_string()))?;
         CHILD_PID.store(0, Ordering::SeqCst);
-        if CANCEL.load(Ordering::SeqCst) {
+        if finish_state(CANCEL.load(Ordering::SeqCst), status.success()) == "cancelled" {
             set("cancelled", &p.id, None, "Отменено");
             log(Entry { id: p.id.clone(), name: p.name.clone(), at: store::now(), result: "cancelled".into(), detail: String::new() });
             return Err("Установка отменена.".into());
@@ -221,14 +254,18 @@ mod win {
     }
 
     pub fn cancel() -> bool {
-        CANCEL.store(true, Ordering::SeqCst);
         let pid = CHILD_PID.load(Ordering::SeqCst);
         if pid == 0 {
             return false;
         }
         let mut c = Command::new("taskkill");
         crate::null_stdio(&mut c);
-        c.args(["/PID", &pid.to_string(), "/T", "/F"]).status().map(|s| s.success()).unwrap_or(false)
+        let ok = c.args(["/PID", &pid.to_string(), "/T", "/F"]).status().map(|s| s.success()).unwrap_or(false);
+        // «cancelled» is written only when the process was really stopped
+        if ok {
+            CANCEL.store(true, Ordering::SeqCst);
+        }
+        ok
     }
 }
 
@@ -240,7 +277,8 @@ pub fn search(_q: &str) -> Result<Vec<Package>, String> {
     Err("Каталог программ (winget) есть только в Windows.".into())
 }
 #[cfg(not(target_os = "windows"))]
-pub fn install(_p: &Package) -> Result<(), String> {
+pub fn install(p: &Package) -> Result<(), String> {
+    set("failed", &p.id, None, "Установка программ (winget) есть только в Windows.");
     Err("Установка программ (winget) есть только в Windows.".into())
 }
 #[cfg(not(target_os = "windows"))]
@@ -291,6 +329,24 @@ mod tests {
             log(Entry { id: "A.B".into(), name: "AB".into(), at: 1, result: "ok".into(), detail: String::new() });
             assert_eq!(history().len(), 1);
         });
+    }
+
+    #[test]
+    fn the_install_slot_is_claimed_once() {
+        set("idle", "", None, "");
+        assert!(begin("A.B"));
+        assert!(!begin("C.D"), "a second click must not start a second install");
+        assert_eq!(status().id, "A.B");
+        set("failed", "A.B", None, "x");
+        assert!(begin("C.D"), "after the end the slot is free again");
+        set("idle", "", None, "");
+    }
+
+    #[test]
+    fn the_end_state_does_not_claim_a_cancel_that_did_not_happen() {
+        assert_eq!(finish_state(true, false), "cancelled");
+        assert_eq!(finish_state(false, true), "done");
+        assert_eq!(finish_state(false, false), "failed");
     }
 
     #[test]

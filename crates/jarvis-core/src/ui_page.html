@@ -1494,6 +1494,12 @@
       <div class="card acc" data-cat="more" id="audit-card" data-tab="Журнал безопасности"><h3><span class="ei">📜</span>Журнал безопасности</h3>
         <div class="setrow"><div class="l">Что здесь записано<small>кто просил (голос, окно, телефон, Telegram), какое действие, риск, разрешено или отказано и почему. Текст команд, пути, пароли и ключи сюда не попадают. Хранится только на этом компьютере, последние 500 записей.</small></div>
           <div class="r"><button class="btn" id="au-refresh" type="button">Обновить</button><button class="btn" id="au-clear" type="button">Очистить</button></div></div>
+        <div class="setrow" id="au-filters"><div class="l">Поиск и фильтры<small>слово ищется в названии, виде и причине</small></div>
+          <div class="r" style="flex-wrap:wrap;gap:6px"><input type="text" id="au-q" maxlength="60" placeholder="Поиск" style="min-width:120px;flex:1 1 120px">
+            <select id="au-door"><option value="">Откуда: все</option><option value="voice">голос</option><option value="window">окно</option><option value="phone">телефон</option><option value="telegram">Telegram</option><option value="script">сценарий</option></select>
+            <select id="au-risk"><option value="">Риск: любой</option><option value="low">низкий</option><option value="medium">средний</option><option value="high">высокий</option></select>
+            <select id="au-dec"><option value="">Результат: любой</option><option value="allowed">разрешено</option><option value="refused">отказано</option><option value="asked">ждёт подтверждения</option></select>
+            <select id="au-within"><option value="0">За всё время</option><option value="3600">За час</option><option value="86400">За сутки</option></select></div></div>
         <div class="hi-list" id="au-list"></div>
       </div>
       <div class="card acc" data-cat="more" id="perm-card" data-tab="Разрешения"><h3><span class="ei">🛡</span>Центр разрешений</h3>
@@ -4110,10 +4116,13 @@ async function saveAssistantName(name, msg) {
 const AU_DOOR = { voice: 'голос', window: 'окно', phone: 'телефон', telegram: 'Telegram', console: 'консоль', ipc: 'приложение', script: 'сценарий', internal: 'программа', system: 'система' };
 const AU_DEC = { allowed: 'разрешено', refused: 'отказано', asked: 'ждёт подтверждения' };
 async function auLoad() {
-  const r = await action('audit_get').catch(() => null); if (!r || !r.ok) return;
+  const r = await action('audit_get', { q: $('#au-q').value, door: $('#au-door').value, risk: $('#au-risk').value, decision: $('#au-dec').value, within: +$('#au-within').value }).catch(() => null); if (!r || !r.ok) return;
   const l = (r.log && r.log.entries) || [];
-  $('#au-list').innerHTML = l.length ? l.map(e => '<div class="hi-item"><small>' + esc(hiWhen(e.at)) + ' · ' + esc(AU_DOOR[e.door] || e.door) + ' · ' + esc(e.kind) + (e.risk ? ' · риск ' + esc(e.risk) : '') + '</small><div><b>' + esc(e.subject) + '</b> — ' + esc(AU_DEC[e.decision] || e.decision) + (e.confirmed ? ' (подтверждено)' : '') + '</div>' + (e.reason ? '<div class="hi-a">' + esc(e.reason) + '</div>' : '') + '</div>').join('') : '<div class="empty">Записей пока нет.</div>';
+  const filtered = !!($('#au-q').value || $('#au-door').value || $('#au-risk').value || $('#au-dec').value || +$('#au-within').value);
+  $('#au-list').innerHTML = l.length ? l.map(e => '<div class="hi-item"><small>' + esc(hiWhen(e.at)) + ' · ' + esc(AU_DOOR[e.door] || e.door) + ' · ' + esc(e.kind) + (e.risk ? ' · риск ' + esc(e.risk) : '') + '</small><div><b>' + esc(e.subject) + '</b> — ' + esc(AU_DEC[e.decision] || e.decision) + (e.confirmed ? ' (подтверждено)' : '') + '</div>' + (e.reason ? '<div class="hi-a">' + esc(e.reason) + '</div>' : '') + '</div>').join('') : '<div class="empty">' + (filtered && r.log.total ? 'По этим условиям ничего не найдено (всего записей: ' + r.log.total + ').' : 'Записей пока нет.') + '</div>';
 }
+['au-door', 'au-risk', 'au-dec', 'au-within'].forEach(id => $('#' + id).onchange = auLoad);
+$('#au-q').oninput = () => { clearTimeout(auLoad.t); auLoad.t = setTimeout(auLoad, 250); };
 $('#au-refresh').onclick = auLoad;
 $('#au-clear').onclick = async () => { if (!confirm('Очистить журнал безопасности?')) return; const r = await action('audit_clear').catch(() => null); if (r && !r.ok) alert(r.message || 'Не получилось'); auLoad(); };
 $('#set-main').addEventListener('click', e => { if (e.target.closest('#audit-card > h3')) setTimeout(auLoad, 60); });

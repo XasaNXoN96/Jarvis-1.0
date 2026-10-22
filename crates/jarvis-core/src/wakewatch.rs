@@ -12,6 +12,8 @@ pub const STALL_MS: u64 = 10_000;
 pub const SILENT_MS: u64 = 20_000;
 pub const RETRY_MS: u64 = 20_000;
 pub const MAX_RESTARTS: u32 = 5;
+// after the fast tries are used up: one more try this often (a microphone plugged in later is found again without a restart)
+pub const SLOW_RETRY_MS: u64 = 300_000;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Verdict {
@@ -69,7 +71,8 @@ impl Watch {
     // should the device be reopened now? (a stall only; a silent device is not helped by a reopening more than a few times)
     pub fn should_restart(&self, now: u64, v: Verdict) -> bool {
         if self.gave_up || self.restarts >= MAX_RESTARTS {
-            return false;
+            // slow tries: only for a real stall (a silent device is not helped by reopening)
+            return matches!(v, Verdict::Stalled(_)) && self.last_restart.map(|t| now.saturating_sub(t) >= SLOW_RETRY_MS).unwrap_or(true);
         }
         if !matches!(v, Verdict::Stalled(_) | Verdict::Silent(_)) {
             return false;
@@ -78,7 +81,7 @@ impl Watch {
     }
 
     pub fn restarted(&mut self, now: u64) {
-        self.restarts += 1;
+        self.restarts = (self.restarts + 1).min(MAX_RESTARTS);
         self.last_restart = Some(now);
         if self.restarts >= MAX_RESTARTS {
             self.gave_up = true;
@@ -119,6 +122,9 @@ impl Drop for Busy {
 
 pub fn set_paused(p: bool) {
     let mut w = WATCH.lock();
+    if w.paused != p {
+        crate::voicediag::note("device", if p { "микрофон выключен" } else { "микрофон включён" });
+    }
     w.paused = p;
     if !p {
         w.last_beat = Some(now_ms());
@@ -148,10 +154,17 @@ pub fn start() {
         let now = now_ms();
         let mut w = WATCH.lock();
         let v = w.verdict(now);
+        match v {
+            Verdict::Stalled(ms) => crate::voicediag::note("stream", &format!("звук не приходит {} с", ms / 1000 / 10 * 10)),
+            Verdict::Silent(ms) => crate::voicediag::note("stream", &format!("тишина без звука {} с", ms / 1000 / 10 * 10)),
+            Verdict::Ok if w.restarts > 0 || w.gave_up => crate::voicediag::note("stream", "звук идёт"),
+            _ => {}
+        }
         if w.should_restart(now, v) {
             w.restarted(now);
             let n = w.restarts;
             drop(w);
+            crate::voicediag::note("device", &format!("переоткрываю микрофон (попытка {})", n));
             log::warn!("Microphone watchdog: {:?}, reopening the device (try {} of {})", v, n, MAX_RESTARTS);
             crate::recorder::recover_in_background();
         }
@@ -207,6 +220,25 @@ mod tests {
         // audio came back: the count starts again
         w.beat(now + 100, 500);
         assert_eq!((w.restarts, w.gave_up), (0, false));
+    }
+
+    #[test]
+    fn after_giving_up_it_still_tries_slowly_but_not_for_silence() {
+        let mut w = Watch::default();
+        w.beat(0, 100);
+        let mut now = 20_000;
+        while !w.gave_up {
+            w.restarted(now);
+            now += 1;
+        }
+        let t = now;
+        assert_eq!(w.restarts, MAX_RESTARTS);
+        assert!(!w.should_restart(t + 60_000, Verdict::Stalled(60_000)), "not at once");
+        assert!(w.should_restart(t + SLOW_RETRY_MS, Verdict::Stalled(60_000)), "a slow try after the pause");
+        assert!(!w.should_restart(t + SLOW_RETRY_MS, Verdict::Silent(60_000)), "silence is not helped by reopening");
+        w.restarted(t + SLOW_RETRY_MS);
+        assert_eq!(w.restarts, MAX_RESTARTS, "the count does not grow without a limit");
+        assert!(w.gave_up);
     }
 
     #[test]

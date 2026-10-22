@@ -77,6 +77,26 @@ pub fn json(limit: usize) -> Value {
     json!({ "entries": list(limit) })
 }
 
+/// The filter of the page: a word (looked for in the subject, the kind and the reason), the door, the risk, the decision and
+/// the age in seconds (0 = any). An empty value does not filter. Pure: the tests give it entries directly.
+pub fn filter(list: Vec<Entry>, q: &str, door: &str, risk: &str, decision: &str, within_secs: u64, now: u64) -> Vec<Entry> {
+    let q = q.trim().to_lowercase();
+    list.into_iter()
+        .filter(|e| door.is_empty() || e.door == door)
+        .filter(|e| risk.is_empty() || e.risk == risk)
+        .filter(|e| decision.is_empty() || e.decision == decision)
+        .filter(|e| within_secs == 0 || now.saturating_sub(e.at) <= within_secs)
+        .filter(|e| q.is_empty() || e.subject.to_lowercase().contains(&q) || e.kind.to_lowercase().contains(&q) || e.reason.to_lowercase().contains(&q))
+        .collect()
+}
+
+pub fn json_filtered(q: &str, door: &str, risk: &str, decision: &str, within_secs: u64) -> Value {
+    let all = list(200);
+    let total = all.len();
+    let shown = filter(all, q, door, risk, decision, within_secs, store::now());
+    json!({ "entries": shown, "total": total })
+}
+
 pub fn clear() -> usize {
     let _g = LOCK.lock();
     let n = store::read::<Vec<Entry>>(FILE).0.len();
@@ -94,6 +114,29 @@ pub fn record_rate_limited(key: &str, secs: u64, kind: &str, subject: &str, deci
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn e(at: u64, door: &str, subject: &str, risk: &str, decision: &str, reason: &str) -> Entry {
+        Entry { at, door: door.into(), kind: "command".into(), subject: subject.into(), risk: risk.into(), decision: decision.into(), confirmed: false, reason: reason.into() }
+    }
+
+    #[test]
+    fn the_journal_can_be_searched_and_filtered() {
+        let l = vec![
+            e(1000, "phone", "shutdown", "high", "refused", "с телефона нельзя"),
+            e(1990, "voice", "volume_up", "low", "allowed", ""),
+            e(1995, "window", "Shutdown", "high", "asked", ""),
+        ];
+        let f = |q: &str, d: &str, r: &str, dec: &str, w: u64| filter(l.clone(), q, d, r, dec, w, 2000).len();
+        assert_eq!(f("", "", "", "", 0), 3);
+        assert_eq!(f("shut", "", "", "", 0), 2, "the search ignores the case");
+        assert_eq!(f("телефона", "", "", "", 0), 1, "the reason is searched too");
+        assert_eq!(f("", "phone", "", "", 0), 1);
+        assert_eq!(f("", "", "high", "", 0), 2);
+        assert_eq!(f("", "", "", "allowed", 0), 1);
+        assert_eq!(f("", "", "", "", 60), 2, "only the last minute");
+        assert_eq!(f("shut", "window", "high", "asked", 60), 1, "filters are combined");
+        assert_eq!(f("nothing", "", "", "", 0), 0);
+    }
 
     #[test]
     fn an_entry_has_the_door_the_command_and_the_decision_but_never_the_words() {
