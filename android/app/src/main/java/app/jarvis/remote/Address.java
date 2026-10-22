@@ -15,13 +15,37 @@ final class Address {
     private Address() {
     }
 
-    /** "192.168.1.10", "192.168.1.10:9713" or a whole link (with ?t=…) -> the link to the page of the remote; null when it is not an address. */
-    static String normalize(String raw) {
+    /** What was typed or scanned: the link of the page, the host, and (from a pairing link) the pin of the computer and the one-time code. */
+    static final class Parsed {
+        final String url;
+        final String host;
+        /** "sha256/…" from the «#pin=» part of the link, or null */
+        final String pin;
+        /** the six digits from «&c=», or null */
+        final String code;
+
+        Parsed(String url, String host, String pin, String code) {
+            this.url = url;
+            this.host = host;
+            this.pin = pin;
+            this.code = code;
+        }
+    }
+
+    /**
+     * "192.168.1.10", "192.168.1.10:9713", "https://192.168.1.10:9713/" or a whole pairing link
+     * ("https://192.168.1.10:9713/#pin=sha256/…&c=123456") -> the link to the page of the remote, https ONLY; null when it is not an address.
+     * A link with plain «http://» is refused: the phone never talks to the computer without encryption.
+     */
+    static Parsed parse(String raw) {
         String s = raw == null ? "" : raw.trim();
-        if (s.isEmpty() || s.length() > 300 || s.matches(".*\\s.*")) return null;
-        // another scheme (file:, ftp:, content:, javascript:) is never an address of the computer
-        if (s.contains("://") && !s.startsWith("http://") && !s.startsWith("https://")) return null;
-        if (!s.startsWith("http://") && !s.startsWith("https://")) s = "http://" + s;
+        if (s.isEmpty() || s.length() > 400 || s.matches(".*\\s.*")) return null;
+        if (s.contains("://")) {
+            // plain http and any other scheme (file:, ftp:, content:, javascript:) are never an address of the computer
+            if (!s.startsWith("https://")) return null;
+        } else {
+            s = "https://" + s;
+        }
         URI u;
         try {
             u = new URI(s);
@@ -37,10 +61,19 @@ final class Address {
         }
         if (u.getUserInfo() != null) return null; // a link with a login and a password is never taken
         int port = u.getPort() > 0 && u.getPort() < 65536 ? u.getPort() : PORT;
-        String scheme = "https".equals(u.getScheme()) ? "https" : "http";
         String t = queryParam(u.getRawQuery(), "t");
         String tail = t == null || t.isEmpty() || t.length() > 200 ? "" : "?t=" + URLEncoder.encode(t, StandardCharsets.UTF_8);
-        return scheme + "://" + h + ":" + port + "/" + tail;
+        String pin = queryParam(u.getRawFragment(), "pin");
+        if (pin != null && !Pin.valid(pin)) return null; // a damaged pin is an error, never «no pin»
+        String code = queryParam(u.getRawFragment(), "c");
+        if (code != null && !code.matches("\\d{6}")) code = null;
+        return new Parsed("https://" + h + ":" + port + "/" + tail, h, pin, code);
+    }
+
+    /** The link to the page of the remote (https), or null: see {@link #parse}. */
+    static String normalize(String raw) {
+        Parsed p = parse(raw);
+        return p == null ? null : p.url;
     }
 
     static String queryParam(String query, String name) {

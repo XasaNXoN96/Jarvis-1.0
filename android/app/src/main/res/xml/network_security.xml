@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <base-config cleartextTrafficPermitted="true" />
+    <!-- no plain http, anywhere: the computer is reached only by https and its key is pinned by the application (PinPolicy) -->
+    <base-config cleartextTrafficPermitted="false" />
 </network-security-config>

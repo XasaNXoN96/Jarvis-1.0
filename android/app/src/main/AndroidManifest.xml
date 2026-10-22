@@ -14,13 +14,13 @@
         </intent>
     </queries>
 
-    <!-- usesCleartextTraffic: the computer is reached by plain http inside the home network (the same as the browser page) -->
+    <!-- no plain http at all: the computer is reached only by https, and its key is pinned (Pin.java, PinPolicy.java) -->
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="Jarvis"
         android:networkSecurityConfig="@xml/network_security"
-        android:usesCleartextTraffic="true"
+        android:usesCleartextTraffic="false"
         android:theme="@style/Theme.Jarvis">
 
         <activity

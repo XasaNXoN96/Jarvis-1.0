@@ -301,11 +301,15 @@
 <script>
 // the secret of the link is taken from the address once and kept on this phone: it does not stay in the address
 // bar, the browser history or a shared screenshot ("Новая ссылка" on the computer revokes it)
+// the one-time code of a pairing link («#c=123456»; the part after # never reaches a server): only fills the field, the owner presses the button
+const pairHint = (() => { const c = new URLSearchParams(location.hash.slice(1)).get('c') || ''; return /^\d{6}$/.test(c) ? c : ''; })();
+// the Android application keeps the secret of this device itself (a new address of the computer is a new origin and an empty localStorage here)
+const nativeToken = (() => { try { return (window.JarvisAndroid && JarvisAndroid.getToken && JarvisAndroid.getToken()) || ''; } catch (e) { return ''; } })();
 const token = (() => {
   // (?t=… from the QR code; #t=… when the page moves to its https address: the part after # never reaches a server)
   const fromUrl = new URLSearchParams(location.search).get('t') || new URLSearchParams(location.hash.slice(1)).get('t') || '';
   let t = fromUrl;
-  try { if (fromUrl) localStorage.setItem('jarvis_t', fromUrl); else t = localStorage.getItem('jarvis_t') || ''; } catch (e) {}
+  try { if (fromUrl) localStorage.setItem('jarvis_t', fromUrl); else { t = localStorage.getItem('jarvis_t') || nativeToken; if (t && !localStorage.getItem('jarvis_t')) localStorage.setItem('jarvis_t', t); } } catch (e) { if (!t) t = nativeToken; }
   if (fromUrl || location.hash) { try { history.replaceState(null, '', location.pathname); } catch (e) {} }
   return t;
 })();
@@ -321,13 +325,14 @@ if (!token) {
   box.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#0b0b0dee;display:flex;align-items:center;justify-content:center;padding:20px';
   box.innerHTML = '<div style="max-width:340px;width:100%;background:#17171a;border:1px solid #3a3a40;border-radius:16px;padding:20px;color:#ececee;font:15px system-ui"><b style="font-size:18px">Привязать телефон</b><p style="color:#9a9aa2">На компьютере в Jarvis: Настройки → Телефон → «Привязать телефон по коду». Введите код оттуда.</p><input id="pcode" inputmode="numeric" maxlength="6" placeholder="Код из 6 цифр" style="width:100%;box-sizing:border-box;padding:12px;border-radius:10px;border:1px solid #3a3a40;background:#101012;color:#fff;font-size:20px;letter-spacing:.2em;text-align:center"><button id="pgo" style="margin-top:12px;width:100%;padding:12px;border-radius:10px;border:0;background:#f2f2f4;color:#0a0a0b;font-weight:600;font-size:15px">Привязать</button><div id="pmsg" style="margin-top:10px;color:#ff9aa6;min-height:20px"></div></div>';
   document.body.appendChild(box);
+  if (pairHint) box.querySelector('#pcode').value = pairHint;
   box.querySelector('#pgo').onclick = async () => {
     const m = box.querySelector('#pmsg'); m.textContent = '…';
     try {
       const name = (/Android/.test(navigator.userAgent) ? 'Android' : /iPhone|iPad/.test(navigator.userAgent) ? 'iPhone/iPad' : 'Телефон') + ' · ' + (navigator.userAgent.match(/(Chrome|Firefox|Safari|Edg)\/?/) || ['браузер'])[0].replace('/', '');
       const r = await fetch('/pair', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'code=' + encodeURIComponent(box.querySelector('#pcode').value.trim()) + '&name=' + encodeURIComponent(name) });
       const j = await r.json().catch(() => ({}));
-      if (j.ok && j.token) { try { localStorage.setItem('jarvis_t', j.token); } catch (e) {} location.reload(); } else { m.textContent = j.message || (r.status === 429 ? 'Слишком много попыток, подождите минуту.' : 'Не получилось привязать.'); }
+      if (j.ok && j.token) { try { localStorage.setItem('jarvis_t', j.token); } catch (e) {} try { window.JarvisAndroid && JarvisAndroid.setToken && JarvisAndroid.setToken(j.token); } catch (e) {} location.reload(); } else { m.textContent = j.message || (r.status === 429 ? 'Слишком много попыток, подождите минуту.' : 'Не получилось привязать.'); }
     } catch (e) { m.textContent = 'Нет связи с компьютером.'; }
   };
 }

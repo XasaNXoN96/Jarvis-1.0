@@ -2,6 +2,7 @@ package app.jarvis.remote;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -10,6 +11,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.net.Uri;
+import android.net.http.SslCertificate;
 import android.net.http.SslError;
 import android.os.BatteryManager;
 import android.os.Build;
@@ -37,6 +39,9 @@ import android.widget.TextView;
 
 import org.json.JSONObject;
 
+import java.io.ByteArrayInputStream;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 
 /**
@@ -47,6 +52,9 @@ import java.util.ArrayList;
 public class MainActivity extends Activity {
     private static final String PREFS = "jarvis";
     private static final String KEY_URL = "url";
+    // the pin of the computer ("sha256/…" of its public key) and the secret of this device: kept by the application, not by the page
+    private static final String KEY_PIN = "pin";
+    private static final String KEY_TOKEN = "device_token";
     private static final int REQ_MIC = 7;
 
     private SharedPreferences prefs;
@@ -55,13 +63,27 @@ public class MainActivity extends Activity {
     private String host = "";
     private SpeechRecognizer recognizer;
     private String pendingLang = "ru-RU";
+    // from a pairing link that was just opened (never stored before the first handshake proved that the computer holds that key)
+    private String expectedPin = null;
+    private String pairCode = null;
+    // handshakes that wait for the owner to compare the fingerprint (nothing is sent to the computer meanwhile)
+    private final ArrayList<SslErrorHandler> waiting = new ArrayList<>();
+    private boolean asking = false;
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         String saved = prefs.getString(KEY_URL, "");
-        if (saved.isEmpty()) showSetup(""); else openRemote(saved);
+        if (saved.isEmpty()) {
+            showSetup("");
+        } else if (Address.normalize(saved) == null) {
+            // an address saved by an older version (plain http): it is never opened; the owner enters the address again (https)
+            prefs.edit().remove(KEY_URL).apply();
+            showSetup("Сохранённый адрес использовал небезопасный http. Введите адрес компьютера заново: теперь соединение шифруется.");
+        } else {
+            openRemote(saved);
+        }
     }
 
     // ---------------------------------------------------------------- the first screen: where is the computer
@@ -86,14 +108,14 @@ public class MainActivity extends Activity {
         setup.addView(title);
 
         TextView hint = new TextView(this);
-        hint.setText("Подключение к компьютеру\n\nНа компьютере откройте Jarvis → Настройки → Подключения → «Пульт телефона». Там показан адрес (например 192.168.1.10) и код привязки. Телефон и компьютер должны быть в одной сети Wi-Fi.\n\nВведите адрес компьютера или вставьте всю ссылку пульта.");
+        hint.setText("Подключение к компьютеру\n\nНа компьютере откройте Jarvis → Настройки → Подключения → «Пульт телефона», нажмите «Привязать телефон по коду». Там показаны адрес (например 192.168.1.10), код и отпечаток компьютера. Телефон и компьютер должны быть в одной сети.\n\nВведите адрес компьютера или вставьте ссылку из QR-кода (в ней есть отпечаток). Соединение всегда зашифровано; обычный http не используется.");
         hint.setTextColor(Color.parseColor("#c7d2d4"));
         hint.setTextSize(15);
         hint.setPadding(0, dp(12), 0, dp(16));
         setup.addView(hint);
 
         final EditText input = new EditText(this);
-        input.setHint("192.168.1.10  или  http://192.168.1.10:9713/?t=…");
+        input.setHint("192.168.1.10  или  https://192.168.1.10:9713/#pin=…");
         input.setHintTextColor(Color.parseColor("#6b7a7e"));
         input.setTextColor(Color.WHITE);
         input.setSingleLine(true);
@@ -109,15 +131,31 @@ public class MainActivity extends Activity {
         Button go = new Button(this);
         go.setText("Подключиться");
         go.setOnClickListener(v -> {
-            String url = Address.normalize(input.getText().toString());
-            if (url == null) {
-                msg.setText("Не похоже на адрес. Пример: 192.168.1.10");
+            Address.Parsed p = Address.parse(input.getText().toString());
+            if (p == null) {
+                msg.setText("Не похоже на адрес или ссылка повреждена (обычный http не принимается). Пример: 192.168.1.10");
                 return;
             }
-            prefs.edit().putString(KEY_URL, url).apply();
-            openRemote(url);
+            if (p.pin != null) {
+                // a pairing link from the window of the computer: it is the owner's own decision to trust THIS key; the old pin is replaced,
+                // and the new one is stored only after the first handshake showed the same key
+                prefs.edit().remove(KEY_PIN).remove(KEY_TOKEN).apply();
+                expectedPin = p.pin;
+                pairCode = p.code;
+            }
+            prefs.edit().putString(KEY_URL, p.url).apply();
+            openRemote(p.url);
         });
         setup.addView(go);
+
+        // the computer was replaced or its key was changed on purpose: forget the old fingerprint and the secret of this device
+        Button forget = new Button(this);
+        forget.setText("Забыть прежний компьютер (сбросить отпечаток)");
+        forget.setOnClickListener(v -> {
+            forgetComputer();
+            msg.setText("Отпечаток и секрет этого телефона удалены. Введите адрес: отпечаток нового компьютера нужно будет сверить.");
+        });
+        setup.addView(forget);
         setContentView(setup);
     }
 
@@ -140,6 +178,12 @@ public class MainActivity extends Activity {
             public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
                 Uri u = r.getUrl();
                 if ("jarvis-app".equals(u.getScheme())) {
+                    if ("forget".equals(u.getHost())) {
+                        forgetComputer();
+                        prefs.edit().remove(KEY_URL).apply();
+                        showSetup("Прежний отпечаток удалён. Введите адрес: отпечаток нужно будет сверить заново.");
+                        return true;
+                    }
                     prefs.edit().remove(KEY_URL).apply();
                     showSetup("");
                     return true;
@@ -153,11 +197,34 @@ public class MainActivity extends Activity {
                 return true;
             }
 
-            // the computer makes its own certificate for https: it is accepted ONLY for the computer that was entered
+            // The computer makes its own certificate. There is NO «proceed anyway»: the connection goes on only if the public key of the
+            // certificate is the pinned one (or the one in the pairing link, or the one the owner confirmed by comparing the fingerprint)
+            // and the certificate is inside its term. Every other case is cancelled.
             @Override
             public void onReceivedSslError(WebView v, SslErrorHandler h, SslError e) {
                 String eh = Uri.parse(e.getUrl()).getHost();
-                if (host != null && host.equalsIgnoreCase(eh)) h.proceed(); else h.cancel();
+                if (host == null || !host.equalsIgnoreCase(eh)) {
+                    h.cancel();
+                    return;
+                }
+                X509Certificate leaf = x509(e.getCertificate());
+                PinPolicy.Verdict verdict = PinPolicy.evaluate(leaf, prefs.getString(KEY_PIN, null), expectedPin, System.currentTimeMillis(), e.hasError(SslError.SSL_INVALID));
+                switch (verdict) {
+                    case ACCEPT:
+                        h.proceed();
+                        return;
+                    case ACCEPT_AND_REMEMBER:
+                        prefs.edit().putString(KEY_PIN, Pin.of(leaf)).apply();
+                        expectedPin = null;
+                        h.proceed();
+                        return;
+                    case ASK_USER:
+                        askFingerprint(h, leaf);
+                        return;
+                    default:
+                        h.cancel();
+                        showRefused(verdict);
+                }
             }
 
             @Override
@@ -173,7 +240,69 @@ public class MainActivity extends Activity {
             }
         });
         setContentView(web, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        web.loadUrl(url);
+        // the pairing code from a link goes into the page as a fragment («#c=…», never sent over the network); only once
+        String first = pairCode != null ? url + "#c=" + pairCode : url;
+        pairCode = null;
+        web.loadUrl(first);
+    }
+
+    private void forgetComputer() {
+        prefs.edit().remove(KEY_PIN).remove(KEY_TOKEN).apply();
+        expectedPin = null;
+        pairCode = null;
+    }
+
+    // the system gives the certificate as SslCertificate: its X.509 form is needed to read the key
+    private static X509Certificate x509(SslCertificate c) {
+        if (c == null) return null;
+        try {
+            if (Build.VERSION.SDK_INT >= 29) return c.getX509Certificate();
+            Bundle b = SslCertificate.saveState(c);
+            byte[] der = b == null ? null : b.getByteArray("x509-certificate");
+            if (der == null) return null;
+            return (X509Certificate) CertificateFactory.getInstance("X.509").generateCertificate(new ByteArrayInputStream(der));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    // First contact with nothing pinned and no pairing link: the owner compares the fingerprint with the window of the computer. Until he
+    // confirms, the handshake is held: the page is not loaded, so the page cannot send the pairing code to a computer that is not checked.
+    private void askFingerprint(final SslErrorHandler h, final X509Certificate leaf) {
+        waiting.add(h);
+        if (asking) return;
+        asking = true;
+        final String shown = Pin.groups(leaf);
+        final String pin = Pin.of(leaf);
+        runOnUiThread(() -> new AlertDialog.Builder(this)
+                .setTitle("Проверьте отпечаток компьютера")
+                .setMessage("Отпечаток:\n\n" + shown + "\n\nСверьте его с окном Jarvis на компьютере (Настройки → Пульт телефона → Безопасность соединения). Если совпадает — подтвердите. Пока вы не подтвердите, ничего не отправляется на компьютер.")
+                .setCancelable(false)
+                .setPositiveButton("Совпадает", (d, w) -> {
+                    prefs.edit().putString(KEY_PIN, pin).apply();
+                    asking = false;
+                    for (SslErrorHandler x : waiting) x.proceed();
+                    waiting.clear();
+                })
+                .setNegativeButton("Не совпадает", (d, w) -> {
+                    asking = false;
+                    for (SslErrorHandler x : waiting) x.cancel();
+                    waiting.clear();
+                    showSetup("Отпечаток не совпал: соединение закрыто. Это может быть другой компьютер или подмена в сети.");
+                })
+                .show());
+    }
+
+    private void showRefused(PinPolicy.Verdict why) {
+        runOnUiThread(() -> {
+            if (web == null) return;
+            String html = "<body style='background:#08090b;color:#ddd;font-family:sans-serif;padding:28px'><h2 style='color:#ff7a7a'>Соединение не открыто</h2>"
+                    + "<p>" + android.text.Html.escapeHtml(PinPolicy.refusal(why)) + "</p>"
+                    + "<p><a style='color:#8ff0e6' href='" + prefs.getString(KEY_URL, "") + "'>Повторить</a></p>"
+                    + (why == PinPolicy.Verdict.MISMATCH ? "<p><a style='color:#8ff0e6' href='jarvis-app://forget'>Это другой компьютер: забыть прежний отпечаток</a></p>" : "")
+                    + "<p><a style='color:#8ff0e6' href='jarvis-app://change'>Сменить компьютер</a></p></body>";
+            web.loadDataWithBaseURL("about:blank", html, "text/html", "utf-8", null);
+        });
     }
 
     private void showOffline(String why) {
@@ -347,6 +476,18 @@ public class MainActivity extends Activity {
                 prefs.edit().remove(KEY_URL).apply();
                 showSetup("");
             });
+        }
+
+        // the secret of this device lives here, not in the localStorage of the page (that one belongs to one address of the computer)
+        @JavascriptInterface
+        public String getToken() {
+            return prefs.getString(KEY_TOKEN, "");
+        }
+
+        @JavascriptInterface
+        public void setToken(String t) {
+            if (t == null || t.length() > 200) return;
+            if (t.isEmpty()) prefs.edit().remove(KEY_TOKEN).apply(); else prefs.edit().putString(KEY_TOKEN, t).apply();
         }
 
         @JavascriptInterface
