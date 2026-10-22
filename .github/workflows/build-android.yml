@@ -11,10 +11,21 @@ on:
       - 'crates/jarvis-core/src/orbkit.js'
       - '.github/workflows/build-android.yml'
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Build the RELEASE package (needs the signing key from the protected secrets; fails clearly without it)"
+        type: boolean
+        default: false
 
+# A push builds only the DEBUG package (signed by the debug key of the Android toolchain, named ...-DEBUG, NOT for distribution).
+# The RELEASE package is built only on request (Run workflow -> release) and only with the owner's own key from the protected secrets
+# (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS). Without them the release build FAILS with a clear message:
+# the old key of the repository is public and is never used.
 jobs:
   apk:
     runs-on: ubuntu-latest
+    env:
+      WANT_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.release }}
     steps:
       - uses: actions/checkout@v4
 
@@ -35,35 +46,30 @@ jobs:
         working-directory: android
         run: gradle --no-daemon testReleaseUnitTest
 
-      # The key of the package comes from the protected secrets of the repository (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
-      # ANDROID_KEY_ALIAS): their values are never printed. Without them the OLD key of the repository is used and the package is named
-      # "LEGACY-KEY": that key and its password are public, so such a package must be replaced (docs/implementation/SECURITY_FIXES.md).
-      - name: Choose the signing key
-        id: key
+      - name: Require and prepare the release signing key
+        if: env.WANT_RELEASE == 'true'
         shell: bash
         env:
           KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
-          if [ -n "$KS_B64" ] && [ -n "$KS_PASS" ]; then
-            umask 077
-            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
-            echo "::add-mask::$KS_PASS"
-            echo "JARVIS_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
-            echo "JARVIS_KEYSTORE_PASSWORD=$KS_PASS" >> "$GITHUB_ENV"
-            echo "JARVIS_KEY_ALIAS=${KS_ALIAS:-jarvis}" >> "$GITHUB_ENV"
-            echo "suffix=" >> "$GITHUB_OUTPUT"
-            echo "The package is signed with the key from the protected secrets."
-          else
-            echo "JARVIS_ALLOW_LEGACY_KEY=1" >> "$GITHUB_ENV"
-            echo "suffix=-LEGACY-KEY" >> "$GITHUB_OUTPUT"
-            echo "::warning title=Android signing::no key in the protected secrets: the OLD public key of the repository is used. Make your own key and add ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS (see docs/implementation/SECURITY_FIXES.md)."
+          if [ -z "$KS_B64" ] || [ -z "$KS_PASS" ]; then
+            echo "::error title=Android release key missing::The release build needs the protected secrets ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD and ANDROID_KEY_ALIAS. They are not set, so no release package is built. The old public key of the repository is NOT used. See docs/implementation/SECURITY_FIXES.md (Android signing key)."
+            exit 1
           fi
+          umask 077
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "::add-mask::$KS_PASS"
+          echo "JARVIS_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          echo "JARVIS_KEYSTORE_PASSWORD=$KS_PASS" >> "$GITHUB_ENV"
+          echo "JARVIS_KEY_ALIAS=${KS_ALIAS:-jarvis}" >> "$GITHUB_ENV"
+          echo "The release package will be signed with the key from the protected secrets (its values are never printed)."
 
       - name: Build the APK
         working-directory: android
-        run: gradle --no-daemon assembleRelease
+        run: |
+          if [ "$WANT_RELEASE" = "true" ]; then gradle --no-daemon assembleRelease; else gradle --no-daemon assembleDebug; fi
 
       - name: List the libraries of the application (there must be no third-party one)
         working-directory: android
@@ -75,9 +81,13 @@ jobs:
         run: |
           label="$(TZ=Asia/Tashkent date +%d.%m.%Y_%H-%M)_${GITHUB_SHA::7}"
           mkdir -p dist
-          SUFFIX="${{ steps.key.outputs.suffix }}"
-          cp android/app/build/outputs/apk/release/app-release.apk "dist/Jarvis-Android-${label}${SUFFIX}.apk"
-          echo "label=${label}${SUFFIX}" >> "$GITHUB_OUTPUT"
+          if [ "$WANT_RELEASE" = "true" ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk "dist/Jarvis-Android-${label}.apk"
+            echo "label=${label}" >> "$GITHUB_OUTPUT"
+          else
+            cp android/app/build/outputs/apk/debug/app-debug.apk "dist/Jarvis-Android-${label}-DEBUG.apk"
+            echo "label=${label}-DEBUG" >> "$GITHUB_OUTPUT"
+          fi
           ls -la dist
 
       - name: Check the APK (a signed package of the right application)

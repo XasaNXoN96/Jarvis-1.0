@@ -62,3 +62,8 @@ android/app/build/
 android/local.properties
 crates/*/audit_log.json
 crates/*/remote_nonces.json
+
+# Android release key material must never be committed (tools/android-key/make-key.* keep it outside the repository)
+jarvis-android-key/
+ANDROID_KEYSTORE_BASE64.txt
+password.txt
