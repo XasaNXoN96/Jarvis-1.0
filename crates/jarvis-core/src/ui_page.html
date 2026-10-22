@@ -21,7 +21,7 @@
   html, body { height: 100%; margin: 0; }
   body {
     background: radial-gradient(1100px 760px at 50% 38%, #141416 0%, var(--bg2) 45%, var(--bg1) 100%);
-    color: var(--text); font: 15px/1.45 "Segoe UI", system-ui, sans-serif;
+    color: var(--text); font: 15px/1.45 var(--font, "Segoe UI", system-ui, sans-serif);
     display: flex; flex-direction: column; overflow: hidden;
   }
   .shell { flex: 1; display: flex; min-height: 0; }
@@ -293,8 +293,16 @@
   .composer input { flex: 1; min-width: 0; padding: 13px 18px; border-radius: 14px; border: 1px solid var(--line); background: #ffffff06; color: var(--text); font: inherit; outline: none; transition: .2s; }
   .composer textarea { flex: 1; min-width: 0; padding: 13px 18px; border-radius: 14px; border: 1px solid var(--line); background: #ffffff06; color: var(--text); font: inherit; outline: none; transition: border-color .2s, background .2s; }
   .composer textarea:focus { border-color: var(--line2); background: #ffffff0a; box-shadow: 0 0 0 3px #ffffff0d; }
-  .grow-in { resize: none; overflow-y: auto; line-height: 1.35; max-height: 40vh; box-sizing: border-box; }
+  .grow-in { resize: none; overflow-y: hidden; scrollbar-width: thin; scrollbar-color: #ffffff30 transparent; line-height: 1.35; max-height: 40vh; box-sizing: border-box; }
   #form { align-items: flex-end; } .composer { align-items: flex-end; }
+  /* no little arrows in the field: the scrollbar of the field has no buttons, and the field scrolls only when it reached its maximum */
+  .grow-in::-webkit-scrollbar { width: 6px; } .grow-in::-webkit-scrollbar-button { display: none; width: 0; height: 0; } .grow-in::-webkit-scrollbar-thumb { background: #ffffff30; border-radius: 6px; }
+  .grow-in { appearance: none; -webkit-appearance: none; }
+  /* the field, the microphone and «Отправить» are three separate things with room between them */
+  .composer, form#form { gap: 14px; align-items: flex-end; }
+  .composer .ib, #micbtn { width: 50px; height: 50px; border-radius: 14px; margin-left: 2px; }
+  .composer .sb, #send { height: 50px; padding: 0 26px; border-radius: 14px; margin-left: 4px; letter-spacing: .02em; }
+  .composer textarea, textarea#input { min-height: 50px; }
   /* the corner block «Мой ПК»: real readings every 2 s while the home page is open; «Недоступно» where Windows or the driver gives nothing */
   .mon { padding: 8px 11px; border: 1px solid var(--line); border-radius: 14px; background: rgba(14,14,18,.72); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); font-size: 12px; }
   .mon[hidden] { display: none; }
@@ -317,9 +325,27 @@
   .rg-dlg { position: fixed; inset: 0; z-index: 9990; background: rgba(0,0,0,.65); display: none; align-items: center; justify-content: center; } .rg-dlg.on { display: flex; }
   .rg-box { width: min(940px, 96vw); max-height: 94vh; overflow: auto; background: var(--panel2); border: 1px solid var(--line2); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
   #rg-canvas { width: 100%; height: auto; border-radius: 10px; cursor: crosshair; touch-action: none; background: #000; } .rg-box .r { display: flex; gap: 8px; } .rg-box .r input { flex: 1; min-width: 0; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: #ffffff06; color: var(--text); font: inherit; }
-  /* accent themes: the colour of the sphere and of the accents; the dark base stays (a light page would need every colour of the program redone) */
-  :root[data-theme="ocean"] { --accent: #8bd8ff; } :root[data-theme="amber"] { --accent: #ffd48a; } :root[data-theme="ruby"] { --accent: #ff9aa8; }
-  :root[data-theme="violet"] { --accent: #c9b3ff; } :root[data-theme="lime"] { --accent: #c4f08a; }
+  /* THEMES: each one sets the colours, the font, the headings and the background effect of the whole program */
+  body { font-family: var(--font, "Segoe UI", system-ui, sans-serif); }
+  h1, h2, h3, .brand b, .tb-title b, nav button span:last-child { text-transform: var(--head-tf, none); letter-spacing: var(--ls, normal); }
+  body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: var(--bgimg, none); transition: opacity .5s; }
+  body.theme-fade *, body.theme-fade { transition: background-color .45s ease, border-color .45s ease, color .45s ease !important; }
+  :root[data-theme="cyberpunk"] { --nav-hi:#fcee0a; --brand-grad:linear-gradient(90deg,#fcee0a,#ff2a6d); --brand-glow:#fcee0aa0; --fx-bg:radial-gradient(900px 600px at 85% -10%,#ff2a6d38,transparent 65%),radial-gradient(800px 560px at 0% 100%,#00f0ff2a,transparent 65%),linear-gradient(#06030c,#10061c); --fx-after:radial-gradient(60% 50% at 50% 110%,#fcee0a22,transparent 70%); --bg1: #06030c; --bg2: #140824; --panel: #170b28e6; --panel2: #1d0f33; --line: #3b1c5a; --line2: #fcee0a77; --text: #f4eeff; --dim: #a28bc2; --accent: #fcee0a; --ink: #0b0612; --nav-bg: #09041399; --nav-sel: #fcee0a22; --row-line: #fcee0a1c; --row-hover: #fcee0a0f; --field-bg: #150a26; --ok: #00f0ff; --err: #ff2a6d; --warn: #fcee0a;
+    --font: "Bahnschrift", "Segoe UI Semibold", "Segoe UI", sans-serif; --head-tf: uppercase; --ls: .07em;
+    --bgimg: repeating-linear-gradient(0deg, #fcee0a09 0 1px, transparent 1px 3px), linear-gradient(#ff2a6d12 1px, transparent 1px) 0 0/64px 64px, linear-gradient(90deg, #00f0ff10 1px, transparent 1px) 0 0/64px 64px, radial-gradient(900px 520px at 85% -10%, #ff2a6d30, transparent), radial-gradient(800px 500px at 0% 100%, #00f0ff22, transparent); }
+  :root[data-theme="avengers"] { --nav-hi:#ffc83d; --brand-grad:linear-gradient(90deg,#fff1b8,#ffc83d 60%,#ff9a1f); --brand-glow:#ffc83da0; --fx-bg:radial-gradient(800px 640px at 50% 42%,#ffc83d1c,transparent 70%),radial-gradient(900px 500px at 50% 120%,#0a3a7a40,transparent 70%),linear-gradient(#02050b,#06101c); --fx-after:radial-gradient(50% 45% at 50% 45%,#ffc83d14,transparent 70%); --bg1: #02050b; --bg2: #07111f; --panel: #08131fe6; --panel2: #0d1b2c; --line: #1e3550; --line2: #ffc83d66; --text: #f6edd2; --dim: #9aa7b8; --accent: #ffc83d; --ink: #0a0f18; --nav-bg: #030a14aa; --nav-sel: #ffc83d1f; --row-line: #ffc83d18; --row-hover: #ffc83d0c; --field-bg: #091422; --ok: #7be0b0; --err: #ff6b4a; --warn: #ffc83d;
+    --font: "Segoe UI Light", "Segoe UI", sans-serif; --head-tf: uppercase; --ls: .16em;
+    --bgimg: radial-gradient(700px 560px at 50% 42%, #ffc83d16, transparent 70%), linear-gradient(#ffc83d0b 1px, transparent 1px) 0 0/52px 52px, linear-gradient(90deg, #ffc83d0b 1px, transparent 1px) 0 0/52px 52px, linear-gradient(180deg, transparent 70%, #0a2a5a30); }
+  :root[data-theme="matrix"] { --nav-hi:#34f06b; --brand-grad:linear-gradient(90deg,#c9ffd9,#34f06b); --brand-glow:#34f06ba0; --fx-bg:radial-gradient(900px 600px at 50% 0,#34f06b1c,transparent 70%),linear-gradient(#010502,#031109); --fx-after:radial-gradient(60% 40% at 50% 110%,#34f06b1c,transparent 70%); --bg1: #010502; --bg2: #03120a; --panel: #04150be6; --panel2: #061c0f; --line: #0f3d22; --line2: #34f06b66; --text: #c9ffd9; --dim: #5fa078; --accent: #34f06b; --ink: #021007; --nav-bg: #020c06aa; --nav-sel: #34f06b1e; --row-line: #34f06b18; --row-hover: #34f06b0c; --field-bg: #05180d; --ok: #34f06b; --err: #ff5d5d; --warn: #d6ff5a;
+    --font: "Cascadia Mono", Consolas, "Courier New", monospace; --head-tf: lowercase; --ls: .04em;
+    --bgimg: repeating-linear-gradient(0deg, #34f06b0a 0 1px, transparent 1px 4px), radial-gradient(900px 600px at 50% 0, #34f06b18, transparent), linear-gradient(90deg, #34f06b08 1px, transparent 1px) 0 0/36px 36px; }
+  :root[data-theme="ice"] { --nav-hi:#7dd3fc; --brand-grad:linear-gradient(90deg,#e8f4ff,#7dd3fc 60%,#3b82f6); --brand-glow:#7dd3fca0; --fx-bg:radial-gradient(900px 600px at 20% -10%,#7dd3fc2a,transparent 65%),radial-gradient(800px 560px at 100% 100%,#3b82f62a,transparent 65%),linear-gradient(#03060d,#08121f); --fx-after:radial-gradient(60% 45% at 50% 110%,#7dd3fc1c,transparent 70%); --bg1: #03060d; --bg2: #0a1626; --panel: #0b1829e6; --panel2: #102238; --line: #1e3a58; --line2: #7dd3fc66; --text: #e8f4ff; --dim: #8da6bf; --accent: #7dd3fc; --ink: #06101c; --nav-bg: #050c18aa; --nav-sel: #7dd3fc1e; --row-line: #7dd3fc18; --row-hover: #7dd3fc0c; --field-bg: #0c1a2c; --font: "Segoe UI Variable Display", "Segoe UI", sans-serif; --head-tf: none; --ls: .02em;
+    --bgimg: radial-gradient(900px 600px at 20% 0, #7dd3fc22, transparent), radial-gradient(700px 500px at 100% 100%, #3b82f622, transparent); }
+  :root[data-theme="sunset"] { --nav-hi:#ff8a4c; --brand-grad:linear-gradient(90deg,#ffe0a8,#ff8a4c 55%,#ff3d7a); --brand-glow:#ff8a4ca0; --fx-bg:radial-gradient(900px 560px at 50% 118%,#ff8a4c44,transparent 70%),radial-gradient(800px 560px at 0% 0,#7a2bd62a,transparent 65%),linear-gradient(#0b0509,#1a0a14); --fx-after:radial-gradient(70% 55% at 50% 110%,#ff3d7a26,transparent 70%); --bg1: #0b0509; --bg2: #1d0b17; --panel: #230d1ae6; --panel2: #2c1220; --line: #4d2038; --line2: #ff8a4c66; --text: #fff0e6; --dim: #c29a9c; --accent: #ff8a4c; --ink: #1a0810; --nav-bg: #12060eaa; --nav-sel: #ff8a4c22; --row-line: #ff8a4c1a; --row-hover: #ff8a4c0d; --field-bg: #260f1c; --font: Candara, "Segoe UI", sans-serif; --head-tf: none; --ls: .03em;
+    --bgimg: linear-gradient(180deg, transparent 40%, #ff5e6c22 80%, #ff8a4c33 100%), radial-gradient(800px 500px at 50% 110%, #ffb34733, transparent); }
+  /* the surfaces that were coloured by hand follow the theme */
+  .bottom { background: color-mix(in srgb, var(--bg1) 85%, transparent); } nav { background: var(--nav-bg); }
+  #input, textarea#input { background: var(--field-bg); } .composer textarea { background: color-mix(in srgb, var(--accent) 5%, transparent); }
   body.reduced #bgfx { display: none; } body.reduced * { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
   .pc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
   .pc-card { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px 10px 10px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); text-align: center; min-width: 0; }
@@ -699,13 +725,11 @@
 
   /* ---- the phoenix theme: a fiery background, the logo of the program, embers ---- */
   body { background: #050507; }
-  #bgfx { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden;
-    background:
-      radial-gradient(980px 640px at 50% 118%, #ff5a1f42 0%, #b0210f28 40%, transparent 72%),
-      radial-gradient(720px 540px at 6% -10%, #5b2bd630 0%, transparent 66%),
-      radial-gradient(800px 600px at 104% 28%, #c2185b26 0%, transparent 64%),
-      radial-gradient(1200px 800px at 50% 36%, #17121c 0%, #0c0b11 50%, #050507 100%); }
-  #bgfx::after { content: ""; position: absolute; inset: 0; background: radial-gradient(70% 60% at 50% 105%, #ff7a2f2e, transparent 70%); animation: bgbreath 7s ease-in-out infinite; }
+  :root { --nav-hi: #ff7a2f; --brand-grad: linear-gradient(90deg, #ffd27a, #ff8a3d 55%, #ff4d4d); --brand-glow: #ff7a2fa0;
+    --fx-bg: radial-gradient(980px 640px at 50% 118%, #ff5a1f42 0%, #b0210f28 40%, transparent 72%), radial-gradient(720px 540px at 6% -10%, #5b2bd630 0%, transparent 66%), radial-gradient(800px 600px at 104% 28%, #c2185b26 0%, transparent 64%), radial-gradient(1200px 800px at 50% 36%, #17121c 0%, #0c0b11 50%, #050507 100%);
+    --fx-after: radial-gradient(70% 60% at 50% 105%, #ff7a2f2e, transparent 70%); }
+  #bgfx { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; background: var(--fx-bg); transition: opacity .5s; }
+  #bgfx::after { content: ""; position: absolute; inset: 0; background: var(--fx-after); animation: bgbreath 7s ease-in-out infinite; }
   /* the phoenix stands in the lower right corner: the sphere in the middle stays clear */
   /* the phoenix stands in the lower right corner: the sphere in the middle stays clear */
   #bgfx .wm { position: absolute; right: -3vh; bottom: -4vh; width: min(58vh, 44vw); aspect-ratio: 1; background: url(/icon.png) center / contain no-repeat; opacity: .16; filter: saturate(1.2) drop-shadow(0 0 40px #ff6a2a66); animation: wmfloat 10s ease-in-out infinite; }
@@ -715,12 +739,13 @@
   @keyframes bgbreath { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
   body.mini #bgfx { display: none; }
   @media (prefers-reduced-motion: reduce) { #bgfx .wm, #bgfx::after { animation: none; } }
-  .brand-logo { width: 30px; height: 30px; flex: none; object-fit: contain; filter: drop-shadow(0 0 7px #ff7a2fa0); }
-  .brand b { background: linear-gradient(90deg, #ffd27a, #ff8a3d 55%, #ff4d4d); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  nav button.active { background: linear-gradient(90deg, #ff7a2f26, #ff7a2f08); border-color: #ff7a2f40; box-shadow: inset 2px 0 0 #ff8a3d; }
-  nav button:hover { background: #ff7a2f12; }
-  .topbar { background: #0b090dae; border-bottom-color: #ff7a2f26; }
-  nav { background: #07060acc; border-right-color: #ff7a2f22; }
+  .brand-logo { width: 30px; height: 30px; flex: none; object-fit: contain; filter: drop-shadow(0 0 7px var(--brand-glow)); }
+  .brand b { background: var(--brand-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  nav button.active { background: linear-gradient(90deg, color-mix(in srgb, var(--nav-hi) 15%, transparent), color-mix(in srgb, var(--nav-hi) 3%, transparent)); border-color: color-mix(in srgb, var(--nav-hi) 25%, transparent); box-shadow: inset 2px 0 0 var(--nav-hi); }
+  nav button:hover { background: color-mix(in srgb, var(--nav-hi) 7%, transparent); }
+  .topbar { background: color-mix(in srgb, var(--bg1) 70%, transparent); border-bottom-color: color-mix(in srgb, var(--nav-hi) 15%, transparent); }
+  nav { background: color-mix(in srgb, var(--bg1) 80%, transparent); border-right-color: color-mix(in srgb, var(--nav-hi) 13%, transparent); }
+  :root[data-theme]:not([data-theme="jarvis"]) #bgfx .wm { display: none; }
 
   /* the home page is clean: only the sphere and the line of input under it (the texts stay in the page for the scripts, they are just not shown) */
   #page-home .h-sum, #page-home .herotext, #page-home #state { display: none !important; }
@@ -1608,13 +1633,17 @@
       <div class="card" data-cat="look" id="look-card" data-tab="Внешний вид"><h3><span class="ei">🧩</span>Внешний вид</h3>
         <div class="setrow"><div class="l">Сфера<small>что показывать на главном экране</small></div>
           <div class="r"><div class="seg"><button data-mode="wire">Сфера из частиц</button><button data-mode="avatar">Моё фото</button></div></div></div>
-        <div class="setrow"><div class="l">Цвет<small>цвет сферы и акцентов (тёмная основа остаётся)</small></div>
-          <div class="r"><div class="seg" id="theme-seg"><button data-theme-pick="graphite" type="button">Графит</button><button data-theme-pick="ocean" type="button">Океан</button><button data-theme-pick="amber" type="button">Янтарь</button><button data-theme-pick="ruby" type="button">Рубин</button><button data-theme-pick="violet" type="button">Фиолет</button><button data-theme-pick="lime" type="button">Лайм</button></div></div></div>
-        <div class="setrow"><div class="l">Вид сферы<small>«Частицы», «Кольца» или «Сетка»; режим «Моё фото» выбирается выше</small></div>
-          <div class="r"><div class="seg"><button data-sphere-pick="dots" type="button">Частицы</button><button data-sphere-pick="rings" type="button">Кольца</button><button data-sphere-pick="grid" type="button">Сетка</button></div></div></div>
+        <div class="setrow"><div class="l">Тема<small>Тема меняет всё сразу: цвета и фон, шрифт, эффекты фона, искры и сферу в центре</small></div>
+          <div class="r"><div class="seg" id="theme-seg"><button data-theme-pick="jarvis" type="button">Jarvis</button><button data-theme-pick="cyberpunk" type="button">Cyberpunk</button><button data-theme-pick="avengers" type="button">Avengers: Эра Альтрона</button><button data-theme-pick="matrix" type="button">Matrix</button><button data-theme-pick="ice" type="button">Ice</button><button data-theme-pick="sunset" type="button">Sunset</button></div></div></div>
+        <div class="setrow"><div class="l">Вид сферы<small>у каждой темы своя сфера по умолчанию; здесь можно выбрать любую</small></div>
+          <div class="r"><div class="seg"><button data-sphere-pick="dots" type="button">Частицы</button><button data-sphere-pick="holo" type="button">Голограмма</button><button data-sphere-pick="neon" type="button">Неон</button><button data-sphere-pick="core" type="button">Реактор</button><button data-sphere-pick="wave" type="button">Волна</button><button data-sphere-pick="orbit" type="button">Орбиты</button></div></div></div>
+        <div class="setrow"><div class="l">Скорость анимации сферы</div>
+          <div class="r"><div class="seg"><button data-speed-pick="slow" type="button">Медленно</button><button data-speed-pick="normal" type="button">Обычно</button><button data-speed-pick="fast" type="button">Быстро</button><button data-speed-pick="hyper" type="button">Очень быстро</button></div></div></div>
+        <div class="setrow"><div class="l">Свечение</div>
+          <div class="r"><div class="seg"><button data-glow-pick="soft" type="button">Мягкое</button><button data-glow-pick="normal" type="button">Обычное</button><button data-glow-pick="strong" type="button">Сильное</button></div></div></div>
         <div class="setrow"><div class="l">Анимации<small>«Авто» следует настройке Windows «Показывать анимацию»; «Меньше» останавливает искры фона, почти не вращает сферу и рисует её реже</small></div>
           <div class="r"><div class="seg"><button data-motion-pick="auto" type="button">Авто</button><button data-motion-pick="reduced" type="button">Меньше</button><button data-motion-pick="full" type="button">Полные</button></div></div></div>
-        <div class="setrow"><div class="l">Сбросить вид</div><div class="r"><button class="btn" id="look-reset" type="button">Сбросить цвет, сферу и анимации</button></div></div>
+        <div class="setrow"><div class="l">Сбросить вид</div><div class="r"><button class="btn" id="look-reset" type="button">Сбросить тему, сферу и анимации</button></div></div>
         <div class="setrow"><div class="l">Фото-голограмма<small>фото остаётся на этом компьютере</small></div>
           <div class="r"><button class="btn" id="avatar-pick">Выбрать фото</button><button class="btn" id="avatar-clear">Убрать</button></div></div>
         <input type="file" id="avatar-file" accept="image/png,image/jpeg,image/webp" style="display:none">
@@ -1838,8 +1867,8 @@ function connect() {
       case 'wake_word_detected': setState('wake', 1500); setStatus('Слушаю…'); homeSig = ''; autoBig(); break;
       case 'listening': setState('listening'); setStatus('Слушаю…'); homeSig = ''; autoBig(); break;
       case 'speech_recognized': add('me', m.text); $('#h-heard').textContent = '«' + m.text + '»'; setStatus('…'); homeSig = ''; setState('busy', 2500); break;
-      case 'command_executed': if (!m.success) add('err', 'Не получилось выполнить: ' + m.id); setTimeout(pollNow, 400); break;
-      case 'output': add('bot', m.text); setStatus(m.text); setState('speaking', 2500); break;
+      case 'command_executed': if (!m.success) add('err', 'Не получилось выполнить: ' + m.id); pollNow(); setTimeout(pollNow, 400); break;
+      case 'output': add('bot', m.text); setStatus(m.text); setState('speaking', 2500); pollNow(); break;
       case 'speaking': setState('speaking', 3500); break;
       case 'error': add('err', m.message); setStatus(m.message); setState('error', 2500); break;
       case 'idle': if (state !== 'speaking') setState('idle'); scheduleAutoSmall(); homeSig = ''; if (currentPage === 'home') homeText(chatCache); break;
@@ -1875,7 +1904,7 @@ function submitFrom(inputEl) {
   ask(text).then(ok => { if (ok) inputEl.value = ''; });
 }
 // the input grows with the text (up to 40% of the window, then scrolls); Enter sends, Shift+Enter is a new line
-function growInput(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight + 2, Math.round(window.innerHeight * 0.4)) + 'px'; }
+function growInput(el) { el.style.height = 'auto'; const max = Math.round(window.innerHeight * 0.4), h = Math.min(el.scrollHeight, max); el.style.height = h + 'px'; el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden'; }
 for (const el of document.querySelectorAll('textarea.grow-in')) {
   el.addEventListener('input', () => growInput(el));
   el.addEventListener('keydown', e => {
@@ -2037,7 +2066,7 @@ const AP_KINDS = [
   ['games', 'Игры', /(\bsteam|epic games|gog galaxy|battle\.net|\borigin\b|ubisoft|uplay|\bea app|\bxbox|rockstar|minecraft|\blauncher|wargaming|\briot\b|valorant)/i],
   ['web', 'Интернет', /(chrome|\bedge\b|firefox|\bopera\b|\bbrave\b|vivaldi|yandex|яндекс|browser|telegram|discord|skype|\bzoom\b|\bteams\b|whatsapp|viber|\bslack\b|thunderbird)/i]
 ];
-const AP_TABS = [['all', 'Все'], ['new', 'Новые'], ['user', 'Установленные'], ['system', 'Системные'], ['office', 'Офис'], ['music', 'Музыка'], ['photo', 'Фото'], ['video', 'Видео'], ['games', 'Игры'], ['web', 'Интернет']];
+const AP_TABS = [['all', 'Все'], ['new', 'Новые'], ['office', 'Офис'], ['music', 'Музыка'], ['photo', 'Фото'], ['video', 'Видео'], ['games', 'Игры'], ['web', 'Интернет']];
 let apTab = 'all';
 let apKnown = null;   // names seen at the previous scan (to mark the new ones)
 function apKind(a) {
@@ -2062,7 +2091,8 @@ function appsRender() {
   const q = $('#ap-search').value.trim().toLowerCase();
   // the programs found on the computer (minus the hidden cards) and the shortcuts the user added
   const hidden = new Set((plLib.hidden || []).map(x => x.toLowerCase()));
-  const all = appsList.filter(a => !hidden.has(a.name.toLowerCase())).concat((plLib.shortcuts || []).map(sc => ({ name: sc.name, launch: 'sc:' + sc.id, ok: true, category: 'user', sc: sc.id })));
+  // the programs of Windows itself are not listed: only what was installed by the user (and the shortcuts added by hand)
+  const all = appsList.filter(a => ['user', 'other'].includes(a.category || '') && !hidden.has(a.name.toLowerCase())).concat((plLib.shortcuts || []).map(sc => ({ name: sc.name, launch: 'sc:' + sc.id, ok: true, category: 'user', sc: sc.id })));
   all.forEach(a => { a.kind = apKind(a); });
   const counts = {};
   AP_TABS.forEach(t => { counts[t[0]] = all.filter(a => t[0] === 'all' || (t[0] === 'new' ? a.isNew : a.kind === t[0])).length; });
@@ -2681,7 +2711,7 @@ async function pollNow(force) {
 function nextDelay() {
   if (document.hidden) return 4000;
   const speaking = lastState && lastState.voice_state && lastState.voice_state.state === 'SPEAKING';
-  return (performance.now() < fastUntil || (lastState && lastState.ai_busy) || speaking) ? 300 : 1500;
+  return (performance.now() < fastUntil || (lastState && lastState.ai_busy) || speaking) ? 100 : 1500;
 }
 (function loop() { pollNow().finally(() => setTimeout(loop, nextDelay())); })();
 
@@ -3014,7 +3044,7 @@ window.addEventListener('resize', syncNativeFull); syncNativeFull(); setTimeout(
   const cv = document.getElementById('embers'); if (!cv) return;
   const g = cv.getContext('2d'); let w = 0, h = 0, parts = [], last = 0;
   const fit = () => { const d = Math.min(window.devicePixelRatio || 1, 1.5); w = cv.width = Math.floor(innerWidth * d); h = cv.height = Math.floor(innerHeight * d); };
-  const mk = (init) => ({ x: Math.random() * w, y: init ? Math.random() * h : h + 10, r: (0.7 + Math.random() * 2.2) * (w / 1600 + .6), v: 0.25 + Math.random() * 0.8, dx: (Math.random() - .5) * 0.35, ph: Math.random() * 6.28, hue: 18 + Math.random() * 28 });
+  const mk = (init) => ({ x: Math.random() * w, y: init ? Math.random() * h : h + 10, r: (0.7 + Math.random() * 2.2) * (w / 1600 + .6), v: 0.25 + Math.random() * 0.8, dx: (Math.random() - .5) * 0.35, ph: Math.random() * 6.28, off: (Math.random() - .5) * 26 });
   fit(); const N = Math.max(70, Math.min(170, Math.floor(innerWidth / 11))); parts = Array.from({ length: N }, () => mk(true));
   addEventListener('resize', fit);
   const tick = t => {
@@ -3025,8 +3055,9 @@ window.addEventListener('resize', syncNativeFull); syncNativeFull(); setTimeout(
       p.y -= p.v; p.x += p.dx + Math.sin(t / 900 + p.ph) * 0.25;
       const life = Math.max(0, p.y / h), a = (0.2 + 0.6 * life) * (0.65 + 0.35 * Math.sin(t / 220 + p.ph));
       if (p.y < -10) Object.assign(p, mk(false));
-      g.beginPath(); g.fillStyle = 'hsla(' + p.hue + ',100%,' + (55 + 20 * (1 - life)) + '%,' + a.toFixed(3) + ')';
-      g.shadowColor = 'hsla(' + p.hue + ',100%,55%,.9)'; g.shadowBlur = 8; g.arc(p.x, p.y, p.r, 0, 6.2832); g.fill();
+      const hue = (window.emberHue == null ? 25 : window.emberHue) + p.off;
+      g.beginPath(); g.fillStyle = 'hsla(' + hue + ',100%,' + (55 + 20 * (1 - life)) + '%,' + a.toFixed(3) + ')';
+      g.arc(p.x, p.y, p.r, 0, 6.2832); g.fill(); g.beginPath(); g.fillStyle = 'hsla(' + hue + ',100%,60%,' + (a * 0.25).toFixed(3) + ')'; g.arc(p.x, p.y, p.r * 2.6, 0, 6.2832); g.fill();
     }
   };
   requestAnimationFrame(tick);
@@ -4939,13 +4970,30 @@ let yaw = 0, level = 0, glitchUntil = 0, nextGlitch = performance.now() + 3000;
 
 // ONE source of the state of the sphere: everything the page knows is folded into a single word, and the colour, the movement and the
 // tooltip all come from it (never from separate flags)
-const THEMES = { graphite: [176, 45, 'Графит'], ocean: [200, 70, 'Океан'], amber: [38, 80, 'Янтарь'], ruby: [352, 65, 'Рубин'], violet: [265, 55, 'Фиолет'], lime: [95, 55, 'Лайм'] };
-let theme = 'graphite', sphere = 'dots', motion = 'auto';
-try { theme = localStorage.getItem('jarvis-theme') || 'graphite'; sphere = localStorage.getItem('jarvis-sphere') || 'dots'; motion = localStorage.getItem('jarvis-motion') || 'auto'; } catch (e) {}
-if (!THEMES[theme]) theme = 'graphite';
+// A THEME changes everything at once: the colours of the page and of the background, the font, the effects of the background, the colour of
+// the sparks and the sphere. [hue, saturation, spark hue, the sphere that goes with the theme, name]
+const THEMES = {
+  jarvis: [176, 45, 25, 'dots', 'Jarvis'],
+  cyberpunk: [55, 100, 320, 'neon', 'Cyberpunk'],
+  avengers: [44, 100, 44, 'holo', 'Avengers: Эра Альтрона'],
+  matrix: [130, 90, 130, 'wave', 'Matrix'],
+  ice: [200, 80, 200, 'core', 'Ice'],
+  sunset: [18, 90, 340, 'orbit', 'Sunset']
+};
+const LEGACY_THEME = { graphite: 'jarvis', ocean: 'ice', amber: 'avengers', ruby: 'sunset', violet: 'cyberpunk', lime: 'matrix' };
+const SPHERES = { dots: 'Частицы', core: 'Реактор', holo: 'Голограмма', neon: 'Неон', wave: 'Волна', orbit: 'Орбиты' };
+const SPEEDS = { slow: 0.45, normal: 1, fast: 1.8, hyper: 3 }, GLOWS = { soft: 0.6, normal: 1, strong: 1.5 };
+let theme = 'jarvis', sphere = 'dots', motion = 'auto', speed = 'normal', glow = 'normal';
+try {
+  theme = localStorage.getItem('jarvis-theme') || 'jarvis'; sphere = localStorage.getItem('jarvis-sphere') || ''; motion = localStorage.getItem('jarvis-motion') || 'auto';
+  speed = localStorage.getItem('jarvis-speed') || 'normal'; glow = localStorage.getItem('jarvis-glow') || 'normal';
+} catch (e) {}
+theme = LEGACY_THEME[theme] || theme; if (!THEMES[theme]) theme = 'jarvis';
+if (!SPHERES[sphere]) sphere = THEMES[theme][3];
+if (!SPEEDS[speed]) speed = 'normal'; if (!GLOWS[glow]) glow = 'normal';
 const ORB_KINDS = {
-  error: ['ошибка', [352, 75], 0.6], off: ['нет связи', [220, 6], 0], muted: ['микрофон выключен', [220, 10], 0.02], listening: ['слушаю', [172, 70], 0.55],
-  speaking: ['говорю', [186, 55], 0.75], thinking: ['думаю', [265, 55], 0.4], game: ['игровой режим', [135, 55], 0.15], locked: ['защита включена', [40, 40], 0.05], idle: ['готов', null, 0.05]
+  error: ['ошибка', [352, 75], 0.6], off: ['нет связи', [220, 6], 0], muted: ['микрофон выключен', [220, 10], 0.02], listening: ['слушаю', null, 0.55],
+  speaking: ['говорю', null, 0.75], thinking: ['думаю', null, 0.4], game: ['игровой режим', [135, 55], 0.15], locked: ['защита включена', [40, 40], 0.05], idle: ['готов', null, 0.05]
 };
 function orbKind() {
   if (state === 'error') return 'error';
@@ -4961,27 +5009,38 @@ function orbKind() {
 }
 let OWNER_LOCKED = false;
 function reducedMotion() { return motion === 'reduced' || (motion === 'auto' && window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches); }
+window.emberHue = 25;
 function applyLook() {
-  document.documentElement.dataset.theme = theme === 'graphite' ? '' : theme;
+  const root = document.documentElement;
+  // a short cross-fade of every colour when the theme changes
+  document.body.classList.add('theme-fade'); clearTimeout(applyLook.t); applyLook.t = setTimeout(() => document.body.classList.remove('theme-fade'), 600);
+  root.dataset.theme = theme; window.emberHue = THEMES[theme][2];
   document.body.classList.toggle('reduced', reducedMotion());
-  document.querySelectorAll('[data-theme-pick]').forEach(b => b.classList.toggle('active', b.dataset.themePick === theme));
-  document.querySelectorAll('[data-sphere-pick]').forEach(b => b.classList.toggle('active', b.dataset.spherePick === sphere));
-  document.querySelectorAll('[data-motion-pick]').forEach(b => b.classList.toggle('active', b.dataset.motionPick === motion));
+  document.body.classList.toggle('rm-calm', reducedMotion());
+  for (const [attr, cur] of [['themePick', theme], ['spherePick', sphere], ['motionPick', motion], ['speedPick', speed], ['glowPick', glow]]) {
+    const sel = '[data-' + attr.replace(/[A-Z]/g, c => '-' + c.toLowerCase()) + ']';
+    document.querySelectorAll(sel).forEach(b => b.classList.toggle('active', b.dataset[attr] === cur));
+  }
 }
 function setLook(k, v, fromServer) {
-  if (k === 'theme' && THEMES[v]) theme = v; else if (k === 'sphere' && ['dots', 'rings', 'grid'].includes(v)) sphere = v; else if (k === 'motion' && ['auto', 'reduced', 'full'].includes(v)) motion = v; else return;
+  if (k === 'theme' && THEMES[v]) { theme = v; sphere = THEMES[v][3]; try { localStorage.setItem('jarvis-sphere', sphere); } catch (e) {} if (!fromServer) saveSettings({ ui: { 'jarvis-sphere': sphere } }); }
+  else if (k === 'sphere' && SPHERES[v]) sphere = v; else if (k === 'motion' && ['auto', 'reduced', 'full'].includes(v)) motion = v;
+  else if (k === 'speed' && SPEEDS[v]) speed = v; else if (k === 'glow' && GLOWS[v]) glow = v; else return;
   try { localStorage.setItem('jarvis-' + k, v); } catch (e) {}
   if (!fromServer) saveSettings({ ui: { ['jarvis-' + k]: v } });
   applyLook();
 }
-document.querySelectorAll('[data-theme-pick]').forEach(b => b.onclick = () => setLook('theme', b.dataset.themePick));
-document.querySelectorAll('[data-sphere-pick]').forEach(b => b.onclick = () => setLook('sphere', b.dataset.spherePick));
-document.querySelectorAll('[data-motion-pick]').forEach(b => b.onclick = () => setLook('motion', b.dataset.motionPick));
-$('#look-reset').onclick = () => { setLook('theme', 'graphite'); setLook('sphere', 'dots'); setLook('motion', 'auto'); };
+for (const [attr, key] of [['theme-pick', 'theme'], ['sphere-pick', 'sphere'], ['motion-pick', 'motion'], ['speed-pick', 'speed'], ['glow-pick', 'glow']]) {
+  document.querySelectorAll('[data-' + attr + ']').forEach(b => b.onclick = () => setLook(key, b.dataset[attr.replace(/-./g, c => c[1].toUpperCase())]));
+}
+$('#look-reset').onclick = () => { setLook('theme', 'jarvis'); setLook('sphere', 'dots'); setLook('motion', 'auto'); setLook('speed', 'normal'); setLook('glow', 'normal'); };
 if (window.matchMedia) matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', applyLook);
+// [hue, saturation] of the sphere: the colour of the theme, changed by the state when something is wrong or switched off
 function palette() {
   const k = ORB_KINDS[orbKind()];
-  return k[1] || [THEMES[theme][0], THEMES[theme][1]];
+  const base = [THEMES[theme][0], THEMES[theme][1]];
+  if (!k[1]) return base;
+  return k[1];
 }
 
 // a soft glow under the photo-hologram (the avatar mode)
@@ -5026,44 +5085,120 @@ function drawOrb(t) {
   }
 }
 
-// variant «rings»: three tilted rings that turn
-function drawRings(t) {
-  const [hue, sat] = palette(), cx = W / 2, cy = H / 2, R = W * 0.33, speaking = state === 'speaking';
-  const glow = ctx.createRadialGradient(cx, cy, R * 0.05, cx, cy, R * 1.25);
-  glow.addColorStop(0, `hsla(${hue},${sat}%,55%,${0.14 + level * 0.2})`); glow.addColorStop(1, `hsla(${hue},${sat}%,30%,0)`);
-  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
-  ctx.lineWidth = PERF_LOW ? 3 : 4;
-  for (let i = 0; i < 3; i++) {
-    const tilt = 0.5 + i * 0.55, rot = yaw * (1 + i * 0.4) + i * 2.1, k = 1 + (speaking ? 0.05 * level * Math.sin(t / 130 + i) : Math.sin(t / 900 + i) * 0.012);
-    ctx.strokeStyle = `hsla(${hue},${sat}%,${70 + i * 8}%,${0.55 + level * 0.3})`;
-    ctx.beginPath();
-    for (let a = 0; a <= 64; a++) {
-      const th = a / 64 * Math.PI * 2, x0 = Math.cos(th) * R * k, y0 = Math.sin(th) * R * k;
-      const x = x0 * Math.cos(rot) , z = x0 * Math.sin(rot), y = y0 * Math.cos(tilt) - z * Math.sin(tilt);
-      const px = cx + x, py = cy + y; if (a === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-    }
+// ---- the spheres. Every one draws from the same few things: the colour of the theme and of the state (palette), `level` (how loud/active),
+// `t` (the animation clock that already has the chosen speed in it) and the glow multiplier of the setting ----
+const TAU = Math.PI * 2;
+const glowK = () => GLOWS[glow];
+function haze(cx, cy, r, hue, sat, a) {
+  const g = ctx.createRadialGradient(cx, cy, r * 0.04, cx, cy, r);
+  g.addColorStop(0, `hsla(${hue},${sat}%,55%,${Math.min(0.9, a * glowK())})`); g.addColorStop(1, `hsla(${hue},${sat}%,30%,0)`);
+  ctx.fillStyle = g; ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+}
+// a point of a globe: [x, y, depth 0..1]
+function globe(lon, lat, R, rot, tilt) {
+  const x0 = Math.cos(lat) * Math.cos(lon + rot), z0 = Math.cos(lat) * Math.sin(lon + rot), y0 = Math.sin(lat);
+  const y = y0 * Math.cos(tilt) - z0 * Math.sin(tilt), z = y0 * Math.sin(tilt) + z0 * Math.cos(tilt);
+  return [W / 2 + x0 * R, H / 2 + y * R, (z + 1) / 2];
+}
+// «Голограмма» (Avengers, Age of Ultron): a gold wire globe with thin rings, a scanning beam and a light flicker, like Jarvis's hologram
+function drawHolo(t) {
+  const [hue, sat] = palette(), cx = W / 2, cy = H / 2, R = W * 0.3, speaking = state === 'speaking';
+  const flick = 0.9 + 0.1 * Math.sin(t / 47) * Math.sin(t / 131);
+  haze(cx, cy, R * 1.6, hue, sat, 0.1 + level * 0.18);
+  ctx.save(); ctx.globalAlpha = flick; ctx.lineCap = 'round';
+  const rot = t / 2600, tilt = 0.42, k = 1 + (speaking ? 0.035 * level * Math.sin(t / 120) : Math.sin(t / 1100) * 0.008);
+  const wire = (f, n, w) => { let prev = null; for (let i = 0; i <= n; i++) { const q = f(i / n); if (prev) { const d = (q[2] + prev[2]) / 2; ctx.strokeStyle = `hsla(${hue},${sat}%,${58 + d * 30}%,${(0.1 + d * 0.62) * Math.min(1.4, glowK())})`; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(prev[0], prev[1]); ctx.lineTo(q[0], q[1]); ctx.stroke(); } prev = q; } };
+  const M = PERF_LOW ? 8 : 12, P = PERF_LOW ? 6 : 9;
+  for (let m = 0; m < M; m++) wire(u => globe(m / M * TAU, (u - 0.5) * Math.PI, R * k, rot, tilt), 40, 2);
+  for (let p = 1; p < P; p++) wire(u => globe(u * TAU, (p / P - 0.5) * Math.PI, R * k, rot, tilt), 56, p === (P >> 1) ? 3 : 1.6);
+  // two thin orbit rings with ticks
+  for (let i = 0; i < 2; i++) {
+    const rr = R * (1.22 + i * 0.16), a = t / (3400 + i * 1500) * (i ? -1 : 1), tl = 1.05 + i * 0.35;
+    ctx.strokeStyle = `hsla(${hue},${sat}%,72%,${0.5 * glowK()})`; ctx.lineWidth = 2; ctx.beginPath();
+    for (let j = 0; j <= 90; j++) { const th = j / 90 * TAU, x = Math.cos(th) * rr, y = Math.sin(th) * rr * Math.cos(tl); const xr = x * Math.cos(a) - y * Math.sin(a), yr = x * Math.sin(a) + y * Math.cos(a); j ? ctx.lineTo(cx + xr, cy + yr) : ctx.moveTo(cx + xr, cy + yr); }
     ctx.stroke();
+    for (let j = 0; j < 24; j++) { const th = j / 24 * TAU + a * 2, x = Math.cos(th) * rr, y = Math.sin(th) * rr * Math.cos(tl); ctx.fillStyle = `hsla(${hue},${sat}%,80%,.55)`; ctx.fillRect(cx + x - 2, cy + y - 2, 4, 4); }
   }
-  ctx.fillStyle = `hsla(${hue},${sat}%,85%,${0.5 + level * 0.4})`; ctx.beginPath(); ctx.arc(cx, cy, R * (0.08 + level * 0.06), 0, Math.PI * 2); ctx.fill();
+  // the scanning beam: a bright band that runs over the globe from top to bottom
+  const by = cy - R + ((t / 1700) % 1) * R * 2, half = Math.sqrt(Math.max(0, R * R - (by - cy) ** 2));
+  const bg = ctx.createLinearGradient(0, by - 26, 0, by + 26); bg.addColorStop(0, `hsla(${hue},${sat}%,70%,0)`); bg.addColorStop(0.5, `hsla(${hue},${sat}%,75%,${0.32 * glowK()})`); bg.addColorStop(1, `hsla(${hue},${sat}%,70%,0)`);
+  ctx.fillStyle = bg; ctx.fillRect(cx - half, by - 26, half * 2, 52);
+  // a few bright specks on the surface
+  for (let i = 0; i < (PERF_LOW ? 14 : 30); i++) { const q = globe(((i * 2.399) % TAU), Math.asin(((i * 0.618) % 1) * 2 - 1), R * k, rot, tilt); ctx.fillStyle = `hsla(${hue},${sat}%,85%,${0.15 + q[2] * 0.6})`; ctx.fillRect(q[0] - 2, q[1] - 2, 4, 4); }
+  ctx.restore();
 }
-// variant «grid»: latitude and longitude lines of a globe
-function drawGrid(t) {
-  const [hue, sat] = palette(), cx = W / 2, cy = H / 2, R = W * 0.33, tilt = 0.38, ct = Math.cos(tilt), st = Math.sin(tilt), cyw = Math.cos(yaw), syw = Math.sin(yaw);
-  const glow = ctx.createRadialGradient(cx, cy, R * 0.05, cx, cy, R * 1.25);
-  glow.addColorStop(0, `hsla(${hue},${sat}%,55%,${0.12 + level * 0.2})`); glow.addColorStop(1, `hsla(${hue},${sat}%,30%,0)`);
-  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
-  const k = 1 + Math.sin(t / 900) * 0.012 + (state === 'speaking' ? 0.04 * level * Math.sin(t / 150) : 0);
-  const proj = (lon, lat) => {
-    const x0 = Math.cos(lat) * Math.cos(lon), z0 = Math.cos(lat) * Math.sin(lon), y0 = Math.sin(lat);
-    const x = (x0 * cyw + z0 * syw) * k, z1 = (-x0 * syw + z0 * cyw) * k, y1 = y0 * k, y = y1 * ct - z1 * st, z = y1 * st + z1 * ct, p = 3.2 / (3.2 - z);
-    return [cx + x * R * p, cy + y * R * p, (z + 1) / 2];
+// «Неон» (Cyberpunk): a segmented neon ring, two turning hexagons, a radar sweep and short glitches with a colour split
+function drawNeon(t) {
+  const [hue, sat] = palette(), cx = W / 2, cy = H / 2, R = W * 0.31, glitch = (Math.sin(t / 233) * Math.sin(t / 71) > 0.93) && !reducedMotion();
+  const cyan = ORB_KINDS[orbKind()][1] ? hue : 185, mag = ORB_KINDS[orbKind()][1] ? hue : 322;
+  haze(cx, cy, R * 1.5, hue, sat, 0.1 + level * 0.2);
+  const ring = (dx, h, alpha) => {
+    ctx.strokeStyle = `hsla(${h},100%,${h === hue ? 58 : 62}%,${alpha * Math.min(1.3, glowK())})`; ctx.lineWidth = 7; ctx.lineCap = 'butt';
+    const n = 36, rot = t / 1800;
+    for (let i = 0; i < n; i++) { if (i % 6 === 5) continue; const a0 = rot + i / n * TAU, len = (i % 3 === 0 ? 0.13 : 0.075) + level * 0.02; ctx.beginPath(); ctx.arc(cx + dx, cy, R, a0, a0 + len); ctx.stroke(); }
   };
-  ctx.lineWidth = 2;
-  const line = (f, n) => { let prev = null; for (let i = 0; i <= n; i++) { const q = f(i / n); if (prev) { const d = (q[2] + prev[2]) / 2; ctx.strokeStyle = `hsla(${hue},${sat * (1 - d * 0.6)}%,${58 + d * 34}%,${0.12 + d * 0.7})`; ctx.beginPath(); ctx.moveTo(prev[0], prev[1]); ctx.lineTo(q[0], q[1]); ctx.stroke(); } prev = q; } };
-  const meridians = PERF_LOW ? 6 : 10, parallels = PERF_LOW ? 5 : 8;
-  for (let m = 0; m < meridians; m++) line(u => proj(m / meridians * Math.PI * 2, (u - 0.5) * Math.PI), 36);
-  for (let p = 1; p < parallels; p++) line(u => proj(u * Math.PI * 2, (p / parallels - 0.5) * Math.PI), 48);
+  if (glitch) { ring(-10, cyan, 0.55); ring(10, mag, 0.55); }
+  ring(0, hue, 0.95);
+  const hex = (r, rot, w, alpha) => { ctx.strokeStyle = `hsla(${hue},${sat}%,66%,${alpha * glowK()})`; ctx.lineWidth = w; ctx.beginPath(); for (let i = 0; i <= 6; i++) { const a = rot + i / 6 * TAU; const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke(); };
+  hex(R * 0.78, t / 3000, 4, 0.85); hex(R * 0.58, -t / 2100, 3, 0.7); hex(R * 0.38 * (1 + level * 0.08), t / 1500, 3, 0.9);
+  // the radar sweep
+  const sw = t / 1100;
+  const g = ctx.createConicGradient ? ctx.createConicGradient(sw, cx, cy) : null;
+  if (g) { g.addColorStop(0, `hsla(${hue},${sat}%,60%,${0.4 * glowK()})`); g.addColorStop(0.18, `hsla(${hue},${sat}%,60%,0)`); g.addColorStop(1, `hsla(${hue},${sat}%,60%,0)`); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, R * 0.74, 0, TAU); ctx.fill(); }
+  // data ticks around
+  ctx.fillStyle = `hsla(${hue},${sat}%,70%,.7)`;
+  for (let i = 0; i < 72; i++) { const a = i / 72 * TAU, r0 = R * 1.14, l = i % 6 === 0 ? 16 : 7; ctx.save(); ctx.translate(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); ctx.rotate(a); ctx.fillRect(0, -1, l, 2); ctx.restore(); }
+  ctx.fillStyle = `hsla(${hue},${sat}%,75%,${0.6 + level * 0.4})`; ctx.beginPath(); ctx.arc(cx, cy, 10 + level * 14 + Math.sin(t / 220) * 2, 0, TAU); ctx.fill();
 }
+// «Волна»: a ring of bars that follow how loud it is
+function drawWave(t) {
+  const [hue, sat] = palette(), cx = W / 2, cy = H / 2, R0 = W * 0.25, N = PERF_LOW ? 64 : 112;
+  haze(cx, cy, R0 * 2.1, hue, sat, 0.08 + level * 0.2);
+  ctx.lineCap = 'round'; ctx.lineWidth = PERF_LOW ? 6 : 4.5;
+  for (let i = 0; i < N; i++) {
+    const a = i / N * TAU - Math.PI / 2, n1 = Math.sin(a * 3 + t / 420) * 0.5 + Math.sin(a * 7 - t / 290) * 0.35 + Math.sin(a * 13 + t / 170) * 0.15;
+    const len = 10 + (0.35 + Math.abs(n1)) * (18 + level * 150);
+    ctx.strokeStyle = `hsla(${hue},${sat}%,${55 + Math.abs(n1) * 25}%,${(0.45 + Math.abs(n1) * 0.5) * Math.min(1.3, glowK())})`;
+    ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * R0, cy + Math.sin(a) * R0); ctx.lineTo(cx + Math.cos(a) * (R0 + len), cy + Math.sin(a) * (R0 + len)); ctx.stroke();
+  }
+  ctx.strokeStyle = `hsla(${hue},${sat}%,70%,.55)`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, R0 - 14, 0, TAU); ctx.stroke();
+  ctx.fillStyle = `hsla(${hue},${sat}%,70%,${0.18 + level * 0.3})`; ctx.beginPath(); ctx.arc(cx, cy, R0 - 24 + level * 10, 0, TAU); ctx.fill();
+}
+// «Реактор»: concentric rings with ticks that turn in turns, and a bright core
+function drawCore(t) {
+  const [hue, sat] = palette(), cx = W / 2, cy = H / 2, S = W * 0.45;
+  haze(cx, cy, S * 1.05, hue, sat, 0.12 + level * 0.22);
+  const rings = [[0.46, 2, 120, 1], [0.38, 6, 24, -1.4], [0.3, 3, 60, 0.8], [0.22, 10, 12, -0.6]];
+  rings.forEach(([f, w, n, dir], k) => {
+    const r = S * f, rot = t / 2400 * dir;
+    ctx.lineWidth = w; ctx.strokeStyle = `hsla(${hue},${sat}%,${60 + k * 6}%,${(0.55 + k * 0.07) * Math.min(1.3, glowK())})`;
+    ctx.setLineDash(w > 5 ? [r * TAU / n * 0.62, r * TAU / n * 0.38] : [r * TAU / n * 0.5, r * TAU / n * 0.5]);
+    ctx.lineDashOffset = -rot * r; ctx.beginPath(); ctx.arc(cx, cy, r, rot, rot + TAU); ctx.stroke();
+  });
+  ctx.setLineDash([]);
+  // triangular coils of the reactor
+  for (let i = 0; i < 10; i++) { const a = i / 10 * TAU + t / 5000; ctx.fillStyle = `hsla(${hue},${sat}%,66%,${0.35 + level * 0.3})`; ctx.beginPath(); ctx.moveTo(cx + Math.cos(a - 0.12) * S * 0.14, cy + Math.sin(a - 0.12) * S * 0.14); ctx.lineTo(cx + Math.cos(a + 0.12) * S * 0.14, cy + Math.sin(a + 0.12) * S * 0.14); ctx.lineTo(cx + Math.cos(a) * S * 0.2, cy + Math.sin(a) * S * 0.2); ctx.closePath(); ctx.fill(); }
+  const pulse = 1 + Math.sin(t / 300) * 0.06 + level * 0.25;
+  const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, S * 0.12 * pulse); g.addColorStop(0, '#fff'); g.addColorStop(0.4, `hsla(${hue},${sat}%,75%,.95)`); g.addColorStop(1, `hsla(${hue},${sat}%,50%,0)`);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, S * 0.12 * pulse, 0, TAU); ctx.fill();
+}
+// «Орбиты»: a nucleus and three tilted orbits with electrons that leave a trail
+function drawOrbit(t) {
+  const [hue, sat] = palette(), cx = W / 2, cy = H / 2, R = W * 0.33;
+  haze(cx, cy, R * 1.2, hue, sat, 0.12 + level * 0.2);
+  for (let k = 0; k < 3; k++) {
+    const tilt = k * Math.PI / 3 + t / 9000, ry = R * (0.34 + 0.04 * k), c = Math.cos(tilt), s = Math.sin(tilt);
+    const pt = th => [cx + Math.cos(th) * R * c - Math.sin(th) * ry * s, cy + Math.cos(th) * R * s + Math.sin(th) * ry * c];
+    ctx.strokeStyle = `hsla(${hue},${sat}%,66%,${0.45 * Math.min(1.3, glowK())})`; ctx.lineWidth = 2; ctx.beginPath();
+    for (let j = 0; j <= 72; j++) { const q = pt(j / 72 * TAU); j ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }
+    ctx.stroke();
+    const th0 = t / (700 + k * 260) * (k % 2 ? -1 : 1);
+    for (let j = 0; j < (PERF_LOW ? 6 : 14); j++) { const q = pt(th0 - j * 0.07 * (k % 2 ? -1 : 1)); ctx.fillStyle = `hsla(${hue},${sat}%,${80 - j * 3}%,${(1 - j / 15) * 0.9})`; ctx.beginPath(); ctx.arc(q[0], q[1], 9 - j * 0.5, 0, TAU); ctx.fill(); }
+  }
+  const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, 46 + level * 30); g.addColorStop(0, '#fff'); g.addColorStop(0.35, `hsla(${hue},${sat}%,72%,.95)`); g.addColorStop(1, `hsla(${hue},${sat}%,50%,0)`);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 46 + level * 30, 0, TAU); ctx.fill();
+}
+const SPHERE_DRAW = { holo: drawHolo, neon: drawNeon, wave: drawWave, core: drawCore, orbit: drawOrbit };
 
 // ---------- avatar (photo -> hologram) ----------
 let avatarImg = null, avatarCanvas = null, avatarVersion = 0;
@@ -5173,7 +5308,7 @@ function avatarLayer(w, h) {
 
 // ---------- main loop ----------
 // nothing is drawn while the sphere is not on the screen (another page, a hidden window)
-let lastDraw = 0;
+let lastDraw = 0, animT = 0;
 function frame(t) {
   requestAnimationFrame(frame);
   if (stateUntil && performance.now() > stateUntil) setState(connected ? 'idle' : 'off');
@@ -5185,11 +5320,13 @@ function frame(t) {
   level += (target - level) * 0.06;
   canvas.title = 'Джарвис: ' + ORB_KINDS[kind][0] + '. Нажмите, чтобы он начал слушать'; canvas.dataset.kind = kind;
   // reduced motion: the sphere turns very slowly and does not ripple or glitch
-  yaw += reduced ? 0.0004 * dt / 16 : (0.0022 + level * 0.009 + (kind === 'thinking' ? 0.01 : 0)) * dt / 16;
+  const spd = reduced ? 0.15 : SPEEDS[speed];
+  animT += dt * spd;
+  yaw += reduced ? 0.0004 * dt / 16 : (0.0022 + level * 0.009 + (kind === 'thinking' ? 0.01 : 0)) * dt * spd / 16;
   if (!reduced && t > nextGlitch) { glitchUntil = t + rnd(90, 220); nextGlitch = t + rnd(3500, 9000); }
   ctx.clearRect(0, 0, W, H);
   ctx.globalCompositeOperation = 'lighter';
-  if (mode === 'avatar') drawAvatar(t); else if (sphere === 'rings') drawRings(t); else if (sphere === 'grid') drawGrid(t); else drawOrb(t);
+  if (mode === 'avatar') drawAvatar(t); else (SPHERE_DRAW[sphere] || drawOrb)(animT);
   ctx.globalCompositeOperation = 'source-over';
 }
 requestAnimationFrame(frame);

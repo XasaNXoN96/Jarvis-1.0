@@ -151,7 +151,10 @@ fn main_loop(text_cmd_rx: &Receiver<Incoming>, rt: &tokio::runtime::Runtime) -> 
                 mic_closed = true;
                 info!("Microphone switched off: the device is closed");
             }
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            // (waiting on the channel itself: a typed command wakes the loop at once instead of up to 100 ms later)
+            if let Ok(incoming) = text_cmd_rx.recv_timeout(std::time::Duration::from_millis(4)) {
+                process_text_command(incoming, &rt);
+            }
             continue 'wake_word;
         }
         if mic_closed {
