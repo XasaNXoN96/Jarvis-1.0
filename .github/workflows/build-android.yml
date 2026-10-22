@@ -42,6 +42,16 @@ jobs:
         shell: bash
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
+      # Static guards of the pinning (the decision lives in PinPolicy; these catch a careless edit that would bring the old behaviour back)
+      - name: Guards - no unconditional proceed, no cleartext
+        shell: bash
+        run: |
+          F=android/app/src/main/java/app/jarvis/remote/MainActivity.java
+          # proceed() is called in exactly three places: the pinned key, the key of the pairing link, the key confirmed by the owner
+          n="$(grep -c '\.proceed()' "$F")"
+          if [ "$n" != "3" ]; then echo "::error::MainActivity has $n calls of proceed(); the agreed number is 3 (see PinPolicy)"; exit 1; fi
+          if grep -rn 'cleartextTrafficPermitted="true"\|usesCleartextTraffic="true"' android/app/src/main; then echo "::error::plain http was allowed again"; exit 1; fi
+
       - name: Test the Java part of the application
         working-directory: android
         run: gradle --no-daemon testReleaseUnitTest
@@ -100,6 +110,9 @@ jobs:
           # the package must verify; the certificate lines are shown to compare the key with the one that was expected (the values of the key itself are never printed)
           "$BT/apksigner" verify --print-certs dist/*.apk | tee sig.txt
           test "${PIPESTATUS[0]}" -eq 0
+          # the manifest of the BUILT package must forbid plain http (usesCleartextTraffic=false is written as 0x0)
+          "$BT/aapt" dump xmltree dist/*.apk AndroidManifest.xml > manifest.txt
+          grep -i 'usesCleartextTraffic' manifest.txt | grep -q '0x0'
 
       - uses: actions/upload-artifact@v4
         with:
