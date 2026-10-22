@@ -702,6 +702,8 @@ pub fn system_prompt() -> String {
     };
     // humor, the language of the answers, the natural manner (persona.rs): right after the base, so a mode or a length only add to it
     let base = format!("{} {}", base, crate::persona::prompt());
+    let mem = crate::memory::ai_context();
+    let base = if mem.is_empty() { base } else { format!("{}\n{}\n", base, mem) };
     let st = crate::uistate::settings();
     let base = match mode_prompt(&st.ai_mode) {
         Some(extra) => format!("{} {}", base, extra),

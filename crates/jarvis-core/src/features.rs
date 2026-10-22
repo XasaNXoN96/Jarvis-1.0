@@ -375,11 +375,26 @@ pub fn handle(text: &str) -> Option<Reply> {
     if let Some(r) = do_programs(text) {
         return Some(r);
     }
+    if let Some(m) = crate::wol::handle(text) {
+        return r(m);
+    }
     if let Some(m) = smarthome::handle(text) {
         return r(m);
     }
     let _ = &contacts::list;
-    do_memory(text)
+    if let Some(r) = do_memory(text) {
+        return Some(r);
+    }
+    // «запоминать самому»: a plain statement about the user (name, city, allergy…) is kept
+    if memory::load().auto_remember && perms::allowed(perms::Cap::Memory) {
+        if let Some(fact) = memory::auto_fact(text) {
+            if let Ok(memory::Added::Added(id)) = memory::add(&fact, "auto") {
+                actionlog::record(&format!("Запомнил сам: {}", fact), actionlog::Undo::MemoryAdd(id));
+                return r(format!("Запомнил: {}. Если не нужно, скажите «верни как было».", fact));
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]

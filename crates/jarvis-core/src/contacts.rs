@@ -21,6 +21,9 @@ pub struct Contact {
     // the channel used when the command does not name one: "telegram" | "whatsapp" | ""
     #[serde(default)]
     pub preferred: String,
+    // when it was last changed (unix seconds): the sync takes the newer version
+    #[serde(default)]
+    pub updated: u64,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -65,6 +68,7 @@ pub fn save(mut c: Contact) -> Result<String, String> {
     if !["", "telegram", "whatsapp"].contains(&c.preferred.as_str()) {
         c.preferred = String::new();
     }
+    c.updated = store::now();
     let mut book = store::read::<Book>(FILE).0;
     if c.id.is_empty() {
         c.id = store::new_id();
@@ -76,6 +80,11 @@ pub fn save(mut c: Contact) -> Result<String, String> {
     }
     store::write(FILE, &book)?;
     Ok(id)
+}
+
+// the data comes back from a sync
+pub fn replace_all(list: Vec<Contact>) -> Result<(), String> {
+    store::write(FILE, &Book { contacts: list })
 }
 
 pub fn delete(id: &str) -> bool {

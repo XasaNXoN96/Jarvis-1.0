@@ -17,10 +17,24 @@ pub struct Note {
     pub at: u64,
     // "diary" | "note"
     pub kind: String,
+    // the last change (unix seconds); older records have none and count from `at`
+    #[serde(default)]
+    pub updated: u64,
 }
 
 pub fn list() -> Vec<Note> {
-    store::read::<Vec<Note>>(FILE).0
+    let mut v = store::read::<Vec<Note>>(FILE).0;
+    for n in v.iter_mut() {
+        if n.updated == 0 {
+            n.updated = n.at;
+        }
+    }
+    v
+}
+
+// the data comes back from a sync
+pub fn replace_all(list: Vec<Note>) -> Result<(), String> {
+    store::write(FILE, &list)
 }
 
 pub fn add(text: &str, kind: &str, at: u64) -> Result<Note, String> {
@@ -38,7 +52,7 @@ pub fn add(text: &str, kind: &str, at: u64) -> Result<Note, String> {
     if all.len() >= MAX_ITEMS {
         return Err("Дневник заполнен.".into());
     }
-    let n = Note { id: store::new_id(), text: text.to_string(), at, kind: if kind == "diary" { "diary" } else { "note" }.into() };
+    let n = Note { id: store::new_id(), text: text.to_string(), at, updated: at, kind: if kind == "diary" { "diary" } else { "note" }.into() };
     all.push(n.clone());
     store::write(FILE, &all)?;
     Ok(n)

@@ -273,7 +273,7 @@ mod tests {
     use super::*;
 
     fn ctc(name: &str, aliases: &[&str], phone: &str, tg: &str) -> Contact {
-        Contact { id: name.into(), name: name.into(), aliases: aliases.iter().map(|s| s.to_string()).collect(), phone: phone.into(), telegram: tg.into(), preferred: String::new() }
+        Contact { id: name.into(), name: name.into(), aliases: aliases.iter().map(|s| s.to_string()).collect(), phone: phone.into(), telegram: tg.into(), preferred: String::new(), updated: 0 }
     }
 
     #[test]

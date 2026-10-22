@@ -143,6 +143,8 @@ pub mod codeassist;
 pub mod proglib;
 pub mod pairing;
 pub mod components;
+pub mod wsync;
+pub mod wol;
 #[cfg(target_os = "windows")]
 pub mod notify_win;
 pub mod diag;

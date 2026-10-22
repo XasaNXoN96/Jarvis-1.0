@@ -265,7 +265,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         }
     }
     // with a password of the owner set, the actions that change what Jarvis keeps or does need the unlocked program
-    if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message" | "ca_apply" | "pl_add" | "pl_remove" | "persona_set" | "pair_start" | "pair_revoke" | "comp_do") {
+    if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message" | "ca_apply" | "pl_add" | "pl_remove" | "persona_set" | "pair_start" | "pair_revoke" | "comp_do" | "sync_folder" | "sync_run" | "sync_clear" | "wol_add" | "wol_remove" | "wol_wake" | "mem_use_ai") {
         if let Err(m) = crate::owner::guard() {
             return json!({ "ok": false, "locked": true, "message": m });
         }
@@ -364,6 +364,31 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             let ok = false;
             json!({ "ok": ok, "message": if ok { "Windows просят обновить значки. Если старые остались: удалите ярлык и создайте заново, а при необходимости удалите файлы IconCache.db и iconcache_*.db в %localappdata% и перезапустите проводник." } else { "Доступно только в Windows" } })
         }
+        // sync of the memory, contacts and notes through a folder; Wake-on-LAN
+        "sync_get" => json!({ "ok": true, "status": crate::wsync::status_json() }),
+        "sync_folder" => match crate::wsync::set_folder(body.get("path").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(()) => json!({ "ok": true, "message": "Папка выбрана. Нажмите «Синхронизировать»." }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "sync_clear" => json!({ "ok": crate::wsync::clear_folder() }),
+        "sync_run" => match crate::wsync::sync_now() {
+            Ok(r) => json!({ "ok": true, "report": r, "message": format!("Готово: добавлено {}, обновлено {}, удалено {}, конфликтов {} (новая версия победила). Всего записей: {}.", r.added, r.updated, r.deleted, r.conflicts, r.items_total) }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "wol_list" => json!({ "ok": true, "items": crate::wol::list() }),
+        "wol_add" => match crate::wol::add(body.get("name").and_then(|v| v.as_str()).unwrap_or(""), body.get("mac").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(_) => json!({ "ok": true, "message": "Добавлено." }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "wol_remove" => json!({ "ok": crate::wol::remove(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) }),
+        "wol_wake" => match crate::wol::wake(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(m) => json!({ "ok": true, "message": m }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "mem_use_ai" => match crate::memory::set_use_in_ai(body.get("value").and_then(|v| v.as_bool()).unwrap_or(true)) {
+            Ok(()) => json!({ "ok": true }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
         // components (voices, the model of the aim assist)
         "comp_list" => json!({ "ok": true, "items": crate::components::json() }),
         "comp_do" => match crate::components::run(body.get("id").and_then(|v| v.as_str()).unwrap_or(""), body.get("op").and_then(|v| v.as_str()).unwrap_or("")) {
@@ -578,7 +603,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         "prog_cancel" => json!({ "ok": crate::progsearch::cancel() }),
         "prog_history" => { let mut h = crate::progsearch::history(); h.reverse(); json!({ "ok": true, "items": h.into_iter().take(50).collect::<Vec<_>>() }) }
         // memory, contacts and the messenger (memory.rs, contacts.rs, messenger.rs)
-        "mem_list" => { let m = crate::memory::load(); json!({ "ok": true, "items": m.items, "auto": m.auto_remember }) }
+        "mem_list" => { let m = crate::memory::load(); json!({ "ok": true, "items": m.items, "auto": m.auto_remember, "use_in_ai": m.use_in_ai }) }
         "mem_add" => match crate::memory::add_with(body.get("text").and_then(|v| v.as_str()).unwrap_or(""), "window", body.get("replace").and_then(|v| v.as_bool()).unwrap_or(false)) {
             Ok(crate::memory::Added::Added(_)) => json!({ "ok": true, "message": "Запомнил." }),
             Ok(crate::memory::Added::Duplicate(_)) => json!({ "ok": true, "message": "Это уже есть в памяти." }),

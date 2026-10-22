@@ -25,7 +25,7 @@ pub enum Privacy {
 pub struct Conf {
     #[serde(default = "full")]
     pub privacy: Privacy,
-    // "auto" (the language of the program) | "ru" | "en" | "uz"
+    // "ru" (default) | "auto" (the language of the program) | "en" | "uz"
     #[serde(default = "auto")]
     pub lang: String,
 }
@@ -33,11 +33,12 @@ fn full() -> Privacy {
     Privacy::Full
 }
 fn auto() -> String {
-    "auto".into()
+    // Russian, as the phrase always was; «auto» follows the language of the program
+    "ru".into()
 }
 impl Default for Conf {
     fn default() -> Self {
-        Conf { privacy: Privacy::Full, lang: "auto".into() }
+        Conf { privacy: Privacy::Full, lang: "ru".into() }
     }
 }
 

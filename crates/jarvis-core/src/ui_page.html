@@ -1332,7 +1332,7 @@
         <div class="setrow"><div class="l">Что зачитывать<small>полностью — отправитель и текст; только отправитель; или лишь «пришло сообщение». «Повтори сообщение» читает последнее ещё раз полностью, «стоп» останавливает голос.</small></div>
           <div class="r"><select id="sms-privacy"><option value="full">Отправитель и текст</option><option value="sender">Только отправитель</option><option value="silent">Только факт сообщения</option></select></div></div>
         <div class="setrow"><div class="l">Язык фраз<small>ссылки в тексте читаются словом «ссылка», длинные тексты сокращаются</small></div>
-          <div class="r"><select id="sms-lang"><option value="auto">Как в программе</option><option value="ru">Русский</option><option value="en">English</option><option value="uz">Oʻzbekcha</option></select></div></div>
+          <div class="r"><select id="sms-lang"><option value="ru">Русский</option><option value="auto">Как язык программы</option><option value="en">English</option><option value="uz">Oʻzbekcha</option></select></div></div>
         <div class="setrow"><div class="l">Прочитать последнее<small>проверка звучания</small></div><div class="r"><button class="btn" id="sms-repeat" type="button">Повторить сообщение</button></div></div>
         <div class="msgline" id="sms-msg"></div>
       </div>
@@ -1429,6 +1429,16 @@
         <div class="setrow"><div class="l">Что Jarvis может делать сам<small>выключенное действительно останавливает способность: обработчик проверяет переключатель перед тем, как что-то сделать.</small></div></div>
         <div id="perm-list"></div><div class="msgline" id="perm-msg"></div>
       </div>
+      <div class="card" data-cat="connect" id="sync-card" data-tab="Синхронизация"><h3><span class="ei">🔄</span>Синхронизация между компьютерами</h3>
+        <div class="setrow"><div class="l">Общая папка<small>У Jarvis нет своего облака. Укажите папку, которую вы уже синхронизируете сами (OneDrive, Dropbox, Syncthing, флешка): в ней лежит один файл с памятью, контактами и заметками. На другом компьютере укажите ту же папку. Новая версия записи побеждает, удаление передаётся. Настройки, ключи, сообщения и расписание в файл не попадают. В файле личные данные: папка должна быть вашей.</small></div>
+          <div class="r"><input type="text" id="sync-path" placeholder="C:\\Users\\Вы\\OneDrive\\Jarvis"><button class="btn" id="sync-set" type="button">Выбрать</button><button class="btn primary" id="sync-run" type="button">Синхронизировать</button><button class="btn" id="sync-clear" type="button">Отключить</button></div></div>
+        <div class="msgline" id="sync-msg"></div>
+      </div>
+      <div class="card" data-cat="connect" id="wol-card" data-tab="Разбудить компьютер"><h3><span class="ei">⏻</span>Разбудить другой компьютер (Wake-on-LAN)</h3>
+        <div class="setrow"><div class="l">Компьютеры<small>Нужен MAC-адрес (на том компьютере: ipconfig /all). Сработает, если у него включён Wake-on-LAN и он в этой же сети. Jarvis отправит сигнал, но не узнает, проснулся ли компьютер. Голосом: «разбуди компьютер папы».</small></div></div>
+        <div class="ct-form"><input type="text" id="wol-name" maxlength="40" placeholder="Название"><input type="text" id="wol-mac" maxlength="20" placeholder="AA:BB:CC:DD:EE:FF"><button class="btn primary" id="wol-add" type="button">Добавить</button></div>
+        <div id="wol-list" class="mem-list"></div><div class="msgline" id="wol-msg"></div>
+      </div>
       <div class="card" data-cat="privacy" id="comp-card" data-tab="Компоненты"><h3><span class="ei">🧩</span>Компоненты и модули</h3>
         <div class="setrow"><div class="l">Что скачивается отдельно<small>Файлы с фиксированных официальных адресов (голоса Piper, модель помощи прицела). Здесь видно, что установлено, чем гарантирована целостность, и можно установить, проверить или удалить. Включить и выключить разделы команд можно на странице «Команды».</small></div></div>
         <div id="comp-list" class="mem-list"></div><div class="msgline" id="comp-msg"></div>
@@ -1478,6 +1488,8 @@
       <div class="card" data-cat="ai" id="mem-card" data-tab="Память"><h3><span class="ei">🧠</span>Память Jarvis</h3>
         <div class="setrow"><div class="l">Что я помню<small>Скажите «запомни, что …», «что ты помнишь про …», «забудь …». Пароли, ключи, токены и номера карт не запоминаются. Файл лежит только на этом компьютере.</small></div>
           <div class="r"><label class="sw" title="ИИ сам предлагает запомнить важное (пока только хранит выбор)"><input type="checkbox" id="mem-auto"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Подсказывать ИИ<small>последние факты (до 15) добавляются к запросам: ИИ-провайдер видит их, когда вы с ним говорите</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="mem-useai"><span></span></label></div></div>
         <div class="setrow"><div class="l">Добавить запись</div><div class="r"><input type="text" id="mem-new" maxlength="500" placeholder="например: мой день рождения 5 мая"><button class="btn" id="mem-add" type="button">Запомнить</button></div></div>
         <div class="setrow"><div class="l">Найти<small>по словам записи</small></div><div class="r"><input type="text" id="mem-q" placeholder="поиск"><button class="btn" id="mem-export" type="button">Копировать всё</button></div></div>
         <div id="mem-list" class="mem-list"></div><div class="msgline" id="mem-msg"></div>
@@ -1775,7 +1787,7 @@ function show(name) {
   if (name === 'games') { gpSummary(); gsLoad(); }
   if (name === 'files') filesLoad();
   if (name === 'devices') devicesLoad();
-  if (name === 'settings') { compLoad(); pairLoad(); personaLoad(); smsLoad(); micwLoad(); memLoad(); ctLoad(); ownerLoad(); permLoad(); kbLoad(); undoLoad(); homeLoad(); schLoad(); notesLoad(); loadSettings(); refreshRemote(); tgLoad(); setTimeout(() => { if (typeof setView === 'function') setView(); }, 60); }
+  if (name === 'settings') { syncLoad(); wolLoad(); compLoad(); pairLoad(); personaLoad(); smsLoad(); micwLoad(); memLoad(); ctLoad(); ownerLoad(); permLoad(); kbLoad(); undoLoad(); homeLoad(); schLoad(); notesLoad(); loadSettings(); refreshRemote(); tgLoad(); setTimeout(() => { if (typeof setView === 'function') setView(); }, 60); }
   if (name === 'tasks') { tkEdit = -1; tasksLoad(); }
   if (name === 'home') { homeSig = ''; }
   if (name === 'messages') msgsLoad(true);
@@ -3171,6 +3183,18 @@ async function pairLoad() {
 $('#pair-start').onclick = async () => { const r = await action('pair_start').catch(() => ({})); if (!r.ok) lineMsg('#pair-msg', r); else $('#pair-msg').textContent = ''; pairLoad(); };
 $('#pair-list').onclick = async e => { const b = e.target.closest('button'); if (!b) return; if (!confirm('Отозвать это устройство? Оно сразу потеряет доступ.')) return; const r = await action('pair_revoke', { id: b.closest('.mem-item').dataset.id }).catch(() => ({})); lineMsg('#pair-msg', r, 'Отозвано.'); pairLoad(); };
 
+// ---------- sync through a folder, Wake-on-LAN ----------
+async function syncLoad() { const r = await action('sync_get').catch(() => ({})); const s = r.status || {}; $('#sync-path').value = s.folder || ''; if (s.folder) { const m = $('#sync-msg'); m.className = 'msgline'; m.textContent = s.last_sync ? 'Последняя синхронизация: ' + new Date(s.last_sync * 1000).toLocaleString('ru-RU') + ' · файл: ' + s.file : 'Ещё не синхронизировали. Файл: ' + s.file; } }
+$('#sync-set').onclick = async () => { const r = await action('sync_folder', { path: $('#sync-path').value }).catch(() => ({})); lineMsg('#sync-msg', r); syncLoad(); };
+$('#sync-run').onclick = async () => { const m = $('#sync-msg'); m.className = 'msgline'; m.textContent = 'Синхронизирую…'; const r = await action('sync_run').catch(() => ({})); lineMsg('#sync-msg', r); memLoad(); ctLoad(); notesLoad(); };
+$('#sync-clear').onclick = async () => { await action('sync_clear'); $('#sync-path').value = ''; $('#sync-msg').textContent = 'Отключено. Файл в папке остался на месте.'; };
+async function wolLoad() {
+  const r = await action('wol_list').catch(() => ({ items: [] }));
+  $('#wol-list').innerHTML = (r.items || []).length ? r.items.map(t => '<div class="mem-item" data-id="' + gpEsc(t.id) + '"><span><b>' + gpEsc(t.name) + '</b><small>' + gpEsc(t.mac) + '</small></span><button class="btn small primary" data-op="wake" type="button">Разбудить</button><button class="btn small" data-op="del" type="button">Удалить</button></div>').join('') : '<small class="dim">Компьютеров нет.</small>';
+}
+$('#wol-add').onclick = async () => { const r = await action('wol_add', { name: $('#wol-name').value, mac: $('#wol-mac').value }).catch(() => ({})); lineMsg('#wol-msg', r); if (r.ok) { $('#wol-name').value = ''; $('#wol-mac').value = ''; } wolLoad(); };
+$('#wol-list').onclick = async e => { const b = e.target.closest('button[data-op]'); if (!b) return; const id = b.closest('.mem-item').dataset.id; if (b.dataset.op === 'del') { await action('wol_remove', { id }); wolLoad(); return; } const r = await action('wol_wake', { id }).catch(() => ({})); lineMsg('#wol-msg', r); };
+
 // ---------- components ----------
 let compTimer = null;
 const COMP_OPS = { install: 'Установить', check: 'Проверить', remove: 'Удалить' };
@@ -3238,7 +3262,7 @@ async function gsLoad() {
 }
 $('#gs-copy').onclick = async () => { const r = await action('gs_report').catch(() => ({})); try { await navigator.clipboard.writeText(r.text || ''); lineMsg('#gs-msg', { ok: true }, 'Скопировано.'); } catch (e) { lineMsg('#gs-msg', { ok: false, message: 'Не удалось скопировать.' }); } };
 $('#gs-clear').onclick = async () => { if (confirm('Очистить историю игровых сессий?')) { await action('gs_clear'); gsLoad(); } };
-async function smsLoad() { const r = await action('sms_get').catch(() => ({})); if (r.privacy) { $('#sms-privacy').value = r.privacy; $('#sms-lang').value = r.lang || 'auto'; } }
+async function smsLoad() { const r = await action('sms_get').catch(() => ({})); if (r.privacy) { $('#sms-privacy').value = r.privacy; $('#sms-lang').value = r.lang || 'ru'; } }
 const smsSave = async () => { const r = await action('sms_set', { privacy: $('#sms-privacy').value, lang: $('#sms-lang').value }).catch(() => ({})); lineMsg('#sms-msg', r, 'Сохранено.'); };
 $('#sms-privacy').onchange = smsSave; $('#sms-lang').onchange = smsSave;
 $('#sms-repeat').onclick = async () => { const r = await action('sms_repeat').catch(() => ({})); lineMsg('#sms-msg', { ok: true, message: r.message }); };
@@ -3342,7 +3366,7 @@ $('#notes-list').onclick = async e => { const b = e.target.closest('button'); if
 const memMsg = (t, ok) => { const m = $('#mem-msg'); m.className = 'msgline ' + (ok === false ? 'bad' : 'ok'); m.textContent = t || ''; };
 async function memLoad() {
   const r = await action('mem_list').catch(() => ({ items: [] })); const q = $('#mem-q').value.trim().toLowerCase();
-  $('#mem-auto').checked = !!r.auto;
+  $('#mem-auto').checked = !!r.auto; $('#mem-useai').checked = r.use_in_ai !== false;
   const items = (r.items || []).filter(e => !q || e.text.toLowerCase().includes(q));
   $('#mem-list').innerHTML = items.length ? items.map(e => '<div class="mem-item" data-id="' + gpEsc(e.id) + '"><span>' + gpEsc(e.text) + '</span><button class="btn small" data-op="edit" type="button">Изменить</button><button class="btn small" data-op="del" type="button">Удалить</button></div>').join('') : '<small class="dim">' + (q ? 'Ничего не найдено.' : 'Память пуста.') + '</small>';
 }
@@ -3360,6 +3384,7 @@ $('#mem-add').onclick = async () => {
 };
 $('#mem-q').oninput = memLoad;
 $('#mem-auto').onchange = e => action('mem_auto', { value: e.target.checked });
+$('#mem-useai').onchange = e => action('mem_use_ai', { value: e.target.checked });
 $('#mem-export').onclick = async () => { const r = await action('mem_export').catch(() => ({})); try { await navigator.clipboard.writeText(r.text || ''); memMsg('Скопировано.'); } catch (e) { memMsg('Не удалось скопировать.', false); } };
 let ctEditId = '';
 async function ctLoad() {
