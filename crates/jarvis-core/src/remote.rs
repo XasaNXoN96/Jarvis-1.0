@@ -1252,6 +1252,18 @@ fn handle<S: Read + Write>(stream: &mut S) -> std::io::Result<()> {
             let door = match query_param(&req.path, "door") { Some("pc") => "pc", Some("phone") => "phone", _ => "all" };
             respond(stream, "200 OK", "application/json", &crate::devhist::json(door, 40).to_string());
         }
+        // the sections of the phone: reading (a short list of names) and acting (the actions the phone may ask for, see ui::phone_act)
+        ("GET", p) if p.starts_with("/api/") => {
+            let query = req.path.split_once('?').map(|x| x.1).unwrap_or("");
+            match crate::ui::phone_get(&p["/api/".len()..], query) {
+                Some(v) => respond(stream, "200 OK", "application/json", &v.to_string()),
+                None => respond(stream, "404 Not Found", "text/plain", "not found"),
+            }
+        }
+        ("POST", "/act") => {
+            let body: serde_json::Value = serde_json::from_str(&req.body).unwrap_or(serde_json::json!({}));
+            respond(stream, "200 OK", "application/json", &crate::ui::phone_act(&body).to_string());
+        }
         // the look of the window (theme, sphere, speed, glow): the phone starts with the same one
         ("GET", "/look") => {
             let ui = crate::uistate::settings().ui;
@@ -1827,6 +1839,39 @@ mod tests {
         let owner = phone_request("/voice-audio", &t, &pcm_base64(&voice(110.0, 1.0, 31, 2.5)));
         assert!(!owner.contains("refused"), "the owner is not refused: {}", owner);
         crate::voiceprint::delete();
+    }
+
+    // the sections of the phone: reading and acting only what ui::phone_get / phone_act name; nothing about keys, the password, the license or files
+    #[test]
+    fn the_phone_sections_need_the_secret_and_only_the_named_things_work() {
+        let _g = PHONE_TEST_LOCK.lock();
+        let _s = crate::uistate::TEST_LOCK.lock();
+        phone_for_tests(true, true);
+        let t = token();
+        assert!(phone_get("/api/apps", "wrong-token").starts_with("HTTP/1.1 403"));
+        assert!(phone_request("/act", "wrong-token", "{\"name\":\"ess_launch\",\"id\":\"cmd\"}").starts_with("HTTP/1.1 403"));
+        let apps = phone_get("/api/apps", &t);
+        assert!(apps.starts_with("HTTP/1.1 200") && apps.contains("\"essentials\"") && apps.contains("Командная строка"), "{}", apps);
+        for name in ["tasks", "chats", "commands", "scenarios", "devices", "messages", "games", "monitor", "diag", "license", "settings"] {
+            let r = phone_get(&format!("/api/{}", name), &t);
+            assert!(r.starts_with("HTTP/1.1 200"), "{}: {}", name, r);
+        }
+        // what is not on the list does not exist for the phone
+        for name in ["files", "remote", "avatar", "../x", "voiceprint", "update"] {
+            assert!(phone_get(&format!("/api/{}", name), &t).starts_with("HTTP/1.1 404"), "{}", name);
+        }
+        // the settings that the phone may read hold no key
+        let st = phone_get("/api/settings", &t);
+        assert!(!st.contains("ai_key") && !st.contains("cloud_tts_key") && !st.contains("token"), "{}", st);
+        // actions: the named ones only
+        for body in [
+            "{\"name\":\"license_activate\"}", "{\"name\":\"owner_set\"}", "{\"name\":\"file_open\",\"path\":\"C:\\\\x.exe\"}", "{\"name\":\"remote_tunnel\"}",
+            "{\"name\":\"setting\",\"key\":\"ai_key\",\"value\":\"sk-x\"}", "{\"name\":\"task\",\"op\":\"clear\"}", "{\"name\":\"scenario\",\"op\":\"delete\",\"id\":\"a\"}", "{}",
+        ] {
+            let r = phone_request("/act", &t, body);
+            assert!(r.starts_with("HTTP/1.1 200") && r.contains("недоступно"), "{} -> {}", body, r);
+        }
+        assert!(crate::uistate::settings().ai_key.is_empty() || crate::uistate::settings().ai_key != "sk-x", "a key cannot be set from the phone");
     }
 
     // the history of the two sections, the look of the window and the Android home-screen files: the first two need the secret, the last two do not

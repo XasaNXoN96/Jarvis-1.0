@@ -1950,6 +1950,115 @@ pub fn open_browser_window() -> bool {
     }
 }
 
+// ---------------------------------------------------------------- the gateway of the phone
+// What the phone page (remote.rs) may read and do besides sending a phrase: a short list, every item named here. The phone is a door that is
+// open to whoever has its secret, so nothing that changes keys, the password, the license, files, the system or the program itself is on it.
+// Everything runs under the phone door (origin::Source::Phone), like a phrase from the phone.
+const PHONE_SETTINGS: [&str; 5] = ["voice_name", "voice_rate", "tts_volume", "assistant_name", "city"];
+const PHONE_ACTIONS: [&str; 7] = ["app_launch", "ess_launch", "pl_launch", "game_launch", "game_mode", "speak_text", "apps_rescan"];
+
+// programs that are only the leftovers of an installer (the same words as the window's list)
+fn is_junk_program(name: &str) -> bool {
+    let l = name.to_lowercase();
+    ["uninstall", "удалить", "удаление", "readme", "help", "справка", "documentation", "документация", "website", "веб-сайт", "license", "лицензи", "release notes", "redistributable", "updater", "обновлени", "setup"].iter().any(|w| l.contains(w))
+}
+
+pub fn phone_get(route: &str, query: &str) -> Option<serde_json::Value> {
+    let _door = crate::origin::enter(crate::origin::Source::Phone);
+    Some(match route {
+        "apps" => {
+            let lib = crate::proglib::load();
+            let hidden: std::collections::HashSet<String> = lib.hidden.iter().map(|h| h.to_lowercase()).collect();
+            let apps: Vec<serde_json::Value> = crate::appindex::apps()
+                .iter()
+                .filter(|a| {
+                    let ok = crate::appindex::launchable(a);
+                    let cat = crate::appindex::category(a, ok);
+                    ok && (cat == "user" || (cat == "other" && a.launch.to_lowercase().starts_with("shell:appsfolder"))) && !is_junk_program(&a.name) && !hidden.contains(&a.name.to_lowercase())
+                })
+                .map(|a| json!({ "name": a.name, "launch": a.launch }))
+                .collect();
+            json!({ "essentials": crate::proglib::essentials_json(), "apps": apps, "shortcuts": lib.shortcuts.iter().map(|s| json!({ "id": s.id, "name": s.name })).collect::<Vec<_>>() })
+        }
+        "tasks" => crate::tasks::json(),
+        "chats" => chats_json(),
+        r if r.starts_with("chat/") => chat_json(&r["chat/".len()..]),
+        "commands" => {
+            let v: serde_json::Value = serde_json::from_str(&commands_json()).unwrap_or(json!({}));
+            // the phone needs the phrases and the state only
+            let items = v.get("commands").or_else(|| v.get("items")).cloned().unwrap_or_else(|| if v.is_array() { v.clone() } else { json!([]) });
+            json!({ "commands": items.as_array().map(|a| a.iter().map(|c| json!({ "id": c["id"], "group": c["group"], "phrases": c["phrases"], "description": c["description"], "status": c["status"] })).collect::<Vec<_>>()).unwrap_or_default() })
+        }
+        "scenarios" => json!({ "scenarios": crate::scenario::list().iter().map(|s| json!({ "id": s.id, "name": s.name, "phrase": s.phrase, "enabled": s.enabled, "steps": s.steps.len() })).collect::<Vec<_>>() }),
+        "devices" => crate::devices::json(),
+        "messages" => crate::social::json(),
+        "games" => {
+            let q = |k: &str| query_param(query, k);
+            let mut v = crate::gamemode::games_list_json(&q("q"), "", "", "recent", 0, 60);
+            v["game"] = crate::gamemode::status_json();
+            v
+        }
+        "monitor" => crate::sysstat::monitor_json(&crate::sysstat::sample(), cfg!(target_os = "windows")),
+        "diag" => {
+            let d = crate::diag::json();
+            json!({ "running": d["running"], "at": d["at"], "checks": d["checks"] })
+        }
+        "license" => {
+            let mut v = crate::licensing::status();
+            if let Some(o) = v.as_object_mut() {
+                o.remove("key");
+                o.remove("license_key");
+            }
+            v
+        }
+        "settings" => {
+            let all = crate::uistate::settings_json();
+            let mut out = serde_json::Map::new();
+            for k in PHONE_SETTINGS {
+                if let Some(x) = all.get(k) {
+                    out.insert(k.to_string(), x.clone());
+                }
+            }
+            serde_json::Value::Object(out)
+        }
+        _ => return None,
+    })
+}
+
+// {"name": "...", ...}: an action of the window that the phone is allowed to ask for (the list above), a task, a scenario test run, a message read aloud,
+// or a change of the few voice settings
+pub fn phone_act(body: &serde_json::Value) -> serde_json::Value {
+    let _door = crate::origin::enter(crate::origin::Source::Phone);
+    let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("");
+    let bad = json!({ "ok": false, "message": "Это действие недоступно с телефона." });
+    match name {
+        n if PHONE_ACTIONS.contains(&n) => run_action(body),
+        "task" => match body.get("op").and_then(|v| v.as_str()).unwrap_or("") {
+            "add" | "remove" | "speak" => tasks_action(body),
+            _ => bad,
+        },
+        "message" => match body.get("op").and_then(|v| v.as_str()).unwrap_or("") {
+            "speak" => messages_action(body),
+            _ => bad,
+        },
+        // only a run of a SAVED scenario by its id (a scenario that came inside the request is never taken) and the switch on/off
+        "scenario" => match body.get("op").and_then(|v| v.as_str()).unwrap_or("") {
+            "test" => scenario_action(&json!({ "op": "test", "id": body.get("id").cloned().unwrap_or(json!("")) })),
+            "enable" => scenario_action(&json!({ "op": "enable", "id": body.get("id").cloned().unwrap_or(json!("")), "value": body.get("value").and_then(|v| v.as_bool()).unwrap_or(true) })),
+            _ => bad,
+        },
+        "setting" => {
+            let key = body.get("key").and_then(|v| v.as_str()).unwrap_or("");
+            if !PHONE_SETTINGS.contains(&key) {
+                return bad;
+            }
+            let value = body.get("value").cloned().unwrap_or(json!(null));
+            apply_settings(&json!({ key: value }))
+        }
+        _ => bad,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     // «Мой голос» through the window: the buttons start the recording at once (without the wake word) and the lock cannot be on without a print

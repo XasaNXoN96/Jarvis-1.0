@@ -149,6 +149,34 @@
   .seg2 small { opacity: .7; margin-left: 4px; }
   .hi-item { border: 1px solid var(--line); border-radius: 14px; background: var(--tile); padding: 10px 12px; margin-bottom: 8px; }
   .hi-item .t { font-size: 14.5px; word-break: break-word; } .hi-item .a { margin-top: 5px; font-size: 13px; color: var(--a2); word-break: break-word; } .hi-item .d { font-size: 11px; color: var(--dim); margin-bottom: 3px; }
+
+  /* ---- sections of the computer on the phone ---- */
+  .secgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .secgrid button { border: 1px solid var(--line); background: var(--tile); border-radius: 16px; padding: 14px 4px; display: grid; justify-items: center; gap: 6px; font-size: 12.5px; }
+  .secgrid button span { font-size: 26px; } .secgrid button:active { border-color: var(--a); }
+  .sechead { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; } .sechead button { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--tile); font-size: 18px; flex: none; } .sechead b { font-size: 17px; text-transform: var(--head-tf, none); letter-spacing: var(--ls, 0); }
+  .srch { width: 100%; padding: 12px 14px; border-radius: 999px; border: 1px solid var(--line); background: #00000040; color: var(--text); font: inherit; margin-bottom: 10px; }
+  .li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--tile); margin-bottom: 8px; }
+  .li > div { min-width: 0; } .li b { display: block; font-weight: 600; word-break: break-word; } .li small { display: block; color: var(--dim); font-size: 12px; line-height: 1.35; word-break: break-word; }
+  .li .go { flex: none; padding: 9px 14px; border-radius: 12px; border: 0; background: var(--btn); color: var(--bg); font-weight: 600; } .li .go.sec { background: #ffffff12; color: var(--text); border: 1px solid var(--line); }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; border: 1px solid var(--line); margin-left: 6px; } .pill.ok { color: var(--ok); border-color: var(--ok); } .pill.bad { color: var(--bad); border-color: var(--bad); } .pill.warn { color: var(--warn); border-color: var(--warn); }
+  .bar { height: 8px; border-radius: 99px; background: #ffffff14; overflow: hidden; margin-top: 6px; } .bar i { display: block; height: 100%; background: var(--a); border-radius: 99px; }
+  .bub { padding: 9px 12px; border-radius: 14px; margin-bottom: 8px; max-width: 92%; word-break: break-word; white-space: pre-wrap; font-size: 14px; } .bub.user { background: color-mix(in srgb, var(--a) 20%, transparent); margin-left: auto; } .bub.assistant { background: var(--tile); border: 1px solid var(--line); } .bub.error { border: 1px solid var(--bad); }
+  .sline { min-height: 18px; color: var(--a2); font-size: 13px; margin: 0 2px 8px; }
+  .addrow { display: flex; gap: 8px; margin-bottom: 10px; } .addrow input { flex: 1; min-width: 0; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: #00000040; color: var(--text); font: inherit; } .addrow button { flex: none; padding: 0 16px; border-radius: 12px; border: 0; background: var(--btn); color: var(--bg); font-weight: 600; }
+  #t-sec h2 { margin: 14px 2px 8px; font-size: 11.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--a); font-weight: 600; }
+  body[data-tab="sec"] form#f, body[data-tab="sections"] form#f { display: none; }
+
+  /* every kind of phone: a very narrow one (a folded phone, 280px), a low one (sideways), a large tablet */
+  .tabs button { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 360px) { .tabs { padding-inline: 2px; } .tabs button { font-size: 9.5px; } .tabs button span { font-size: 17px; } .secgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .row, .li { padding: 9px 10px; } .chip { font-size: 11px; padding: 3px 8px; } }
+  @media (max-width: 300px) { .tabs button { font-size: 0; } .tabs button span { font-size: 21px; } .brand small { display: none; } }
+  @media (max-height: 520px) {
+    .top { padding-block: 6px; } .brand small, .chips { display: none; } .reactor { width: 26px; height: 26px; } .brand b { font-size: 15px; }
+    #mic { width: min(44vh, 190px); min-width: 110px; } #orb-cap { display: none; } .orbwrap { padding: 0; gap: 2px; }
+    .tabs { padding-block: 2px calc(2px + env(safe-area-inset-bottom)); } .tabs button { padding: 2px 0; font-size: 10px; } .tabs button span { font-size: 16px; }
+    form#f { padding-block: 6px; } form#f input { padding-block: 8px; } form#f button { width: 40px; height: 40px; }
+  }
 </style></head><body data-tab="home">
 <div id="ringbox">📢 Компьютер ищет этот телефон<br><button id="ringstop" type="button">Я нашёл телефон</button></div>
 
@@ -174,6 +202,19 @@
       <div class="player" id="media"></div>
       <div class="dim" style="margin-top:6px">Кнопки управляют звуком и музыкой <b>компьютера</b>. Приложения самого телефона веб-страница переключать не может.</div>
     </section>
+  </div>
+
+  <div class="tab" id="t-sections">
+    <section><h2>Разделы компьютера</h2>
+      <div class="secgrid" id="secgrid"></div>
+      <div class="dim" style="margin-top:12px">Здесь то, что есть в программе на компьютере. Опасное (ключи, пароль, лицензия, файлы, обновление) с телефона недоступно: это можно менять только на компьютере.</div>
+    </section>
+  </div>
+
+  <div class="tab" id="t-sec">
+    <div class="sechead"><button id="sec-back" type="button" aria-label="Назад">←</button><b id="sec-title"></b></div>
+    <div class="sline" id="sec-line"></div>
+    <div id="sec-body"></div>
   </div>
 
   <div class="tab" id="t-hist">
@@ -253,8 +294,8 @@
 <div class="tabs" id="tabs">
   <button class="on" data-tab="home" type="button"><span>⚡</span>Главная</button>
   <button data-tab="media" type="button"><span>🎛</span>Управление</button>
+  <button data-tab="sections" type="button"><span>🧩</span>Разделы</button>
   <button data-tab="hist" type="button"><span>🧠</span>История</button>
-  <button data-tab="phone" type="button"><span>📱</span>Телефон</button>
   <button data-tab="more" type="button"><span>⚙</span>Настройки</button>
 </div>
 <script>
@@ -759,14 +800,184 @@ async function loadNow() {
 }
 
 // ---------- tabs ----------
-document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
-  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 't-' + b.dataset.tab));
-  document.body.dataset.tab = b.dataset.tab; document.querySelector('.body').scrollTop = 0;
-  if (b.dataset.tab === 'more') loadVoices();
-  if (b.dataset.tab === 'media') loadNow();
-  if (b.dataset.tab === 'hist') loadHistory();
-});
+// the bar highlights `mark`, the page shown is `tab` (a section opens inside «Разделы»)
+let secTimer = 0;
+function goTab(tab, mark) {
+  clearTimeout(secTimer);
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x.dataset.tab === (mark || tab)));
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 't-' + tab));
+  document.body.dataset.tab = tab; document.querySelector('.body').scrollTop = 0;
+  if (tab === 'more') loadVoices();
+  if (tab === 'media') loadNow();
+  if (tab === 'hist') loadHistory();
+}
+document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => goTab(b.dataset.tab));
+
+// ---------- the sections of the computer (the list of what the phone may read and do is on the computer: ui::phone_get / phone_act) ----------
+async function api(name) {
+  const r = await fetchT('/api/' + name, { headers: { 'X-Token': token } });
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+async function act(body) {
+  const r = await fetchT('/act', { method: 'POST', headers: { 'X-Token': token, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+const secLine = t => { $('sec-line').textContent = t || ''; };
+function listItem(title, sub, buttons) {
+  const d = el('div', 'li'), t = el('div'); t.appendChild(el('b', '', title)); if (sub) t.appendChild(el('small', '', sub)); d.appendChild(t);
+  const bx = el('div'); bx.style.cssText = 'display:flex;gap:6px;flex:none';
+  for (const [label, fn, cls] of buttons || []) { const b = el('button', 'go' + (cls ? ' ' + cls : ''), label); b.type = 'button'; b.onclick = () => fn(b); bx.appendChild(b); }
+  if (buttons && buttons.length) d.appendChild(bx);
+  return d;
+}
+function searchBox(ph, onInput) { const i = el('input', 'srch'); i.type = 'search'; i.placeholder = ph; i.oninput = () => onInput(i.value.trim().toLowerCase()); return i; }
+// a request that says by the line what happened (or that there is no connection)
+async function doAct(body, okText) {
+  secLine('…');
+  try { const r = await act(body); secLine(r.message || (r.ok ? okText || 'Готово' : 'Не получилось')); return r; }
+  catch (e) { secLine('Нет связи с компьютером'); return { ok: false }; }
+}
+const fmtAt = s => { const d = new Date(s * 1000); return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) + ' ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }); };
+
+const SECTIONS = {
+  apps: ['Программы', '🖥', async box => {
+    const d = await api('apps'); let q = '';
+    const list = el('div'), draw = () => {
+      list.textContent = '';
+      const match = n => !q || n.toLowerCase().includes(q);
+      const ess = (d.essentials || []).filter(e => match(e.name)), apps = (d.apps || []).filter(a => match(a.name)).sort((a, b) => a.name.localeCompare(b.name)), sc = (d.shortcuts || []).filter(s => match(s.name));
+      if (ess.length) list.appendChild(el('h2', '', 'Основное'));
+      ess.forEach(e => list.appendChild(listItem(e.name, e.kind, [['Запустить', () => doAct({ name: 'ess_launch', id: e.id })]])));
+      if (sc.length) list.appendChild(el('h2', '', 'Мои ярлыки'));
+      sc.forEach(s => list.appendChild(listItem(s.name, '', [['Запустить', () => doAct({ name: 'pl_launch', id: s.id })]])));
+      if (apps.length) list.appendChild(el('h2', '', 'Установленные'));
+      apps.slice(0, 200).forEach(a => list.appendChild(listItem(a.name, '', [['Запустить', () => doAct({ name: 'app_launch', launch: a.launch })]])));
+      if (!ess.length && !apps.length && !sc.length) list.appendChild(el('div', 'dim', 'Ничего не найдено. На компьютере откройте «Программы» и нажмите «Обновить список».'));
+    };
+    box.append(searchBox('Поиск программы', v => { q = v; draw(); }), list); draw();
+  }],
+  games: ['Игры', '🎮', async box => {
+    let q = '', d = await api('games');
+    const top = el('div'), list = el('div');
+    const drawTop = () => {
+      top.textContent = ''; const g = d.game || {};
+      top.appendChild(listItem('Голосовое управление играми', g.active ? 'включено' + (g.game ? ': ' + g.game : '') : 'выключено', [[g.active ? 'Выключить' : 'Включить', async () => { await doAct({ name: 'game_mode', value: !g.active }); d = await api('games'); drawTop(); }, g.active ? 'sec' : '']]));
+    };
+    const draw = () => {
+      list.textContent = '';
+      (d.items || []).filter(i => !q || i.name.toLowerCase().includes(q)).forEach(i => list.appendChild(listItem(i.name, [i.genre, i.origin_label].filter(Boolean).join(' · '), [['Играть', () => doAct({ name: 'game_launch', id: i.id })]])));
+      if (!list.children.length) list.appendChild(el('div', 'dim', 'Игр не найдено. Добавьте игры на компьютере в разделе «Игры».'));
+    };
+    box.append(top, searchBox('Поиск игры', v => { q = v; draw(); }), list); drawTop(); draw();
+  }],
+  tasks: ['Задачи', '✅', async box => {
+    const row = el('div', 'addrow'), inp = el('input'); inp.placeholder = 'Новая задача'; inp.maxLength = 200; const add = el('button', '', 'Добавить'); add.type = 'button'; row.append(inp, add);
+    const list = el('div'); const sp = el('button', 'btn wide', '🔊 Озвучить задачи на компьютере'); sp.type = 'button';
+    const load = async () => {
+      const d = await api('tasks'); list.textContent = ''; const t = d.tasks || [];
+      t.forEach((x, i) => list.appendChild(listItem(typeof x === 'string' ? x : (x.text || JSON.stringify(x)), '', [['✓', async () => { await doAct({ name: 'task', op: 'remove', index: i, old: typeof x === 'string' ? x : (x.text || '') }, 'Задача выполнена'); load(); }, 'sec']])));
+      if (!t.length) list.appendChild(el('div', 'dim', 'Задач нет.'));
+    };
+    add.onclick = async () => { if (!inp.value.trim()) return; const r = await doAct({ name: 'task', op: 'add', text: inp.value.trim() }); if (r.ok) inp.value = ''; load(); };
+    sp.onclick = () => doAct({ name: 'task', op: 'speak' });
+    box.append(row, list, sp); await load();
+  }],
+  chats: ['Диалоги', '💬', async box => {
+    const list = el('div'), view = el('div');
+    const open = async c => {
+      view.textContent = ''; list.hidden = true; const back = el('button', 'btn wide', '← К списку диалогов'); back.type = 'button'; back.onclick = () => { view.textContent = ''; list.hidden = false; }; view.appendChild(back);
+      try {
+        const d = await api('chat/' + encodeURIComponent(c.id)); view.appendChild(el('h2', '', d.title || 'Диалог'));
+        (d.messages || []).forEach(m => view.appendChild(el('div', 'bub ' + (m.role || ''), m.content || '')));
+        if (!(d.messages || []).length) view.appendChild(el('div', 'dim', 'Пустой диалог.'));
+      } catch (e) { view.appendChild(el('div', 'dim', 'Не удалось открыть диалог.')); }
+    };
+    const d = await api('chats');
+    (d.chats || []).forEach(c => list.appendChild(listItem(c.title || 'Без названия', fmtAt(c.updated) + ' · сообщений: ' + c.count, [['Открыть', () => open(c)]])));
+    if (!(d.chats || []).length) list.appendChild(el('div', 'dim', 'Диалогов пока нет.'));
+    box.append(list, view);
+  }],
+  messages: ['Сообщения', '📥', async box => {
+    const d = await api('messages'); const ms = d.messages || [];
+    ms.forEach(m => box.appendChild(listItem((m.title || m.app || 'Сообщение'), (m.text || '') + ' · ' + fmtAt(m.at), [['🔊', () => doAct({ name: 'message', op: 'speak', id: m.id }), 'sec']])));
+    if (!ms.length) box.appendChild(el('div', 'dim', 'Сообщений нет. Чтение уведомлений других программ включается на компьютере в настройках.'));
+  }],
+  commands: ['Команды', '📋', async box => {
+    const d = await api('commands'); let q = ''; const list = el('div');
+    const draw = () => {
+      list.textContent = '';
+      const items = (d.commands || []).filter(c => c.status !== 'off' && (c.phrases || []).length && (!q || (c.phrases.join(' ') + ' ' + (c.description || '')).toLowerCase().includes(q)));
+      items.slice(0, 120).forEach(c => list.appendChild(listItem(c.phrases[0], c.description || '', [['Выполнить', () => { send(c.phrases[0]); secLine('Отправлено: ' + c.phrases[0]); }]])));
+      if (items.length > 120) list.appendChild(el('div', 'dim', 'Показаны первые 120 из ' + items.length + '. Уточните поиск.'));
+      if (!items.length) list.appendChild(el('div', 'dim', 'Команд не найдено.'));
+    };
+    box.append(searchBox('Поиск команды', v => { q = v; draw(); }), list); draw();
+  }],
+  scenarios: ['Сценарии', '🧩', async box => {
+    const d = await api('scenarios'); const sc = d.scenarios || [];
+    sc.forEach(s => box.appendChild(listItem(s.name, '«' + s.phrase + '» · шагов: ' + s.steps + (s.enabled ? '' : ' · выключен'), [['Запустить', () => doAct({ name: 'scenario', op: 'test', id: s.id }, 'Сценарий запущен')], [s.enabled ? 'Выкл' : 'Вкл', async () => { await doAct({ name: 'scenario', op: 'enable', id: s.id, value: !s.enabled }); openSection('scenarios'); }, 'sec']])));
+    if (!sc.length) box.appendChild(el('div', 'dim', 'Сценариев нет. Создавать и менять их можно на компьютере в «Конструкторе».'));
+  }],
+  devices: ['Устройства', '📱', async box => {
+    const d = await api('devices');
+    (d.devices || []).forEach(x => {
+      const sub = [x.kind_label, x.status_label, x.battery != null ? 'заряд ' + Math.round(x.battery * (x.battery <= 1 ? 100 : 1)) + '%' : '', x.detail].filter(Boolean).join(' · ');
+      const it = listItem(x.name, sub, []); const pill = el('span', 'pill ' + (x.online ? 'ok' : ''), x.online ? 'в сети' : 'не в сети'); it.querySelector('b').appendChild(pill); box.appendChild(it);
+    });
+    if (!(d.devices || []).length) box.appendChild(el('div', 'dim', 'Устройств нет.'));
+  }],
+  system: ['Система', '⚙', async box => {
+    const draw = async () => {
+      let d; try { d = await api('monitor'); } catch (e) { secLine('Нет связи с компьютером'); return; }
+      box.textContent = '';
+      (d.items || []).forEach(i => { const it = listItem(i.label, i.available ? i.value : (i.why || 'недоступно'), []); if (i.available && i.pct != null) { const b = el('div', 'bar'), f = el('i'); f.style.width = Math.min(100, i.pct) + '%'; b.appendChild(f); it.firstChild.appendChild(b); } box.appendChild(it); });
+      if (document.body.dataset.tab === 'sec' && curSection === 'system') secTimer = setTimeout(draw, 3000);
+    };
+    await draw();
+  }],
+  diag: ['Диагностика', '🩺', async box => {
+    const d = await api('diag'); const checks = d.checks || [];
+    checks.forEach(c => { const it = listItem(c.name, c.detail || '', []); it.querySelector('b').appendChild(el('span', 'pill ' + (c.status === 'ok' ? 'ok' : c.status === 'error' ? 'bad' : 'warn'), c.status === 'ok' ? 'в порядке' : c.status === 'error' ? 'ошибка' : c.status === 'warn' ? 'внимание' : 'не проверено')); box.appendChild(it); });
+    if (!checks.length) box.appendChild(el('div', 'dim', 'Проверка ещё не запускалась. Запустите её на компьютере в разделе «Диагностика».'));
+  }],
+  license: ['Лицензия', '🛡', async box => {
+    const d = await api('license');
+    const names = { premium: 'Premium', expired: 'Подписка закончилась', needs_refresh: 'Нужно обновить лицензию (подключитесь к интернету)', demo: 'Демо-режим' };
+    box.appendChild(listItem('Состояние', names[d.state] || d.state || '—', []));
+    if (d.plan) box.appendChild(listItem('Тариф', String(d.plan), []));
+    if (d.lifetime) box.appendChild(listItem('Срок', 'бессрочно', [])); else if (d.days_left != null) box.appendChild(listItem('Осталось', d.days_left + ' дн.', []));
+    if (d.edition) box.appendChild(listItem('Редакция', String(d.edition), []));
+    box.appendChild(el('div', 'dim', 'Ввод и продление ключа — только на компьютере.'));
+  }],
+  phone: ['Телефон', '📲', null],
+  settings: ['Голос и имя', '🎙', async box => {
+    const d = await api('settings'); const sv = (key, value) => doAct({ name: 'setting', key, value }, 'Сохранено');
+    const txt = (label, key, ph) => { const row = el('div', 'addrow'), i = el('input'); i.value = d[key] || ''; i.placeholder = ph; i.maxLength = 40; const b = el('button', '', 'Сохранить'); b.type = 'button'; b.onclick = () => sv(key, i.value.trim()); box.appendChild(el('h2', '', label)); row.append(i, b); box.appendChild(row); };
+    txt('Имя помощника', 'assistant_name', 'Джарвис'); txt('Город для погоды', 'city', 'Ташкент');
+    box.appendChild(el('h2', '', 'Скорость речи')); const rates = el('div', 'chipsel');
+    [['0.85', 'Медленнее'], ['1', 'Обычная'], ['1.15', 'Быстрее'], ['1.3', 'Очень быстро']].forEach(([v, l]) => { const b = el('button', Math.abs(+v - (+d.voice_rate || 1)) < 0.03 ? 'on' : '', l); b.type = 'button'; b.onclick = async () => { await sv('voice_rate', +v); rates.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); }; rates.appendChild(b); });
+    box.appendChild(rates);
+    box.appendChild(el('h2', '', 'Громкость голоса')); const vol = el('input'); vol.type = 'range'; vol.min = 0; vol.max = 100; vol.value = d.tts_volume ?? 100; vol.style.width = '100%'; vol.onchange = () => sv('tts_volume', +vol.value); box.appendChild(vol);
+    box.appendChild(el('div', 'dim', 'Выбор самого голоса — в «Настройки → Голос Jarvis». Ключи, пароль, ИИ-провайдер и разрешения меняются только на компьютере.'));
+  }],
+};
+let curSection = '';
+async function openSection(id) {
+  const s = SECTIONS[id]; if (!s) return;
+  if (id === 'phone') { curSection = id; goTab('phone', 'sections'); return; }
+  curSection = id; goTab('sec', 'sections'); $('sec-title').textContent = s[1] + ' ' + s[0]; secLine('');
+  const box = $('sec-body'); box.textContent = ''; box.appendChild(el('div', 'dim', 'Загружаю…'));
+  const mine = id;
+  try { const tmp = el('div'); await s[2](tmp); if (curSection === mine) { box.textContent = ''; while (tmp.firstChild) box.appendChild(tmp.firstChild); } }
+  catch (e) { box.textContent = ''; box.appendChild(el('div', 'dim', 'Не удалось получить данные с компьютера.')); }
+}
+for (const id of ['apps', 'games', 'tasks', 'chats', 'messages', 'commands', 'scenarios', 'devices', 'system', 'diag', 'license', 'phone', 'settings']) {
+  const b = el('button'); b.type = 'button'; b.appendChild(el('span', '', SECTIONS[id][1])); b.appendChild(document.createTextNode(SECTIONS[id][0])); b.onclick = () => openSection(id); $('secgrid').appendChild(b);
+}
+$('sec-back').onclick = () => goTab('sections');
 
 // ---------- the signs at the top mirror the lines below ----------
 function chip(id, cls, text) { const c = $(id); c.className = 'chip ' + cls; c.lastChild.textContent = text; }
