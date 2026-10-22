@@ -305,6 +305,13 @@
   .mem-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; } .mem-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 10px; background: #ffffff06; font-size: 13px; }
   .mem-item span { flex: 1; min-width: 0; word-break: break-word; } .mem-item small { opacity: .6; display: block; } .ct-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; margin: 8px 0; }
   .ct-form input, .ct-form select, #mem-new, #mem-q { padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: #ffffff06; color: var(--text); font: inherit; min-width: 0; }
+  .rg-dlg { position: fixed; inset: 0; z-index: 9990; background: rgba(0,0,0,.65); display: none; align-items: center; justify-content: center; } .rg-dlg.on { display: flex; }
+  .rg-box { width: min(940px, 96vw); max-height: 94vh; overflow: auto; background: var(--panel2); border: 1px solid var(--line2); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+  #rg-canvas { width: 100%; height: auto; border-radius: 10px; cursor: crosshair; touch-action: none; background: #000; } .rg-box .r { display: flex; gap: 8px; } .rg-box .r input { flex: 1; min-width: 0; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: #ffffff06; color: var(--text); font: inherit; }
+  /* accent themes: the colour of the sphere and of the accents; the dark base stays (a light page would need every colour of the program redone) */
+  :root[data-theme="ocean"] { --accent: #8bd8ff; } :root[data-theme="amber"] { --accent: #ffd48a; } :root[data-theme="ruby"] { --accent: #ff9aa8; }
+  :root[data-theme="violet"] { --accent: #c9b3ff; } :root[data-theme="lime"] { --accent: #c4f08a; }
+  body.reduced #bgfx { display: none; } body.reduced * { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
   #page-apps [hidden] { display: none !important; }
   .gm-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: #ffffff06; color: var(--text); cursor: pointer; font: inherit; font-size: 13px; }
   .gm-chip:hover { border-color: var(--line2); } .gm-chip[aria-pressed="true"] { border-color: var(--accent); background: #ffffff14; }
@@ -717,6 +724,9 @@
 </head>
 <body>
 <div id="bgfx" aria-hidden="true"><canvas id="embers"></canvas></div>
+<div id="rg-dlg" class="rg-dlg" role="dialog" aria-label="Область экрана"><div class="rg-box"><b>Выделите область экрана</b><small class="dim">Потяните мышью по снимку. Без выделения уйдёт весь снимок. Ответ ИИ только показывается: найденные в нём «команды» Jarvis не выполняет.</small>
+  <canvas id="rg-canvas" width="900" height="500"></canvas>
+  <div class="r"><input type="text" id="rg-q" maxlength="300" placeholder="Что спросить об этой области?"><button class="btn primary" id="rg-send" type="button">Спросить ИИ</button><button class="btn" id="rg-cancel" type="button">Отмена</button></div></div></div>
 <div id="wincap-zone"></div>
 <div id="wincap" role="toolbar" aria-label="Окно"><span>ДЖАРВИС</span><span class="grow"></span><button type="button" id="wc-mini" title="Мини-режим: маленькое окно поверх других">&#9645;</button><button type="button" id="wc-min" title="Свернуть">&#8212;</button><button type="button" id="wc-full" title="Окно / весь экран (Alt+Enter)">&#10064;</button><button type="button" id="wc-close" title="Закрыть">&#10005;</button></div>
 <div id="mini" data-s="idle" role="region" aria-label="Мини-режим Джарвиса">
@@ -893,7 +903,7 @@
           <button class="btn small" id="chat-del-all" type="button" title="Убрать все диалоги в архив (Настройки → Архив диалогов)">Убрать все в архив</button>
         </aside>
         <div class="chatmain">
-          <div class="chathead"><b id="chat-title">Диалог</b><span class="grow"></span><button class="btn small" id="chat-image" type="button" title="Задать вопрос о картинке: она уйдёт выбранному ИИ-провайдеру и не сохраняется в Джарвисе">🖼 Картинка</button><input type="file" id="chat-image-file" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none"><button class="btn small" id="chat-clear" type="button">Очистить</button></div>
+          <div class="chathead"><b id="chat-title">Диалог</b><span class="grow"></span><button class="btn small" id="chat-region" type="button" title="Снять экран и выбрать область: уйдёт ИИ только выбранный кусок, и только если «Анализ экрана» включён">🖥 Область экрана</button><button class="btn small" id="chat-image" type="button" title="Задать вопрос о картинке: она уйдёт выбранному ИИ-провайдеру и не сохраняется в Джарвисе">🖼 Картинка</button><input type="file" id="chat-image-file" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none"><button class="btn small" id="chat-clear" type="button">Очистить</button></div>
           <div class="privacy" id="chat-privacy"></div>
           <div class="banner" id="ai-setup" style="display:none"><span id="ai-setup-text"></span> <button class="btn small" id="ai-setup-btn" type="button">Открыть настройки</button></div>
           <div id="ai-log"><div class="empty">Напишите вопрос в поле внизу и нажмите «Отправить». Ответит выбранная нейросеть.</div></div>
@@ -1011,7 +1021,7 @@
     <section class="page" id="page-games">
       <h1>Игры</h1>
       <p class="lead">Библиотека ваших одиночных игр. Известные онлайн-игры и программы, не относящиеся к играм, в неё не попадают.</p>
-      <div class="ap-tabs" id="gp-tabs" role="tablist"><button type="button" class="chip on" data-gt="lib">Библиотека</button><button type="button" class="chip" data-gt="mode">Голосовое управление</button><button type="button" class="chip" data-gt="aim">Прицел</button><button type="button" class="chip" data-gt="macro">Макросы и подсказки</button></div>
+      <div class="ap-tabs" id="gp-tabs" role="tablist"><button type="button" class="chip on" data-gt="lib">Библиотека</button><button type="button" class="chip" data-gt="mode">Голосовое управление</button><button type="button" class="chip" data-gt="aim">Прицел</button><button type="button" class="chip" data-gt="macro">Макросы и подсказки</button><button type="button" class="chip" data-gt="stats">Статистика</button></div>
       <div class="gp-tab" data-gt="lib">
       <div class="gp-bar">
         <button class="btn primary" id="gp-scan" type="button">Найти игры</button>
@@ -1039,6 +1049,16 @@
         <div class="setrow"><div class="l">Отчёт по играм<small>состояние режима, список игр, последний поиск и последние события: чтобы прислать разработчику. Ключей и сказанных фраз в отчёте нет</small></div>
           <div class="r"><button class="btn" id="gp-report" type="button">Копировать отчёт по играм</button></div></div>
       </div>
+      </div>
+      <div class="gp-tab" data-gt="stats" hidden>
+        <div class="card" style="margin-top:8px"><h3><span class="ei">📊</span>Статистика игр</h3>
+          <small class="dim">Пишется само, пока игра в фокусе дольше 30 секунд: настоящие замеры нагрузки ЦП, видеокарты, памяти и температуры. FPS читается только при запуске Jarvis от администратора; чего нет, то показано как «—» и не придумывается. Содержимое экрана не сохраняется.</small>
+          <div id="gs-games" class="mem-list"></div>
+          <h4 style="margin:14px 0 6px">Последние сессии</h4>
+          <div id="gs-list" class="mem-list"></div>
+          <div class="r" style="margin-top:8px"><button class="btn" id="gs-copy" type="button">Копировать отчёт</button><button class="btn" id="gs-clear" type="button">Очистить историю</button></div>
+          <div class="msgline" id="gs-msg"></div>
+        </div>
       </div>
       <div class="gp-tab" data-gt="aim" hidden>
       <div class="card" id="gp-aim-card"><h3><span class="ei">🎯</span>Помощь прицела (эксперимент, только офлайн-игры)</h3>
@@ -1282,6 +1302,14 @@
         <div id="nt-list"><div class="empty">Уведомлений пока нет.</div></div>
       </div>
 
+      <div class="card" data-cat="notify" id="sms-card" data-tab="Чтение сообщений"><h3><span class="ei">🗣</span>Как читать сообщения</h3>
+        <div class="setrow"><div class="l">Что зачитывать<small>полностью — отправитель и текст; только отправитель; или лишь «пришло сообщение». «Повтори сообщение» читает последнее ещё раз полностью, «стоп» останавливает голос.</small></div>
+          <div class="r"><select id="sms-privacy"><option value="full">Отправитель и текст</option><option value="sender">Только отправитель</option><option value="silent">Только факт сообщения</option></select></div></div>
+        <div class="setrow"><div class="l">Язык фраз<small>ссылки в тексте читаются словом «ссылка», длинные тексты сокращаются</small></div>
+          <div class="r"><select id="sms-lang"><option value="auto">Как в программе</option><option value="ru">Русский</option><option value="en">English</option><option value="uz">Oʻzbekcha</option></select></div></div>
+        <div class="setrow"><div class="l">Прочитать последнее<small>проверка звучания</small></div><div class="r"><button class="btn" id="sms-repeat" type="button">Повторить сообщение</button></div></div>
+        <div class="msgline" id="sms-msg"></div>
+      </div>
       <div class="card" data-cat="notify" id="ext-card" data-tab="Другие программы"><h3><span class="ei">📨</span>Уведомления других программ</h3>
         <small class="dim">Джарвис может показывать и читать уведомления мессенджеров, почты и других программ — только с вашего разрешения и разрешения Windows (Windows 10 1809+ и Windows 11). При включении Windows может спросить разрешение; без него ничего не читается. Не все программы отправляют уведомления так, чтобы их можно было прочитать, а обычным (не из Microsoft Store) программам Windows иногда не даёт доступ совсем — тогда это будет видно в статусе. Тексты уведомлений остаются на этом компьютере: не сохраняются на диск, не попадают в историю и не отправляются в ИИ или в интернет.</small>
         <div class="setrow"><div class="l">Читать уведомления других программ<small id="ext-status">выключено</small></div>
@@ -1442,6 +1470,10 @@
         <div class="msgline" id="game-msg"></div>
         <small class="dim">Фразы: иди вперёд / назад / влево / вправо, беги, стой · смотри налево / направо / вверх / вниз (можно «на 45 градусов», «чуть», «разворот») · стреляй, огонь очередью, прекрати огонь · целься, не целься · перезаряди, гранату, нож, прыгай, присядь, используй. «Стой» отпускает все клавиши. Работает только если окно игры впереди.<br>Гонки: газ, тормоз, влево, вправо, прямо, ручник, нитро, сигнал, смени камеру · Экшен/приключения: атакуй, тяжёлый удар, блок, перекат, инвентарь, карта, полечись, садись в машину · свои фразы для любого жанра — в game_profile.json (docs/GAME-MODE.md).</small></details>
       </div>
+      <div class="card" data-cat="voice" id="micw-card" data-tab="Микрофон"><h3><span class="ei">🎙</span>Состояние микрофона</h3>
+        <div class="setrow"><div class="l">Идёт ли звук<small id="micw-text">…</small></div><div class="r"><button class="btn" id="micw-refresh" type="button">Проверить</button></div></div>
+        <small class="dim">Если звук перестал приходить, Jarvis сам переоткрывает микрофон (не чаще раза в 20 секунд, не больше 5 раз подряд) и честно пишет, если не вышло. Слово «Джарвис» он при этом не «слышит»: это только проверка потока звука.</small>
+      </div>
       <div class="card" data-cat="general" id="vp-card" data-tab="Мой голос"><h3><span class="ei">🗣</span>Мой голос</h3>
         <div class="setrow"><div class="l">Слушать только мой голос<small id="vp-hint">Jarvis будет игнорировать чужие голоса, игру, фильм и свой собственный голос. Сначала запишите образец своего голоса. По умолчанию выключено.</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="vp-on"><span></span></label></div></div>
@@ -1513,6 +1545,13 @@
       <div class="card" data-cat="look" id="look-card" data-tab="Внешний вид"><h3><span class="ei">🧩</span>Внешний вид</h3>
         <div class="setrow"><div class="l">Сфера<small>что показывать на главном экране</small></div>
           <div class="r"><div class="seg"><button data-mode="wire">Сфера из частиц</button><button data-mode="avatar">Моё фото</button></div></div></div>
+        <div class="setrow"><div class="l">Цвет<small>цвет сферы и акцентов (тёмная основа остаётся)</small></div>
+          <div class="r"><div class="seg" id="theme-seg"><button data-theme-pick="graphite" type="button">Графит</button><button data-theme-pick="ocean" type="button">Океан</button><button data-theme-pick="amber" type="button">Янтарь</button><button data-theme-pick="ruby" type="button">Рубин</button><button data-theme-pick="violet" type="button">Фиолет</button><button data-theme-pick="lime" type="button">Лайм</button></div></div></div>
+        <div class="setrow"><div class="l">Вид сферы<small>«Частицы», «Кольца» или «Сетка»; режим «Моё фото» выбирается выше</small></div>
+          <div class="r"><div class="seg"><button data-sphere-pick="dots" type="button">Частицы</button><button data-sphere-pick="rings" type="button">Кольца</button><button data-sphere-pick="grid" type="button">Сетка</button></div></div></div>
+        <div class="setrow"><div class="l">Анимации<small>«Авто» следует настройке Windows «Показывать анимацию»; «Меньше» останавливает искры фона, почти не вращает сферу и рисует её реже</small></div>
+          <div class="r"><div class="seg"><button data-motion-pick="auto" type="button">Авто</button><button data-motion-pick="reduced" type="button">Меньше</button><button data-motion-pick="full" type="button">Полные</button></div></div></div>
+        <div class="setrow"><div class="l">Сбросить вид</div><div class="r"><button class="btn" id="look-reset" type="button">Сбросить цвет, сферу и анимации</button></div></div>
         <div class="setrow"><div class="l">Фото-голограмма<small>фото остаётся на этом компьютере</small></div>
           <div class="r"><button class="btn" id="avatar-pick">Выбрать фото</button><button class="btn" id="avatar-clear">Убрать</button></div></div>
         <input type="file" id="avatar-file" accept="image/png,image/jpeg,image/webp" style="display:none">
@@ -1688,10 +1727,10 @@ function show(name) {
   if (name === 'diag') diagLoad();
   if (name === 'builder') builderLoad();
   if (name === 'apps') appsLoad();
-  if (name === 'games') gpSummary();
+  if (name === 'games') { gpSummary(); gsLoad(); }
   if (name === 'files') filesLoad();
   if (name === 'devices') devicesLoad();
-  if (name === 'settings') { memLoad(); ctLoad(); ownerLoad(); permLoad(); kbLoad(); undoLoad(); homeLoad(); schLoad(); notesLoad(); loadSettings(); refreshRemote(); tgLoad(); setTimeout(() => { if (typeof setView === 'function') setView(); }, 60); }
+  if (name === 'settings') { smsLoad(); micwLoad(); memLoad(); ctLoad(); ownerLoad(); permLoad(); kbLoad(); undoLoad(); homeLoad(); schLoad(); notesLoad(); loadSettings(); refreshRemote(); tgLoad(); setTimeout(() => { if (typeof setView === 'function') setView(); }, 60); }
   if (name === 'tasks') { tkEdit = -1; tasksLoad(); }
   if (name === 'home') { homeSig = ''; }
   if (name === 'messages') msgsLoad(true);
@@ -2872,7 +2911,6 @@ window.addEventListener('resize', syncNativeFull); syncNativeFull(); setTimeout(
 // ---- the embers of the background: a few dozen sparks that rise and flicker (about 30 frames a second, stops when the window is hidden) ----
 (() => {
   const cv = document.getElementById('embers'); if (!cv) return;
-  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const g = cv.getContext('2d'); let w = 0, h = 0, parts = [], last = 0;
   const fit = () => { const d = Math.min(window.devicePixelRatio || 1, 1.5); w = cv.width = Math.floor(innerWidth * d); h = cv.height = Math.floor(innerHeight * d); };
   const mk = (init) => ({ x: Math.random() * w, y: init ? Math.random() * h : h + 10, r: (0.7 + Math.random() * 2.2) * (w / 1600 + .6), v: 0.25 + Math.random() * 0.8, dx: (Math.random() - .5) * 0.35, ph: Math.random() * 6.28, hue: 18 + Math.random() * 28 });
@@ -2880,7 +2918,7 @@ window.addEventListener('resize', syncNativeFull); syncNativeFull(); setTimeout(
   addEventListener('resize', fit);
   const tick = t => {
     requestAnimationFrame(tick);
-    if (document.hidden || document.body.classList.contains('mini') || t - last < 33) return; last = t;
+    if (document.hidden || document.body.classList.contains('mini') || document.body.classList.contains('reduced') || t - last < 33) return; last = t;
     g.clearRect(0, 0, w, h);
     for (const p of parts) {
       p.y -= p.v; p.x += p.dx + Math.sin(t / 900 + p.ph) * 0.25;
@@ -3038,12 +3076,69 @@ $('#aim-on').onclick = async () => { const r = await action('game_aim', { value:
 $('#aim-off').onclick = async () => { const r = await action('game_aim', { value: false }).catch(() => ({})); const m = $('#game-msg'); m.className = 'msgline ok'; m.textContent = (r && r.message) || ''; gameRefresh(); };
 gameRefresh(); setInterval(gameRefresh, 4000);
 
+// ---------- game statistics, reading of messages, microphone watch, region of the screen ----------
+const gsDur = sec => sec >= 3600 ? Math.floor(sec / 3600) + ' ч ' + Math.floor(sec % 3600 / 60) + ' мин' : Math.max(1, Math.round(sec / 60)) + ' мин';
+const dash = v => v == null ? '—' : v;
+async function gsLoad() {
+  const r = await action('gs_summary').catch(() => ({ stats: {} })); const st = r.stats || {};
+  $('#gs-games').innerHTML = (st.games || []).length ? st.games.map(g => '<div class="mem-item"><span><b>' + gpEsc(g.exe) + '</b><small>сессий: ' + g.sessions + ' · всего ' + gsDur(g.secs) + '</small></span></div>').join('') : '<small class="dim">Пока нет ни одной сессии.</small>';
+  $('#gs-list').innerHTML = (st.sessions || []).length ? st.sessions.map(x => '<div class="mem-item"><span><b>' + gpEsc(x.exe) + '</b> · ' + gsDur(x.secs) + ' · ' + new Date(x.start * 1000).toLocaleString('ru-RU') +
+    '<small>FPS ' + dash(x.fps_avg) + ' (1% low ' + dash(x.fps_low1) + ') · ЦП ' + dash(x.cpu_avg) + '% · ВК ' + dash(x.gpu_avg) + '% · ОЗУ до ' + dash(x.ram_max_gb) + ' ГБ · видеопамять до ' + dash(x.vram_max_gb) + ' ГБ · темп. до ' + dash(x.gpu_temp_max) + ' °C</small></span></div>').join('') : '';
+  if (st.fps_note) { const m = $('#gs-msg'); m.className = 'msgline'; m.textContent = st.fps_note; }
+}
+$('#gs-copy').onclick = async () => { const r = await action('gs_report').catch(() => ({})); try { await navigator.clipboard.writeText(r.text || ''); lineMsg('#gs-msg', { ok: true }, 'Скопировано.'); } catch (e) { lineMsg('#gs-msg', { ok: false, message: 'Не удалось скопировать.' }); } };
+$('#gs-clear').onclick = async () => { if (confirm('Очистить историю игровых сессий?')) { await action('gs_clear'); gsLoad(); } };
+async function smsLoad() { const r = await action('sms_get').catch(() => ({})); if (r.privacy) { $('#sms-privacy').value = r.privacy; $('#sms-lang').value = r.lang || 'auto'; } }
+const smsSave = async () => { const r = await action('sms_set', { privacy: $('#sms-privacy').value, lang: $('#sms-lang').value }).catch(() => ({})); lineMsg('#sms-msg', r, 'Сохранено.'); };
+$('#sms-privacy').onchange = smsSave; $('#sms-lang').onchange = smsSave;
+$('#sms-repeat').onclick = async () => { const r = await action('sms_repeat').catch(() => ({})); lineMsg('#sms-msg', { ok: true, message: r.message }); };
+async function micwLoad() { const r = await action('mic_watch').catch(() => ({})); const w = r.watch || {}; $('#micw-text').textContent = w.text || 'нет данных'; }
+$('#micw-refresh').onclick = micwLoad;
+// a region of the screen: the screen is taken only on this click, the user marks a rectangle, only that part goes to the AI as a picture of the conversation
+let rgImg = null, rgSel = null;
+function rgClose() { $('#rg-dlg').classList.remove('on'); rgImg = null; rgSel = null; }
+function rgDraw() {
+  const c = $('#rg-canvas'), g = c.getContext('2d'); if (!rgImg) return;
+  g.clearRect(0, 0, c.width, c.height); g.drawImage(rgImg, 0, 0, c.width, c.height);
+  if (rgSel) { const [x, y, w, h] = rgSel; g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(0, 0, c.width, y); g.fillRect(0, y + h, c.width, c.height - y - h); g.fillRect(0, y, x, h); g.fillRect(x + w, y, c.width - x - w, h); g.strokeStyle = '#7dd3fc'; g.lineWidth = 2; g.strokeRect(x, y, w, h); }
+}
+$('#chat-region').onclick = async () => {
+  const r = await action('screen_grab').catch(() => ({}));
+  if (!r.ok) { showToast(r.message || 'Не удалось снять экран'); return; }
+  const img = new Image();
+  img.onload = () => {
+    rgImg = img; rgSel = null; const c = $('#rg-canvas'); const k = Math.min(1, 900 / img.width); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    $('#rg-q').value = $('#input').value; $('#rg-dlg').classList.add('on'); rgDraw();
+  };
+  img.src = 'data:image/jpeg;base64,' + r.jpeg;
+};
+(() => {
+  const c = $('#rg-canvas'); let start = null;
+  const pos = e => { const b = c.getBoundingClientRect(); return [Math.max(0, Math.min(c.width, (e.clientX - b.left) * c.width / b.width)), Math.max(0, Math.min(c.height, (e.clientY - b.top) * c.height / b.height))]; };
+  c.onpointerdown = e => { start = pos(e); c.setPointerCapture(e.pointerId); };
+  c.onpointermove = e => { if (!start) return; const p = pos(e); rgSel = [Math.min(start[0], p[0]), Math.min(start[1], p[1]), Math.abs(p[0] - start[0]), Math.abs(p[1] - start[1])]; rgDraw(); };
+  c.onpointerup = () => { start = null; };
+})();
+$('#rg-cancel').onclick = rgClose;
+$('#rg-send').onclick = async () => {
+  if (!rgImg) return;
+  const c = $('#rg-canvas'); const sel = rgSel && rgSel[2] > 8 && rgSel[3] > 8 ? rgSel : [0, 0, c.width, c.height];
+  const k = rgImg.width / c.width, out = document.createElement('canvas'); out.width = Math.round(sel[2] * k); out.height = Math.round(sel[3] * k);
+  out.getContext('2d').drawImage(rgImg, sel[0] * k, sel[1] * k, sel[2] * k, sel[3] * k, 0, 0, out.width, out.height);
+  const b64 = out.toDataURL('image/jpeg', 0.85).split(',')[1], q = $('#rg-q').value.trim() || 'Что на этой части экрана?';
+  rgClose();
+  try {
+    const r = await chatApi({ op: 'image', id: aiActive, text: q, name: 'screen-region.jpg', mime: 'image/jpeg', data: b64 });
+    if (r.ok) await pollNow(true); else showToast(r.message || 'Не удалось отправить');
+  } catch (e) { showToast('Нет связи с Джарвисом'); }
+};
+
 // ---------- owner password, permissions, knowledge base, history, smart home, scheduler, diary ----------
 const lineMsg = (id, r, okText) => { const m = $(id); m.className = 'msgline ' + (r && r.ok === false ? 'bad' : 'ok'); m.textContent = (r && r.message) || (r && r.ok !== false ? (okText || '') : 'Не получилось'); };
 async function ownerLoad() {
   const r = await action('owner_status').catch(() => ({}));
   $('#ow-state').textContent = r.set ? (r.unlocked ? 'пароль задан, сейчас разблокировано' : 'пароль задан, защищённое заблокировано') : 'пароль не задан: защита выключена';
-  $('#ow-msg').value = r.message || ''; $('#ow-lock').disabled = !r.set || !r.unlocked;
+  $('#ow-msg').value = r.message || ''; $('#ow-lock').disabled = !r.set || !r.unlocked; OWNER_LOCKED = !!(r.set && !r.unlocked);
 }
 function showRecovery(r) { if (r && r.recovery) alert('Код восстановления (покажется один раз, запишите):\n\n' + r.recovery); }
 $('#ow-unlock').onclick = async () => { const r = await action('owner_unlock', { password: $('#ow-pw').value }).catch(() => ({})); lineMsg('#ow-msgline', r); $('#ow-pw').value = ''; ownerLoad(); };
@@ -3947,6 +4042,7 @@ function applyPrivacy(s) {
   renderSocial(s);
   if (s.ui && s.ui['jarvis-mode'] && s.ui['jarvis-mode'] !== mode) setMode(s.ui['jarvis-mode'], true);
   if (s.ui && s.ui['jarvis-perf']) setPerf(s.ui['jarvis-perf'] === 'low', true);
+  for (const k of ['theme', 'sphere', 'motion']) if (s.ui && s.ui['jarvis-' + k]) setLook(k, s.ui['jarvis-' + k], true);
   if (s.ui && typeof gpHydrate === 'function') gpHydrate(s.ui);
 }
 let extLists = { allowed: [], blocked: [], seen: [] };
@@ -4053,7 +4149,7 @@ $('#pv-key-del').onclick = async () => {
 $('#pv-reset').onclick = async () => {
   if (!confirm('Сбросить все настройки к значениям по умолчанию? История диалогов, таймеры и ключ ИИ сохранятся.')) return;
   const r = await action('settings_reset', { confirm: 'reset' });
-  try { localStorage.removeItem('jarvis-mode'); localStorage.removeItem('jarvis-av-thr'); localStorage.removeItem('jarvis-av-inv'); } catch (e) {}
+  try { localStorage.removeItem('jarvis-theme'); localStorage.removeItem('jarvis-sphere'); localStorage.removeItem('jarvis-motion'); localStorage.removeItem('jarvis-mode'); localStorage.removeItem('jarvis-av-thr'); localStorage.removeItem('jarvis-av-inv'); } catch (e) {}
   pvMsg(r.ok, r.ok ? 'Настройки сброшены' : 'Не удалось'); voicesLoaded = false; loadSettings(); pollNow();
 };
 let notesSig = '';
@@ -4617,13 +4713,51 @@ document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => setMode(
 
 let yaw = 0, level = 0, glitchUntil = 0, nextGlitch = performance.now() + 3000;
 
+// ONE source of the state of the sphere: everything the page knows is folded into a single word, and the colour, the movement and the
+// tooltip all come from it (never from separate flags)
+const THEMES = { graphite: [176, 45, 'Графит'], ocean: [200, 70, 'Океан'], amber: [38, 80, 'Янтарь'], ruby: [352, 65, 'Рубин'], violet: [265, 55, 'Фиолет'], lime: [95, 55, 'Лайм'] };
+let theme = 'graphite', sphere = 'dots', motion = 'auto';
+try { theme = localStorage.getItem('jarvis-theme') || 'graphite'; sphere = localStorage.getItem('jarvis-sphere') || 'dots'; motion = localStorage.getItem('jarvis-motion') || 'auto'; } catch (e) {}
+if (!THEMES[theme]) theme = 'graphite';
+const ORB_KINDS = {
+  error: ['ошибка', [352, 75], 0.6], off: ['нет связи', [220, 6], 0], muted: ['микрофон выключен', [220, 10], 0.02], listening: ['слушаю', [172, 70], 0.55],
+  speaking: ['говорю', [186, 55], 0.75], thinking: ['думаю', [265, 55], 0.4], game: ['игровой режим', [135, 55], 0.15], locked: ['защита включена', [40, 40], 0.05], idle: ['готов', null, 0.05]
+};
+function orbKind() {
+  if (state === 'error') return 'error';
+  if (state === 'off' || !connected) return 'off';
+  if (state === 'listening' || state === 'wake') return 'listening';
+  if (state === 'speaking') return 'speaking';
+  if (state === 'busy' || (lastState && lastState.ai_busy)) return 'thinking';
+  const v = lastState && lastState.voice_state && lastState.voice_state.state;
+  if (v === 'DISABLED') return 'muted';
+  if (typeof GM !== 'undefined' && GM.active) return 'game';
+  if (typeof OWNER_LOCKED !== 'undefined' && OWNER_LOCKED) return 'locked';
+  return 'idle';
+}
+let OWNER_LOCKED = false;
+function reducedMotion() { return motion === 'reduced' || (motion === 'auto' && window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches); }
+function applyLook() {
+  document.documentElement.dataset.theme = theme === 'graphite' ? '' : theme;
+  document.body.classList.toggle('reduced', reducedMotion());
+  document.querySelectorAll('[data-theme-pick]').forEach(b => b.classList.toggle('active', b.dataset.themePick === theme));
+  document.querySelectorAll('[data-sphere-pick]').forEach(b => b.classList.toggle('active', b.dataset.spherePick === sphere));
+  document.querySelectorAll('[data-motion-pick]').forEach(b => b.classList.toggle('active', b.dataset.motionPick === motion));
+}
+function setLook(k, v, fromServer) {
+  if (k === 'theme' && THEMES[v]) theme = v; else if (k === 'sphere' && ['dots', 'rings', 'grid'].includes(v)) sphere = v; else if (k === 'motion' && ['auto', 'reduced', 'full'].includes(v)) motion = v; else return;
+  try { localStorage.setItem('jarvis-' + k, v); } catch (e) {}
+  if (!fromServer) saveSettings({ ui: { ['jarvis-' + k]: v } });
+  applyLook();
+}
+document.querySelectorAll('[data-theme-pick]').forEach(b => b.onclick = () => setLook('theme', b.dataset.themePick));
+document.querySelectorAll('[data-sphere-pick]').forEach(b => b.onclick = () => setLook('sphere', b.dataset.spherePick));
+document.querySelectorAll('[data-motion-pick]').forEach(b => b.onclick = () => setLook('motion', b.dataset.motionPick));
+$('#look-reset').onclick = () => { setLook('theme', 'graphite'); setLook('sphere', 'dots'); setLook('motion', 'auto'); };
+if (window.matchMedia) matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', applyLook);
 function palette() {
-  // [hue, saturation] by state: graphite-white points with a cold glow inside
-  if (state === 'error') return [352, 75];
-  if (state === 'off') return [220, 6];
-  if (state === 'listening' || state === 'wake') return [172, 70];
-  if (state === 'speaking') return [186, 55];
-  return [176, 45];
+  const k = ORB_KINDS[orbKind()];
+  return k[1] || [THEMES[theme][0], THEMES[theme][1]];
 }
 
 // a soft glow under the photo-hologram (the avatar mode)
@@ -4666,6 +4800,45 @@ function drawOrb(t) {
     const r = (PERF_LOW ? 2.6 : 2.0) + depth * 2.6;
     ctx.fillRect(px - r / 2, py - r / 2, r, r);
   }
+}
+
+// variant «rings»: three tilted rings that turn
+function drawRings(t) {
+  const [hue, sat] = palette(), cx = W / 2, cy = H / 2, R = W * 0.33, speaking = state === 'speaking';
+  const glow = ctx.createRadialGradient(cx, cy, R * 0.05, cx, cy, R * 1.25);
+  glow.addColorStop(0, `hsla(${hue},${sat}%,55%,${0.14 + level * 0.2})`); glow.addColorStop(1, `hsla(${hue},${sat}%,30%,0)`);
+  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+  ctx.lineWidth = PERF_LOW ? 3 : 4;
+  for (let i = 0; i < 3; i++) {
+    const tilt = 0.5 + i * 0.55, rot = yaw * (1 + i * 0.4) + i * 2.1, k = 1 + (speaking ? 0.05 * level * Math.sin(t / 130 + i) : Math.sin(t / 900 + i) * 0.012);
+    ctx.strokeStyle = `hsla(${hue},${sat}%,${70 + i * 8}%,${0.55 + level * 0.3})`;
+    ctx.beginPath();
+    for (let a = 0; a <= 64; a++) {
+      const th = a / 64 * Math.PI * 2, x0 = Math.cos(th) * R * k, y0 = Math.sin(th) * R * k;
+      const x = x0 * Math.cos(rot) , z = x0 * Math.sin(rot), y = y0 * Math.cos(tilt) - z * Math.sin(tilt);
+      const px = cx + x, py = cy + y; if (a === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+  ctx.fillStyle = `hsla(${hue},${sat}%,85%,${0.5 + level * 0.4})`; ctx.beginPath(); ctx.arc(cx, cy, R * (0.08 + level * 0.06), 0, Math.PI * 2); ctx.fill();
+}
+// variant «grid»: latitude and longitude lines of a globe
+function drawGrid(t) {
+  const [hue, sat] = palette(), cx = W / 2, cy = H / 2, R = W * 0.33, tilt = 0.38, ct = Math.cos(tilt), st = Math.sin(tilt), cyw = Math.cos(yaw), syw = Math.sin(yaw);
+  const glow = ctx.createRadialGradient(cx, cy, R * 0.05, cx, cy, R * 1.25);
+  glow.addColorStop(0, `hsla(${hue},${sat}%,55%,${0.12 + level * 0.2})`); glow.addColorStop(1, `hsla(${hue},${sat}%,30%,0)`);
+  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+  const k = 1 + Math.sin(t / 900) * 0.012 + (state === 'speaking' ? 0.04 * level * Math.sin(t / 150) : 0);
+  const proj = (lon, lat) => {
+    const x0 = Math.cos(lat) * Math.cos(lon), z0 = Math.cos(lat) * Math.sin(lon), y0 = Math.sin(lat);
+    const x = (x0 * cyw + z0 * syw) * k, z1 = (-x0 * syw + z0 * cyw) * k, y1 = y0 * k, y = y1 * ct - z1 * st, z = y1 * st + z1 * ct, p = 3.2 / (3.2 - z);
+    return [cx + x * R * p, cy + y * R * p, (z + 1) / 2];
+  };
+  ctx.lineWidth = 2;
+  const line = (f, n) => { let prev = null; for (let i = 0; i <= n; i++) { const q = f(i / n); if (prev) { const d = (q[2] + prev[2]) / 2; ctx.strokeStyle = `hsla(${hue},${sat * (1 - d * 0.6)}%,${58 + d * 34}%,${0.12 + d * 0.7})`; ctx.beginPath(); ctx.moveTo(prev[0], prev[1]); ctx.lineTo(q[0], q[1]); ctx.stroke(); } prev = q; } };
+  const meridians = PERF_LOW ? 6 : 10, parallels = PERF_LOW ? 5 : 8;
+  for (let m = 0; m < meridians; m++) line(u => proj(m / meridians * Math.PI * 2, (u - 0.5) * Math.PI), 36);
+  for (let p = 1; p < parallels; p++) line(u => proj(u * Math.PI * 2, (p / parallels - 0.5) * Math.PI), 48);
 }
 
 // ---------- avatar (photo -> hologram) ----------
@@ -4781,19 +4954,26 @@ function frame(t) {
   requestAnimationFrame(frame);
   if (stateUntil && performance.now() > stateUntil) setState(connected ? 'idle' : 'off');
   if (document.hidden || currentPage !== 'home') return;
-  if (PERF_LOW && t - lastDraw < 33) return;
+  const reduced = reducedMotion();
+  if ((reduced && t - lastDraw < 100) || (PERF_LOW && t - lastDraw < 33)) return;
   const dt = Math.min(64, t - (lastDraw || t)); lastDraw = t;
-  const target = { idle: 0.05, listening: 0.55, wake: 0.8, speaking: 0.75, busy: 0.4, error: 0.6, off: 0 }[state] ?? 0.05;
+  const kind = orbKind(), target = state === 'wake' ? 0.8 : ORB_KINDS[kind][2];
   level += (target - level) * 0.06;
-  yaw += (0.0022 + level * 0.009 + (state === 'busy' ? 0.01 : 0)) * dt / 16;
-  if (t > nextGlitch) { glitchUntil = t + rnd(90, 220); nextGlitch = t + rnd(3500, 9000); }
+  canvas.title = 'Джарвис: ' + ORB_KINDS[kind][0] + '. Нажмите, чтобы он начал слушать'; canvas.dataset.kind = kind;
+  // reduced motion: the sphere turns very slowly and does not ripple or glitch
+  yaw += reduced ? 0.0004 * dt / 16 : (0.0022 + level * 0.009 + (kind === 'thinking' ? 0.01 : 0)) * dt / 16;
+  if (!reduced && t > nextGlitch) { glitchUntil = t + rnd(90, 220); nextGlitch = t + rnd(3500, 9000); }
   ctx.clearRect(0, 0, W, H);
   ctx.globalCompositeOperation = 'lighter';
-  if (mode === 'avatar') drawAvatar(t); else drawOrb(t);
+  if (mode === 'avatar') drawAvatar(t); else if (sphere === 'rings') drawRings(t); else if (sphere === 'grid') drawGrid(t); else drawOrb(t);
   ctx.globalCompositeOperation = 'source-over';
 }
 requestAnimationFrame(frame);
+// the sphere shows «защита включена» while a password of the owner is set and the program is locked
+async function ownerPoll() { const r = await action('owner_status').catch(() => null); if (r) OWNER_LOCKED = !!(r.set && !r.unlocked); }
+ownerPoll(); setInterval(ownerPoll, 30000);
 loadAvatar();
+applyLook();
 setMode(mode, true);
 renderMic();
 connect();

@@ -134,6 +134,10 @@ pub mod smarthome;
 pub mod imagegen;
 pub mod kb;
 pub mod actionlog;
+pub mod smsread;
+pub mod wakewatch;
+pub mod gamestats;
+pub mod autopilot;
 #[cfg(target_os = "windows")]
 pub mod notify_win;
 pub mod diag;

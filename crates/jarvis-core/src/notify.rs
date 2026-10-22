@@ -284,12 +284,7 @@ pub fn ext_allowed_id(s: &UiSettings, app: &str, aumid: &str) -> bool {
 
 // what Jarvis says about a message of a social network: the network, the sender (the first line of the notification) and the text
 pub fn social_say(network: &str, texts: &[String]) -> String {
-    let parts = ext_parts(texts);
-    match parts.len() {
-        0 => format!("Вам пришло сообщение в {}", network),
-        1 => format!("Вам пришло сообщение в {}: {}", network, parts[0]),
-        _ => format!("Вам пришло сообщение в {} от {}: {}", network, parts[0], parts[1..].join(" — ")),
-    }
+    crate::smsread::say(network, &ext_parts(texts))
 }
 
 // the texts of a notification without empty lines

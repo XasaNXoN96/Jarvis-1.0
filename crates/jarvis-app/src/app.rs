@@ -145,6 +145,7 @@ fn main_loop(text_cmd_rx: &Receiver<Incoming>, rt: &tokio::runtime::Runtime) -> 
         // microphone switched off (tray / command): the device itself is closed (Windows no longer shows it in use),
         // text commands still work; switched on again: it is opened again
         if jarvis_core::MIC_MUTED.load(std::sync::atomic::Ordering::SeqCst) {
+            jarvis_core::wakewatch::set_paused(true);
             if !mic_closed {
                 recorder::release();
                 mic_closed = true;
@@ -154,6 +155,7 @@ fn main_loop(text_cmd_rx: &Receiver<Incoming>, rt: &tokio::runtime::Runtime) -> 
             continue 'wake_word;
         }
         if mic_closed {
+            jarvis_core::wakewatch::set_paused(false);
             mic_closed = false;
             match recorder::start_recording() {
                 Ok(_) => info!("Microphone switched on: the device is open again"),
@@ -663,6 +665,8 @@ fn open_request(text: &str, src: &str) {
 fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> bool {
     // every command, script and scenario that runs below knows its door (jarvis_core::origin::current())
     let _door = jarvis_core::origin::enter(source);
+    // (the loop reads no microphone while a command runs: the watchdog of the microphone is told)
+    let _busy = jarvis_core::wakewatch::busy();
     info!("Command door: {}", source.as_str());
 
     // a question «Подтвердить? да / нет» is open: this phrase answers it (only from the door the request came through)

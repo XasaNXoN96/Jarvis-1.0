@@ -496,6 +496,18 @@ fn run_step_in(s: &Step, grid: &mut Vec<isize>) -> Result<(), String> {
 // What runs now (the window shows "Шаг 2 из 4: Громкость"): (scenario id, step number from 1, steps, step title)
 static RUNNING: Lazy<Mutex<Option<(String, usize, usize, String)>>> = Lazy::new(|| Mutex::new(None));
 
+static CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+// «стоп» for a chain that is running: it stops before the next step (a step that has started finishes)
+pub fn cancel() -> bool {
+    if RUNNING.lock().is_some() {
+        CANCEL.store(true, std::sync::atomic::Ordering::SeqCst);
+        true
+    } else {
+        false
+    }
+}
+
 pub fn running_json() -> Value {
     match RUNNING.lock().as_ref() {
         Some((id, step, total, title)) => json!({ "id": id, "step": step, "total": total, "title": title }),
@@ -552,7 +564,12 @@ fn run_inner(sc: &Scenario, remember: bool) -> RunResult {
     if let Err(e) = preflight(sc) {
         message = e;
     } else {
+        CANCEL.store(false, std::sync::atomic::Ordering::SeqCst);
         for (i, s) in sc.steps.iter().enumerate() {
+            if CANCEL.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                message = format!("отменено перед шагом {}", i + 1);
+                break;
+            }
             *RUNNING.lock() = Some((sc.id.clone(), i + 1, total, step_title(&s.kind).to_string()));
             match run_step_in(s, &mut grid) {
                 Ok(()) => done += 1,

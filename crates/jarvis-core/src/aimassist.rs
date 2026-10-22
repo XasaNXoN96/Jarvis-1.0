@@ -632,6 +632,17 @@ pub fn front_any_game(cfg: &AimConfig) -> Option<String> {
 }
 
 // programs that are never a game (the browser, the desktop, a player, a messenger): the full screen of these is not the full screen of a game
+// the exe of the game in front, whether or not the aim assist is on for it (the statistics of the sessions use it)
+pub fn front_game_any() -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        let exe = crate::gamemode::front_exe_any()?;
+        (!is_not_a_game(&exe) && run::front_fullscreen()).then_some(exe)
+    }
+    #[cfg(not(target_os = "windows"))]
+    None
+}
+
 pub fn is_not_a_game(exe: &str) -> bool {
     const NOT: [&str; 52] = [
         "explorer.exe", "jarvis-app.exe", "chrome.exe", "msedge.exe", "firefox.exe", "opera.exe", "brave.exe", "vivaldi.exe", "browser.exe", "yandex.exe",

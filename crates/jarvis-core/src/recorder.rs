@@ -184,6 +184,8 @@ pub fn read_microphone(frame_buffer: &mut [i16]) {
     match RECORDER_TYPE.get().unwrap() {
         RecorderType::PvRecorder => {
             pvrecorder::read_microphone(frame_buffer);
+            // (the watchdog of the microphone loop: a frame was read, and how loud it was)
+            crate::wakewatch::beat(frame_buffer.iter().map(|v| (*v as i32).unsigned_abs()).max().unwrap_or(0));
         }
         RecorderType::PortAudio => {
             todo!();

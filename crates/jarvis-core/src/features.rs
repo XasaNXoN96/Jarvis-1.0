@@ -2,7 +2,7 @@
 //! `None` = not for these features, the normal command search goes on. Nothing here executes silently: the messenger always waits
 //! for a confirmation, and every answer says what really happened.
 
-use crate::{actionlog, confirm, contacts, imagegen, kb, memory, messenger, notes, owner, perms, progsearch, scheduler, smarthome, store, translate};
+use crate::{actionlog, autopilot, confirm, contacts, imagegen, kb, memory, messenger, notes, owner, perms, progsearch, scheduler, smarthome, store, translate};
 use parking_lot::Mutex;
 
 pub struct Reply {
@@ -129,6 +129,7 @@ fn do_messenger(p: &messenger::Parsed) -> Option<Reply> {
             if let Err(e) = messenger::stage(&o) {
                 return r(e);
             }
+            autopilot::clear();
             *PENDING_MSG.lock() = Some((o.id.clone(), store::now()));
             r(format!("Сообщение для «{}» ({}): «{}». Отправить? Скажите «да» или «нет».", o.contact, if o.channel == "whatsapp" { "WhatsApp" } else { "Telegram" }, o.body))
         }
@@ -258,10 +259,38 @@ fn do_programs(text: &str) -> Option<Reply> {
     })
 }
 
+fn answer_plan(text: &str) -> Option<Reply> {
+    let run = |sc: crate::scenario::Scenario| {
+        std::thread::spawn(move || {
+            let r = crate::scenario::run_draft(&sc);
+            actionlog::record(&format!("План выполнен: {}", sc.name), actionlog::Undo::None);
+            announce_later(&r.message);
+        });
+    };
+    match autopilot::answer(text, &run) {
+        autopilot::Answer::NotMine => None,
+        autopilot::Answer::Started => r("Выполняю по плану. Скажите «отмени план», чтобы остановить перед следующим шагом."),
+        autopilot::Answer::Cancelled => r("Отменено, ничего не выполнено."),
+    }
+}
+
 // `text` is the original phrase of the user (capitals and punctuation kept)
 pub fn handle(text: &str) -> Option<Reply> {
     if let Some(a) = answer_pending(text) {
         return Some(a);
+    }
+    if let Some(a) = answer_plan(text) {
+        return Some(a);
+    }
+    if autopilot::stop_requested(text) {
+        return r(if crate::scenario::cancel() { "Остановлю перед следующим шагом." } else if autopilot::has_pending() { autopilot::clear(); "План отменён." } else { "Сейчас ничего не выполняется." });
+    }
+    if crate::smsread::repeat_requested(text) {
+        return r(crate::smsread::repeat_last());
+    }
+    if let Some(req) = autopilot::parse(text) {
+        *PENDING_MSG.lock() = None;
+        return r(match autopilot::propose(&req) { Ok(d) => d, Err(e) => e });
     }
     if let Some(undo) = actionlog::parse(text) {
         return r(if undo { match owner::guard().and_then(|_| actionlog::undo("")) { Ok(m) => m, Err(e) => e } } else { actionlog::summary(5) });

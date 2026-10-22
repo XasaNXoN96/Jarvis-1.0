@@ -359,6 +359,33 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             let ok = false;
             json!({ "ok": ok, "message": if ok { "Windows просят обновить значки. Если старые остались: удалите ярлык и создайте заново, а при необходимости удалите файлы IconCache.db и iconcache_*.db в %localappdata% и перезапустите проводник." } else { "Доступно только в Windows" } })
         }
+        // reading of messages, microphone watchdog, game statistics, screen region
+        "sms_get" => { let c = crate::smsread::conf(); json!({ "ok": true, "privacy": c.privacy, "lang": c.lang }) }
+        "sms_set" => {
+            let privacy = match body.get("privacy").and_then(|v| v.as_str()).unwrap_or("full") { "sender" => crate::smsread::Privacy::Sender, "silent" => crate::smsread::Privacy::Silent, _ => crate::smsread::Privacy::Full };
+            match crate::smsread::set(privacy, body.get("lang").and_then(|v| v.as_str()).unwrap_or("auto")) {
+                Ok(()) => json!({ "ok": true }),
+                Err(e) => json!({ "ok": false, "message": e }),
+            }
+        }
+        "sms_repeat" => { let m = crate::smsread::repeat_last(); if crate::tts::is_enabled() { crate::tts::speak(&m); } json!({ "ok": true, "message": m }) }
+        "mic_watch" => json!({ "ok": true, "watch": crate::wakewatch::status_json() }),
+        "gs_summary" => json!({ "ok": true, "stats": crate::gamestats::summary_json() }),
+        "gs_report" => json!({ "ok": true, "text": crate::gamestats::report_text() }),
+        "gs_clear" => json!({ "ok": crate::gamestats::clear() }),
+        // a picture of the screen for the page: the user chooses a region there, and only that region is sent to the AI as a picture of the chat
+        "screen_grab" => {
+            if let Err(e) = crate::perms::check(crate::perms::Cap::ScreenCapture) {
+                return json!({ "ok": false, "message": e });
+            }
+            if !crate::uistate::settings().ai_screen {
+                return json!({ "ok": false, "message": "Анализ экрана выключен: включите его в Настройки → ИИ. Пока он выключен, экран не снимается." });
+            }
+            match crate::screen::capture() {
+                Ok(jpeg) => json!({ "ok": true, "jpeg": crate::docai::b64_encode(&jpeg) }),
+                Err(e) => json!({ "ok": false, "message": e }),
+            }
+        }
         // permissions centre, owner password
         "perms_list" => json!({ "ok": true, "items": crate::perms::json() }),
         "perms_set" => match crate::perms::Cap::from_id(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) {
