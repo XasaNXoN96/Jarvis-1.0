@@ -281,6 +281,11 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
     web.set("search", lua.create_function(|_, query: String| Ok(match crate::websearch::start(&query) { Ok(_) => (Some(true), None), Err(e) => (None, Some(e)) }))?)?;
     jarvis.set("web", web)?;
 
+    // jarvis.owner.lock(): the protected things need the password of the owner again (only closes access, never opens it)
+    let owner = lua.create_table()?;
+    owner.set("lock", lua.create_function(|_, ()| { crate::owner::lock(); Ok(()) })?)?;
+    jarvis.set("owner", owner)?;
+
     // jarvis.ai.screen(question) -> answer | nil, reason: a question about the screen (only when allowed in the settings)
     let ai = lua.create_table()?;
     ai.set("screen", lua.create_function(|_, question: String| {

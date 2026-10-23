@@ -36,7 +36,7 @@ const fails = []; const ok = (c, m) => { if (!c) fails.push(m); };
   await p.evaluate(() => { const c = document.querySelector('input[data-perm="remote_camera"]'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true })); }); await p.waitForTimeout(300);
   const s = seen.find(x => x.name === 'perms_set');
   ok(s && s.id === 'remote_camera' && s.value === true, 'a switch sends its id and value: ' + JSON.stringify(s));
-  ok((await p.textContent('#ow-state')).includes('ещё 10 мин'), 'the time left is shown: ' + await p.textContent('#ow-state'));
+  { const t = await p.textContent('#ow-state'); ok(t.includes('разблокировано') && !/мин/.test(t) && t.includes('заблокируй компьютер'), 'no countdown: it stays open until the owner locks: ' + t); }
   await b.close();
   console.log(fails.length ? 'FAILED:\n' + fails.join('\n') : 'SECURITY UI: all checks passed');
   process.exit(fails.length ? 1 : 0);

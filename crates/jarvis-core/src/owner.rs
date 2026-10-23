@@ -15,7 +15,9 @@ pub const ROUNDS: u32 = 210_000;
 #[cfg(test)]
 pub const ROUNDS: u32 = 500;
 pub const MIN_LEN: usize = 6;
-pub const UNLOCK_SECS: u64 = 900;
+// no time limit: after the right password the protected things stay open until the owner locks again (the button, «заблокируй компьютер»)
+// or Jarvis is restarted. (ten years in seconds)
+pub const UNLOCK_SECS: u64 = 315_360_000;
 const FREE_TRIES: u32 = 5;
 pub const DEFAULT_MESSAGE: &str = "Ты не мой создатель.";
 
@@ -143,7 +145,7 @@ pub fn weak_reason(pw: &str) -> Option<&'static str> {
     None
 }
 
-// seconds left until the program locks itself again (0: locked, or no password is set)
+// seconds left until the program locks itself again (0: locked, or no password is set; practically unlimited after the unlock)
 pub fn unlock_left() -> u64 {
     if !is_set() {
         return 0;
@@ -440,7 +442,7 @@ mod tests {
             assert!(set_password("abc", "").unwrap_err().contains("короче"), "the length is checked first");
             set_password("кот и три пирожка", "").unwrap();
             assert!(set_password("111111", "кот и три пирожка").unwrap_err().contains("посложнее"), "also when changing");
-            assert!(unlock_left() > 800 && unlock_left() <= UNLOCK_SECS, "the time left is reported");
+            assert!(unlock_left() > 365 * 24 * 3600 && unlock_left() <= UNLOCK_SECS, "no time limit: the unlock stays until the owner locks again");
             lock();
             assert_eq!(unlock_left(), 0);
         });

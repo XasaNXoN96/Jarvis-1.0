@@ -18,6 +18,8 @@ elseif id == "windows_4" then
   open("ms-screenclip:")
   say(title, T("Снимок экрана", "Screenshot"))
 elseif id == "windows_5" then
+  -- the password of the owner is asked again after the lock of the computer (nothing opens by itself)
+  jarvis.owner.lock()
   say(title, T("Компьютер заблокирован", "Computer locked"), nil, "lock")
   run("rundll32.exe", { "user32.dll,LockWorkStation" })
 elseif id == "windows_6" then
