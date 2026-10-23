@@ -520,9 +520,6 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             json!({ "ok": true, "log": crate::audit::json_filtered(&g("q"), &g("door"), &g("risk"), &g("decision"), within, body.get("op").and_then(|v| v.as_u64()).unwrap_or(0)) })
         }
         "audit_clear" => json!({ "ok": true, "removed": crate::audit::clear() }),
-        "name_test_start" => { crate::nametest::start(); json!({ "ok": true, "status": crate::nametest::status_json() }) }
-        "name_test_stop" => { crate::nametest::stop(); json!({ "ok": true, "status": crate::nametest::status_json() }) }
-        "name_test_status" => json!({ "ok": true, "status": crate::nametest::status_json() }),
         "ess_launch" => match crate::proglib::launch_essential(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) {
             Ok(m) => json!({ "ok": true, "message": m }),
             Err(e) => json!({ "ok": false, "message": e }),
@@ -2074,7 +2071,7 @@ pub fn open_browser_window() -> bool {
 // What the phone page (remote.rs) may read and do besides sending a phrase: a short list, every item named here. The phone is a door that is
 // open to whoever has its secret, so nothing that changes keys, the password, the license, files, the system or the program itself is on it.
 // Everything runs under the phone door (origin::Source::Phone), like a phrase from the phone.
-const PHONE_SETTINGS: [&str; 5] = ["voice_name", "voice_rate", "tts_volume", "assistant_name", "city"];
+const PHONE_SETTINGS: [&str; 4] = ["voice_name", "voice_rate", "tts_volume", "city"];
 const PHONE_ACTIONS: [&str; 7] = ["app_launch", "ess_launch", "pl_launch", "game_launch", "game_mode", "speak_text", "apps_rescan"];
 
 // programs that are only the leftovers of an installer (the same words as the window's list)

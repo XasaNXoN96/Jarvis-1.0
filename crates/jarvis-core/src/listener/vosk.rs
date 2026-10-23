@@ -8,11 +8,6 @@ pub fn data_callback(frame_buffer: &[i16]) -> Option<i32> {
     if let Some((recognized, _confidence)) = stt::recognize_wake_word(frame_buffer) {
         let recognized = recognized.trim().to_lowercase();
 
-        // «Проверить имя» in the settings: the test takes what was heard and nobody wakes
-        if crate::nametest::active() && crate::nametest::offer(&recognized, &config::wake_phrases_now(&i18n::get_language())) {
-            return None;
-        }
-
         // skip unknown/empty
         if recognized.is_empty() || recognized == "[unk]" {
             return None;

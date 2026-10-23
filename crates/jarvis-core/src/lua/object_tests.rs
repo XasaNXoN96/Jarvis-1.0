@@ -220,20 +220,15 @@ fn work_mode_word_new_document_dictation_and_save() {
     assert_eq!(w.fake()["word"]["docs"].as_array().unwrap().len(), 1, "the document stays open");
 }
 
-// asked its name, the assistant says the one the user gave it, not «Джарвис»
+// asked its name, the assistant says «Джарвис»; a name sent in the settings is not taken
 #[test]
-fn asked_who_it_is_the_assistant_says_the_name_the_user_gave() {
+fn asked_who_it_is_the_assistant_says_jarvis_whatever_the_settings_try_to_say() {
     let _g = LOCK.lock();
     let _s = crate::uistate::TEST_LOCK.lock();
-    let old = crate::uistate::assistant_name();
     let w = World::new(json!({}));
     crate::uistate::update_settings(&json!({ "assistant_name": "Сайёра" }));
     assert_eq!(w.say("как тебя зовут"), "assistant_who");
-    assert!(w.output().contains("Сайёра") && !w.output().contains("Джарвис"), "{}", w.output());
-    crate::uistate::update_settings(&json!({ "assistant_name": "" }));
-    w.say("как тебя зовут");
-    assert!(w.output().contains("Джарвис"), "{}", w.output());
-    crate::uistate::update_settings(&json!({ "assistant_name": old }));
+    assert!(w.output().contains("Джарвис") && !w.output().contains("Сайёра"), "{}", w.output());
 }
 
 // "открой ворд" -> «Работаем с этим объектом?» -> «да» -> a new document and dictation (no other phrase needed)

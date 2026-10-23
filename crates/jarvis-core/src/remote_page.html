@@ -977,7 +977,7 @@ const SECTIONS = {
   settings: ['Голос и имя', '🎙', async box => {
     const d = await api('settings'); const sv = (key, value) => doAct({ name: 'setting', key, value }, 'Сохранено');
     const txt = (label, key, ph) => { const row = el('div', 'addrow'), i = el('input'); i.value = d[key] || ''; i.placeholder = ph; i.maxLength = 40; const b = el('button', '', 'Сохранить'); b.type = 'button'; b.onclick = () => sv(key, i.value.trim()); box.appendChild(el('h2', '', label)); row.append(i, b); box.appendChild(row); };
-    txt('Имя помощника', 'assistant_name', 'Джарвис'); txt('Город для погоды', 'city', 'Ташкент');
+    txt('Город для погоды', 'city', 'Ташкент');
     box.appendChild(el('h2', '', 'Скорость речи')); const rates = el('div', 'chipsel');
     [['0.85', 'Медленнее'], ['1', 'Обычная'], ['1.15', 'Быстрее'], ['1.3', 'Очень быстро']].forEach(([v, l]) => { const b = el('button', Math.abs(+v - (+d.voice_rate || 1)) < 0.03 ? 'on' : '', l); b.type = 'button'; b.onclick = async () => { await sv('voice_rate', +v); rates.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); }; rates.appendChild(b); });
     box.appendChild(rates);

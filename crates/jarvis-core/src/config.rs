@@ -305,34 +305,29 @@ mod name_tests {
     use super::*;
     use crate::uistate::TEST_LOCK;
 
+    // the assistant is always «Джарвис»: a name cannot be chosen any more (the setting, the question and the check of the name are gone)
     #[test]
-    fn a_chosen_name_replaces_the_default_wake_word_and_is_cut_from_commands() {
+    fn the_assistant_is_always_called_jarvis_and_a_name_in_a_patch_is_not_taken() {
         let _g = TEST_LOCK.lock();
-        let old = crate::uistate::settings().assistant_name;
-        crate::uistate::update_settings(&serde_json::json!({ "assistant_name": "  Карен, привет " }));
-        assert_eq!(crate::uistate::assistant_name(), "карен", "one word, lower case, no punctuation");
-        assert_eq!(wake_phrases_now("ru"), vec!["карен".to_string()]);
-        assert_eq!(wake_grammar_now("ru")[0], "карен");
-        assert!(wake_grammar_now("ru").contains(&"[unk]".to_string()), "the rest of the grammar stays");
-        assert!(phrases_to_remove_now("ru").contains(&"карен".to_string()));
-        // the name is said by the assistant itself: «меня зовут Карен», and the AI is told it
-        assert_eq!(crate::uistate::assistant_display_name(), "Карен");
-        assert!(crate::ai::system_prompt().contains("Карен") && !crate::ai::system_prompt().contains("Jarvis"), "{}", crate::ai::system_prompt());
-        crate::uistate::update_settings(&serde_json::json!({ "assistant_name": "" }));
-        assert!(wake_phrases_now("ru").contains(&"джарвис".to_string()), "empty name = Джарвис");
+        crate::uistate::update_settings(&serde_json::json!({ "assistant_name": "Карен", "assistant_named": false }));
+        assert_eq!(crate::uistate::assistant_name(), "", "a name is not taken");
+        assert!(wake_phrases_now("ru").contains(&"джарвис".to_string()));
         assert_eq!(wake_grammar_now("ru")[0], "джарвис");
+        assert!(!phrases_to_remove_now("ru").contains(&"карен".to_string()));
         assert_eq!(crate::uistate::assistant_display_name(), "Джарвис");
         assert!(crate::ai::system_prompt().contains("Jarvis"));
-        crate::uistate::update_settings(&serde_json::json!({ "assistant_name": old }));
+        let j = crate::uistate::settings_json();
+        assert!(j.get("assistant_name").is_none() && j.get("assistant_named").is_none() && j.get("assistant_voice_known").is_none(), "the page is told nothing about a name");
     }
 
     #[test]
-    fn unusable_names_are_not_taken() {
-        assert_eq!(crate::uistate::clean_assistant_name("а"), "");
-        assert_eq!(crate::uistate::clean_assistant_name("   "), "");
-        assert_eq!(crate::uistate::clean_assistant_name("!!!"), "");
-        assert_eq!(crate::uistate::clean_assistant_name("Ка Рен"), "ка", "only the first word");
-        assert_eq!(crate::uistate::clean_assistant_name("Friday"), "friday");
-        assert!(crate::uistate::clean_assistant_name(&"я".repeat(50)).chars().count() <= 20);
+    fn a_name_saved_by_an_earlier_version_is_dropped_when_the_settings_are_read() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("ui_settings.json");
+        std::fs::write(&p, r#"{"assistant_name":"карен","assistant_named":false,"voice_rate":1.2}"#).unwrap();
+        let s = crate::uistate::load_from(&p);
+        assert_eq!(s.assistant_name, "");
+        assert!(s.assistant_named);
+        assert_eq!(s.voice_rate, 1.2, "the other settings are kept");
     }
 }

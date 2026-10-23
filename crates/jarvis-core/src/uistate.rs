@@ -171,7 +171,7 @@ pub fn browser_exe(key: &str) -> Option<&'static str> {
 impl Default for UiSettings {
     fn default() -> Self {
         Self {
-            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: false, city: String::new(), reaction_voice: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_mode: String::new(), ai_talk: String::new(), window_fullscreen: true, ai_key: String::new(), ai_search_key: String::new(), cloud_tts_key: String::new(), ai_search_auto: true, ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
+            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: true, city: String::new(), reaction_voice: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_mode: String::new(), ai_talk: String::new(), window_fullscreen: true, ai_key: String::new(), ai_search_key: String::new(), cloud_tts_key: String::new(), ai_search_auto: true, ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
             ai_enabled: true, mic_off: false,
             notify_show: true, notify_speak: true, notify_sound: true, dnd: false,
             ext_enabled: false, ext_show: true, ext_speak: false, ext_strict: true, ext_allowed: Vec::new(), ext_blocked: Vec::new(), ext_seen: Vec::new(),
@@ -226,6 +226,9 @@ pub fn load_from(path: &std::path::Path) -> UiSettings {
     if let Some(p) = problem {
         add_load_problem(&p);
     }
+    // the assistant is always «Джарвис»: a name saved by an earlier version is dropped
+    s.assistant_name.clear();
+    s.assistant_named = true;
     // the male voices were removed: a saved choice of one of them becomes the automatic (female) voice
     if ["piper:denis", "piper:dmitri", "piper:ruslan", "silero:aidar", "silero:eugene", "yandex:filipp", "yandex:ermil", "yandex:zahar"].contains(&s.voice_name.as_str()) {
         s.voice_name.clear();
@@ -458,15 +461,7 @@ pub fn set_ai_mode(id: &str) {
 
 pub fn update_settings(patch: &Value) {
     let mut s = SETTINGS.lock();
-    if let Some(v) = patch.get("assistant_name").and_then(|v| v.as_str()) {
-        let name = clean_assistant_name(v);
-        if name != s.assistant_name {
-            s.assistant_name = name;
-            // the wake-word recognizer learns the new name (in the background: it needs the settings, which are locked here)
-            std::thread::spawn(crate::stt::rebuild_wake_grammar);
-        }
-    }
-    if let Some(v) = patch.get("assistant_named").and_then(|v| v.as_bool()) { s.assistant_named = v; }
+    // (the assistant is always «Джарвис»: a name in a patch is not taken)
     if let Some(v) = patch.get("voice_rate").and_then(|v| v.as_f64()) { s.voice_rate = (v as f32).clamp(0.5, 2.0); }
     if let Some(v) = patch.get("reaction_voice").and_then(|v| v.as_str()) {
         s.reaction_voice = v.chars().take(60).collect();
@@ -599,13 +594,9 @@ pub fn settings_json() -> Value {
     out["hotkey_error"] = json!(HOTKEY_ERROR.lock().clone());
     out["barge_in"] = json!(s.barge_in);
     // (apart from the macro above: it is too big for one more key)
-    let shown = if s.assistant_name.is_empty() { "джарвис".to_string() } else { s.assistant_name.clone() };
-    out["assistant_name"] = json!(s.assistant_name);
-    out["assistant_named"] = json!(s.assistant_named);
     out["ai_search_key_saved"] = json!(!s.ai_search_key.is_empty());
     out["cloud_tts_key_saved"] = json!(!s.cloud_tts_key.is_empty());
     out["ai_search_auto"] = json!(s.ai_search_auto);
-    out["assistant_voice_known"] = json!(crate::stt::wake_word_known(&shown));
     out
 }
 

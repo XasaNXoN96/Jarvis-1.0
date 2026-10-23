@@ -149,9 +149,7 @@
   /* compact summary of the computer, the AI and the phone remote on the home page: the same data as «Система», collapsed by default */
   .h-sum { flex-shrink: 0; position: relative; z-index: 3; margin: 4px 0 2px; }
   .h-obj { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12px; min-width: 0; }
-  .h-obj[hidden] { display: none; } #name-ask[hidden] { display: none; }
-  /* the card of the name stops before the column of the state signs on the right (it covered the buttons «Сохранить» and «Оставить Джарвис») */
-  #name-ask { margin: 8px 280px 8px 16px !important; } @media (max-width: 1250px) { #name-ask { margin-right: 84px !important; } }
+  .h-obj[hidden] { display: none; }
   .h-obj .ho-st { padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line, rgba(255,255,255,.12)); white-space: nowrap; flex-shrink: 0; }
   .h-obj[data-s="ok"] .ho-st { border-color: #34d399; } .h-obj[data-s="warn"] .ho-st { border-color: #fbbf24; } .h-obj[data-s="bad"] .ho-st { border-color: #f87171; } .h-obj[data-s="info"] .ho-st { border-color: #60a5fa; }
   .h-obj .ho-t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .85; }
@@ -790,9 +788,6 @@
   #page-settings.ds .card.acc.folded { padding-bottom: 0; } #page-settings.ds .card.acc.folded > :not(h3) { display: none !important; }
   .hi-list { max-height: 360px; overflow-y: auto; } .hi-item { padding: 9px 4px; border-top: 1px solid var(--row-line); } .hi-item small { color: var(--dim); } .hi-item .hi-a { color: var(--accent); font-size: var(--fs-sm); margin-top: 2px; }
   /* the test of the name */
-  .nt-box { margin: 2px 0 10px; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--field-bg); } .nt-box[hidden] { display: none; }
-  .nt-h { font-size: var(--fs-md); margin-bottom: 6px; } .nt-h.ok { color: var(--ok); } .nt-h.bad { color: var(--warn); }
-  .nt-row { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; border-top: 1px solid var(--row-line); font-size: var(--fs-sm); color: var(--dim); } .nt-row.ok { color: var(--ok); } .nt-row b { font-weight: 600; }
 
   /* the lock screen: with a password of the owner set, the window asks for it at the start (the real protection is in the program: the guarded actions refuse until it is unlocked) */
   #lockscr { position: fixed; inset: 0; z-index: 10000; display: none; align-items: center; justify-content: center; background: color-mix(in srgb, var(--bg1) 92%, transparent); backdrop-filter: blur(14px); }
@@ -862,11 +857,6 @@
         <span class="grow"></span>
         <button type="button" class="wbox" id="wbox" title="Погода: выберите город в настройках"><span class="w-main" id="w-main">Погода…</span><small id="w-city"></small></button>
         <div class="clockbox" title="Время и дата берутся с этого компьютера"><div class="clk" id="clk-time">--:--</div><div class="clk-date" id="clk-date"></div></div>
-      </div>
-      <div class="card" id="name-ask" hidden style="position: relative; z-index: 3;">
-        <div class="setrow"><div class="l">Как назвать помощника?<small>Он будет откликаться на это имя и голосом, и в тексте (например: «Карен, таймер на 5 минут»). По умолчанию — «Джарвис». Имя можно сменить в Настройках.</small></div>
-          <div class="r"><input type="text" id="name-ask-input" placeholder="например: Карен" maxlength="20"><button class="btn primary" id="name-ask-save" type="button">Сохранить</button><button class="btn" id="name-ask-skip" type="button">Оставить «Джарвис»</button></div></div>
-        <div class="msgline" id="name-ask-msg"></div>
       </div>
       <!-- the state of the voice, the computer, the AI and the phone: small signs at the right edge; a click opens the panel, the sphere never moves -->
       <div class="rail" id="rail" role="group" aria-label="Состояние Джарвиса">
@@ -1644,14 +1634,6 @@
         <div class="setrow"><div class="l">Версия программы<small id="upd-hint">Проверка и установка обновлений только по вашей кнопке</small></div>
           <div class="r"><b id="upd-cur"></b> <button class="btn" id="upd-check" type="button">Проверить обновления</button> <button class="btn primary" id="upd-go" type="button" hidden>Скачать</button></div></div>
         <div class="msgline" id="upd-msg"></div>
-      </div>
-      <div class="card" data-cat="main" data-ord="0" id="name-card" data-tab="Имя помощника"><h3><span class="ei">🏷</span>Имя помощника</h3>
-        <div class="setrow"><div class="l">Как его зовут<small>на это имя он откликается голосом и в тексте. Одно слово, например «Карен». Пусто = «Джарвис». Интерфейс остаётся «Джарвис».</small></div>
-          <div class="r"><input type="text" id="name-input" placeholder="Джарвис" maxlength="20"><button class="btn primary" id="name-save" type="button">Сохранить</button></div></div>
-        <div class="setrow"><div class="l">Проверить имя<small>скажите имя вслух: 12 секунд Jarvis только слушает и показывает, что услышал (никуда не отправляется, команды не выполняются)</small></div>
-          <div class="r"><button class="btn" id="name-test" type="button">Проверить имя</button></div></div>
-        <div class="nt-box" id="nt-box" hidden></div>
-        <div class="msgline" id="name-msg"></div>
       </div>
       <div class="card" data-cat="main" data-ord="4" id="city-card" data-tab="Погода и город"><h3><span class="ei">🌤</span>Погода и город</h3>
         <div class="setrow"><div class="l">Город<small>нужен только для блока погоды на главной. Местоположение компьютера не определяется. В интернет уходит только название города (open-meteo.com), и только для погоды.</small></div>
@@ -4163,7 +4145,6 @@ async function loadSettings() {
     $('#rate').value = s.voice_rate; $('#rate-v').textContent = (+s.voice_rate).toFixed(2).replace(/0$/, '') + '×';
     $('#tts-on').checked = !!s.tts_enabled; $('#tts-warm').checked = s.tts_warm !== false;
     if (document.activeElement !== $('#city-input')) $('#city-input').value = s.city || '';
-    if (document.activeElement !== $('#name-input')) $('#name-input').value = s.assistant_name || '';
     $('#ai-fallback').checked = !!s.ai_fallback; $('#ai-mode').value = s.ai_mode || ''; $('#ai-talk').value = s.ai_talk || ''; aiSavedProvider = s.ai_provider || ''; $('#ai-search-auto').checked = s.ai_search_auto !== false; $('#ai-search-key').value = ''; $('#ai-search-hint').dataset.saved = s.ai_search_key_saved ? '1' : ''; $('#ai-search-key').placeholder = s.ai_search_key_saved ? 'ключ сохранён (оставьте пустым, чтобы не менять)' : 'ключ pplx-…'; $('#ai-provider').value = s.ai_provider || 'none'; $('#ai-model').value = s.ai_model || ''; $('#ai-url').value = s.ai_url || ''; $('#ai-route').value = s.ai_route || ''; $('#ai-route-row').style.display = s.ai_provider === 'openrouter' ? '' : 'none';
     $('#ai-key').value = ''; $('#ai-key-hint').textContent = s.ai_key_saved ? 'ключ сохранён (оставьте поле пустым, чтобы не менять)' : 'хранится только на этом компьютере'; $('#ai-key-hint').dataset.base = $('#ai-key-hint').textContent;
     updateAiRows();
@@ -4229,18 +4210,6 @@ $('#voice-select').onchange = async e => {
   voicesLoaded = false; await saveSettings({ voice_name: v }); setTimeout(loadSettings, 600);
 };
 $('#rate').oninput = e => { $('#rate-v').textContent = (+e.target.value).toFixed(2).replace(/0$/, '') + '×'; saveSettings({ voice_rate: +e.target.value }); };
-// the name of the assistant: saved, then the speech model is asked whether the word can be heard
-async function saveAssistantName(name, msg) {
-  msg.className = 'msgline'; msg.textContent = 'Сохраняю…';
-  let s;
-  try { await api('/settings', { assistant_name: name, assistant_named: true }); s = await (await fetch('/settings')).json(); lastSettings = s; }
-  catch (e) { msg.className = 'msgline bad'; msg.textContent = 'Не удалось сохранить'; return false; }
-  const shown = s.assistant_name || 'Джарвис';
-  if (s.assistant_voice_known === false) { msg.className = 'msgline bad'; msg.textContent = 'Имя «' + shown + '» сохранено. В тексте оно работает, но модель распознавания речи не знает такого слова, и голосом помощник может не откликаться. Попробуйте другое имя.'; }
-  else if (s.assistant_voice_known === null) { msg.className = 'msgline ok'; msg.textContent = 'Имя «' + shown + '» сохранено. Проверить, услышит ли его микрофон, не удалось.'; }
-  else { msg.className = 'msgline ok'; msg.textContent = 'Имя «' + shown + '» сохранено: скажите «' + shown + ', …» или напишите так в строке ввода.'; }
-  return true;
-}
 // the journal of critical actions (Settings → Additionally → Журнал безопасности)
 const AU_DOOR = { voice: 'голос', window: 'окно', phone: 'телефон', telegram: 'Telegram', console: 'консоль', ipc: 'приложение', script: 'сценарий', internal: 'программа', system: 'система' };
 const AU_DEC = { allowed: 'разрешено', refused: 'отказано', asked: 'ждёт подтверждения' };
@@ -4272,36 +4241,6 @@ $('#hi-clear').onclick = async () => { if (!confirm('Очистить истор
 setInterval(() => { if (currentPage === 'settings' && setCat === 'connect' && setSub.connect === 'hist-card') hiLoad(); }, 4000);
 $('#set-cats').addEventListener('click', () => setTimeout(() => { if (setCat === 'connect') hiLoad(); }, 50));
 $('#set-subtabs').addEventListener('click', () => setTimeout(hiLoad, 50));
-// «Проверить имя»: 12 seconds of listening; the page asks what was heard twice a second
-let ntTimer = null;
-function ntRender(st) {
-  const b = $('#nt-box'); b.hidden = false;
-  const rows = (st.heard || []).map(x => '<div class="nt-row ' + (x.ratio >= st.threshold ? 'ok' : '') + '"><span>«' + esc(x.text) + '»</span><b>' + Math.round(x.ratio) + '%</b></div>').join('');
-  const v = (st.voice || {}).state;
-  let head;
-  if (v === 'DISABLED' || v === 'ERROR') head = '<div class="nt-h bad">Микрофон не слушает: ' + esc((st.voice || {}).detail || '') + '</div>';
-  else if (st.engine !== 'vosk') head = '<div class="nt-h bad">Активация работает на движке «' + esc(st.engine) + '»: он ищет не слово, а записанный образец, поэтому своё имя этим способом не проверить.</div>';
-  else if (st.matched) head = '<div class="nt-h ok">✓ Имя «' + esc(st.name) + '» услышано.' + (st.active ? '' : ' Всё в порядке.') + '</div>';
-  else if (st.active) head = '<div class="nt-h">Слушаю… скажите «' + esc(st.name) + '» (осталось ' + st.seconds_left + ' с)</div>';
-  else if ((st.heard || []).length || st.unknown) head = '<div class="nt-h bad">Имя не распознано. Попробуйте сказать чётче, ближе к микрофону или выберите более простое имя из 2–3 слогов.</div>';
-  else head = '<div class="nt-h bad">Ничего не слышно. Проверьте, что микрофон включён.</div>';
-  b.innerHTML = head + rows + (st.unknown ? '<div class="nt-row"><span>речь, которую не удалось разобрать</span><b>×' + st.unknown + '</b></div>' : '');
-}
-$('#name-test').onclick = async () => {
-  const btn = $('#name-test'); btn.disabled = true; clearInterval(ntTimer);
-  let r = await action('name_test_start').catch(() => null);
-  if (!r || !r.ok) { btn.disabled = false; $('#nt-box').hidden = false; $('#nt-box').innerHTML = '<div class="nt-h bad">Нет связи с Джарвисом</div>'; return; }
-  ntRender(r.status);
-  ntTimer = setInterval(async () => {
-    const q = await action('name_test_status').catch(() => null); if (!q || !q.ok) return;
-    ntRender(q.status);
-    if (!q.status.active) { clearInterval(ntTimer); btn.disabled = false; }
-  }, 500);
-};
-$('#name-save').onclick = () => saveAssistantName($('#name-input').value.trim(), $('#name-msg'));
-$('#name-ask-save').onclick = async () => { const n = $('#name-ask-input').value.trim(); if (!n) { $('#name-ask-msg').className = 'msgline bad'; $('#name-ask-msg').textContent = 'Введите имя или нажмите «Оставить Джарвис»'; return; } if (await saveAssistantName(n, $('#name-ask-msg'))) setTimeout(() => { $('#name-ask').hidden = true; }, 4500); };
-$('#name-ask-skip').onclick = async () => { try { await api('/settings', { assistant_named: true }); } catch (e) {} $('#name-ask').hidden = true; };
-(async () => { try { const s = await (await fetch('/settings')).json(); if (s.assistant_named === false) $('#name-ask').hidden = false; } catch (e) {} })();
 $('#city-save').onclick = async () => {
   const city = $('#city-input').value.trim(), m = $('#city-msg'); m.className = 'msgline'; m.textContent = 'Сохраняю…';
   try { await api('/settings', { city }); } catch (e) { m.className = 'msgline bad'; m.textContent = 'Не удалось сохранить'; return; }
