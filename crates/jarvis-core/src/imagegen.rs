@@ -30,6 +30,35 @@ pub fn set_model(model: &str) -> Result<(), String> {
     store::write(FILE, &c)
 }
 
+// the shape of the picture: "" (the provider decides) | "square" | "wide" | "tall"
+pub fn set_size(choice: &str) -> Result<(), String> {
+    if !["", "square", "wide", "tall"].contains(&choice) {
+        return Err("Форма картинки: квадрат, широкая или высокая.".into());
+    }
+    let mut c: Conf = store::read::<Conf>(FILE).0;
+    c.size = choice.to_string();
+    store::write(FILE, &c)
+}
+
+pub fn size_choice() -> String {
+    store::read::<Conf>(FILE).0.size
+}
+
+// the size in pixels that the model really takes for the chosen shape; "" = do not ask for one (the provider decides, and models that take only
+// an aspect ratio, like imagen, are never sent a size they do not know)
+pub fn size_for(model: &str, choice: &str) -> &'static str {
+    let m = model.to_lowercase();
+    if m.starts_with("gpt-image") {
+        match choice { "square" => "1024x1024", "wide" => "1536x1024", "tall" => "1024x1536", _ => "" }
+    } else if m.starts_with("dall-e-3") {
+        match choice { "square" => "1024x1024", "wide" => "1792x1024", "tall" => "1024x1792", _ => "" }
+    } else if m.starts_with("dall-e-2") {
+        match choice { "square" => "1024x1024", _ => "" }
+    } else {
+        ""
+    }
+}
+
 pub fn default_model(provider: &str) -> &'static str {
     match provider {
         "openai" => "gpt-image-1",
@@ -121,7 +150,7 @@ pub fn generate_with(base: &str, key: &str, model: &str, prompt: &str, dir: &Pat
         return Err("Не выбрана модель картинок: укажите её в Настройках → ИИ.".into());
     }
     let client = reqwest::blocking::Client::builder().connect_timeout(std::time::Duration::from_secs(8)).timeout(std::time::Duration::from_secs(180)).build().map_err(|e| e.to_string())?;
-    let mut req = client.post(format!("{}/images/generations", base.trim_end_matches('/'))).json(&request_body(model, prompt, ""));
+    let mut req = client.post(format!("{}/images/generations", base.trim_end_matches('/'))).json(&request_body(model, prompt, size_for(model, &size_choice())));
     if !key.is_empty() {
         req = req.bearer_auth(key);
     }
@@ -259,6 +288,67 @@ pub fn preview_b64(path: &str) -> Option<String> {
     Some(crate::docai::b64_encode(&b))
 }
 
+// ---- the gallery: the pictures Jarvis made, in its own folder ----
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct Picture {
+    pub name: String,
+    pub bytes: u64,
+    pub modified: u64,
+}
+
+// a plain file name of a picture in the folder (no folders, no «..», only the extensions Jarvis writes)
+fn safe_name(name: &str) -> bool {
+    !name.is_empty() && name.len() <= 120 && !name.contains(['/', '\\', ':']) && !name.starts_with('.') && matches!(name.rsplit('.').next(), Some("png" | "jpg" | "webp")) && name.contains('.')
+}
+
+pub fn gallery_in(dir: &Path, n: usize) -> Vec<Picture> {
+    let mut v: Vec<Picture> = std::fs::read_dir(dir)
+        .map(|rd| {
+            rd.flatten()
+                .filter_map(|e| {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    let m = std::fs::symlink_metadata(e.path()).ok()?;
+                    (m.is_file() && safe_name(&name)).then(|| Picture { name, bytes: m.len(), modified: m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0) })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    v.sort_by(|a, b| b.modified.cmp(&a.modified).then(b.name.cmp(&a.name)));
+    v.truncate(n);
+    v
+}
+
+pub fn gallery(n: usize) -> Vec<Picture> {
+    gallery_in(&out_dir(), n)
+}
+
+// the picture of the gallery for the window (the same limits as the preview of a new one)
+pub fn picture_b64_in(dir: &Path, name: &str) -> Option<String> {
+    if !safe_name(name) {
+        return None;
+    }
+    let p = dir.join(name);
+    if !std::fs::symlink_metadata(&p).ok()?.is_file() {
+        return None;
+    }
+    let b = std::fs::read(&p).ok().filter(|b| b.len() < 8_000_000)?;
+    image_kind(&b)?;
+    Some(crate::docai::b64_encode(&b))
+}
+
+// deletes one picture that Jarvis made (never another file: the name is checked, the file must really be a picture)
+pub fn delete_picture_in(dir: &Path, name: &str) -> Result<(), String> {
+    if !safe_name(name) {
+        return Err("Так называть картинку нельзя.".into());
+    }
+    let p = dir.join(name);
+    let b = std::fs::read(&p).map_err(|_| "Такой картинки нет.".to_string())?;
+    if image_kind(&b).is_none() {
+        return Err("Это не картинка Jarvis: я такой файл не удаляю.".into());
+    }
+    std::fs::remove_file(&p).map_err(|_| "Не удалось удалить: файл занят.".to_string())
+}
+
 // video: its own adapter. No supported provider has one common call, so the answer says what is needed.
 pub fn generate_video(_prompt: &str) -> Result<PathBuf, String> {
     Err("Создание видео пока недоступно: для него нужен отдельный сервис (например, Sora или Veo) и его ключ, а общего способа у подключённых ИИ-провайдеров нет. Картинки работают.".into())
@@ -388,5 +478,53 @@ mod tests {
         assert!(!j.message.is_empty());
         assert!(start_job_with("следующая", Box::new(|_| Err("x".into()))).is_ok(), "a new job can start");
         for _ in 0..200 { if job().state != "running" { break; } std::thread::sleep(std::time::Duration::from_millis(20)); }
+    }
+
+    #[test]
+    fn the_shape_becomes_a_size_that_the_model_takes() {
+        assert_eq!(size_for("gpt-image-1", "wide"), "1536x1024");
+        assert_eq!(size_for("gpt-image-1", "tall"), "1024x1536");
+        assert_eq!(size_for("dall-e-3", "wide"), "1792x1024");
+        assert_eq!(size_for("dall-e-2", "wide"), "", "dall-e-2 has no wide size");
+        assert_eq!(size_for("imagen-3.0-generate-002", "wide"), "", "a model that takes an aspect ratio is not sent a size");
+        assert_eq!(size_for("gpt-image-1", ""), "");
+        assert_eq!(size_for("my-own-model", "square"), "", "an unknown model: the provider decides");
+        let b = request_body("gpt-image-1", "кот", size_for("gpt-image-1", "square"));
+        assert_eq!(b["size"], "1024x1024");
+        assert!(request_body("gpt-image-1", "кот", "").get("size").is_none());
+        store::with_temp(|| {
+            assert!(set_size("huge").is_err());
+            set_size("wide").unwrap();
+            assert_eq!(size_choice(), "wide");
+            set_size("").unwrap();
+            assert_eq!(size_choice(), "");
+        });
+    }
+
+    #[test]
+    fn the_gallery_lists_only_pictures_and_deletes_only_a_picture_by_a_plain_name() {
+        let d = tempfile::tempdir().unwrap();
+        let png = |n: &str| std::fs::write(d.path().join(n), PNG).unwrap();
+        png("20260101-000001-кот.png");
+        png("20260102-000001-пёс.png");
+        std::fs::write(d.path().join("notes.txt"), "секрет").unwrap();
+        std::fs::write(d.path().join("fake.png"), "это не картинка").unwrap();
+        std::fs::create_dir_all(d.path().join("sub.png")).unwrap();
+        let g = gallery_in(d.path(), 10);
+        let names: Vec<&str> = g.iter().map(|p| p.name.as_str()).collect();
+        assert!(names.contains(&"20260101-000001-кот.png") && names.contains(&"20260102-000001-пёс.png") && !names.contains(&"notes.txt") && !names.contains(&"sub.png"), "{:?}", names);
+        assert_eq!(gallery_in(d.path(), 1).len(), 1, "cut to n");
+        // the window gets a picture only by a plain name and only if it is a picture
+        assert!(picture_b64_in(d.path(), "20260101-000001-кот.png").is_some());
+        for bad in ["../x.png", "..\\x.png", "sub/a.png", "C:\\a.png", "notes.txt", ".hidden.png", "", "fake.png"] {
+            assert!(picture_b64_in(d.path(), bad).is_none(), "{:?}", bad);
+        }
+        // a delete: names are checked, and a file that is not a picture is never removed, even under a picture name
+        for bad in ["../notes.txt", "notes.txt", "fake.png", "sub.png", "nobody.png", "a/b.png"] {
+            assert!(delete_picture_in(d.path(), bad).is_err(), "{:?}", bad);
+        }
+        assert!(d.path().join("notes.txt").exists() && d.path().join("fake.png").exists(), "nothing else was touched");
+        delete_picture_in(d.path(), "20260101-000001-кот.png").unwrap();
+        assert!(!d.path().join("20260101-000001-кот.png").exists() && d.path().join("20260102-000001-пёс.png").exists());
     }
 }

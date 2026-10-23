@@ -265,7 +265,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         }
     }
     // with a password of the owner set, the actions that change what Jarvis keeps or does need the unlocked program
-    if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_edit" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "notes_edit" | "notes_category" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message" | "audit_clear" | "ca_apply" | "pl_add" | "pl_remove" | "persona_set" | "pair_start" | "pair_revoke" | "pair_rename" | "pair_revoke_all" | "ct_import" | "pair_link" | "remote_http_set" | "remote_key_rotate" | "comp_do" | "sync_folder" | "sync_run" | "sync_clear" | "wol_add" | "wol_remove" | "wol_wake" | "mem_use_ai" | "diag_fix_apply") {
+    if matches!(name, "img_delete" | "img_size" | "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_edit" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "notes_edit" | "notes_category" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message" | "audit_clear" | "ca_apply" | "pl_add" | "pl_remove" | "persona_set" | "pair_start" | "pair_revoke" | "pair_rename" | "pair_revoke_all" | "ct_import" | "pair_link" | "remote_http_set" | "remote_key_rotate" | "comp_do" | "sync_folder" | "sync_run" | "sync_clear" | "wol_add" | "wol_remove" | "wol_wake" | "mem_use_ai" | "diag_fix_apply") {
         if let Err(m) = crate::owner::guard() {
             return json!({ "ok": false, "locked": true, "code": "locked", "message": m });
         }
@@ -374,6 +374,20 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             let preview = if j.state == "done" { crate::imagegen::preview_b64(&j.path) } else { None };
             json!({ "ok": true, "job": j, "preview": preview, "model": crate::imagegen::model_for(&crate::uistate::settings().ai_provider), "provider": crate::uistate::settings().ai_provider })
         }
+        // the shape of the picture and the gallery of what Jarvis made (the folder is its own; a delete is of one picture by its name)
+        "img_size" => match crate::imagegen::set_size(body.get("value").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(()) => json!({ "ok": true }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "img_gallery" => json!({ "ok": true, "size": crate::imagegen::size_choice(), "folder": crate::imagegen::out_dir().to_string_lossy(), "items": crate::imagegen::gallery(24) }),
+        "img_picture" => match crate::imagegen::picture_b64_in(&crate::imagegen::out_dir(), body.get("file").and_then(|v| v.as_str()).unwrap_or("")) {
+            Some(b) => json!({ "ok": true, "data": b }),
+            None => json!({ "ok": false, "message": "Не удалось открыть картинку." }),
+        },
+        "img_delete" => match crate::imagegen::delete_picture_in(&crate::imagegen::out_dir(), body.get("file").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(()) => json!({ "ok": true, "message": "Картинка удалена." }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
         "img_cancel" => json!({ "ok": crate::imagegen::cancel_job() }),
         "img_model" => match crate::imagegen::set_model(body.get("value").and_then(|v| v.as_str()).unwrap_or("")) {
             Ok(()) => json!({ "ok": true }),
