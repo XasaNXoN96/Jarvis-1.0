@@ -276,6 +276,11 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
     sites.set("find", lua.create_function(|_, name: String| Ok(crate::sites::find(&crate::sites::words(&name)).map(|s| (s.url, s.name)).unzip()))?)?;
     jarvis.set("sites", sites)?;
 
+    // jarvis.web.search(query) -> true | nil, reason: the search starts in its own thread; the results appear in small windows of Jarvis
+    let web = lua.create_table()?;
+    web.set("search", lua.create_function(|_, query: String| Ok(match crate::websearch::start(&query) { Ok(_) => (Some(true), None), Err(e) => (None, Some(e)) }))?)?;
+    jarvis.set("web", web)?;
+
     // jarvis.ai.screen(question) -> answer | nil, reason: a question about the screen (only when allowed in the settings)
     let ai = lua.create_table()?;
     ai.set("screen", lua.create_function(|_, question: String| {

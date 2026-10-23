@@ -852,6 +852,8 @@ pub fn state_json() -> Value {
         // the question of the cross of the window, in the language of Jarvis (the own window of Jarvis asks it)
         "close_dialog": close_dialog_json(),
         "close_req": crate::ui::browser_close_counter(),
+        // the results of the last search «найди …»: the window opens a small window for each of them
+        "web_results": crate::websearch::snapshot(),
         // something is still to be said (the queue, the next sentence being prepared): the "Стоп" button stays
         "speaking": crate::tts::is_speaking(),
         "voice_state": voice_state(),

@@ -1177,7 +1177,7 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
             say(&msg);
             ipc::send(IpcEvent::Output { text: msg.clone() });
             open_request(text, "local");
-            jarvis_core::dialog::reply(&msg, "search");
+            jarvis_core::dialog::reply(&msg, "local");
             jarvis_core::dialog::end(true);
             if jarvis_core::tts::is_enabled() {
                 jarvis_core::tts::speak("ИИ не подключён. Ищу ответ в интернете.");

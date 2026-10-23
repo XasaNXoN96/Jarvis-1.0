@@ -75,6 +75,7 @@ pub mod dialog;
 pub mod health;
 pub mod devices;
 pub mod weather;
+pub mod websearch;
 pub mod session;
 pub mod objects;
 pub mod codeobj;

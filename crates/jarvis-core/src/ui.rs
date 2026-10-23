@@ -888,6 +888,21 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             #[cfg(not(all(feature = "lua", target_os = "windows")))]
             Ok(url) => json!({ "ok": false, "message": format!("Открытие браузера доступно только в Windows. Адрес: {}", url) }),
         },
+        // the «Открыть в браузере» button of a window with a found page: the page names the result by its kind and number, the address is the one Jarvis kept
+        "web_open_hit" => {
+            let id = body.get("hit_id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let n = body.get("hit_n").and_then(|v| v.as_u64()).unwrap_or(u64::MAX) as usize;
+            match crate::websearch::hit_url(id, body.get("hit_kind").and_then(|v| v.as_str()).unwrap_or(""), n) {
+                None => json!({ "ok": false, "message": "Этот результат уже устарел: повторите поиск." }),
+                #[cfg(all(feature = "lua", target_os = "windows"))]
+                Some(url) => match crate::lua::shell_open(&url) {
+                    Ok(()) => json!({ "ok": true }),
+                    Err(e) => json!({ "ok": false, "message": e }),
+                },
+                #[cfg(not(all(feature = "lua", target_os = "windows")))]
+                Some(url) => json!({ "ok": false, "message": format!("Открытие браузера доступно только в Windows. Адрес: {}", url) }),
+            }
+        }
         // "Открыть папку с логами"
         "open_logs" => match crate::APP_LOG_DIR.get() {
             #[cfg(all(feature = "lua", target_os = "windows"))]

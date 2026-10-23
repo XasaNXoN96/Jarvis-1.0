@@ -320,6 +320,10 @@
   .fw-bar { display: flex; align-items: center; gap: 4px; padding: 6px 8px 6px 12px; background: #ffffff0a; border-bottom: 1px solid var(--line); cursor: move; user-select: none; touch-action: none; }
   .fw-bar b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; } .fw-bar button { border: 0; background: transparent; color: var(--dim); cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 6px; } .fw-bar button:hover { color: var(--text); background: #ffffff14; }
   .fw-body { flex: 1; min-height: 0; overflow: auto; padding: 10px 12px; font-size: 14px; line-height: 1.5; }
+  .fw-body.wr-photos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; align-content: start; }
+  .wr-card { display: flex; gap: 10px; align-items: center; padding: 6px; border-radius: 10px; cursor: pointer; border: 1px solid transparent; } .wr-card:hover, .wr-card:focus-visible { background: #ffffff10; border-color: var(--line2); outline: none; }
+  .wr-card img { width: 96px; height: 54px; object-fit: cover; border-radius: 6px; background: #0006; flex: none; } .wr-card .wr-t { min-width: 0; } .wr-card b { display: block; font-size: 13px; line-height: 1.3; } .wr-card small { display: block; opacity: .65; font-size: 12px; word-break: break-word; }
+  .wr-photos .wr-card { padding: 0; display: block; } .wr-photos .wr-card img { width: 100%; height: 84px; border-radius: 8px; } .wr-photos .wr-card .wr-t { display: none; }
   .pair-code { font-size: 26px; letter-spacing: .3em; font-variant-numeric: tabular-nums; margin-left: 8px; }
   .img-out { max-width: 100%; max-height: 420px; border-radius: 12px; border: 1px solid var(--line); margin-top: 8px; } .img-out[hidden] { display: none; }
   .rg-dlg { position: fixed; inset: 0; z-index: 9990; background: rgba(0,0,0,.65); display: none; align-items: center; justify-content: center; } .rg-dlg.on { display: flex; }
@@ -2853,7 +2857,7 @@ async function loadChat(id) {
 async function pollNow(force) {
   try {
     const s = await (await fetch(document.hidden ? '/state' : '/state?v=1')).json();
-    lastState = s; applyState(s); applyCloseRequest(s);
+    lastState = s; applyState(s); applyCloseRequest(s); try { applyWebResults(s.web_results); } catch (e) { /* the windows must never break the page */ }
     if (force || s.rev !== chatRev || (s.active_chat || '') !== aiActive) await loadChat(s.active_chat || '');
   } catch (e) {
     // no answer from the program: its last «выполняю / ищу / распознаю» is not true any more, the sphere must not stay in it
@@ -3487,8 +3491,8 @@ function fwOpen(title, text, key, opts) {
   while (FW.wins.size >= 6) { const first = FW.wins.keys().next().value; fwClose(first); }
   const w = document.createElement('div'); w.className = 'fw'; w.style.zIndex = ++FW.z;
   const off = (FW.n++ % 6) * 28; w.style.left = Math.min(innerWidth - 400, 120 + off) + 'px'; w.style.top = Math.min(innerHeight - 280, 90 + off) + 'px';
-  w.innerHTML = '<div class="fw-bar"><b></b><button type="button" data-a="copy" title="Копировать" aria-label="Копировать">⧉</button><button type="button" data-a="min" title="Свернуть" aria-label="Свернуть">—</button><button type="button" data-a="big" title="На большой экран" aria-label="На большой экран">⛶</button>' + (opts && opts.query ? '<button type="button" data-a="web" title="Открыть в браузере" aria-label="Открыть в браузере">🌐</button>' : '') + '<button type="button" data-a="close" title="Закрыть" aria-label="Закрыть">✕</button></div><div class="fw-body"></div>';
-  w.querySelector('b').textContent = title; w.querySelector('.fw-body').innerHTML = md(String(text));
+  w.innerHTML = '<div class="fw-bar"><b></b><button type="button" data-a="copy" title="Копировать" aria-label="Копировать">⧉</button><button type="button" data-a="min" title="Свернуть" aria-label="Свернуть">—</button><button type="button" data-a="big" title="На большой экран" aria-label="На большой экран">⛶</button>' + (opts && opts.query ? '<button type="button" data-a="web" title="' + (opts.webTitle || 'Открыть в браузере') + '" aria-label="' + (opts.webTitle || 'Открыть в браузере') + '">🌐</button>' : '') + '<button type="button" data-a="close" title="Закрыть" aria-label="Закрыть">✕</button></div><div class="fw-body"></div>';
+  w.querySelector('b').textContent = title; if (opts && opts.render) opts.render(w.querySelector('.fw-body')); else w.querySelector('.fw-body').innerHTML = md(String(text));
   const id = key || ('w' + FW.n); w.dataset.key = id; FW.wins.set(id, w);
   w.addEventListener('pointerdown', () => { w.style.zIndex = ++FW.z; });
   const bar = w.querySelector('.fw-bar'); let drag = null;
@@ -3546,6 +3550,47 @@ function fwAutoFromChat(chat) {
       fwNearOrb(w, n);
     });
   });
+}
+// the results of «найди …»: one small window for each KIND of result — 📷 photos, ▶ video, 🔗 links, 📝 text — laid out as tiles in the middle.
+// Only what was found gets a window. The first look only learns the last search, so an old search never reopens. A picture, a video or a link opens in
+// the browser by its number: the page never sends an address, Jarvis keeps it.
+let wrSeen = null;
+function fwTile(w, i, n) {
+  const W = w.offsetWidth || 380, H = w.offsetHeight || 260, cols = n > 1 ? 2 : 1;
+  const left0 = Math.max(8, (innerWidth - cols * W - (cols - 1) * 12) / 2), top0 = Math.max(8, Math.min(70, (innerHeight - Math.ceil(n / cols) * H) / 2));
+  w.style.left = Math.max(8, Math.min(innerWidth - W - 8, left0 + (i % cols) * (W + 12))) + 'px';
+  w.style.top = Math.max(8, Math.min(innerHeight - H - 8, top0 + Math.floor(i / cols) * (H + 12))) + 'px';
+}
+function wrOpenHit(id, kind, n) { action('web_open_hit', { hit_id: id, hit_kind: kind, hit_n: n }).then(r => { if (!r.ok) showToast(r.message || 'Не удалось открыть браузер'); }).catch(() => showToast('Нет связи с Джарвисом')); }
+function wrThumb(src) { const im = document.createElement('img'); im.loading = 'lazy'; im.referrerPolicy = 'no-referrer'; im.alt = ''; if (/^https:\/\//.test(src)) im.src = src; return im; }
+function wrCard(r, kind, i, h, withThumb) {
+  const d = document.createElement('div'); d.className = 'wr-card'; d.tabIndex = 0; d.setAttribute('role', 'link'); d.title = 'Открыть в браузере';
+  if (withThumb && h.thumb) d.appendChild(wrThumb(h.thumb));
+  const t = document.createElement('div'); t.className = 'wr-t';
+  const b = document.createElement('b'); b.textContent = h.title; const s = document.createElement('small'); s.textContent = [h.host, h.note].filter(Boolean).join(' · ');
+  t.append(b, s); d.appendChild(t);
+  const go = () => wrOpenHit(r.id, kind, i); d.onclick = go; d.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } };
+  return d;
+}
+function applyWebResults(r) {
+  if (!r || typeof r.id !== 'number') return;
+  if (wrSeen === null || r.id < wrSeen) { wrSeen = r.loading ? r.id - 1 : r.id; return; }
+  if (r.loading || r.id === wrSeen) return;
+  wrSeen = r.id;
+  const q = String(r.query || ''), key = k => 'web:' + r.id + ':' + k;
+  const kinds = [];
+  if ((r.photos || []).length) kinds.push(['photos', '📷 Фото: ' + q.slice(0, 30), box => { box.classList.add('wr-photos'); r.photos.forEach((h, i) => { const c = wrCard(r, 'photos', i, h, true); c.title = h.title; box.appendChild(c); }); }]);
+  if ((r.videos || []).length) kinds.push(['videos', '▶ Видео: ' + q.slice(0, 30), box => r.videos.forEach((h, i) => box.appendChild(wrCard(r, 'videos', i, h, true)))]);
+  if ((r.links || []).length) kinds.push(['links', '🔗 Ссылки: ' + q.slice(0, 30), box => r.links.forEach((h, i) => box.appendChild(wrCard(r, 'links', i, h, false)))]);
+  if (r.text) kinds.push(['text', '📝 Текст: ' + String(r.text.title).slice(0, 30), box => {
+    const p = document.createElement('p'); p.textContent = r.text.note; const a = document.createElement('a'); a.href = '#'; a.textContent = 'Читать полностью (' + r.text.host + ')'; a.onclick = e => { e.preventDefault(); wrOpenHit(r.id, 'text', 0); };
+    box.append(p, a);
+  }]);
+  if (!kinds.length) {
+    fwOpen('Поиск: ' + q.slice(0, 40), r.error ? 'Не удалось найти: ' + r.error + '.' : 'Ничего не нашёл по запросу «' + q + '».', key('none'), { query: q });
+    return;
+  }
+  kinds.forEach(([k, title, render], i) => { const w = fwOpen(title, '', key(k), { query: q, webTitle: 'Открыть поиск в браузере', render }); w.dataset.kind = k; fwTile(w, i, kinds.length); });
 }
 function fwClose(id) { const w = FW.wins.get(id); if (w) { w.remove(); FW.wins.delete(id); } }
 

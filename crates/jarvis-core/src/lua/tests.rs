@@ -393,6 +393,17 @@ mod tests {
         assert!(run("зайди на сайт гитхаб").contains("GitHub"));
         assert!(run("открой сайт ютуб музыка").contains("YouTube Music"));
         assert!(run("найди в гугле как установить python").contains("как установить python"));
+        // any other search is made by Jarvis itself (the results appear in its windows), Google in the browser only when asked for
+        {
+            let _l = crate::websearch::TEST_LOCK.lock();
+            let before = crate::websearch::snapshot()["id"].as_u64().unwrap();
+            assert!(run("найди рецепт борща").contains("рецепт борща"));
+            let s = crate::websearch::snapshot();
+            assert!(s["id"].as_u64().unwrap() > before && s["query"] == "рецепт борща", "{}", s);
+            let before = s["id"].as_u64().unwrap();
+            run("найди в гугле погоду");
+            assert_eq!(crate::websearch::snapshot()["id"].as_u64().unwrap(), before, "Google was asked for: no search of Jarvis");
+        }
         assert!(run("открой сайт непонятныйсайт").contains("Не знаю такой сайт"), "an unknown name is said to be a search");
         assert!(run("зайди на сайт example.com").contains("example.com"));
     }

@@ -5,7 +5,7 @@
 local STOP = {
   "открой", "открыть", "запусти", "зайди", "зайти", "перейди", "перейти", "включи", "покажи",
   "на", "в", "во", "сайт", "сайта", "страницу", "страница", "браузер", "браузере", "и", "мне", "пожалуйста",
-  "найди", "найти", "поищи", "загугли", "гугле", "гугл", "интернете", "ютубе", "ютуб", "ютьюб", "ютюб", "ютьюбе", "в", "по", "про",
+  "найди", "найти", "поищи", "ищи", "ищите", "информацию", "информация", "инфу", "сети", "загугли", "гугле", "гугл", "интернете", "ютубе", "ютуб", "ютьюб", "ютюб", "ютьюбе", "в", "по", "про", "о", "об",
   "open", "go", "to", "website", "site", "the", "visit", "launch", "browser", "and", "please",
   "search", "for", "find", "google", "on", "youtube", "in", "internet",
 }
@@ -14,7 +14,7 @@ local function urlencode(s)
   return (s:gsub("[^%w%-_%.~]", function(c) return string.format("%%%02X", c:byte()) end))
 end
 
-local searching = has_stem("найд") or has_stem("найт") or has_stem("поищ") or has_stem("загугл")
+local searching = has_stem("найд") or has_stem("найт") or has_stem("поищ") or has_stem("ищи") or has_stem("загугл")
   or has_stem("search") or has_stem("find")
 local on_youtube = has_stem("ютуб") or has_stem("ютьюб") or has_stem("youtube")
 
@@ -35,13 +35,18 @@ if searching then
     say(T("Поиск", "Search"), T("Что искать? Например: найди в гугле погоду", "What to search for?"))
     return
   end
-  local url
   if on_youtube then
-    url = "https://www.youtube.com/results?search_query=" .. urlencode(rest)
-  else
-    url = "https://www.google.com/search?q=" .. urlencode(rest)
+    open("https://www.youtube.com/results?search_query=" .. urlencode(rest))
+    say(T("Поиск", "Search"), rest, T("Ищу " .. rest, "Searching for " .. rest))
+    return
   end
-  open(url)
+  -- «найди в гугле …» is Google in the browser, as asked; any other search is shown by Jarvis itself, in small windows beside the sphere
+  -- (the browser is then a button of every window)
+  local on_google = has_stem("гугл") or has_stem("загугл") or has_stem("google")
+  local started = (not on_google) and jarvis.web.search(rest)
+  if not started then
+    open("https://www.google.com/search?q=" .. urlencode(rest))
+  end
   say(T("Поиск", "Search"), rest, T("Ищу " .. rest, "Searching for " .. rest))
   return
 end
