@@ -265,7 +265,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         }
     }
     // with a password of the owner set, the actions that change what Jarvis keeps or does need the unlocked program
-    if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "notes_edit" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message" | "audit_clear" | "ca_apply" | "pl_add" | "pl_remove" | "persona_set" | "pair_start" | "pair_revoke" | "pair_link" | "remote_http_set" | "remote_key_rotate" | "comp_do" | "sync_folder" | "sync_run" | "sync_clear" | "wol_add" | "wol_remove" | "wol_wake" | "mem_use_ai") {
+    if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "notes_edit" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message" | "audit_clear" | "ca_apply" | "pl_add" | "pl_remove" | "persona_set" | "pair_start" | "pair_revoke" | "pair_link" | "remote_http_set" | "remote_key_rotate" | "comp_do" | "sync_folder" | "sync_run" | "sync_clear" | "wol_add" | "wol_remove" | "wol_wake" | "mem_use_ai" | "diag_fix_apply") {
         if let Err(m) = crate::owner::guard() {
             return json!({ "ok": false, "locked": true, "message": m });
         }
@@ -778,6 +778,12 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         }
         // ---- diagnostics: the checks run in the background; the report is built from their last results ----
         "diag_run" => json!({ "ok": true, "started": crate::diag::start() }),
+        "diag_fix_preview" => match crate::diag::fix_preview(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) {
+            Some(p) => json!({ "ok": true, "preview": p }),
+            None => json!({ "ok": false, "message": "Такого исправления нет." }),
+        },
+        // nothing changes without "confirm": true, which the window sends only after the owner read the preview
+        "diag_fix_apply" => crate::diag::fix_apply(body.get("id").and_then(|v| v.as_str()).unwrap_or(""), body.get("confirm").and_then(|v| v.as_bool()) == Some(true)),
         // ---- notifications ----
         "notify_test" => {
             let id = crate::notify::push("command", "Проверка уведомлений", "Так выглядят уведомления Джарвиса.", false);
@@ -2193,6 +2199,48 @@ mod tests {
             assert!(!crate::owner::unlocked(), "nothing the phone sent unlocked the program");
             let log = crate::audit::list(50);
             assert!(log.iter().any(|e| e.kind == "gateway" && e.decision == "refused" && e.door == "phone"), "{:?}", log);
+        });
+    }
+
+    // a fix of the diagnostics page changes something only after the owner confirmed it; the phone cannot do it; a locked program refuses; the journal keeps every outcome
+    #[test]
+    fn a_fix_of_the_diagnostics_needs_the_confirmation_of_the_owner() {
+        let _s = crate::uistate::TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            crate::owner::reset_for_tests();
+            let muted = || crate::MIC_MUTED.load(std::sync::atomic::Ordering::SeqCst);
+            crate::uistate::set_mic_muted(true);
+            // the preview changes nothing
+            let r = run_action(&json!({ "name": "diag_fix_preview", "id": "mic_unmute" }));
+            assert!(r["preview"].as_str().unwrap().contains("Включить микрофон") && muted(), "{}", r);
+            // no confirmation / a confirmation that is not a plain true: refused, nothing changed, the refusal is in the journal
+            for body in [json!({ "name": "diag_fix_apply", "id": "mic_unmute" }), json!({ "name": "diag_fix_apply", "id": "mic_unmute", "confirm": "true" }), json!({ "name": "diag_fix_apply", "id": "mic_unmute", "confirm": false })] {
+                let r = run_action(&body);
+                assert_eq!((r["ok"].as_bool(), r["needs_confirm"].as_bool()), (Some(false), Some(true)), "{}", r);
+                assert!(muted());
+            }
+            // an unknown fix (a command, a path) is not a fix
+            for id in ["", "shell", "C:\\Windows\\System32\\cmd.exe", "all"] {
+                assert_eq!(run_action(&json!({ "name": "diag_fix_apply", "id": id, "confirm": true }))["ok"], false);
+            }
+            assert!(muted());
+            // the phone cannot confirm fixes
+            let r = phone_act(&json!({ "name": "diag_fix_apply", "id": "mic_unmute", "confirm": true }));
+            assert!(muted(), "{}", r);
+            // a locked program refuses even a confirmed fix
+            crate::owner::set_password("пароль-для-теста", "").unwrap();
+            crate::owner::lock();
+            let r = run_action(&json!({ "name": "diag_fix_apply", "id": "mic_unmute", "confirm": true }));
+            assert_eq!(r["locked"].as_bool(), Some(true));
+            assert!(muted());
+            // the owner confirmed: done once; a second time there is nothing to change
+            crate::owner::unlock("пароль-для-теста").unwrap();
+            let r = run_action(&json!({ "name": "diag_fix_apply", "id": "mic_unmute", "confirm": true }));
+            assert_eq!((r["ok"].as_bool(), r["applied"].as_bool()), (Some(true), Some(true)), "{}", r);
+            assert!(!muted());
+            assert_eq!(run_action(&json!({ "name": "diag_fix_apply", "id": "mic_unmute", "confirm": true }))["applied"], false);
+            let outcomes: Vec<String> = crate::audit::list(100).into_iter().rev().filter(|e| e.kind == "diag_fix").map(|e| e.decision).collect();
+            assert_eq!(outcomes, ["declined", "declined", "declined", "applied", "nothing_to_do"]);
         });
     }
 

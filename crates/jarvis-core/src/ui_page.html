@@ -4786,6 +4786,20 @@ async function diagLoad() {
       el.querySelector('b').textContent = c.name; const p = el.querySelector('.pill'); p.textContent = DST[c.status][0]; p.className = 'pill ' + DST[c.status][1];
       el.querySelector('.dsum').textContent = String(c.detail || '').split(/(?<=[.!?])\s/)[0];
       el.querySelector('.dd').textContent = c.detail; el.querySelector('.df').textContent = c.status !== 'ok' && c.fix ? '→ ' + c.fix : '';
+      // a fix from the fixed list: the owner reads what it will do and confirms; nothing is changed before that
+      if (c.fix_id && c.status !== 'ok') {
+        const fb = document.createElement('button'); fb.className = 'btn'; fb.textContent = 'Исправить…';
+        fb.onclick = async () => {
+          try {
+            const pv = await action('diag_fix_preview', { id: c.fix_id });
+            if (!pv.ok || !confirm(pv.preview + '\n\nВыполнить?')) return;
+            const r = await action('diag_fix_apply', { id: c.fix_id, confirm: true });
+            showToast(r.message || (r.ok ? 'Готово.' : 'Не выполнено.'));
+          } catch (e) { showToast('Не выполнено.'); }
+          diagLoad();
+        };
+        el.querySelector('.dbody').appendChild(fb);
+      }
       list.appendChild(el);
     }
   }
@@ -4796,7 +4810,7 @@ async function diagLoad() {
   const dq = $('#diag-q').value.trim().toLowerCase();
   for (const e of (d.events || []).filter(e => (!diagKind || e.kind === diagKind) && (!dq || e.text.toLowerCase().includes(dq)))) {
     const r = document.createElement('div'); r.className = 'ntrow' + (e.kind === 'error' ? ' err' : '');
-    const tm = document.createElement('time'); tm.textContent = fmtTime(e.time); const sp = document.createElement('span'); sp.textContent = e.text; r.append(tm, sp); ev.appendChild(r);
+    const tm = document.createElement('time'); tm.textContent = fmtTime(e.time); const sp = document.createElement('span'); sp.textContent = e.text + (e.op ? ' · операция №' + e.op : ''); r.append(tm, sp); ev.appendChild(r);
   }
   clearTimeout(diagTimer); if (d.running && currentPage === 'diag') diagTimer = setTimeout(diagLoad, 800);
 }

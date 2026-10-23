@@ -576,11 +576,25 @@ pub fn step_limit(s: &Step) -> Duration {
 // the step is not stopped: a mouse click or a keystroke that has started cannot be taken back, and the thread cannot be killed
 // safely. It may still finish later; that is said in the message and nothing after it is run.
 fn timed(s: &Step, grid: &mut Vec<isize>, limit: Duration, exec: fn(&Step, &mut Vec<isize>) -> Result<(), String>) -> Result<(), String> {
+    use std::sync::atomic::Ordering::SeqCst;
+    // 0 = runs, 1 = the caller gave up waiting (counted in ORPHANS), 2 = finished
+    let state = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0));
     let (tx, rx) = std::sync::mpsc::channel();
     let st = s.clone();
     let mut g = grid.clone();
     let ctx = crate::origin::capture();
+    // whatever happens in the step (also a panic) the end of the thread is noted, so a late step stops blocking new chains
+    struct End(std::sync::Arc<std::sync::atomic::AtomicU8>);
+    impl Drop for End {
+        fn drop(&mut self) {
+            if self.0.swap(2, SeqCst) == 1 {
+                ORPHANS.fetch_sub(1, SeqCst);
+            }
+        }
+    }
+    let end = End(state.clone());
     let spawned = std::thread::Builder::new().name("plan-step".into()).spawn(move || {
+        let _end = end;
         let _o = crate::origin::adopt(ctx);
         let r = exec(&st, &mut g);
         let _ = tx.send((r, g));
@@ -593,8 +607,23 @@ fn timed(s: &Step, grid: &mut Vec<isize>, limit: Duration, exec: fn(&Step, &mut 
             *grid = g;
             r
         }
-        Err(_) => Err(format!("шаг не завершился за {} с; он мог продолжить работу, остановить его нельзя", limit.as_secs().max(1))),
+        Err(_) => {
+            // from now on no new chain starts until this step is over (see `run_inner`)
+            ORPHANS.fetch_add(1, SeqCst);
+            if state.compare_exchange(0, 1, SeqCst, SeqCst).is_err() {
+                ORPHANS.fetch_sub(1, SeqCst);
+            }
+            Err(format!("шаг не завершился за {} с; он мог продолжить работу, остановить его нельзя. Новые планы не запустятся, пока он не закончит", limit.as_secs().max(1)))
+        }
     }
+}
+
+// Steps that did not finish in their time and are still running somewhere. While there is one, NO chain starts (a plan, a scenario):
+// a step that cannot be stopped must not work at the same time as the next one on the same mouse, keyboard and windows.
+static ORPHANS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+pub fn orphan_steps() -> usize {
+    ORPHANS.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 fn run_inner(sc: &Scenario, remember: bool, guard: Option<&Guard>) -> RunResult {
@@ -604,6 +633,9 @@ fn run_inner(sc: &Scenario, remember: bool, guard: Option<&Guard>) -> RunResult 
         if let Some((id, step, n, _)) = running.as_ref() {
             let what = if *id == sc.id { "этот сценарий" } else { "другой сценарий" };
             return RunResult { at: now(), ok: false, done: 0, total, message: format!("Сценарий «{}» не запущен: {} уже выполняется (шаг {} из {})", sc.name, what, step, n) };
+        }
+        if orphan_steps() > 0 {
+            return RunResult { at: now(), ok: false, done: 0, total, message: format!("«{}» не запущен: предыдущий шаг, не уложившийся во время, ещё выполняется. Подождите его окончания или перезапустите Jarvis", sc.name) };
         }
         *running = Some((sc.id.clone(), 0, total, String::new()));
         // a stale «стоп» of an earlier chain must not stop this one; a «стоп» said from here on (also while the checks

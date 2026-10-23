@@ -271,7 +271,7 @@ fn the_aim_card_tells_each_state_of_the_model_honestly() {
 fn the_microphone_journal_joins_the_events_newest_first_and_is_cut() {
     use crate::voicediag::Event;
     let base = vec![json!({ "time": 100, "kind": "start", "text": "Запуск" }), json!({ "time": 300, "kind": "ai", "text": "ИИ ответил" })];
-    let mic = vec![Event { at: 200, kind: "device".into(), text: "микрофон не открылся".into() }, Event { at: 50, kind: "device".into(), text: "микрофон открыт".into() }];
+    let mic = vec![Event { at: 200, kind: "device".into(), text: "микрофон не открылся".into(), op: 0 }, Event { at: 50, kind: "device".into(), text: "микрофон открыт".into(), op: 0 }];
     let all = merge_mic_events(base.clone(), mic.clone(), 10);
     let times: Vec<u64> = all.iter().map(|e| e["time"].as_u64().unwrap()).collect();
     assert_eq!(times, vec![300, 200, 100, 50]);

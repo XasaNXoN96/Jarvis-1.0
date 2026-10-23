@@ -14,6 +14,7 @@ pub struct Event {
     // "device" | "watch" | "recognizer" | "stream"
     pub kind: String,
     pub text: String,
+    pub op: u64,
 }
 
 static EVENTS: Mutex<Vec<Event>> = parking_lot::const_mutex(Vec::new());
@@ -28,7 +29,7 @@ fn note_at(at: u64, kind: &str, text: &str) {
     if e.last().map(|l| l.kind == kind && l.text == text).unwrap_or(false) {
         return;
     }
-    e.push(Event { at, kind: kind.into(), text: text.chars().take(160).collect() });
+    e.push(Event { at, kind: kind.into(), text: text.chars().take(160).collect(), op: crate::origin::op() });
     if e.len() > KEEP {
         let n = e.len() - KEEP;
         e.drain(..n);
@@ -85,7 +86,7 @@ mod tests {
 
     #[test]
     fn the_explanation_names_the_real_cause() {
-        let e = Event { at: 1, kind: "device".into(), text: "микрофон не открылся".into() };
+        let e = Event { at: 1, kind: "device".into(), text: "микрофон не открылся".into(), op: 0 };
         assert!(explain(&json!({"state":"paused"}), None).contains("выключен"));
         assert!(explain(&json!({"state":"silent"}), None).contains("тишина"));
         assert!(explain(&json!({"state":"stalled","gave_up":true}), Some(&e)).contains("не помогли"));

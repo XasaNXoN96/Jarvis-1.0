@@ -44,6 +44,8 @@ pub struct Event {
     pub time: u64,
     pub kind: String, // start | command | ai | voice | error | info
     pub text: String,
+    // the number of the operation that wrote it (the same as in the security journal); 0 = it came from no operation
+    pub op: u64,
 }
 
 static EVENTS: Lazy<Mutex<VecDeque<Event>>> = Lazy::new(|| Mutex::new(VecDeque::new()));
@@ -51,7 +53,7 @@ static EVENT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::ne
 
 pub fn log_event(kind: &str, text: &str) {
     let mut ev = EVENTS.lock();
-    ev.push_front(Event { id: EVENT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst), time: now(), kind: kind.to_string(), text: text.chars().take(200).collect() });
+    ev.push_front(Event { id: EVENT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst), time: now(), kind: kind.to_string(), text: text.chars().take(200).collect(), op: crate::origin::op() });
     ev.truncate(80);
 }
 

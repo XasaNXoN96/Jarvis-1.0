@@ -46,3 +46,7 @@ jobs:
         run: node tests/ui/audit_page.js
         env:
           PW_MODULE: ${{ github.workspace }}/node_modules/playwright
+      - name: Diagnostics fix button (preview first, confirmation required)
+        run: node tests/ui/diag_fix.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright

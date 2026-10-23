@@ -146,6 +146,8 @@ pub(crate) fn execute_with(
     exec: fn(&scenario::Step, &mut Vec<isize>) -> Result<(), String>,
     gate: &dyn Fn() -> Result<(), String>,
 ) -> scenario::RunResult {
+    // the plan runs on a thread of its own: it gets ONE operation number for all its lines and events
+    let _op = crate::origin::ensure_op();
     let journal = |n: usize, total: usize, kind: &str, outcome: &str| {
         crate::audit::record("autopilot_step", kind, "high", outcome, true, &format!("шаг {} из {}", n, total));
     };
@@ -224,9 +226,22 @@ mod tests {
             assert!(t.elapsed() < std::time::Duration::from_millis(800), "the plan waited for the whole step");
             assert!(!r.ok && r.done == 1 && r.message.contains("Шаг 2") && r.message.contains("не завершился") && r.message.contains("остановить его нельзя"), "{:?}", r);
             assert_eq!(lines().iter().map(|l| l.1.as_str()).collect::<Vec<_>>(), ["ok", "timeout", "stopped"]);
-            std::thread::sleep(std::time::Duration::from_millis(700));
-            // steps 3 and 4 were never started: nothing more in the journal
-            assert_eq!(lines().len(), 3);
+            // while the late step still works NO other chain starts: not a plan, not a scenario; nothing of them is run
+            assert_eq!(scenario::orphan_steps(), 1);
+            let second = execute_with(&plan(&["0.1"]), short, mock, &open);
+            assert!(!second.ok && second.done == 0 && second.message.contains("ещё выполняется"), "{:?}", second);
+            let own = scenario::run(&sc);
+            assert!(!own.ok && own.done == 0 && own.message.contains("ещё выполняется"), "{:?}", own);
+            // the refused chains left no step lines
+            assert_eq!(lines().iter().filter(|l| l.0 == "autopilot_step").count(), 2);
+            // when the late step is over the way is free again
+            let t = std::time::Instant::now();
+            while scenario::orphan_steps() > 0 && t.elapsed() < std::time::Duration::from_secs(3) {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            assert_eq!(scenario::orphan_steps(), 0);
+            let third = execute_with(&plan(&["0.1", "0.1"]), short, mock, &open);
+            assert!(third.ok && third.done == 2, "{:?}", third);
         });
     }
 
@@ -279,6 +294,27 @@ mod tests {
             assert!(!scenario::cancel());
             let r = execute_with(&plan(&["0.1", "0.1"]), short, mock, &open);
             assert!(r.ok && r.done == 2, "{:?}", r);
+        });
+    }
+
+    #[test]
+    fn the_lines_and_the_events_of_one_plan_carry_one_operation_number() {
+        let _l = scenario::RUN_TEST_LOCK.lock();
+        let _s = crate::uistate::TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            // a plan of its own thread (as after «да»): no number before, one number for everything it writes
+            assert_eq!(crate::origin::op(), 0);
+            let r = std::thread::spawn(|| execute_with(&plan(&["0.1", "0.4"]), short, mock, &open)).join().unwrap();
+            assert!(!r.ok);
+            let ops: std::collections::HashSet<u64> = crate::audit::list(100).iter().filter(|e| e.kind.starts_with("autopilot")).map(|e| e.op).collect();
+            assert_eq!(ops.len(), 1);
+            let op = *ops.iter().next().unwrap();
+            assert!(op > 0, "the plan has a number");
+            // the event of the result in the list of the diagnostics page carries the same number
+            let ev = crate::uistate::recent_events(10);
+            assert!(ev.iter().any(|e| e.kind == "error" && e.op == op), "{:?}", ev.iter().map(|e| (e.kind.clone(), e.op)).collect::<Vec<_>>());
+            // and the number is gone from the thread afterwards
+            assert_eq!(crate::origin::op(), 0);
         });
     }
 

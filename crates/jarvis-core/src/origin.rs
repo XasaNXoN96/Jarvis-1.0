@@ -125,6 +125,16 @@ pub fn adopt(c: (Option<Source>, u64)) -> Entered {
     Entered(prev.0, prev.1)
 }
 
+// An operation number for the work that has none yet (a plan that runs on its own thread, after «да»): every journal line and every event of it
+// then carries the same number. Nothing changes if the thread already runs an operation.
+pub fn ensure_op() -> Entered {
+    let prev = capture();
+    if prev.1 == 0 {
+        OP.with(|c| c.set(OP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
+    }
+    Entered(prev.0, prev.1)
+}
+
 // the door of the command that runs now; None outside of a command (a test, the command line tool)
 pub fn current() -> Option<Source> {
     CURRENT.with(|c| c.get())

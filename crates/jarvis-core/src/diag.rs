@@ -46,10 +46,12 @@ pub struct Check {
     pub status: Status,
     pub detail: String,
     pub fix: String,
+    // a fix the owner can confirm in the window (from the fixed list below); "" = the advice is text only
+    pub fix_id: &'static str,
 }
 
 fn check(key: &'static str, name: &'static str, status: Status, detail: impl Into<String>, fix: impl Into<String>) -> Check {
-    Check { key, name, status, detail: detail.into(), fix: fix.into() }
+    Check { key, name, status, detail: detail.into(), fix: fix.into(), fix_id: "" }
 }
 
 fn now() -> u64 {
@@ -76,7 +78,9 @@ pub struct MicFacts {
 pub fn mic_check(f: &MicFacts) -> Check {
     let (name, key) = ("Микрофон", "mic");
     if f.muted {
-        return check(key, name, Status::Warn, "Микрофон выключен пользователем: голосовые команды не слушаются.", "Включите микрофон: Настройки → Приватность или кнопка 🎤 на главной.");
+        let mut c = check(key, name, Status::Warn, "Микрофон выключен пользователем: голосовые команды не слушаются.", "Включите микрофон: Настройки → Приватность или кнопка 🎤 на главной.");
+        c.fix_id = FIX_MIC_UNMUTE;
+        return c;
     }
     if f.text_only {
         return check(key, name, Status::Warn, "Джарвис запущен в режиме «только текст».", "Перезапустите Джарвиса обычным ярлыком (без --text), чтобы включить голос.");
@@ -782,6 +786,15 @@ pub fn json() -> Value {
     })
 }
 
+// an event of the page; "op" (the number of the operation, the same as «вся операция» in the security journal) only when it has one
+fn event_json(time: u64, kind: &str, text: &str, op: u64) -> Value {
+    let mut v = json!({ "time": time, "kind": kind, "text": text });
+    if op > 0 {
+        v["op"] = json!(op);
+    }
+    v
+}
+
 // events of the program that carry no personal text: start, voice, AI state, errors. Events that quote what the user
 // said («…») and notifications are left out.
 fn safe_events(n: usize) -> Vec<Value> {
@@ -789,7 +802,7 @@ fn safe_events(n: usize) -> Vec<Value> {
         .into_iter()
         .filter(|e| matches!(e.kind.as_str(), "start" | "voice" | "ai" | "error"))
         .filter(|e| !e.text.contains('«') && !e.text.starts_with("Уведомление") && !e.text.starts_with("Вопрос"))
-        .map(|e| json!({ "time": e.time, "kind": e.kind, "text": sanitize(&e.text) }))
+        .map(|e| event_json(e.time, &e.kind, &sanitize(&e.text), e.op))
         .collect();
     merge_mic_events(base, crate::voicediag::recent(40), n)
 }
@@ -798,7 +811,7 @@ fn safe_events(n: usize) -> Vec<Value> {
 // newest first
 pub fn merge_mic_events(mut base: Vec<Value>, mic: Vec<crate::voicediag::Event>, n: usize) -> Vec<Value> {
     for e in mic {
-        base.push(json!({ "time": e.at, "kind": "voice", "text": format!("Микрофон: {}", sanitize(&e.text)) }));
+        base.push(event_json(e.at, "voice", &format!("Микрофон: {}", sanitize(&e.text)), e.op));
     }
     base.sort_by(|a, b| b["time"].as_u64().unwrap_or(0).cmp(&a["time"].as_u64().unwrap_or(0)));
     base.truncate(n);
@@ -952,5 +965,61 @@ mod new_checks {
         assert_eq!(smarthome_check(false, false).status, Status::Unchecked);
         assert_eq!(smarthome_check(true, false).status, Status::Warn);
         assert_eq!(smarthome_check(true, true).status, Status::Ok);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// fixes the owner can confirm. A FIXED list: each one is one named change of Jarvis' own state (never a command, a path or text from outside).
+// The window first asks for the preview, the owner reads it and confirms; without the confirmation nothing changes. There is no «fix all».
+// ---------------------------------------------------------------------------------------------
+pub const FIX_MIC_UNMUTE: &str = "mic_unmute";
+
+// what the fix will do, in words, and whether it still applies to the state of the program now
+pub fn fix_preview(id: &str) -> Option<String> {
+    match id {
+        FIX_MIC_UNMUTE => Some(if crate::MIC_MUTED.load(Ordering::SeqCst) {
+            "Включить микрофон в Jarvis: голосовые команды снова будут слушаться. Настройки Windows и других программ не меняются.".to_string()
+        } else {
+            "Микрофон в Jarvis уже включён: менять нечего.".to_string()
+        }),
+        _ => None,
+    }
+}
+
+pub fn fix_apply(id: &str, confirmed: bool) -> Value {
+    let Some(preview) = fix_preview(id) else {
+        return json!({ "ok": false, "message": "Такого исправления нет." });
+    };
+    if !confirmed {
+        crate::audit::record("diag_fix", id, "medium", "declined", false, "владелец не подтвердил");
+        return json!({ "ok": false, "needs_confirm": true, "preview": preview, "message": "Исправление не выполнено: нужно подтверждение." });
+    }
+    let done = match id {
+        FIX_MIC_UNMUTE if crate::MIC_MUTED.load(Ordering::SeqCst) => {
+            crate::uistate::set_mic_muted(false);
+            true
+        }
+        _ => false,
+    };
+    crate::audit::record("diag_fix", id, "medium", if done { "applied" } else { "nothing_to_do" }, true, "подтверждено владельцем");
+    crate::uistate::log_event("info", &format!("Исправление «{}»: {}", id, if done { "выполнено" } else { "менять нечего" }));
+    json!({ "ok": true, "applied": done, "message": if done { "Готово." } else { "Менять нечего." } })
+}
+
+#[cfg(test)]
+mod fix_tests {
+    use super::*;
+
+    #[test]
+    fn only_the_muted_microphone_offers_a_fix_and_the_events_show_their_operation_number() {
+        let facts = |muted| MicFacts { voice_active: true, text_only: false, muted, frame_age_ms: Some(10), error: String::new(), devices: 1 };
+        assert_eq!(mic_check(&facts(true)).fix_id, FIX_MIC_UNMUTE);
+        assert_eq!(mic_check(&facts(false)).fix_id, "");
+        // an event without an operation has no "op", with one it has
+        assert!(event_json(5, "info", "x", 0).get("op").is_none());
+        assert_eq!(event_json(5, "info", "x", 7)["op"], 7);
+        // the microphone journal carries the number too
+        let e = crate::voicediag::Event { at: 9, kind: "device".into(), text: "x".into(), op: 3 };
+        assert_eq!(merge_mic_events(vec![], vec![e], 5)[0]["op"], 3);
     }
 }
