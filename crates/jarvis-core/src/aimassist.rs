@@ -498,8 +498,12 @@ pub fn effective_for(profile: &AimConfig, exe: Option<&str>) -> AimConfig {
         c.cx_pct = cx;
         c.cy_pct = cy;
     }
-    // the key of the aim: only the confirmed key of THIS game (none: the aim assist does not start)
-    c.trigger = exe.map(game_binding).and_then(|b| b.usable_key().map(|k| k.to_string())).unwrap_or_default();
+    // the key of the aim: the confirmed key of THIS game; a game that has none yet aims on the RIGHT mouse button (a proposal of the wizard is not
+    // used until it is confirmed). Without a game in front there is no key and the aim assist does not start.
+    c.trigger = match exe {
+        Some(e) => game_binding(e).usable_key().map(|k| k.to_string()).unwrap_or_else(|| "rmb".to_string()),
+        None => String::new(),
+    };
     // the other numbers that this game keeps for itself lie over the general ones
     if let Some(e) = exe.and_then(game_key).and_then(|k| read_overlay().get("games").and_then(|g| g.get(&k)).cloned()) {
         if let Some(o) = e.as_object() {
@@ -1864,11 +1868,11 @@ mod tests {
         assert_eq!(game_binding("not a game"), Binding::none());
         // nothing was written by the reading
         assert!(std::fs::read_to_string(&file).unwrap().contains("\"trigger\":\"q\""));
-        // the key of the aim assist for each game is its own confirmed key; a new game has none (the aim assist does not start)
+        // the key of the aim assist for each game is its own confirmed key; a new game aims on the right mouse button; no game: no key
         let profile = AimConfig::default();
         assert_eq!(effective_for(&profile, Some("old.exe")).trigger, "rmb");
         assert_eq!(effective_for(&profile, Some("keyed.exe")).trigger, "q");
-        assert_eq!(effective_for(&profile, Some("brandnew.exe")).trigger, "");
+        assert_eq!(effective_for(&profile, Some("brandnew.exe")).trigger, "rmb", "a game without its own key aims on the right button");
         assert_eq!(effective_for(&profile, None).trigger, "");
         // the old numbers of the game are used as before
         assert_eq!((effective_for(&profile, Some("old.exe")).strength_pct, effective_for(&profile, Some("old.exe")).cy_pct), (50, -9));
@@ -1900,7 +1904,7 @@ mod tests {
         save_game_binding("g.exe", "rmb", BindStatus::Suggested, "wizard", "hold").unwrap();
         let b = game_binding("g.exe");
         assert_eq!((b.status, b.usable_key()), (BindStatus::Suggested, None), "a proposal is not a key");
-        assert_eq!(effective_for(&profile, Some("g.exe")).trigger, "", "the aim assist has no key and does not start");
+        assert_eq!(effective_for(&profile, Some("g.exe")).trigger, "rmb", "a proposal is not used: the default right button stays");
         save_game_binding("g.exe", "rmb", BindStatus::Confirmed, "wizard", "hold").unwrap();
         assert_eq!(effective_for(&profile, Some("g.exe")).trigger, "rmb");
         assert!(game_binding("g.exe").at > 0);
