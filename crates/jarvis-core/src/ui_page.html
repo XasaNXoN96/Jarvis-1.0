@@ -4781,7 +4781,7 @@ async function diagLoad() {
     $('#diag-sum').hidden = false; $('#diag-counts').textContent = 'Работает: ' + nOk + ' · требует внимания: ' + nBad + ' · всего: ' + d.checks.length;
     const flt = diagFilter;
     for (const c of d.checks.filter(c => flt === 'all' || (flt === 'bad' ? (c.status === 'warn' || c.status === 'error') : c.status === 'ok'))) {
-      const el = document.createElement('details'); el.className = 'drow ' + c.status; el.dataset.key = c.key || c.name; if (open.has(el.dataset.key)) el.open = true;
+      const el = document.createElement('details'); el.className = 'drow ' + c.status; el.dataset.key = c.key || c.name; el.dataset.code = c.code || ''; if (open.has(el.dataset.key)) el.open = true;
       el.innerHTML = '<summary><i class="dstat"></i><b></b><span class="dsum"></span><span class="pill"></span></summary><div class="dbody"><div class="dd"></div><div class="df"></div></div>';
       el.querySelector('b').textContent = c.name; const p = el.querySelector('.pill'); p.textContent = DST[c.status][0]; p.className = 'pill ' + DST[c.status][1];
       el.querySelector('.dsum').textContent = String(c.detail || '').split(/(?<=[.!?])\s/)[0];

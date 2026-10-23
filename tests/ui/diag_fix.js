@@ -15,8 +15,8 @@ const ok = (c, m) => { if (!c) fails.push(m); };
     const p = await ctx.newPage();
     const sent = [];
     const diag = { running: false, at: Math.floor(Date.now() / 1000), checks: [
-      { key: 'mic', name: 'Микрофон', status: 'warn', detail: 'Микрофон выключен пользователем.', fix: 'Включите микрофон.', fix_id: 'mic_unmute' },
-      { key: 'net', name: 'Интернет', status: 'error', detail: 'Нет сети.', fix: 'Проверьте кабель.', fix_id: '' },
+      { key: 'mic', name: 'Микрофон', status: 'warn', detail: 'Микрофон выключен пользователем.', fix: 'Включите микрофон.', fix_id: 'mic_unmute', code: 'mic.muted' },
+      { key: 'net', name: 'Интернет', status: 'error', detail: 'Нет сети.', fix: 'Проверьте кабель.', fix_id: '', code: 'net.error' },
     ], events: [{ time: Math.floor(Date.now() / 1000), kind: 'error', text: 'Шаг 2 остановлен', op: 42 }] };
     const dialogs = [];
     p.on('dialog', async d => { dialogs.push(d.message()); accept ? await d.accept() : await d.dismiss(); });
@@ -35,6 +35,7 @@ const ok = (c, m) => { if (!c) fails.push(m); };
     await p.evaluate(() => show('diag')); await p.waitForTimeout(500);
     await p.evaluate(() => diagLoad()); await p.waitForTimeout(400);
     await p.evaluate(() => document.querySelectorAll('#diag-list details').forEach(d => d.open = true));
+    ok(JSON.stringify(await p.$$eval('#diag-list details', a => a.map(d => d.dataset.code))) === '["mic.muted","net.error"]', `accept=${accept}: the rows carry the codes of the checks`);
     const btns = await p.$$('#diag-list button');
     ok(btns.length === 1, `accept=${accept}: only the check with a fix has the button (${btns.length})`);
     ok(/операция №42/.test(await p.textContent('#diag-events')), `accept=${accept}: the event shows its operation number`);

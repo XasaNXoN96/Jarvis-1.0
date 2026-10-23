@@ -471,6 +471,14 @@ jobs:
           }
           $ErrorActionPreference = "Stop"
           $dir = "C:\JarvisSmoke"
+          # Hang protection (runs 265 and 271: the step stayed "in progress" far beyond its own 10 minutes, with no failed step and no logs).
+          # Hypothesis, NOT proven: a program started by this step (Jarvis, cloudflared) outlives a failed check and keeps the output pipe of the
+          # step open, so the runner never sees the step end. Nothing is hidden by this: a failed check still fails the step with its own message.
+          function Stop-SmokeProcesses { Get-Process jarvis-app, cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue }
+          trap { Write-Host "SMOKE: the step failed, stopping the programs it started (jarvis-app, cloudflared)"; Stop-SmokeProcesses; if ($script:wd) { Stop-Process -Id $script:wd.Id -Force -ErrorAction SilentlyContinue }; break }
+          # a watchdog in another process: after 9 minutes it writes the list of processes (names, ids, parents, start times only) to
+          # smoke-watchdog.log (uploaded below) and stops the programs, which frees the pipe. It is stopped when the step ends normally.
+          $script:wd = Start-Process pwsh -ArgumentList '-NoProfile', '-Command', 'Start-Sleep 540; Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, Name, CreationDate | Format-Table -AutoSize | Out-String -Width 200 | Out-File smoke-watchdog.log; Get-Process jarvis-app, cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force' -WindowStyle Hidden -PassThru -WorkingDirectory $PWD
           $p = Start-Process dist\Jarvis-Setup-Lite.exe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LANG=russian", "/DIR=$dir", "/LOG=$PWD\install.log" -PassThru -Wait
           Write-Host "installer exit code: $($p.ExitCode)"
           Get-Content install.log -TotalCount 12
@@ -843,10 +851,22 @@ jobs:
             Write-Host "=== $($log.FullName)"
             Select-String -Path $log.FullName -Pattern "Window:|UI:|Exit requested|Microphone|instance|show" | Select-Object -Last 30 | ForEach-Object { $_.Line }
           } else { Write-Host "log.txt not found" }
+          Stop-SmokeProcesses
+          if ($script:wd) { Stop-Process -Id $script:wd.Id -Force -ErrorAction SilentlyContinue }
 
   # The release "build-latest": only from main and only when BOTH the tests and the build passed.
   # dev/* branches stop before this job (the check of a branch is never published).
       # everything the real-Windows checks found, in one place (read the end of this job)
+      - name: Upload the smoke watchdog log (only if it was written)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-watchdog
+          path: smoke-watchdog.log
+          if-no-files-found: ignore
+          retention-days: 7
+
       # What was running when the job ended badly (a failed step, a timeout, a cancel). Only names, ids, times and the tail of the installer
       # log and of the program logs of this temporary machine; the token file and settings are never printed. It does not change the result.
       - name: Runner diagnostics (processes, installer and program logs)

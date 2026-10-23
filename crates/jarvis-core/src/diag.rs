@@ -48,10 +48,26 @@ pub struct Check {
     pub fix: String,
     // a fix the owner can confirm in the window (from the fixed list below); "" = the advice is text only
     pub fix_id: &'static str,
+    // a stable machine-readable identifier of the RESULT: "<check>.<state>" (mic.ok, piper.not_installed, …). Fixed words only: never a text of an error
+    pub code: String,
 }
 
 fn check(key: &'static str, name: &'static str, status: Status, detail: impl Into<String>, fix: impl Into<String>) -> Check {
-    Check { key, name, status, detail: detail.into(), fix: fix.into(), fix_id: "" }
+    let code = format!("{}.{}", key, match status {
+        Status::Ok => "ok",
+        Status::Warn => "warn",
+        Status::Error => "error",
+        Status::Unchecked => "unchecked",
+    });
+    Check { key, name, status, detail: detail.into(), fix: fix.into(), fix_id: "", code }
+}
+
+impl Check {
+    // the exact reason inside the state: a fixed word of this module ("muted", "synth_failed"), checked by `valid_code`
+    fn why(mut self, reason: &'static str) -> Check {
+        self.code = format!("{}.{}", self.key, reason);
+        self
+    }
 }
 
 fn now() -> u64 {
@@ -78,21 +94,21 @@ pub struct MicFacts {
 pub fn mic_check(f: &MicFacts) -> Check {
     let (name, key) = ("Микрофон", "mic");
     if f.muted {
-        let mut c = check(key, name, Status::Warn, "Микрофон выключен пользователем: голосовые команды не слушаются.", "Включите микрофон: Настройки → Приватность или кнопка 🎤 на главной.");
+        let mut c = check(key, name, Status::Warn, "Микрофон выключен пользователем: голосовые команды не слушаются.", "Включите микрофон: Настройки → Приватность или кнопка 🎤 на главной.").why("muted");
         c.fix_id = FIX_MIC_UNMUTE;
         return c;
     }
     if f.text_only {
-        return check(key, name, Status::Warn, "Джарвис запущен в режиме «только текст».", "Перезапустите Джарвиса обычным ярлыком (без --text), чтобы включить голос.");
+        return check(key, name, Status::Warn, "Джарвис запущен в режиме «только текст».", "Перезапустите Джарвиса обычным ярлыком (без --text), чтобы включить голос.").why("text_only");
     }
     if !f.voice_active {
         let why = if f.error.is_empty() { "голосовой режим не запущен".to_string() } else { f.error.clone() };
-        return check(key, name, Status::Error, format!("Голос не работает: {}. Устройств записи: {}.", why, f.devices), "Подключите микрофон, разрешите доступ к нему в Параметры Windows → Конфиденциальность → Микрофон, выберите его в Настройках и перезапустите Джарвиса.");
+        return check(key, name, Status::Error, format!("Голос не работает: {}. Устройств записи: {}.", why, f.devices), "Подключите микрофон, разрешите доступ к нему в Параметры Windows → Конфиденциальность → Микрофон, выберите его в Настройках и перезапустите Джарвиса.").why("voice_off");
     }
     match f.frame_age_ms {
         Some(age) if age < 3000 => check(key, name, Status::Ok, format!("Звук с микрофона поступает (последний блок {} мс назад).", age), ""),
-        Some(age) => check(key, name, Status::Error, format!("Микрофон перестал отдавать звук {} с назад.", age / 1000), "Проверьте, не отключён ли микрофон и не занят ли другой программой; нажмите «Проверить» в Настройках → Микрофон."),
-        None => check(key, name, Status::Error, "Поток открыт, но звук не поступил ни разу.", "Выберите другое устройство в Настройках → Микрофон и перезапустите Джарвиса."),
+        Some(age) => check(key, name, Status::Error, format!("Микрофон перестал отдавать звук {} с назад.", age / 1000), "Проверьте, не отключён ли микрофон и не занят ли другой программой; нажмите «Проверить» в Настройках → Микрофон.").why("stalled"),
+        None => check(key, name, Status::Error, "Поток открыт, но звук не поступил ни разу.", "Выберите другое устройство в Настройках → Микрофон и перезапустите Джарвиса.").why("no_frames"),
     }
 }
 
@@ -134,7 +150,7 @@ pub fn piper_check_play(tts_on: bool, windows_voice: bool, test: PiperFacts, las
         Some((t, Ok(()))) => last_txt.push_str(&format!(" Последнее воспроизведение {} прошло без ошибок.", ago(*t))),
         Some((t, Err(e))) => {
             if matches!(test, PiperFacts::Ok(_)) {
-                return check(key, name, Status::Error, format!("Звук создаётся, но не воспроизводится ({}): {}.", ago(*t), e), "Проверьте устройство вывода звука в Параметры Windows → Система → Звук и громкость; нажмите «Проверить звук» в Настройках → Голос.");
+                return check(key, name, Status::Error, format!("Звук создаётся, но не воспроизводится ({}): {}.", ago(*t), e), "Проверьте устройство вывода звука в Параметры Windows → Система → Звук и громкость; нажмите «Проверить звук» в Настройках → Голос.").why("play_failed");
             }
             last_txt.push_str(&format!(" Последняя ошибка воспроизведения {}: {}.", ago(*t), e));
         }
@@ -144,9 +160,9 @@ pub fn piper_check_play(tts_on: bool, windows_voice: bool, test: PiperFacts, las
     match test {
         PiperFacts::NotInstalled => {
             if windows_voice {
-                check(key, name, Status::Warn, format!("Piper не установлен; выбран голос Windows.{}", off), "Настройки → Голос → «Установить голос Джарвиса».")
+                check(key, name, Status::Warn, format!("Piper не установлен; выбран голос Windows.{}", off), "Настройки → Голос → «Установить голос Джарвиса».").why("not_installed_windows_voice")
             } else {
-                check(key, name, Status::Error, format!("Голос Джарвиса (Piper) не установлен, ответы не звучат.{}", off), "Настройки → Голос → «Установить голос Джарвиса» (нужен интернет, ≈80 МБ).")
+                check(key, name, Status::Error, format!("Голос Джарвиса (Piper) не установлен, ответы не звучат.{}", off), "Настройки → Голос → «Установить голос Джарвиса» (нужен интернет, ≈80 МБ).").why("not_installed")
             }
         }
         PiperFacts::Ok(bytes) => {
@@ -156,11 +172,12 @@ pub fn piper_check_play(tts_on: bool, windows_voice: bool, test: PiperFacts, las
             let mut c = check(key, name, st, format!("Пробная фраза синтезирована ({} КБ звука, без воспроизведения).{}{}", bytes / 1024, last_txt, off), fix);
             if !tts_on {
                 c.fix_id = FIX_TTS_ENABLE;
+                c.code = format!("{}.speech_off", c.key);
             }
             c
         }
-        PiperFacts::Failed(e) => check(key, name, Status::Error, format!("Piper не смог создать звук: {}.{}", e, last_txt), "Переустановите голос: Настройки → Голос → «Установить голос Джарвиса». Проверьте, что антивирус не блокирует piper.exe."),
-        PiperFacts::Interrupted => check(key, name, Status::Unchecked, format!("Проверка прервана: Джарвис начал говорить.{}", last_txt), "Повторите проверку."),
+        PiperFacts::Failed(e) => check(key, name, Status::Error, format!("Piper не смог создать звук: {}.{}", e, last_txt), "Переустановите голос: Настройки → Голос → «Установить голос Джарвиса». Проверьте, что антивирус не блокирует piper.exe.").why("synth_failed"),
+        PiperFacts::Interrupted => check(key, name, Status::Unchecked, format!("Проверка прервана: Джарвис начал говорить.{}", last_txt), "Повторите проверку.").why("interrupted"),
     }
 }
 
@@ -772,7 +789,11 @@ pub fn start() -> bool {
     if RUNNING.swap(true, Ordering::SeqCst) {
         return false;
     }
-    std::thread::spawn(|| {
+    // the checks that were started INSIDE an operation write their events under its number; started from nowhere they carry none (thread-local
+    // numbers are not inherited by a new thread, so nothing is linked by accident)
+    let ctx = crate::origin::capture();
+    std::thread::spawn(move || {
+        let _o = crate::origin::adopt(ctx);
         let _ = std::panic::catch_unwind(run);
         RUNNING.store(false, Ordering::SeqCst);
     });
@@ -784,10 +805,27 @@ pub fn json() -> Value {
     json!({
         "running": RUNNING.load(Ordering::SeqCst),
         "at": last.as_ref().map(|r| r.at),
-        "checks": last.as_ref().map(|r| r.checks.clone()).unwrap_or_default(),
+        "checks": last.as_ref().map(|r| r.checks.iter().map(check_json).collect::<Vec<_>>()).unwrap_or_default(),
         "warm_piper": crate::tts::warm_status(),
         "events": safe_events(100),
     })
+}
+
+// A check for the page and for the phone: the old fields stay, `code` is added, and the free texts are cleaned of anything that looks like a secret
+// (the details of a check can quote an error of the system).
+fn check_json(c: &Check) -> Value {
+    let mut v = serde_json::to_value(c).unwrap_or(Value::Null);
+    if let Some(o) = v.as_object_mut() {
+        o.insert("detail".into(), json!(sanitize(&c.detail)));
+        o.insert("fix".into(), json!(sanitize(&c.fix)));
+    }
+    v
+}
+
+// the rule for a code: lower case words, digits and "_", two or three parts divided by "."
+pub fn valid_code(code: &str) -> bool {
+    let parts: Vec<&str> = code.split('.').collect();
+    (2..=3).contains(&parts.len()) && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'))
 }
 
 // an event of the page; "op" (the number of the operation, the same as «вся операция» in the security journal) only when it has one
@@ -1075,6 +1113,111 @@ pub fn fix_apply_in(id: &str, confirmed: bool, env: &dyn FixEnv) -> Value {
             crate::uistate::log_event("error", &format!("Исправление «{}» не удалось", id));
             fix_answer(false, "apply_failed", "Не удалось применить исправление. Подробностей в журнале нет: проверьте настройки вручную.", op, json!({ "applied": false }))
         }
+    }
+}
+
+#[cfg(test)]
+mod code_tests {
+    use super::*;
+
+    fn mic(muted: bool, text_only: bool, voice: bool, age: Option<u64>) -> Check {
+        mic_check(&MicFacts { voice_active: voice, text_only, muted, frame_age_ms: age, error: "C:\\Users\\x\\секрет.cfg token sk-123456".into(), devices: 1 })
+    }
+
+    #[test]
+    fn every_result_has_a_fixed_machine_readable_code_for_ok_warning_and_error() {
+        let cases = [
+            (mic(false, false, true, Some(10)), Status::Ok, "mic.ok"),
+            (mic(true, false, true, Some(10)), Status::Warn, "mic.muted"),
+            (mic(false, true, true, Some(10)), Status::Warn, "mic.text_only"),
+            (mic(false, false, false, None), Status::Error, "mic.voice_off"),
+            (mic(false, false, true, Some(9000)), Status::Error, "mic.stalled"),
+            (mic(false, false, true, None), Status::Error, "mic.no_frames"),
+            (piper_check_play(true, false, PiperFacts::NotInstalled, None, None), Status::Error, "piper.not_installed"),
+            (piper_check_play(true, false, PiperFacts::Failed("sk-123456 отклонён".into()), None, None), Status::Error, "piper.synth_failed"),
+            (piper_check_play(false, false, PiperFacts::Ok(4096), None, None), Status::Warn, "piper.speech_off"),
+            (piper_check_play(true, false, PiperFacts::Ok(4096), None, Some((1, Ok(())))), Status::Ok, "piper.ok"),
+            (windows_voice_check(true, true, Some((1, Err("boom".into())))), Status::Error, "winvoice.error"),
+        ];
+        let mut seen = std::collections::HashSet::new();
+        for (c, st, code) in cases {
+            assert_eq!((c.status, c.code.as_str()), (st, code), "{}", c.detail);
+            assert!(valid_code(&c.code), "{}", c.code);
+            seen.insert(c.code);
+        }
+        assert_eq!(seen.len(), 11, "the codes tell the results apart");
+        assert!(!valid_code("Mic Muted") && !valid_code("mic") && !valid_code("mic..x") && !valid_code("mic.секрет"));
+    }
+
+    #[test]
+    fn the_code_is_never_made_of_the_text_of_an_error_and_the_texts_of_the_page_are_cleaned() {
+        let c = piper_check_play(true, false, PiperFacts::Failed("отказ: sk-abcdefghijklmnopqrstuvwx012345 не принят".into()), None, None);
+        assert_eq!(c.code, "piper.synth_failed");
+        assert!(!c.code.contains("sk-") && !c.code.contains("token"));
+        // the raw detail still quotes the error (the old field), the JSON of the page and of the phone has it cleaned
+        assert!(c.detail.contains("sk-abcdefghijklmnopqrstuvwx012345"));
+        let v = check_json(&c);
+        let all = v.to_string();
+        assert!(!all.contains("sk-abcdef"), "{}", all);
+        for k in ["key", "name", "status", "detail", "fix", "fix_id", "code"] {
+            assert!(v.get(k).is_some(), "the field {} stays", k);
+        }
+        assert_eq!(v["code"], "piper.synth_failed");
+        assert_eq!(v["status"], "error");
+    }
+
+    // The numbers of the operations: a thread that does not belong to an operation (the watchdog of the microphone, a timer) has none and its
+    // events carry none; a thread that is handed an operation shows it; a new thread never inherits the number of the thread that created it.
+    #[test]
+    fn background_events_are_linked_only_to_an_operation_that_really_exists() {
+        let _s = crate::uistate::TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            // a thread of nobody
+            std::thread::spawn(|| {
+                crate::uistate::log_event("info", "фоновое событие без операции");
+                crate::voicediag::note("device", "фон: без операции");
+            })
+            .join()
+            .unwrap();
+            let ev = crate::uistate::recent_events(5).into_iter().find(|e| e.text.contains("без операции")).unwrap();
+            assert_eq!(ev.op, 0);
+            let mic = crate::voicediag::recent(5).into_iter().find(|e| e.text.contains("без операции")).unwrap();
+            assert_eq!(mic.op, 0);
+            let shown = merge_mic_events(vec![], vec![mic], 5);
+            assert!(shown[0].get("op").is_none(), "no invented number: {}", shown[0]);
+            // an operation: its own events carry its number; a thread started inside it does NOT inherit it by itself…
+            let (op, child_without, child_with) = {
+                let _g = crate::origin::ensure_op();
+                let op = crate::origin::op();
+                crate::uistate::log_event("info", "событие самой операции");
+                let a = std::thread::spawn(|| {
+                    crate::uistate::log_event("info", "поток без контекста");
+                    crate::origin::op()
+                })
+                .join()
+                .unwrap();
+                // …and gets it only when it is handed the context on purpose
+                let ctx = crate::origin::capture();
+                let b = std::thread::spawn(move || {
+                    let _o = crate::origin::adopt(ctx);
+                    crate::uistate::log_event("info", "поток с переданным контекстом");
+                    crate::origin::op()
+                })
+                .join()
+                .unwrap();
+                (op, a, b)
+            };
+            assert!(op > 0);
+            assert_eq!((child_without, child_with), (0, op));
+            let find = |t: &str| crate::uistate::recent_events(20).into_iter().find(|e| e.text.contains(t)).unwrap().op;
+            assert_eq!(find("событие самой операции"), op);
+            assert_eq!(find("поток без контекста"), 0, "no false link");
+            assert_eq!(find("поток с переданным контекстом"), op);
+            // after the operation ended the thread has none again; the next operation has another number
+            assert_eq!(crate::origin::op(), 0);
+            let next = { let _g = crate::origin::ensure_op(); crate::origin::op() };
+            assert!(next > op);
+        });
     }
 }
 
