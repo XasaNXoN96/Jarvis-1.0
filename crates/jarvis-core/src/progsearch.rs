@@ -28,6 +28,69 @@ pub fn valid_query(q: &str) -> bool {
     !q.is_empty() && q.chars().count() <= 60 && !q.starts_with('-') && !q.chars().any(|c| c.is_control() || "&|<>^\"%".contains(c))
 }
 
+
+// A search by PURPOSE («программа для видео», «архиватор», «video editor»): a short fixed table of what people ask for, each with the English
+// words winget understands. Only these words reach winget (never the text of the user as an option); the user's own words are searched too.
+const PURPOSES: &[(&[&str], &[&str])] = &[
+    (&["видео", "монтаж", "video editor", "video edit"], &["video editor", "shotcut", "kdenlive"]),
+    (&["плеер", "смотреть фильм", "медиаплеер", "media player", "music player", "музык"], &["media player", "vlc", "aimp"]),
+    (&["архив", "архиватор", "zip", "rar", "archiver"], &["7zip", "winrar", "peazip"]),
+    (&["браузер", "browser", "интернет"], &["browser", "firefox", "chrome"]),
+    (&["pdf", "пдф", "читать книги"], &["pdf", "sumatra", "adobe reader"]),
+    (&["торрент", "torrent"], &["torrent", "qbittorrent"]),
+    (&["антивирус", "вирус", "antivirus"], &["antivirus", "malwarebytes"]),
+    (&["заметки", "блокнот", "текстовый редактор", "notes", "text editor"], &["notepad++", "obsidian", "text editor"]),
+    (&["мессенджер", "общение", "чат", "messenger", "telegram", "whatsapp"], &["telegram", "whatsapp", "discord"]),
+    (&["почта", "email", "mail"], &["thunderbird", "email"]),
+    (&["запись экрана", "стрим", "screen record", "stream"], &["obs studio", "screen recorder"]),
+    (&["фото", "картинк", "изображен", "photo", "image editor", "рисова"], &["gimp", "paint.net", "krita"]),
+    (&["программирован", "код", "ide", "programming", "coding"], &["visual studio code", "pycharm", "ide"]),
+    (&["игр", "game launcher", "steam"], &["steam", "epic games", "game launcher"]),
+    (&["пароль", "password"], &["password manager", "keepass", "bitwarden"]),
+    (&["облако", "cloud", "диск", "синхрониз"], &["dropbox", "google drive", "onedrive"]),
+    (&["vpn", "впн"], &["vpn", "wireguard"]),
+    (&["скриншот", "screenshot"], &["sharex", "screenshot"]),
+    (&["переводчик", "translator"], &["translator", "deepl"]),
+    (&["аудио", "звук", "запись голоса", "audio editor"], &["audacity", "audio editor"]),
+    (&["3d", "моделирован"], &["blender", "3d"]),
+];
+
+// the queries to run for a text: always the text itself first, then (when it names a purpose) at most two fixed English words
+pub fn expand_query(q: &str) -> Vec<String> {
+    let q = q.trim();
+    let low = q.to_lowercase().replace('ё', "е");
+    let mut out = vec![q.to_string()];
+    if q.chars().count() < 3 {
+        return out;
+    }
+    for (keys, terms) in PURPOSES {
+        if keys.iter().any(|k| low.contains(k)) {
+            for t in terms.iter().take(2) {
+                if !out.iter().any(|o| o.eq_ignore_ascii_case(t)) {
+                    out.push(t.to_string());
+                }
+            }
+            break;
+        }
+    }
+    out
+}
+
+// results of several searches in one list: no id twice, the user's own words first, at most `max`
+pub fn merge(lists: Vec<Vec<Package>>, max: usize) -> Vec<Package> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for l in lists {
+        for p in l {
+            if seen.insert(p.id.to_lowercase()) {
+                out.push(p);
+            }
+        }
+    }
+    out.truncate(max);
+    out
+}
+
 // the table printed by «winget search»: a header, a line of dashes, then the rows. The columns are cut where the header words start
 // (the header is localised, so no word is expected, only the shape)
 pub fn parse_table(out: &str) -> Vec<Package> {
@@ -183,15 +246,32 @@ mod win {
             return Err("Запрос должен быть коротким и без спецсимволов.".into());
         }
         set("searching", "", None, "");
-        let out = winget().args(["search", "--source", "winget", "--accept-source-agreements", "--disable-interactivity", "--", q.trim()]).output().map_err(|e| format!("winget не запустился ({}). Нужен «Установщик приложений» из Microsoft Store.", e));
-        set("idle", "", None, "");
-        let out = out?;
-        let text = String::from_utf8_lossy(&out.stdout).to_string();
-        let list = parse_table(&text);
-        if list.is_empty() && !out.status.success() && !text.contains("No package") {
-            return Err(format!("winget ответил ошибкой {}", out.status.code().unwrap_or(-1)));
+        let mut lists = Vec::new();
+        let mut first_error: Option<String> = None;
+        for (i, term) in expand_query(q).iter().enumerate() {
+            let out = winget().args(["search", "--source", "winget", "--accept-source-agreements", "--disable-interactivity", "--", term]).output();
+            let out = match out {
+                Ok(o) => o,
+                Err(e) => {
+                    set("idle", "", None, "");
+                    return Err(format!("winget не запустился ({}). Нужен «Установщик приложений» из Microsoft Store.", e));
+                }
+            };
+            let text = String::from_utf8_lossy(&out.stdout).to_string();
+            let list = parse_table(&text);
+            if list.is_empty() && !out.status.success() && !text.contains("No package") && i == 0 {
+                first_error = Some(format!("winget ответил ошибкой {}", out.status.code().unwrap_or(-1)));
+            }
+            lists.push(list);
         }
-        Ok(list.into_iter().take(15).collect())
+        set("idle", "", None, "");
+        let list = merge(lists, 15);
+        if list.is_empty() {
+            if let Some(e) = first_error {
+                return Err(e);
+            }
+        }
+        Ok(list)
     }
 
     // blocks until the end; the status is read by the window
@@ -315,6 +395,31 @@ mod tests {
         assert!(!valid_query("--help"));
         assert!(!valid_query("a & calc"));
         assert!(!valid_query(""));
+    }
+
+    #[test]
+    fn a_purpose_is_turned_into_a_few_fixed_search_words() {
+        assert_eq!(expand_query("vlc"), vec!["vlc"], "a name is searched as it is");
+        let v = expand_query("программа для монтажа видео");
+        assert_eq!(v[0], "программа для монтажа видео");
+        assert!(v.len() == 3 && v.contains(&"video editor".to_string()) && v.contains(&"shotcut".to_string()), "{:?}", v);
+        assert!(expand_query("Архиватор").contains(&"7zip".to_string()));
+        assert!(expand_query("ёж").len() == 1, "a very short text is never expanded");
+        // whatever the text, the extra words come only from the table and pass the same check as a query
+        for q in ["видео", "торрент", "vpn", "пароль", "3d", "почта"] {
+            for t in expand_query(q) {
+                assert!(valid_query(&t), "{}", t);
+            }
+        }
+        assert_eq!(expand_query("видео --source evil")[1..].iter().all(|t| !t.starts_with('-')), true);
+    }
+
+    #[test]
+    fn several_searches_make_one_list_without_repeats() {
+        let p = |id: &str| Package { name: id.into(), id: id.into(), version: String::new(), source: "winget".into() };
+        let m = merge(vec![vec![p("A.One"), p("B.Two")], vec![p("a.one"), p("C.Three")]], 3);
+        assert_eq!(m.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), vec!["A.One", "B.Two", "C.Three"]);
+        assert_eq!(merge(vec![vec![p("A.One"), p("B.Two")]], 1).len(), 1);
     }
 
     #[test]

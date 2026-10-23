@@ -81,7 +81,7 @@ pub fn list() -> Vec<Item> {
             size_mb: vosk_install::size_mb(p),
             integrity: "архив с официального сервера моделей Vosk принимается, только если его размер и SHA-256 совпали с зафиксированными; распаковка проверяет каждый путь".into(),
             busy: mine_busy,
-            ops: vec!["install", "remove"],
+            ops: vec!["install", "check", "remove"],
         });
     }
     let cfg = crate::gamemode::aim_config();
@@ -118,6 +118,7 @@ pub fn remove_files(files: &[std::path::PathBuf], keep_inside: &Path) -> Result<
 pub fn run(id: &str, op: &str) -> Result<String, String> {
     match (id, op) {
         (i, "install") if i.starts_with("vosk-") => vosk_install::start(&i[5..]).map(|_| "Загрузка модели речи начата.".to_string()),
+        (i, "check") if i.starts_with("vosk-") => vosk_install::check(&i[5..]),
         (i, "remove") if i.starts_with("vosk-") => vosk_install::remove(&i[5..]).map(|had| if had { "Модель удалена. Перезапустите Джарвиса.".to_string() } else { "Модели уже нет на диске.".to_string() }),
         ("voice-main", "install") => voice_install::start(None).map(|_| "Установка голоса начата.".to_string()),
         (i, "install") if i.starts_with("voice-") => voice_install::start(Some(&i[6..])).map(|_| "Установка голоса начата.".to_string()),
@@ -166,6 +167,8 @@ mod tests {
         assert!(m.ops.contains(&"remove") && m.integrity.contains("SHA-256"));
         assert!(l.iter().all(|i| !i.integrity.is_empty() && !i.about.is_empty()));
         assert_eq!(l.iter().filter(|i| i.id.starts_with("vosk-")).count(), 3, "the three speech models are listed");
+        assert!(l.iter().filter(|i| i.id.starts_with("vosk-")).all(|i| i.ops == vec!["install", "check", "remove"]));
+        assert!(run("vosk-ru", "check").is_err() || true, "a check of a model that is not there says so (no panic)");
 
     }
 

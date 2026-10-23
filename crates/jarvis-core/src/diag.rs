@@ -514,7 +514,10 @@ pub fn resources_check(commands: usize, missing: &[String], vosk: bool) -> Check
         return check(key, name, Status::Error, format!("Загружено команд: {}. Нет: {}.", commands, missing.join(", ")), "Переустановите Джарвиса или распакуйте commands-update.zip в папку resources.");
     }
     if !vosk {
-        return check(key, name, Status::Warn, format!("Загружено команд: {}. Модель распознавания речи (Vosk) не найдена — голос недоступен.", commands), "Откройте Настройки → Компоненты и нажмите «Установить» у модели распознавания речи вашего языка (нужен интернет, около 40–80 МБ), потом перезапустите Джарвиса. Либо используйте полный установщик.");
+        let mut c = check(key, name, Status::Warn, format!("Загружено команд: {}. Модель распознавания речи (Vosk) не найдена — голос недоступен.", commands), "Откройте Настройки → Компоненты и нажмите «Установить» у модели распознавания речи вашего языка (нужен интернет, около 40–80 МБ), потом перезапустите Джарвиса. Либо используйте полный установщик.");
+        c.fix_id = FIX_SPEECH_MODEL;
+        c = c.why("no_speech_model");
+        return c;
     }
     check(key, name, Status::Ok, format!("Загружено команд: {}; звуки, модель речи и команды на месте.", commands), "")
 }
@@ -1016,6 +1019,7 @@ mod new_checks {
 // ---------------------------------------------------------------------------------------------
 pub const FIX_MIC_UNMUTE: &str = "mic_unmute";
 pub const FIX_TTS_ENABLE: &str = "tts_enable";
+pub const FIX_SPEECH_MODEL: &str = "speech_model";
 
 // What a fix looks at and changes: only the own state of Jarvis. A trait so the tests put a mock here (and can make the change fail).
 pub trait FixEnv {
@@ -1023,6 +1027,13 @@ pub trait FixEnv {
     fn unmute_mic(&self) -> Result<(), String>;
     fn speech_on(&self) -> bool;
     fn enable_speech(&self) -> Result<(), String>;
+    // the speech recognition model (Vosk) is not on the disk; installing it starts the download (the progress is in Settings → Components)
+    fn speech_model_missing(&self) -> bool {
+        false
+    }
+    fn install_speech_model(&self) -> Result<(), String> {
+        Err("установка модели недоступна".into())
+    }
 }
 
 pub struct Live;
@@ -1042,6 +1053,17 @@ impl FixEnv for Live {
         crate::tts::set_enabled(true);
         if self.speech_on() { Ok(()) } else { Err("озвучка осталась выключенной".into()) }
     }
+    fn speech_model_missing(&self) -> bool {
+        crate::vosk_models::scan_vosk_models().is_empty()
+    }
+    fn install_speech_model(&self) -> Result<(), String> {
+        let id = match crate::i18n::get_language().as_str() {
+            "en" => "en",
+            "ua" | "uk" => "uk",
+            _ => "ru",
+        };
+        crate::vosk_install::start(id)
+    }
 }
 
 // what the fix will do, in words, and whether it still applies to the state of the program now
@@ -1060,6 +1082,11 @@ pub fn fix_preview_in(id: &str, env: &dyn FixEnv) -> Option<String> {
             "Включить озвучку ответов в Jarvis: он снова будет говорить вслух. Громкость и устройства Windows не меняются.".to_string()
         } else {
             "Озвучка в Jarvis уже включена: менять нечего.".to_string()
+        }),
+        FIX_SPEECH_MODEL => Some(if env.speech_model_missing() {
+            "Скачать модель распознавания речи для вашего языка (около 40–80 МБ) с официального сервера моделей Vosk, проверить её контрольную сумму и поставить в папку Jarvis. Нужен интернет; после загрузки перезапустите Джарвиса. Ничего больше не меняется.".to_string()
+        } else {
+            "Модель распознавания речи уже на месте: менять нечего.".to_string()
         }),
         _ => None,
     }
@@ -1095,6 +1122,7 @@ pub fn fix_apply_in(id: &str, confirmed: bool, env: &dyn FixEnv) -> Value {
     let result: Result<bool, String> = match id {
         FIX_MIC_UNMUTE if env.mic_muted() => env.unmute_mic().map(|_| true),
         FIX_TTS_ENABLE if !env.speech_on() => env.enable_speech().map(|_| true),
+        FIX_SPEECH_MODEL if env.speech_model_missing() => env.install_speech_model().map(|_| true),
         _ => Ok(false),
     };
     // (nothing of the error text of the system goes to the journal: only the fixed words)
@@ -1107,7 +1135,8 @@ pub fn fix_apply_in(id: &str, confirmed: bool, env: &dyn FixEnv) -> Value {
     match result {
         Ok(done) => {
             crate::uistate::log_event("info", &format!("Исправление «{}»: {}", id, if done { "выполнено" } else { "менять нечего" }));
-            fix_answer(true, if done { "applied" } else { "nothing_to_do" }, if done { "Готово." } else { "Менять нечего." }, op, json!({ "applied": done }))
+            let message = if !done { "Менять нечего." } else if id == FIX_SPEECH_MODEL { "Загрузка модели начата: прогресс — в Настройки → Компоненты. После загрузки перезапустите Джарвиса." } else { "Готово." };
+            fix_answer(true, if done { "applied" } else { "nothing_to_do" }, message, op, json!({ "applied": done }))
         }
         Err(_) => {
             crate::uistate::log_event("error", &format!("Исправление «{}» не удалось", id));
@@ -1119,6 +1148,7 @@ pub fn fix_apply_in(id: &str, confirmed: bool, env: &dyn FixEnv) -> Value {
 #[cfg(test)]
 mod code_tests {
     use super::*;
+    use serde_json::json;
 
     fn mic(muted: bool, text_only: bool, voice: bool, age: Option<u64>) -> Check {
         mic_check(&MicFacts { voice_active: voice, text_only, muted, frame_age_ms: age, error: "C:\\Users\\x\\секрет.cfg token sk-123456".into(), devices: 1 })
@@ -1303,6 +1333,70 @@ mod fix_tests {
             assert!(crate::uistate::recent_events(10).iter().any(|e| e.op == r["op"].as_u64().unwrap()));
             assert_eq!(kinds(), [("tts_enable".to_string(), "declined".to_string()), ("tts_enable".to_string(), "applied".to_string()), ("tts_enable".to_string(), "nothing_to_do".to_string())]);
         });
+    }
+
+    // the missing speech model: offered by the check, a preview that names the download, nothing without the confirmation, started once confirmed
+    struct ModelMock {
+        missing: Cell<bool>,
+        started: Cell<u32>,
+    }
+    impl FixEnv for ModelMock {
+        fn mic_muted(&self) -> bool {
+            false
+        }
+        fn unmute_mic(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn speech_on(&self) -> bool {
+            true
+        }
+        fn enable_speech(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn speech_model_missing(&self) -> bool {
+            self.missing.get()
+        }
+        fn install_speech_model(&self) -> Result<(), String> {
+            self.started.set(self.started.get() + 1);
+            self.missing.set(false);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_missing_speech_model_can_be_installed_by_a_confirmed_fix() {
+        let _s = crate::uistate::TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            let c = resources_check(10, &[], false);
+            assert_eq!((c.fix_id, c.code.as_str(), c.status), (FIX_SPEECH_MODEL, "files.no_speech_model", Status::Warn));
+            assert!(valid_code(&c.code));
+            assert_eq!(resources_check(10, &[], true).fix_id, "", "nothing to fix when the model is there");
+            let env = ModelMock { missing: Cell::new(true), started: Cell::new(0) };
+            let p = fix_preview_in(FIX_SPEECH_MODEL, &env).unwrap();
+            assert!(p.contains("Vosk") && p.contains("контрольную сумму") && env.started.get() == 0, "the preview names the download and starts nothing");
+            let r = fix_apply_in(FIX_SPEECH_MODEL, false, &env);
+            assert_eq!(r["code"], "needs_confirm");
+            assert_eq!(env.started.get(), 0, "no confirmation, no download");
+            let r = fix_apply_in(FIX_SPEECH_MODEL, true, &env);
+            assert_eq!((r["ok"].as_bool(), r["code"].as_str()), (Some(true), Some("applied")));
+            assert!(r["message"].as_str().unwrap().contains("Компоненты") && env.started.get() == 1);
+            assert_eq!(fix_apply_in(FIX_SPEECH_MODEL, true, &env)["code"], "nothing_to_do");
+            assert_eq!(env.started.get(), 1, "a second press does not start a second download");
+        });
+    }
+
+    #[test]
+    fn every_check_of_a_run_has_a_valid_code_of_its_own_key() {
+        let cases = [
+            mic_check(&MicFacts { voice_active: true, text_only: false, muted: false, frame_age_ms: Some(1), error: String::new(), devices: 1 }),
+            resources_check(0, &[], true), resources_check(5, &["a".to_string()], true), resources_check(5, &[], false), resources_check(5, &[], true),
+            security_check(true, true, &[]), scheduler_check(0, 0, None), smarthome_check(false, false), monitor_check(16.0, 10.0, 500.0),
+            commands_check(&[("cmd", true)]), watch_check(&json!({"state":"ok","text":"x"})), build_check(),
+        ];
+        for c in cases {
+            assert!(valid_code(&c.code), "{} has a bad code {}", c.key, c.code);
+            assert!(c.code.starts_with(&format!("{}.", c.key)), "{}: the code {} must start with its key", c.key, c.code);
+        }
     }
 
     #[test]

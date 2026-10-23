@@ -75,6 +75,27 @@ pub fn line_with_fps(s: &Sample, aim: Option<(u32, u64)>, game_fps: Option<u32>,
     t
 }
 
+
+// The video card of any maker (AMD, Intel, NVIDIA without its library): the counters of Windows «GPU Engine» and «GPU Adapter Memory».
+// Each engine of each process is one instance; the load of the card is the sum of its 3D engines (what Task Manager shows as «3D»).
+// The names look like «pid_1234_luid_0x0000_0x0000_phys_0_eng_0_engtype_3D».
+pub fn gpu_load_3d(instances: &[(String, f64)]) -> Option<u32> {
+    let v: Vec<f64> = instances.iter().filter(|(n, v)| n.to_lowercase().contains("engtype_3d") && v.is_finite() && *v >= 0.0).map(|(_, v)| *v).collect();
+    if v.is_empty() {
+        return None;
+    }
+    Some(v.iter().sum::<f64>().round().clamp(0.0, 100.0) as u32)
+}
+
+// the dedicated video memory in use, summed over the adapters (bytes -> GB); None when Windows gave nothing
+pub fn gpu_mem_used(instances: &[(String, f64)]) -> Option<f32> {
+    let v: Vec<f64> = instances.iter().filter(|(_, v)| v.is_finite() && *v >= 0.0).map(|(_, v)| *v).collect();
+    if v.is_empty() {
+        return None;
+    }
+    Some((v.iter().sum::<f64>() / 1024.0 / 1024.0 / 1024.0) as f32)
+}
+
 #[cfg(target_os = "windows")]
 mod win {
     use super::*;
@@ -145,6 +166,83 @@ mod win {
         let clock: Option<ClockFn> = if c.is_null() { None } else { Some(std::mem::transmute(c)) };
         Some(Nvml { handle: h as usize, util, mem, temp, clock })
     });
+
+
+    // the counters are opened once; a rate counter needs two readings, so the first one gives nothing (None) and the next ones do
+    struct Pdh {
+        query: winapi::um::pdh::PDH_HQUERY,
+        engine: winapi::um::pdh::PDH_HCOUNTER,
+        memory: winapi::um::pdh::PDH_HCOUNTER,
+    }
+    unsafe impl Send for Pdh {}
+    static PDH: Lazy<Mutex<Option<Pdh>>> = Lazy::new(|| unsafe {
+        use winapi::um::pdh::*;
+        let mut q: PDH_HQUERY = std::ptr::null_mut();
+        if PdhOpenQueryW(std::ptr::null(), 0, &mut q) != 0 {
+            return Mutex::new(None);
+        }
+        let wide = |t: &str| -> Vec<u16> { t.encode_utf16().chain(std::iter::once(0)).collect() };
+        let (mut e, mut m): (PDH_HCOUNTER, PDH_HCOUNTER) = (std::ptr::null_mut(), std::ptr::null_mut());
+        // (a computer without these counters — an old Windows — simply has none: the card is then «Недоступно»)
+        if PdhAddEnglishCounterW(q, wide("\\GPU Engine(*)\\Utilization Percentage").as_ptr(), 0, &mut e) != 0 {
+            e = std::ptr::null_mut();
+        }
+        if PdhAddEnglishCounterW(q, wide("\\GPU Adapter Memory(*)\\Dedicated Usage").as_ptr(), 0, &mut m) != 0 {
+            m = std::ptr::null_mut();
+        }
+        if e.is_null() && m.is_null() {
+            PdhCloseQuery(q);
+            return Mutex::new(None);
+        }
+        Mutex::new(Some(Pdh { query: q, engine: e, memory: m }))
+    });
+
+    // (the status «the buffer is too small, here is the size»; winapi does not declare it)
+    const PDH_MORE_DATA: i32 = 0x800007D2u32 as i32;
+
+    unsafe fn instances(c: winapi::um::pdh::PDH_HCOUNTER) -> Vec<(String, f64)> {
+        use winapi::um::pdh::*;
+        if c.is_null() {
+            return Vec::new();
+        }
+        let fmt = PDH_FMT_DOUBLE | PDH_FMT_NOCAP100;
+        let (mut size, mut count) = (0u32, 0u32);
+        if PdhGetFormattedCounterArrayW(c, fmt, &mut size, &mut count, std::ptr::null_mut()) != PDH_MORE_DATA || size == 0 || size > 8_000_000 {
+            return Vec::new();
+        }
+        // (u64 so that the buffer is aligned for the items)
+        let mut buf = vec![0u64; (size as usize + 7) / 8];
+        let items = buf.as_mut_ptr() as *mut PDH_FMT_COUNTERVALUE_ITEM_W;
+        if PdhGetFormattedCounterArrayW(c, fmt, &mut size, &mut count, items) != 0 {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        for i in 0..count as usize {
+            let it = &*items.add(i);
+            if it.FmtValue.CStatus != 0 || it.szName.is_null() {
+                continue;
+            }
+            let mut n = 0usize;
+            while n < 400 && *it.szName.add(n) != 0 {
+                n += 1;
+            }
+            let name = String::from_utf16_lossy(std::slice::from_raw_parts(it.szName, n));
+            out.push((name, *it.FmtValue.u.doubleValue()));
+        }
+        out
+    }
+
+    // (load, memory in use) of the video card from the counters of Windows
+    fn pdh_gpu() -> (Option<u32>, Option<f32>) {
+        let g = PDH.lock();
+        let Some(p) = g.as_ref() else { return (None, None) };
+        unsafe {
+            if winapi::um::pdh::PdhCollectQueryData(p.query) != 0 {
+                return (None, None);
+            }
+            (gpu_load_3d(&instances(p.engine)), gpu_mem_used(&instances(p.memory)))
+        }
+    }
 
     pub fn sample() -> Sample {
         static CACHE: Lazy<Mutex<Option<(std::time::Instant, Sample)>>> = Lazy::new(|| Mutex::new(None));
@@ -224,6 +322,11 @@ mod win {
                         s.gpu_clock_mhz = Some(c);
                     }
                 }
+            } else {
+                // not an NVIDIA card (or no library): the counters of Windows give the load and the memory in use (no total, no temperature)
+                let (load, used) = pdh_gpu();
+                s.gpu_pct = load;
+                s.gpu_mem_used_gb = used;
             }
         }
         s
@@ -256,10 +359,12 @@ pub fn monitor_json(s: &Sample, available: bool) -> serde_json::Value {
         (Some(u), Some(t)) if t > 0.0 => ok("disk", "Диск системы", format!("{} / {}", gbs(u), gbs(t)), Some((u / t * 100.0).round().clamp(0.0, 100.0) as u32)),
         _ => na("disk", "Диск системы", "Windows не ответил"),
     });
-    let nv = "нужна видеокарта NVIDIA с драйвером";
+    let nv = "Windows не отдаёт счётчики видеокарты (нужен Windows 10 версии 1709 или новее и драйвер видеокарты)";
     items.push(match s.gpu_pct { Some(g) => ok("gpu", "Видеокарта", format!("{}%", g), Some(g)), None => na("gpu", "Видеокарта", nv) });
     items.push(match (s.gpu_mem_used_gb, s.gpu_mem_total_gb) {
         (Some(u), Some(t)) if t > 0.0 => ok("vram", "Видеопамять", format!("{} / {}", gbs(u), gbs(t)), Some((u / t * 100.0).round().clamp(0.0, 100.0) as u32)),
+        // a card that is not NVIDIA: Windows tells what is in use, not the total
+        (Some(u), _) => ok("vram", "Видеопамять", format!("занято {}", gbs(u)), None),
         _ => na("vram", "Видеопамять", nv),
     });
     items.push(match s.gpu_temp_c { Some(t) => ok("gpu_temp", "Температура видеокарты", format!("{} °C", t), Some(t.min(100))), None => na("gpu_temp", "Температура видеокарты", nv) });
@@ -283,6 +388,29 @@ mod tests {
         let yes = monitor_json(&Sample { cpu_pct: 1, ram_total_gb: 8.0, refresh_hz: Some(144), ..Default::default() }, true);
         let r = yes["items"].as_array().unwrap().iter().find(|i| i["id"] == "refresh").unwrap();
         assert_eq!(r["value"], "144 Гц");
+    }
+
+    #[test]
+    fn the_load_of_any_video_card_is_the_sum_of_its_3d_engines() {
+        let i = |n: &str, v: f64| (n.to_string(), v);
+        let l = vec![i("pid_1_luid_0x0_0x1_phys_0_eng_0_engtype_3D", 30.4), i("pid_2_luid_0x0_0x1_phys_0_eng_0_engtype_3D", 12.2), i("pid_2_luid_0x0_0x1_phys_0_eng_3_engtype_VideoDecode", 90.0), i("pid_3_eng_1_engtype_Copy", 50.0)];
+        assert_eq!(gpu_load_3d(&l), Some(43), "only the 3D engines count");
+        assert_eq!(gpu_load_3d(&[i("a_engtype_3D", 80.0), i("b_engtype_3D", 70.0)]), Some(100), "never above 100");
+        assert_eq!(gpu_load_3d(&[i("a_engtype_Copy", 5.0)]), None, "no 3D engine: no number is invented");
+        assert_eq!(gpu_load_3d(&[]), None);
+        assert_eq!(gpu_load_3d(&[i("a_engtype_3D", f64::NAN), i("b_engtype_3D", -3.0)]), None, "garbage is ignored");
+        assert_eq!(gpu_mem_used(&[]), None);
+        let gb = gpu_mem_used(&[i("luid_a", 1_073_741_824.0), i("luid_b", 536_870_912.0)]).unwrap();
+        assert!((gb - 1.5).abs() < 0.001, "{}", gb);
+    }
+
+    #[test]
+    fn a_card_without_a_known_total_shows_what_is_in_use() {
+        let s = Sample { cpu_pct: 1, ram_total_gb: 8.0, gpu_pct: Some(10), gpu_mem_used_gb: Some(2.0), ..Default::default() };
+        let m = monitor_json(&s, true);
+        let v = m["items"].as_array().unwrap().iter().find(|i| i["id"] == "vram").unwrap();
+        assert_eq!((v["available"].as_bool(), v["value"].as_str().map(|t| t.starts_with("занято"))), (Some(true), Some(true)));
+        assert!(v["pct"].is_null(), "no percent without a total");
     }
 
     #[test]

@@ -220,6 +220,42 @@ pub fn start(id: &str) -> Result<(), String> {
     Ok(())
 }
 
+// a check of an installed model: the files the recognizer cannot start without, and that none of them is empty
+pub fn check(id: &str) -> Result<String, String> {
+    let p = pin(id).ok_or_else(|| "такой модели речи нет".to_string())?;
+    check_dir(&models_dir().join(p.name)).map(|n| format!("Модель «{}» в порядке: {} файлов, {} МБ.", p.name, n.0, n.1 / 1_048_576))
+}
+
+// (files, bytes) of a model folder that has everything; the reason otherwise
+pub(crate) fn check_dir(dir: &Path) -> Result<(usize, u64), String> {
+    if !dir.is_dir() {
+        return Err("модель не установлена".into());
+    }
+    for f in ["am/final.mdl", "conf/model.conf", "conf/mfcc.conf"] {
+        match std::fs::metadata(dir.join(f)) {
+            Ok(m) if m.is_file() && m.len() > 0 => {}
+            _ => return Err(format!("в модели нет файла {} или он пустой: удалите модель и установите заново", f)),
+        }
+    }
+    fn walk(d: &Path, n: &mut usize, bytes: &mut u64) {
+        if let Ok(rd) = std::fs::read_dir(d) {
+            for e in rd.flatten() {
+                match e.metadata() {
+                    Ok(m) if m.is_dir() => walk(&e.path(), n, bytes),
+                    Ok(m) => {
+                        *n += 1;
+                        *bytes += m.len();
+                    }
+                    Err(_) => {}
+                }
+            }
+        }
+    }
+    let (mut n, mut bytes) = (0, 0);
+    walk(dir, &mut n, &mut bytes);
+    Ok((n, bytes))
+}
+
 // removes exactly the folder of the named model (never a link, never a path that came from outside)
 pub fn remove(id: &str) -> Result<bool, String> {
     let p = pin(id).ok_or_else(|| "такой модели речи нет".to_string())?;
@@ -318,6 +354,24 @@ mod tests {
             w.finish().unwrap();
         }
         assert!(extract(&z, &d.path().join("s"), "m1").unwrap_err().contains("ссылка"));
+    }
+
+    #[test]
+    fn a_model_folder_is_checked_for_the_files_it_cannot_work_without() {
+        let d = tempfile::tempdir().unwrap();
+        let m = d.path().join("m");
+        assert!(check_dir(&m).unwrap_err().contains("не установлена"));
+        for (f, data) in [("am/final.mdl", &b"x"[..]), ("conf/model.conf", b"y"), ("conf/mfcc.conf", b"z"), ("graph/HCLG.fst", b"abc")] {
+            let p = m.join(f);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, data).unwrap();
+        }
+        assert_eq!(check_dir(&m).unwrap(), (4, 6));
+        std::fs::write(m.join("conf/mfcc.conf"), b"").unwrap();
+        assert!(check_dir(&m).unwrap_err().contains("mfcc.conf"), "an empty file is a broken model");
+        std::fs::remove_file(m.join("am/final.mdl")).unwrap();
+        assert!(check_dir(&m).is_err());
+        assert!(check("../x").is_err());
     }
 
     #[test]
