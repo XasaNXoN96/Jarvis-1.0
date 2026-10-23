@@ -141,6 +141,7 @@ pub mod imagegen;
 pub mod kb;
 pub mod actionlog;
 pub mod smsread;
+pub mod powerwatch;
 pub mod wakewatch;
 pub mod voicediag;
 pub mod gamestats;

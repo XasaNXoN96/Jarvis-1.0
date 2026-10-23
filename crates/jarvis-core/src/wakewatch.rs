@@ -36,6 +36,16 @@ pub struct Watch {
     pub restarts: u32,
     pub last_restart: Option<u64>,
     pub gave_up: bool,
+    // Windows woke up from sleep / the session was unlocked: the device is reopened once, with fresh counters (see `resumed`)
+    pub resume_pending: bool,
+}
+
+// what the watchdog does at one tick
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Action {
+    Nothing,
+    // reopen the device; `n` = the number of this try; `after_resume` = the reason is a return from sleep / unlock, not a measured stall
+    Reopen { n: u32, after_resume: bool, verdict: Verdict },
 }
 
 impl Watch {
@@ -80,6 +90,38 @@ impl Watch {
         self.last_restart.map(|t| now.saturating_sub(t) >= RETRY_MS).unwrap_or(true)
     }
 
+    // Windows returned from sleep (or the session was unlocked). A device that was open before the sleep is often dead after it, and the
+    // fast tries may have been used up while the computer was still waking up (then the next try would wait 5 minutes). So: the counters
+    // start over (still limited: MAX_RESTARTS), the clocks start from now (the time asleep is not a «stall»), and ONE reopening is asked for.
+    pub fn resumed(&mut self, now: u64) {
+        self.restarts = 0;
+        self.gave_up = false;
+        self.last_restart = None;
+        self.zero_since = None;
+        self.last_beat = Some(now);
+        self.resume_pending = true;
+    }
+
+    // one tick of the watchdog
+    pub fn next_action(&mut self, now: u64) -> Action {
+        if self.paused {
+            // the user switched the microphone off: nothing to bring back (switching it on reopens it by itself)
+            self.resume_pending = false;
+            return Action::Nothing;
+        }
+        if self.resume_pending && self.busy == 0 {
+            self.resume_pending = false;
+            self.restarted(now);
+            return Action::Reopen { n: self.restarts, after_resume: true, verdict: Verdict::Ok };
+        }
+        let v = self.verdict(now);
+        if self.should_restart(now, v) {
+            self.restarted(now);
+            return Action::Reopen { n: self.restarts, after_resume: false, verdict: v };
+        }
+        Action::Nothing
+    }
+
     pub fn restarted(&mut self, now: u64) {
         self.restarts = (self.restarts + 1).min(MAX_RESTARTS);
         self.last_restart = Some(now);
@@ -92,11 +134,11 @@ impl Watch {
     }
 }
 
-static WATCH: Mutex<Watch> = parking_lot::const_mutex(Watch { last_beat: None, zero_since: None, paused: false, busy: 0, restarts: 0, last_restart: None, gave_up: false });
+static WATCH: Mutex<Watch> = parking_lot::const_mutex(Watch { last_beat: None, zero_since: None, paused: false, busy: 0, restarts: 0, last_restart: None, gave_up: false, resume_pending: false });
 static STARTED: AtomicBool = AtomicBool::new(false);
 static T0: once_cell::sync::Lazy<Instant> = once_cell::sync::Lazy::new(Instant::now);
 
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     T0.elapsed().as_millis() as u64
 }
 
@@ -118,6 +160,11 @@ impl Drop for Busy {
         w.last_beat = Some(now_ms());
         w.zero_since = None;
     }
+}
+
+// Windows woke up / the session was unlocked (see powerwatch.rs)
+pub fn on_resume() {
+    WATCH.lock().resumed(now_ms());
 }
 
 pub fn set_paused(p: bool) {
@@ -149,6 +196,7 @@ pub fn start() {
     if STARTED.swap(true, Ordering::SeqCst) {
         return;
     }
+    crate::powerwatch::start();
     std::thread::spawn(|| loop {
         std::thread::sleep(std::time::Duration::from_secs(2));
         let now = now_ms();
@@ -160,12 +208,16 @@ pub fn start() {
             Verdict::Ok if w.restarts > 0 || w.gave_up => crate::voicediag::note("stream", "звук идёт"),
             _ => {}
         }
-        if w.should_restart(now, v) {
-            w.restarted(now);
-            let n = w.restarts;
+        if let Action::Reopen { n, after_resume, verdict } = w.next_action(now) {
             drop(w);
-            crate::voicediag::note("device", &format!("переоткрываю микрофон (попытка {})", n));
-            log::warn!("Microphone watchdog: {:?}, reopening the device (try {} of {})", v, n, MAX_RESTARTS);
+            if after_resume {
+                crate::voicediag::note("device", "после сна или блокировки открываю микрофон заново");
+                log::warn!("Microphone watchdog: Windows resumed, reopening the device once");
+            } else {
+                crate::voicediag::note("device", &format!("переоткрываю микрофон (попытка {})", n));
+                log::warn!("Microphone watchdog: {:?}, reopening the device (try {} of {})", verdict, n, MAX_RESTARTS);
+            }
+            // (one recovery thread at a time: `recover_in_background` refuses a second one while the first works)
             crate::recorder::recover_in_background();
         }
     });
