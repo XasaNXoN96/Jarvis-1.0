@@ -200,6 +200,31 @@ pub fn backup_path(p: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
+// The copy never replaces an older one: the second edit of the same file must not destroy the copy of the ORIGINAL (and with it the
+// undo of the first edit). The names are `name.jarvis-bak`, `name.jarvis-bak.2`, `name.jarvis-bak.3` …; a name that exists is never written.
+fn save_backup(path: &Path, content: &[u8]) -> Result<PathBuf, String> {
+    use std::io::Write;
+    let first = backup_path(path);
+    for n in 1..=1000u32 {
+        let candidate = if n == 1 {
+            first.clone()
+        } else {
+            let mut s = first.as_os_str().to_owned();
+            s.push(format!(".{}", n));
+            PathBuf::from(s)
+        };
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&candidate) {
+            Ok(mut f) => {
+                f.write_all(content).and_then(|_| f.flush()).map_err(|e| format!("Не удалось сохранить копию: {}", e))?;
+                return Ok(candidate);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("Не удалось сохранить копию: {}", e)),
+        }
+    }
+    Err("Слишком много копий этого файла рядом с ним: уберите старые `.jarvis-bak` и повторите.".into())
+}
+
 // applies the proposal if the file is still as it was when the proposal was made. Returns the backup path.
 pub fn apply(p: &Proposal) -> Result<PathBuf, String> {
     crate::owner::guard()?;
@@ -207,8 +232,7 @@ pub fn apply(p: &Proposal) -> Result<PathBuf, String> {
     if now != p.old {
         return Err("Файл изменился после предложения правки: сделайте предложение заново.".into());
     }
-    let bak = backup_path(&p.path);
-    std::fs::write(&bak, p.old.as_bytes()).map_err(|e| format!("Не удалось сохранить копию: {}", e))?;
+    let bak = save_backup(&p.path, p.old.as_bytes())?;
     crate::write_atomic(&p.path, p.new.as_bytes()).map_err(|e| format!("Не удалось записать файл: {}", e))?;
     Ok(bak)
 }
@@ -352,5 +376,27 @@ mod tests {
         let (checked, ok, msg) = quick_check(Path::new("a.json"), "{bad");
         assert!(checked && !ok && msg.contains("не читается"));
         assert_eq!(quick_check(Path::new("a.md"), "x").0, false);
+    }
+
+    #[test]
+    fn a_second_edit_keeps_the_copy_of_the_original() {
+        crate::store::with_temp(|| {
+            crate::owner::reset_for_tests();
+            let d = tempfile::tempdir().unwrap();
+            let f = d.path().join("a.txt");
+            std::fs::write(&f, "original\n").unwrap();
+            let p1 = propose_with(&f.to_string_lossy(), "x", &|_: &str, _: &str| Ok("edit one\n".to_string())).unwrap();
+            let bak1 = apply(&p1).unwrap();
+            let p2 = propose_with(&f.to_string_lossy(), "x", &|_: &str, _: &str| Ok("edit two\n".to_string())).unwrap();
+            let bak2 = apply(&p2).unwrap();
+            assert_ne!(bak1, bak2, "the second copy has a name of its own");
+            assert_eq!(std::fs::read_to_string(&bak1).unwrap(), "original\n", "the copy of the original is still there");
+            assert_eq!(std::fs::read_to_string(&bak2).unwrap(), "edit one\n");
+            // undo of the second edit, then of the first
+            restore(&f.to_string_lossy(), &bak2.to_string_lossy()).unwrap();
+            assert_eq!(std::fs::read_to_string(&f).unwrap(), "edit one\n");
+            restore(&f.to_string_lossy(), &bak1.to_string_lossy()).unwrap();
+            assert_eq!(std::fs::read_to_string(&f).unwrap(), "original\n");
+        });
     }
 }

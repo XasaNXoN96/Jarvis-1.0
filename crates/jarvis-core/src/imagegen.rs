@@ -216,7 +216,8 @@ pub fn start_job_with(prompt: &str, run: Box<dyn FnOnce(&str) -> Result<PathBuf,
     }
     let my = GEN.load(std::sync::atomic::Ordering::SeqCst);
     std::thread::spawn(move || {
-        let result = run(&prompt);
+        // a panic of the call must end the job with an error: a job «running» for ever would refuse every next picture
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(&prompt))).unwrap_or_else(|_| Err("Генерация остановилась из-за внутренней ошибки. Попробуйте ещё раз.".to_string()));
         let mut g = JOB.lock();
         if GEN.load(std::sync::atomic::Ordering::SeqCst) != my {
             // cancelled: the file, if it was made, is removed
@@ -280,6 +281,9 @@ pub fn parse(text: &str) -> Option<(bool, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // the tests of the job share ONE job state: they run one after another
+    static JOB_TEST_LOCK: parking_lot::Mutex<()> = parking_lot::const_mutex(());
     use std::io::{Read, Write};
 
     const PNG: [u8; 12] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0];
@@ -312,6 +316,7 @@ mod tests {
 
     #[test]
     fn the_job_has_honest_states_and_a_cancelled_result_is_dropped() {
+        let _t = JOB_TEST_LOCK.lock();
         let d = tempfile::tempdir().unwrap();
         let (tx, rx) = std::sync::mpsc::channel::<()>();
         let dir = d.path().to_path_buf();
@@ -369,5 +374,19 @@ mod tests {
         assert!(req.starts_with("POST /v1/images/generations") && req.to_lowercase().contains("authorization: bearer sk-test") && req.contains("кот в шляпе"));
         assert!(generate_with("http://127.0.0.1:1/v1", "", "m", "", d.path()).is_err());
         assert!(generate_with("http://127.0.0.1:1/v1", "", "", "кот", d.path()).unwrap_err().contains("модель"));
+    }
+
+    #[test]
+    fn a_job_that_panics_ends_in_an_error_and_does_not_block_the_next_one() {
+        let _t = JOB_TEST_LOCK.lock();
+        // (the jobs share one state: wait until no other test's job is running)
+        for _ in 0..200 { if job().state != "running" { break; } std::thread::sleep(std::time::Duration::from_millis(20)); }
+        start_job_with("падает", Box::new(|_| panic!("внутренний сбой"))).unwrap();
+        for _ in 0..200 { if job().state != "running" { break; } std::thread::sleep(std::time::Duration::from_millis(20)); }
+        let j = job();
+        assert_eq!(j.state, "error", "a panic must not leave the job «running» for ever");
+        assert!(!j.message.is_empty());
+        assert!(start_job_with("следующая", Box::new(|_| Err("x".into()))).is_ok(), "a new job can start");
+        for _ in 0..200 { if job().state != "running" { break; } std::thread::sleep(std::time::Duration::from_millis(20)); }
     }
 }
