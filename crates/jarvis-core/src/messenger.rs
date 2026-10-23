@@ -204,6 +204,9 @@ pub fn history() -> Vec<Outgoing> {
     store::read::<Vec<Outgoing>>(FILE).0
 }
 
+// the history is changed under this lock: a read-modify-write of two threads (a button and a spoken «да») must not lose a line or let both of them send
+static LOCK: parking_lot::Mutex<()> = parking_lot::const_mutex(());
+
 fn put(o: &Outgoing) -> Result<(), String> {
     let mut h = history();
     match h.iter_mut().find(|x| x.id == o.id) {
@@ -223,10 +226,12 @@ pub fn get(id: &str) -> Option<Outgoing> {
 
 // remembers a prepared message (it waits for the confirmation)
 pub fn stage(o: &Outgoing) -> Result<(), String> {
+    let _g = LOCK.lock();
     put(o)
 }
 
 pub fn cancel(id: &str) -> Result<Outgoing, String> {
+    let _g = LOCK.lock();
     let mut o = get(id).ok_or("такого сообщения нет")?;
     if o.status.is_final() {
         return Err(format!("Сообщение уже в состоянии «{}».", o.status.label()));
@@ -239,20 +244,32 @@ pub fn cancel(id: &str) -> Result<Outgoing, String> {
 
 // the user said «да»: the adapter is called once; a message that is final is never sent again
 pub fn confirm(id: &str, adapter: &dyn Adapter) -> Result<Outgoing, String> {
-    let mut o = get(id).ok_or("такого сообщения нет")?;
-    if o.status != Status::AwaitingConfirmation && o.status != Status::Prepared {
-        return Err(format!("Сообщение уже в состоянии «{}»: второй раз не отправляю.", o.status.label()));
-    }
-    let c = contacts::by_id(&o.contact_id).ok_or("контакт удалён")?;
-    o.status = Status::Sending;
-    o.updated = store::now();
-    put(&o)?;
-    match adapter.send(&c, &o.body) {
+    // the message is claimed (→ «отправляется») under the lock, so only ONE of two simultaneous «да» reaches the adapter
+    let mut o = {
+        let _g = LOCK.lock();
+        let mut o = get(id).ok_or("такого сообщения нет")?;
+        if o.status != Status::AwaitingConfirmation && o.status != Status::Prepared {
+            return Err(format!("Сообщение уже в состоянии «{}»: второй раз не отправляю.", o.status.label()));
+        }
+        if contacts::by_id(&o.contact_id).is_none() {
+            return Err("контакт удалён".into());
+        }
+        o.status = Status::Sending;
+        o.updated = store::now();
+        put(&o)?;
+        o
+    };
+    let c = contacts::by_id(&o.contact_id);
+    let outcome = match &c {
+        Some(c) => adapter.send(c, &o.body),
+        None => Outcome::Failed("контакт удалён".into()),
+    };
+    match outcome {
         Outcome::Delivered => o.status = Status::Sent,
         Outcome::Manual(url) => {
             o.status = Status::ManualSendRequired;
             o.url = url;
-            o.note = "Чат открыт с текстом: нажмите «Отправить» в приложении. Я не могу узнать, отправили ли вы.".into();
+            o.note = manual_note(&o.channel).into();
         }
         Outcome::Failed(e) => {
             o.status = Status::Error;
@@ -260,11 +277,22 @@ pub fn confirm(id: &str, adapter: &dyn Adapter) -> Result<Outgoing, String> {
         }
     }
     o.updated = store::now();
+    let _g = LOCK.lock();
     put(&o)?;
     Ok(o)
 }
 
+// What the user has to do after the chat is opened. WhatsApp gets the text in the link; the Telegram link opens the chat only (it has no place for a text), so the text must be pasted by hand.
+pub fn manual_note(channel: &str) -> &'static str {
+    if channel == "telegram" {
+        "Чат открыт БЕЗ текста (Telegram не принимает текст из ссылки): вставьте сообщение сами, оно сохранено в истории, и нажмите «Отправить». Я не могу узнать, отправили ли вы."
+    } else {
+        "Чат открыт с текстом: нажмите «Отправить» в приложении. Я не могу узнать, отправили ли вы."
+    }
+}
+
 pub fn clear_history() -> bool {
+    let _g = LOCK.lock();
     store::write(FILE, &Vec::<Outgoing>::new()).is_ok()
 }
 
@@ -358,6 +386,59 @@ mod tests {
             assert_eq!(cancel(&o2.id).unwrap().status, Status::Cancelled);
             assert!(confirm(&o2.id, &Fake(Outcome2::Delivered)).is_err());
             assert_eq!(history().len(), 2);
+        });
+    }
+
+    struct Counting(std::sync::atomic::AtomicUsize);
+    impl Adapter for Counting {
+        fn send(&self, _: &Contact, _: &str) -> Outcome {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            std::thread::sleep(std::time::Duration::from_millis(60));
+            Outcome::Delivered
+        }
+    }
+
+    #[test]
+    fn two_simultaneous_confirmations_send_once() {
+        store::with_temp(|| {
+            let o = staged();
+            let a = std::sync::Arc::new(Counting(std::sync::atomic::AtomicUsize::new(0)));
+            let handles: Vec<_> = (0..6)
+                .map(|_| {
+                    let (a, id) = (a.clone(), o.id.clone());
+                    std::thread::spawn(move || confirm(&id, &*a).is_ok())
+                })
+                .collect();
+            let ok = handles.into_iter().map(|h| h.join().unwrap()).filter(|x| *x).count();
+            assert_eq!(ok, 1, "exactly one confirmation wins");
+            assert_eq!(a.0.load(std::sync::atomic::Ordering::SeqCst), 1, "the adapter is called once");
+            assert_eq!(get(&o.id).unwrap().status, Status::Sent);
+            assert_eq!(history().len(), 1);
+        });
+    }
+
+    #[test]
+    fn a_deleted_contact_stops_the_confirmation_before_anything_is_claimed() {
+        store::with_temp(|| {
+            let o = staged();
+            assert!(contacts::delete("m"));
+            assert_eq!(confirm(&o.id, &Fake(Outcome2::Delivered)).unwrap_err(), "контакт удалён");
+            assert_eq!(get(&o.id).unwrap().status, Status::AwaitingConfirmation, "the message stays confirmable/cancellable");
+        });
+    }
+
+    #[test]
+    fn the_telegram_chat_is_said_to_be_opened_without_the_text() {
+        store::with_temp(|| {
+            contacts::save(Contact { id: "t".into(), name: "Тима".into(), telegram: "tima".into(), ..Default::default() }).unwrap();
+            let Prepared::Ready(o) = prepare(&Parsed { who: "Тима".into(), body: "секретный текст".into(), channel: None }) else { panic!() };
+            stage(&o).unwrap();
+            let r = confirm(&o.id, &LinkAdapter { channel: "telegram".into() }).unwrap();
+            assert_eq!(r.status, Status::ManualSendRequired);
+            assert_eq!(r.url, "https://t.me/tima");
+            assert!(!r.url.contains("секретный") && r.note.contains("БЕЗ текста"), "{}", r.note);
+            assert_eq!(get(&o.id).unwrap().body, "секретный текст", "the text stays in the history to be pasted");
+            assert!(manual_note("whatsapp").contains("с текстом"));
         });
     }
 }

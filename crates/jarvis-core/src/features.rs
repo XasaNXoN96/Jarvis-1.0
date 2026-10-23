@@ -39,7 +39,8 @@ fn adapter_for(channel: &str) -> messenger::LinkAdapter {
 
 fn describe(o: &messenger::Outgoing) -> String {
     match o.status {
-        messenger::Status::ManualSendRequired => format!("Открыл чат с «{}» в {} с готовым текстом. Нажмите «Отправить» там — сам я отправить не могу и не узнаю, отправили ли вы.", o.contact, if o.channel == "whatsapp" { "WhatsApp" } else { "Telegram" }),
+        messenger::Status::ManualSendRequired if o.channel == "telegram" => format!("Открыл чат с «{}» в Telegram, но БЕЗ текста: Telegram не принимает его из ссылки. Вставьте сообщение сами (оно в истории) и нажмите «Отправить»; я не узнаю, отправили ли вы.", o.contact),
+        messenger::Status::ManualSendRequired => format!("Открыл чат с «{}» в WhatsApp с готовым текстом. Нажмите «Отправить» там — сам я отправить не могу и не узнаю, отправили ли вы.", o.contact),
         messenger::Status::Sent => format!("Отправлено: «{}».", o.contact),
         messenger::Status::Error => format!("Не отправлено: {}.", o.note),
         s => format!("Сообщение «{}»: {}.", o.contact, s.label()),

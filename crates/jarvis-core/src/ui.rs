@@ -741,7 +741,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         "ct_delete" => json!({ "ok": crate::contacts::delete(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) }),
         "out_list" => { let mut h = crate::messenger::history(); h.reverse(); json!({ "ok": true, "items": h.into_iter().take(50).map(|o| { let label = o.status.label(); let mut v = serde_json::to_value(&o).unwrap_or(json!({})); v["label"] = json!(label); v }).collect::<Vec<_>>() }) }
         "out_confirm" => match crate::features::confirm_message(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) {
-            Ok(o) => json!({ "ok": o.status != crate::messenger::Status::Error, "status": o.status, "message": if o.status == crate::messenger::Status::ManualSendRequired { "Чат открыт с текстом: нажмите «Отправить» в приложении.".to_string() } else { o.note.clone() } }),
+            Ok(o) => json!({ "ok": o.status != crate::messenger::Status::Error, "status": o.status, "message": if o.status == crate::messenger::Status::ManualSendRequired { crate::messenger::manual_note(&o.channel).to_string() } else { o.note.clone() } }),
             Err(e) => json!({ "ok": false, "message": e }),
         },
         "out_cancel" => match crate::features::cancel_message(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) {
