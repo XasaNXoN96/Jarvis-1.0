@@ -49,8 +49,8 @@ jobs:
             echo "::error::The key does not open with the stored password and alias (or the alias is wrong). Nothing is printed about the secrets."
             exit 1
           fi
-          # the old key of the repository is public (its password is in the history), so its fingerprint is public information as well
-          old_fp="$(keytool -list -v -keystore android/keystore/jarvis-sideload.jks -storepass jarvis-sideload -alias jarvis 2>/dev/null | fp)"
+          # the fingerprint of the old, compromised key (public information; its file is removed from the tree, it stays only in the history)
+          old_fp="62:0A:34:1D:C2:8A:04:A5:78:F7:61:6C:38:34:B6:4F:4A:4B:3A:7D:7F:0B:2E:6A:6F:88:88:60:07:DC:82:63"
           echo "New key certificate SHA-256 (public): $new_fp"
           echo "Old compromised key SHA-256 (public): $old_fp"
           if [ "$new_fp" = "$old_fp" ]; then

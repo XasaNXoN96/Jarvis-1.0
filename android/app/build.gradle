@@ -16,7 +16,7 @@ android {
 
     // The key of the RELEASE comes ONLY from the environment (the protected secrets of CI): JARVIS_KEYSTORE (a file), JARVIS_KEYSTORE_PASSWORD,
     // JARVIS_KEY_ALIAS, optionally JARVIS_KEY_PASSWORD. No key and no password are written here.
-    // There is no fallback: the old sideload key of the repository is PUBLIC (compromised) and is never used. A release build without a key
+    // There is no fallback: the old sideload key was PUBLIC (compromised): its file is removed from the tree and it is never used. A release build without a key
     // stops with a clear error (below); a DEBUG build is signed by the debug key of the Android toolchain and is not for distribution.
     def envKey = System.getenv('JARVIS_KEYSTORE')
     signingConfigs {

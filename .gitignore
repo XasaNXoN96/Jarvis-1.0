@@ -73,3 +73,9 @@ remote_key.sealed
 remote_cert.der
 remote_cert.meta
 remote_policy.json
+
+# key files never go into the repository (the Android release key lives in the protected secrets and in the owner's own backup)
+*.jks
+*.p12
+*.pfx
+android/keystore/

@@ -48,11 +48,7 @@ jobs:
           if git grep -nIE -e '-----BEGIN [A-Z ]*PRIVATE KEY-----' -e 'ghp_[A-Za-z0-9]{36}' -e 'AKIA[0-9A-Z]{16}' -e 'xox[bp]-[A-Za-z0-9-]{20,}' -e 'AIza[0-9A-Za-z_-]{35}' -- . ':!*.md' ':!.github/workflows/*' ':!crates/**/tests*' ':!crates/**/*tests.rs' ; then
             echo "::error::a secret looks committed (see above)"; bad=1
           fi
-          # a keystore other than the one that is known and being replaced (docs/implementation/SECURITY_FIXES.md)
-          extra="$(git ls-files | grep -iE '\.(jks|keystore|p12|pfx)$' | grep -v '^android/keystore/jarvis-sideload.jks$' || true)"
+          # no key file may be committed at all (the old sideload key was removed from the tree on 23.10.2026; it stays only in the history)
+          extra="$(git ls-files | grep -iE '\.(jks|keystore|p12|pfx)$' || true)"
           if [ -n "$extra" ]; then echo "::error::a key file is committed: $extra"; bad=1; fi
-          # the known legacy key: a reminder on every run until it is removed
-          if git ls-files --error-unmatch android/keystore/jarvis-sideload.jks >/dev/null 2>&1; then
-            echo "::warning title=Android key::the OLD sideload key (with a public password) is still in the repository: replace it and remove the file (docs/implementation/SECURITY_FIXES.md)"
-          fi
           exit $bad

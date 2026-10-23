@@ -9,9 +9,8 @@
 3. Запустите, введите адрес компьютера (или вставьте ссылку пульта целиком), затем код привязки из Jarvis на компьютере.
 
 ## Сборка
-`cd android && gradle assembleRelease` (нужны JDK 17, Android SDK 34, Gradle 8.7). Подпись — ключ для установки вручную `keystore/jarvis-sideload.jks`
-(пароль `jarvis-sideload`): он нужен, чтобы новая версия ставилась поверх старой. Для Google Play нужен свой ключ: переменные
-`JARVIS_KEYSTORE`, `JARVIS_KEYSTORE_PASSWORD`, `JARVIS_KEY_ALIAS`.
+Debug-пакет (не для распространения): `cd android && gradle assembleDebug` (нужны JDK 17, Android SDK 34, Gradle 8.7); в CI его собирает каждый push.
+Релизный пакет собирается только с вашим собственным ключом: переменные `JARVIS_KEYSTORE` (файл), `JARVIS_KEYSTORE_PASSWORD`, `JARVIS_KEY_ALIAS` (в CI — защищённые секреты `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`; workflow «Build Android app» → Run workflow → `release`). Без ключа релизная сборка завершается ошибкой. Ключ создаёт `tools/android-key/make-key.sh` (или `.ps1`). Старый публичный ключ удалён и не используется; сертификат нового ключа (SHA-256, публичный отпечаток): `41:E8:35:AF:8D:F4:BA:EC:17:DA:EC:76:C1:B8:60:D6:3F:8E:0B:8D:25:AB:C8:7F:BC:70:7E:D6:82:9A:CD:DF`. Новая версия ставится поверх старой только если подписана тем же ключом; пакет, подписанный старым ключом, обновить нельзя — приложение нужно удалить и поставить заново.
 
 ## Что не делает
 iOS не поддерживается. Геолокация и запись образца голоса («Мой голос») в приложении недоступны — это работает только в браузере по https.
