@@ -180,7 +180,7 @@ extern "system" {
 }
 
 #[cfg(target_os = "windows")]
-fn exe_icon_png(path: &str) -> Option<Vec<u8>> {
+pub(crate) fn exe_icon_png(path: &str) -> Option<Vec<u8>> {
     use winapi::shared::windef::HICON;
     use winapi::um::wingdi::{CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetObjectW, BITMAP, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS};
     use winapi::um::winuser::{DestroyIcon, GetIconInfo, ICONINFO};
@@ -247,7 +247,7 @@ fn exe_icon_png(path: &str) -> Option<Vec<u8>> {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn exe_icon_png(_path: &str) -> Option<Vec<u8>> {
+pub(crate) fn exe_icon_png(_path: &str) -> Option<Vec<u8>> {
     None
 }
 

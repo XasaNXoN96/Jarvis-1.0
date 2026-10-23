@@ -1803,6 +1803,10 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
                 None => respond(&mut stream, "404 Not Found", "text/plain", "no icon"),
             }
         }
+        ("GET", "/prog-icon") => match crate::progicon::icon_for(&query_param(&req.query, "k")) {
+            Some(data) => respond_bytes_cached(&mut stream, "image/png", &data),
+            None => respond(&mut stream, "404 Not Found", "text/plain", "no icon"),
+        },
         ("GET", "/games-report") => respond(&mut stream, "200 OK", "text/plain", &crate::gamemode::report_text()),
         ("GET", "/games") => respond(&mut stream, "200 OK", "application/json", &crate::gamemode::games_json().to_string()),
         ("GET", "/aim") => {
@@ -2747,7 +2751,7 @@ mod tests {
         answer.lines().next().unwrap_or("")
     }
 
-    const DATA: &[&str] = &["/state", "/remote", "/remote-qr", "/remote-qr-net", "/remote-qr-https", "/diag", "/diag-report", "/games", "/games-list", "/game-icon", "/games-report", "/aim", "/aim-report", "/aim-snapshot", "/voiceprint", "/settings", "/voices", "/modules", "/chats", "/scenarios", "/tasks", "/messages", "/telegram", "/commands", "/apps", "/files", "/avatar", "/voice-install", "/reaction-voices", "/devices"];
+    const DATA: &[&str] = &["/state", "/remote", "/remote-qr", "/remote-qr-net", "/remote-qr-https", "/diag", "/diag-report", "/games", "/games-list", "/game-icon", "/prog-icon", "/games-report", "/aim", "/aim-report", "/aim-snapshot", "/voiceprint", "/settings", "/voices", "/modules", "/chats", "/scenarios", "/tasks", "/messages", "/telegram", "/commands", "/apps", "/files", "/avatar", "/voice-install", "/reaction-voices", "/devices"];
 
     // a program on this computer (a web page is stopped before, by the Host) sends any header it likes: without the secret of the
     // window nothing is read and nothing is done, whatever else the request says

@@ -152,6 +152,7 @@ pub mod autopilot;
 pub mod persona;
 pub mod codeassist;
 pub mod proglib;
+pub mod progicon;
 pub mod pairing;
 pub mod components;
 pub mod wsync;

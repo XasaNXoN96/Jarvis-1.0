@@ -6,7 +6,8 @@ const THEMES = {
   avengers: [44, 100, 44, 'holo', 'Avengers: Эра Альтрона'],
   matrix: [130, 90, 130, 'wave', 'Matrix'],
   ice: [200, 80, 200, 'core', 'Ice'],
-  sunset: [18, 90, 340, 'orbit', 'Sunset']
+  sunset: [18, 90, 340, 'orbit', 'Sunset'],
+  day: [214, 80, 214, 'core', 'День (светлая)']
 };
 const LEGACY_THEME = { graphite: 'jarvis', ocean: 'ice', amber: 'avengers', ruby: 'sunset', violet: 'cyberpunk', lime: 'matrix' };
 const SPHERES = { dots: 'Частицы', core: 'Реактор', holo: 'Голограмма', neon: 'Неон', wave: 'Волна', orbit: 'Орбиты' };

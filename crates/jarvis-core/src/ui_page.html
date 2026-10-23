@@ -343,6 +343,15 @@
     --bgimg: radial-gradient(900px 600px at 20% 0, #7dd3fc22, transparent), radial-gradient(700px 500px at 100% 100%, #3b82f622, transparent); }
   :root[data-theme="sunset"] { --nav-hi:#ff8a4c; --brand-grad:linear-gradient(90deg,#ffe0a8,#ff8a4c 55%,#ff3d7a); --brand-glow:#ff8a4ca0; --fx-bg:radial-gradient(900px 560px at 50% 118%,#ff8a4c44,transparent 70%),radial-gradient(800px 560px at 0% 0,#7a2bd62a,transparent 65%),linear-gradient(#0b0509,#1a0a14); --fx-after:radial-gradient(70% 55% at 50% 110%,#ff3d7a26,transparent 70%); --bg1: #0b0509; --bg2: #1d0b17; --panel: #230d1ae6; --panel2: #2c1220; --line: #4d2038; --line2: #ff8a4c66; --text: #fff0e6; --dim: #c29a9c; --accent: #ff8a4c; --ink: #1a0810; --nav-bg: #12060eaa; --nav-sel: #ff8a4c22; --row-line: #ff8a4c1a; --row-hover: #ff8a4c0d; --field-bg: #260f1c; --font: Candara, "Segoe UI", sans-serif; --head-tf: none; --ls: .03em;
     --bgimg: linear-gradient(180deg, transparent 40%, #ff5e6c22 80%, #ff8a4c33 100%), radial-gradient(800px 500px at 50% 110%, #ffb34733, transparent); }
+  /* the light theme: dark text on a light ground; the sphere is darkened by a filter so that it is seen on white */
+  :root[data-theme="day"] { color-scheme: light; --nav-hi:#1f6feb; --brand-grad:linear-gradient(90deg,#1f6feb,#7c3aed); --brand-glow:#1f6feb55; --fx-bg:linear-gradient(#f4f7fb,#e6edf6); --fx-after:radial-gradient(60% 45% at 50% 110%,#1f6feb14,transparent 70%); --bg1: #f4f7fb; --bg2: #e6edf6; --panel: #ffffffee; --panel2: #ffffff; --line: #cfd9e6; --line2: #1f6feb66; --text: #1b2430; --dim: #566578; --accent: #1f6feb; --ink: #ffffff; --nav-bg: #ffffffcc; --nav-sel: #1f6feb1a; --row-line: #1b243016; --row-hover: #1f6feb0d; --field-bg: #ffffff; --ok: #137a45; --err: #c4161c; --warn: #8a5a00; --focus: 0 0 0 3px #1f6feb33;
+    --font: "Segoe UI", system-ui, sans-serif; --head-tf: none; --ls: .01em; --bgimg: none; }
+  :root[data-theme="day"] body { background: linear-gradient(#f4f7fb, #e6edf6); }
+  :root[data-theme="day"] #wincap { background: #ffffff; }
+  :root[data-theme="day"] #mic, :root[data-theme="day"] #orb { filter: brightness(.55) saturate(1.6) contrast(1.15); }
+  :root[data-theme="day"] .bottom { background: #ffffffe6 !important; }
+  :root[data-theme="day"] #input, :root[data-theme="day"] textarea#input, :root[data-theme="day"] .composer input, :root[data-theme="day"] .composer textarea { background: #ffffff !important; color: var(--text); }
+  :root[data-theme="day"] #bgfx .wm, :root[data-theme="day"] #bgfx canvas { display: none; }
   /* the surfaces that were coloured by hand follow the theme */
   .bottom { background: color-mix(in srgb, var(--bg1) 85%, transparent); } nav { background: var(--nav-bg); }
   #input, textarea#input { background: var(--field-bg); } .composer textarea { background: color-mix(in srgb, var(--accent) 5%, transparent); }
@@ -351,6 +360,7 @@
   .pc-card { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px 10px 10px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); text-align: center; min-width: 0; }
   .pc-card:hover { border-color: var(--line2); background: var(--panel2); } .pc-card.off { opacity: .55; }
   .pc-mono { width: 52px; height: 52px; border-radius: 14px; border: 1px solid var(--line2); background: #ffffff0a; display: inline-flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 600; color: var(--accent); }
+  .pc-mono, .ap-mono { position: relative; overflow: hidden; } .ap-ico { position: absolute; inset: 0; width: 100%; height: 100%; padding: 15%; object-fit: contain; background: var(--panel2); border-radius: inherit; }
   .pc-card b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; } .pc-card small { color: var(--dim); font-size: 11.5px; min-height: 16px; }
   .pc-act { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; justify-content: center; }
   .ca-diff { margin: 8px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #0b0b0d; font: 12.5px/1.5 Consolas, monospace; white-space: pre-wrap; max-height: 360px; overflow: auto; }
@@ -617,6 +627,12 @@
   .ccard .cb { flex: 1; min-width: 0; } .ccard .cb > b { font-size: 15px; cursor: pointer; } .ccard .cb > b:hover { color: var(--accent); } .ccard .cd { color: var(--dim); font-size: 12.5px; margin-top: 2px; }
   #commands.cgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; align-items: stretch; } #commands.cgrid .ccard { flex-direction: column; } .cmarks { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; } .cmarks .pill { position: static; }
   .ncat { margin-left: 8px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 3px 6px; font-size: 12px; }
+  /* the detail card of a command: everything the program knows about it (nothing is invented; missing facts are not shown) */
+  #cd-dlg { position: fixed; inset: 0; z-index: 520; display: none; align-items: center; justify-content: center; background: #000a; padding: 12px; } #cd-dlg.open { display: flex; }
+  #cd-dlg .cd-box { width: min(560px, 96vw); max-height: 92vh; overflow: auto; background: var(--panel2); border: 1px solid var(--line2); border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+  #cd-dlg h3 { margin: 0; font-size: 18px; } #cd-dlg .cd-row { display: flex; gap: 6px; flex-wrap: wrap; } #cd-dlg dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; font-size: 13.5px; } #cd-dlg dt { color: var(--dim); } #cd-dlg dd { margin: 0; word-break: break-word; }
+  #cd-dlg .cd-ph { display: flex; flex-direction: column; gap: 6px; } #cd-dlg .cd-ph button { text-align: left; }
+  .ccard .cdet { margin-top: 8px; margin-left: 6px; font-size: 12px; padding: 4px 10px; }
   .ccard.off { opacity: .55; } .ccard .chip { font-size: 12px; } .ccard .cact { margin-top: 8px; font-size: 12px; padding: 4px 10px; }
   @media (max-width: 760px) { .cat-grid { grid-template-columns: 1fr; } .cat-side { flex-direction: row; flex-wrap: wrap; } .cat-side button { flex: 1 1 45%; } }
   details.grp { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); margin-bottom: 10px; }
@@ -806,6 +822,7 @@ body.live-on { padding-top: 44px; }
 <div id="live-strip" role="alert" style="display:none"><span id="live-strip-t"></span><button type="button" id="live-strip-off">Выключить</button></div>
 <div id="bgfx" aria-hidden="true"><canvas id="embers"></canvas></div>
 <div id="fw-layer" aria-live="polite"></div>
+<div id="cd-dlg" role="dialog" aria-modal="true" aria-labelledby="cd-title"><div class="cd-box"><h3 id="cd-title"></h3><div class="cd-row" id="cd-marks"></div><div id="cd-desc" class="dim"></div><div class="cd-ph" id="cd-ph"></div><dl id="cd-facts"></dl><div class="cd-row"><button class="btn primary" id="cd-use" type="button">Подставить в поле</button><button class="btn" id="cd-close" type="button">Закрыть</button></div></div></div>
 <div id="rg-dlg" class="rg-dlg" role="dialog" aria-label="Область экрана"><div class="rg-box"><b>Выделите область экрана</b><small class="dim">Потяните мышью по снимку. Без выделения уйдёт весь снимок. Ответ ИИ только показывается: найденные в нём «команды» Jarvis не выполняет.</small>
   <canvas id="rg-canvas" width="900" height="500"></canvas>
   <div class="r"><input type="text" id="rg-q" maxlength="300" placeholder="Что спросить об этой области?"><button class="btn primary" id="rg-send" type="button">Спросить ИИ</button><button class="btn" id="rg-cancel" type="button">Отмена</button></div></div></div>
@@ -1697,7 +1714,7 @@ body.live-on { padding-top: 44px; }
         <div class="setrow"><div class="l">Сфера<small>что показывать на главном экране</small></div>
           <div class="r"><div class="seg"><button data-mode="wire">Сфера из частиц</button><button data-mode="avatar">Моё фото</button></div></div></div>
         <div class="setrow"><div class="l">Тема<small>Тема меняет всё сразу: цвета и фон, шрифт, эффекты фона, искры и сферу в центре</small></div>
-          <div class="r"><div class="seg" id="theme-seg"><button data-theme-pick="jarvis" type="button">Jarvis</button><button data-theme-pick="cyberpunk" type="button">Cyberpunk</button><button data-theme-pick="avengers" type="button">Avengers: Эра Альтрона</button><button data-theme-pick="matrix" type="button">Matrix</button><button data-theme-pick="ice" type="button">Ice</button><button data-theme-pick="sunset" type="button">Sunset</button></div></div></div>
+          <div class="r"><div class="seg" id="theme-seg"><button data-theme-pick="jarvis" type="button">Jarvis</button><button data-theme-pick="cyberpunk" type="button">Cyberpunk</button><button data-theme-pick="avengers" type="button">Avengers: Эра Альтрона</button><button data-theme-pick="matrix" type="button">Matrix</button><button data-theme-pick="ice" type="button">Ice</button><button data-theme-pick="sunset" type="button">Sunset</button><button data-theme-pick="day" type="button">День (светлая)</button></div></div></div>
         <div class="setrow"><div class="l">Вид сферы<small>у каждой темы своя сфера по умолчанию; здесь можно выбрать любую</small></div>
           <div class="r"><div class="seg"><button data-sphere-pick="dots" type="button">Частицы</button><button data-sphere-pick="holo" type="button">Голограмма</button><button data-sphere-pick="neon" type="button">Неон</button><button data-sphere-pick="core" type="button">Реактор</button><button data-sphere-pick="wave" type="button">Волна</button><button data-sphere-pick="orbit" type="button">Орбиты</button></div></div></div>
         <div class="setrow"><div class="l">Скорость анимации сферы</div>
@@ -2151,6 +2168,14 @@ function apRememberKnown() { try { if (apKnown) localStorage.setItem('jv_apps_kn
 let plLib = { shortcuts: [], hidden: [], launches: {} }, apView = 'cards', apSort = 'name';
 try { apView = localStorage.getItem('jv_ap_view') || 'cards'; apSort = localStorage.getItem('jv_ap_sort') || 'name'; } catch (e) {}
 async function plLoad() { const r = await action('pl_get').catch(() => null); if (r && r.lib) { plLib = r.lib; appsRender(); } }
+// the real icon of the program file (made by Jarvis from the file, once); without one the letter stays. A program is asked for by a key, never by a path.
+function apIconKey(a) { return a.ess ? 'ess:' + a.ess : a.sc ? 'sc:' + a.sc : (a.launch && !/^shell:/i.test(a.launch) ? 'app:' + a.launch : ''); }
+function apIcon(a) {
+  const k = apIconKey(a); if (!k || AP_NOICON.has(k)) return '';
+  return '<img class="ap-ico" alt="" loading="lazy" decoding="async" data-k="' + esc(k) + '" src="' + esc(withTok('/prog-icon?k=' + encodeURIComponent(k))) + '">';
+}
+const AP_NOICON = new Set();
+document.addEventListener('error', e => { const t = e.target; if (t && t.classList && t.classList.contains('ap-ico')) { AP_NOICON.add(t.dataset.k); t.remove(); } }, true);
 function appsRender() {
   const q = $('#ap-search').value.trim().toLowerCase();
   // the programs found on the computer (minus the hidden cards) and the shortcuts the user added
@@ -2175,11 +2200,11 @@ function appsRender() {
   const part = shown.slice(0, 300);
   const kindName = a => a.ess ? a.essKind : (AP_TABS.find(t => t[0] === a.kind) || [0, 'Установленные'])[1];
   if (apView === 'cards') {
-    box.innerHTML = '<div class="pc-grid">' + part.map((a, i) => '<div class="pc-card' + (a.ok ? '' : ' off') + '"><span class="pc-mono" aria-hidden="true">' + esc((a.name.trim()[0] || '?').toUpperCase()) + '</span><b title="' + esc(a.name) + '">' + esc(a.name) + '</b><small>' + esc(kindName(a)) + (a.sc ? ' · мой ярлык' : '') + (a.ok ? '' : ' · файл не найден') + '</small>' +
+    box.innerHTML = '<div class="pc-grid">' + part.map((a, i) => '<div class="pc-card' + (a.ok ? '' : ' off') + '"><span class="pc-mono" aria-hidden="true">' + esc((a.name.trim()[0] || '?').toUpperCase()) + apIcon(a) + '</span><b title="' + esc(a.name) + '">' + esc(a.name) + '</b><small>' + esc(kindName(a)) + (a.sc ? ' · мой ярлык' : '') + (a.ok ? '' : ' · файл не найден') + '</small>' +
       '<div class="pc-act"><button class="btn small primary" type="button" data-i="' + i + '"' + (a.ok ? '' : ' disabled') + '>Запустить</button>' + (a.ess ? '' : '<button class="btn small" type="button" data-rm="' + i + '" title="' + (a.sc ? 'Убрать ярлык (сама программа остаётся)' : 'Скрыть карточку (программа остаётся на компьютере)') + '">Убрать</button>') + '</div></div>').join('') + '</div>';
   } else {
     box.innerHTML = '<div class="ap-group">' + part.map((a, i) =>
-      '<div class="ap-row' + (a.ok ? '' : ' off') + '"><span class="ap-mono" aria-hidden="true">' + esc((a.name.trim()[0] || '?').toUpperCase()) + '</span><div><b>' + esc(a.name) + (a.isNew ? ' <span class="chip on" style="font-size:11px;padding:1px 7px">новое</span>' : '') + '</b><small>' + esc(kindName(a)) + (a.ok ? '' : ' · файл запуска не найден') + '</small></div>' +
+      '<div class="ap-row' + (a.ok ? '' : ' off') + '"><span class="ap-mono" aria-hidden="true">' + esc((a.name.trim()[0] || '?').toUpperCase()) + apIcon(a) + '</span><div><b>' + esc(a.name) + (a.isNew ? ' <span class="chip on" style="font-size:11px;padding:1px 7px">новое</span>' : '') + '</b><small>' + esc(kindName(a)) + (a.ok ? '' : ' · файл запуска не найден') + '</small></div>' +
       '<span><button class="btn small" type="button" data-i="' + i + '"' + (a.ok ? '' : ' disabled') + '>Запустить</button> ' + (a.ess ? '' : '<button class="btn small" type="button" data-rm="' + i + '">Убрать</button>') + '</span></div>').join('') + '</div>';
   }
   if (shown.length > 300) box.insertAdjacentHTML('beforeend', '<div class="empty">Показаны первые 300 из ' + shown.length + '. Уточните поиск.</div>');
@@ -4907,6 +4932,37 @@ function cmdMatches(c, q, st) {
   const norm = t => t.toLowerCase().replace(/ё/g, 'е');
   return norm(c.phrases.join(' ') + ' ' + (c.keywords || '') + ' ' + (c.description || '') + ' ' + (c.note || '') + ' ' + (g ? g.title : '') + ' ' + c.id).includes(norm(q));
 }
+const CMD_STATUS_TEXT = { on: 'Работает.', partial: 'Работает частично.', unavailable: 'Сейчас недоступна.', duplicate: 'Дубль другой команды.', off: 'Раздел выключен: команда не выполняется.' };
+function cmdDetail(c) {
+  const grp = cmdData.groups.find(x => x.key === c.group) || {};
+  const insert = p => { const i = $('#h-input'); i.value = p.replace(/\{[^}]*\}/g, '').trim(); cmdDetailClose(); show('home'); i.focus(); updateComposers(); };
+  $('#cd-title').textContent = c.phrases[0];
+  $('#cd-desc').textContent = c.description || ('Скажите: «' + c.phrases[0].replace(/\{[^}]*\}/g, '…') + '»');
+  const marks = $('#cd-marks'); marks.textContent = '';
+  const mark = (t, cls) => { const s = document.createElement('span'); s.className = 'pill ' + (cls || ''); s.textContent = t; marks.appendChild(s); };
+  const PILL = { on: ['РАБОТАЕТ', 'ok'], partial: ['ЧАСТИЧНО', 'warn'], unavailable: ['НЕДОСТУПНО', 'bad'], duplicate: ['ДУБЛЬ', ''], off: ['РАЗДЕЛ ВЫКЛЮЧЕН', ''] };
+  const pl = PILL[c.status] || PILL.on; mark(pl[0], pl[1]);
+  if (c.risk === 'high') mark('нужно подтверждение', 'warn'); if (c.level === 'premium') mark('Premium'); if (c.level === 'admin') mark('Admin'); if (c.level === 'free') mark('бесплатная');
+  const ph = $('#cd-ph'); ph.textContent = '';
+  const usable = c.status !== 'unavailable' && c.status !== 'off';
+  const lab = document.createElement('small'); lab.className = 'dim'; lab.textContent = c.phrases.length > 1 ? 'Можно сказать так (нажмите, чтобы подставить в поле):' : 'Скажите так (нажмите, чтобы подставить в поле):'; ph.appendChild(lab);
+  for (const p of c.phrases) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn small'; b.textContent = '«' + p + '»'; b.disabled = !usable; b.onclick = () => insert(p); ph.appendChild(b); }
+  const f = $('#cd-facts'); f.textContent = '';
+  const fact = (k, v) => { if (!v) return; const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = k; dd.textContent = v; f.append(dt, dd); };
+  fact('Раздел', grp.title ? (grp.emoji ? grp.emoji + ' ' : '') + grp.title : '');
+  fact('Состояние', CMD_STATUS_TEXT[c.status] || CMD_STATUS_TEXT.on);
+  fact('Пояснение', c.note);
+  fact('Подтверждение', c.risk === 'high' ? 'Перед выполнением Джарвис спросит «да/нет».' : '');
+  fact('Версия', c.level === 'premium' ? 'нужна платная версия' : c.level === 'admin' ? 'только в Admin-версии' : c.level === 'free' ? 'доступна всем' : '');
+  fact('Слова для поиска', c.keywords);
+  fact('Пакет команд', c.pack); fact('Имя команды', c.id);
+  const use = $('#cd-use'); use.disabled = !usable; use.onclick = () => insert(c.phrases[0]);
+  $('#cd-dlg').classList.add('open'); $('#cd-close').focus();
+}
+function cmdDetailClose() { $('#cd-dlg').classList.remove('open'); }
+$('#cd-close').onclick = cmdDetailClose;
+$('#cd-dlg').onclick = e => { if (e.target === $('#cd-dlg')) cmdDetailClose(); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#cd-dlg').classList.contains('open')) cmdDetailClose(); });
 function renderCommands() {
   if (!cmdData) return;
   const q = $('#cmd-search').value.trim().toLowerCase(), st = $('#cmd-status').value;
@@ -4951,6 +5007,8 @@ function renderCommands() {
     if (c.status === 'unavailable' || c.status === 'off') { act.disabled = true; act.title = c.status === 'off' ? 'Раздел выключен' : (c.note || 'Команда сейчас недоступна'); }
     else act.onclick = () => insert(c.phrases[0]);
     card.querySelector('.cb').appendChild(act);
+    const det = document.createElement('button'); det.type = 'button'; det.className = 'btn cdet'; det.textContent = 'Подробнее'; det.setAttribute('aria-label', 'Подробнее о команде «' + c.phrases[0] + '»'); det.onclick = () => cmdDetail(c);
+    card.querySelector('.cb').appendChild(det);
     const ph = card.querySelector('.ph');
     for (const p of c.phrases.slice(1)) { const chip = document.createElement('span'); chip.className = 'chip'; chip.textContent = p; chip.onclick = () => insert(p); ph.appendChild(chip); }
     const PILL = { on: ['РАБОТАЕТ', 'ok'], partial: ['ЧАСТИЧНО', 'warn'], unavailable: ['НЕДОСТУПНО', 'bad'], duplicate: ['ДУБЛЬ', ''], off: ['РАЗДЕЛ ВЫКЛЮЧЕН', ''] };
