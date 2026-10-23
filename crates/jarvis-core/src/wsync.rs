@@ -208,6 +208,31 @@ fn read_remote(path: &Path) -> Result<Bundle, String> {
     }
 }
 
+// the first merged item that cannot be read back as a record of its kind (None when all can)
+fn unreadable(merged: &BTreeMap<String, Vec<Value>>) -> Option<(String, String)> {
+    for (k, items) in merged {
+        for v in items {
+            let ok = match k.as_str() {
+                "memory" => serde_json::from_value::<memory::Entry>(v.clone()).is_ok(),
+                "contacts" => serde_json::from_value::<contacts::Contact>(v.clone()).is_ok(),
+                "notes" => serde_json::from_value::<notes::Note>(v.clone()).is_ok(),
+                _ => true,
+            };
+            if !ok {
+                return Some((k.clone(), id_of(v).unwrap_or_default()));
+            }
+        }
+    }
+    None
+}
+
+fn check_readable(merged: &BTreeMap<String, Vec<Value>>) -> Result<(), String> {
+    match unreadable(merged) {
+        Some((k, id)) => Err(format!("В файле синхронизации есть запись, которую эта версия Jarvis не может прочитать (раздел «{}», номер {}). Ничего не изменено ни в файле, ни здесь: уберите эту запись из файла или обновите Jarvis на другом компьютере.", k, id)),
+        None => Ok(()),
+    }
+}
+
 pub fn sync_now() -> Result<Report, String> {
     crate::owner::guard()?;
     let mut st = state();
@@ -218,6 +243,8 @@ pub fn sync_now() -> Result<Report, String> {
     let remote = read_remote(&path)?;
     let now = store::now();
     let (merged, bundle, report) = merge(&local_items(), &remote, &mut st, now);
+    // an item of the file that does not fit the record of this program would silently vanish from here (and the next sync would delete it everywhere): refuse before anything is written
+    check_readable(&merged)?;
     // the file first (if it cannot be written nothing changes here), then the local data
     let text = serde_json::to_string_pretty(&bundle).map_err(|e| e.to_string())?;
     crate::write_atomic(&path, text).map_err(|e| format!("Не удалось записать {}: {}", path.display(), e))?;
@@ -356,6 +383,38 @@ mod tests {
             assert_eq!(std::fs::read_to_string(&f).unwrap(), "{not json");
             clear_folder();
             assert!(sync_now().unwrap_err().contains("не выбрана"));
+        });
+    }
+
+    #[test]
+    fn an_item_that_does_not_fit_the_record_stops_the_sync_and_nothing_is_lost() {
+        store::with_temp(|| {
+            crate::owner::reset_for_tests();
+            let dir = tempfile::tempdir().unwrap();
+            let folder = dir.path().to_string_lossy().to_string();
+            set_folder(&folder).unwrap();
+            let n = notes::add("моя запись", "note", 100).unwrap();
+            // the file brings a NEWER copy of the same note whose text is not a text
+            let mut b = Bundle { version: 1, device: "other".into(), written: 0, items: BTreeMap::new(), tombstones: vec![] };
+            b.items.insert("notes".into(), vec![json!({"id": n.id, "text": 5, "at": 1, "kind": "note", "updated": store::now() + 100})]);
+            let before = serde_json::to_string(&b).unwrap();
+            std::fs::write(file_path(&folder), &before).unwrap();
+            let e = sync_now().unwrap_err();
+            assert!(e.contains("не может прочитать") && e.contains("notes"), "{}", e);
+            assert_eq!(std::fs::read_to_string(file_path(&folder)).unwrap(), before, "the file is not touched");
+            assert!(notes::list().iter().any(|x| x.id == n.id && x.text == "моя запись"), "the local note stays");
+            // a note with a category and one made before the categories both go through the file
+            std::fs::remove_file(file_path(&folder)).unwrap();
+            notes::set_category(&n.id, "work").unwrap();
+            sync_now().unwrap();
+            let after: Bundle = serde_json::from_str(&std::fs::read_to_string(file_path(&folder)).unwrap()).unwrap();
+            assert_eq!(after.items["notes"][0]["category"], "work");
+            let mut old = after.clone();
+            old.items.get_mut("notes").unwrap().push(json!({"id":"old1","text":"запись без категории","at":3,"kind":"diary","updated":store::now()+1}));
+            std::fs::write(file_path(&folder), serde_json::to_string(&old).unwrap()).unwrap();
+            sync_now().unwrap();
+            assert!(notes::list().iter().any(|x| x.id == "old1" && x.category.is_empty()));
+            assert!(notes::list().iter().any(|x| x.id == n.id && x.category == "work"));
         });
     }
 }
