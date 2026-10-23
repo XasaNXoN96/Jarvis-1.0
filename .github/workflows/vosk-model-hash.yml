@@ -1,0 +1,21 @@
+# Manual, read-only: downloads the Vosk speech models from their official address and PRINTS their size and SHA-256.
+# The numbers are then pinned in the program (the in-program installer of a speech model checks the download against them).
+# It builds nothing, publishes nothing and uses no secret.
+name: Vosk model hashes
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  hashes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Download and hash
+        run: |
+          set -e
+          for m in vosk-model-small-ru-0.22 vosk-model-small-en-us-0.15 vosk-model-small-uk-v3-nano; do
+            curl -fsSL --retry 3 -o "$m.zip" "https://alphacephei.com/vosk/models/$m.zip"
+            echo "MODEL $m size=$(stat -c %s "$m.zip") sha256=$(sha256sum "$m.zip" | cut -d' ' -f1)"
+            unzip -l "$m.zip" | awk 'NR>3 && /\/(am\/final.mdl|conf\/model.conf|conf\/mfcc.conf)$/ {print "  has " $4}'
+          done
