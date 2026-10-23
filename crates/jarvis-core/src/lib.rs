@@ -18,6 +18,9 @@ pub mod i18n;
 
 #[cfg(feature = "jarvis_app")]
 pub mod listener;
+pub mod camera;
+pub mod live;
+pub mod remote_input;
 
 pub mod recorder;
 

@@ -31,9 +31,13 @@ pub enum Cap {
     RemoteScreen,
     // the linked phone may send its voice (audio of the microphone of the page / application) to this computer for recognition
     RemoteMicrophone,
+    // the linked phone may drive the mouse and the keyboard of this computer (a session started on purpose; off by default)
+    RemoteInput,
+    // the linked phone may look through the web camera of this computer (a session started on purpose, a sign on the screen; off by default)
+    RemoteCamera,
 }
 
-pub const ALL: [Cap; 11] = [Cap::AiNetwork, Cap::Messenger, Cap::Memory, Cap::ScreenCapture, Cap::FileSearch, Cap::Scheduler, Cap::Install, Cap::SmartHome, Cap::Automation, Cap::RemoteScreen, Cap::RemoteMicrophone];
+pub const ALL: [Cap; 13] = [Cap::AiNetwork, Cap::Messenger, Cap::Memory, Cap::ScreenCapture, Cap::FileSearch, Cap::Scheduler, Cap::Install, Cap::SmartHome, Cap::Automation, Cap::RemoteScreen, Cap::RemoteMicrophone, Cap::RemoteInput, Cap::RemoteCamera];
 
 impl Cap {
     pub fn id(self) -> &'static str {
@@ -49,6 +53,8 @@ impl Cap {
             Cap::Automation => "automation",
             Cap::RemoteScreen => "remote_screen",
             Cap::RemoteMicrophone => "remote_microphone",
+            Cap::RemoteInput => "remote_input",
+            Cap::RemoteCamera => "remote_camera",
         }
     }
     pub fn title(self) -> &'static str {
@@ -64,6 +70,8 @@ impl Cap {
             Cap::Automation => "Управлять компьютером по плану (многошаговые задачи)",
             Cap::RemoteScreen => "Показывать экран компьютера на привязанном телефоне",
             Cap::RemoteMicrophone => "Принимать голос с привязанного телефона",
+            Cap::RemoteInput => "Разрешить телефону управлять мышью и клавиатурой этого компьютера",
+            Cap::RemoteCamera => "Показывать веб-камеру этого компьютера на привязанном телефоне",
         }
     }
     pub fn from_id(s: &str) -> Option<Cap> {
@@ -71,7 +79,7 @@ impl Cap {
     }
     // on by default: what the program did before this centre existed, and the harmless ones. Installing and the smart home start OFF.
     fn default_on(self) -> bool {
-        !matches!(self, Cap::Install | Cap::SmartHome | Cap::Automation | Cap::RemoteScreen)
+        !matches!(self, Cap::Install | Cap::SmartHome | Cap::Automation | Cap::RemoteScreen | Cap::RemoteInput | Cap::RemoteCamera)
     }
 }
 

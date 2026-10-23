@@ -766,6 +766,9 @@ pub fn start() -> Result<String, String> {
 
 pub fn stop() {
     RUNNING.store(false, Ordering::SeqCst);
+    // a phone cannot keep the mouse or the camera of this computer when the remote is off
+    crate::remote_input::stop("пульт выключен");
+    crate::camera::stop("пульт выключен");
     // the access from the internet does not outlive the remote
     crate::tunnel::disable();
 }
@@ -1381,6 +1384,30 @@ fn handle_from<S: Read + Write>(stream: &mut S, via_tunnel: bool) -> std::io::Re
                 }
             }
         }
+        // live sessions of the phone (live.rs): the mouse and the keyboard of this computer, the web camera of this computer.
+        // Each needs its own ability (off by default) and an explicit start; they end by themselves.
+        ("GET", "/live") => respond(stream, "200 OK", "application/json", &serde_json::json!({ "input": crate::remote_input::status_json(), "camera": crate::camera::status_json() }).to_string()),
+        ("POST", "/input-start") => live_reply(stream, crate::remote_input::start()),
+        ("POST", "/input-stop") => {
+            crate::remote_input::stop("телефон выключил управление");
+            respond(stream, "200 OK", "application/json", &serde_json::json!({ "ok": true }).to_string());
+        }
+        ("POST", "/input") => {
+            let body: serde_json::Value = serde_json::from_str(&req.body).unwrap_or(serde_json::json!({}));
+            live_reply(stream, crate::remote_input::parse(&body).and_then(|a| crate::remote_input::act(&a)).map(|_| serde_json::json!({ "ok": true })));
+        }
+        ("GET", "/camera-list") => live_reply(stream, crate::camera::list().map(|l| serde_json::json!({ "ok": true, "cameras": l }))),
+        ("POST", "/camera-start") => {
+            let body: serde_json::Value = serde_json::from_str(&req.body).unwrap_or(serde_json::json!({}));
+            let index = body.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+            let q = body.get("quality").and_then(|v| v.as_str()).unwrap_or("medium").to_string();
+            live_reply(stream, crate::camera::start(index, &q));
+        }
+        ("POST", "/camera-stop") => {
+            crate::camera::stop("телефон выключил камеру");
+            respond(stream, "200 OK", "application/json", &serde_json::json!({ "ok": true }).to_string());
+        }
+        ("GET", "/camera-frame") => live_reply(stream, crate::camera::frame().map(|j| serde_json::json!({ "ok": true, "jpeg": crate::docai::b64_encode(&j) }))),
         // the two sections «ПК» / «Телефон» (devhist.rs): the same history the window shows
         ("GET", "/history") => {
             let door = match query_param(&req.path, "door") { Some("pc") => "pc", Some("phone") => "phone", _ => "all" };
@@ -1428,11 +1455,22 @@ fn handle_from<S: Read + Write>(stream: &mut S, via_tunnel: bool) -> std::io::Re
     Ok(())
 }
 
+// the answer of a live-session route: the refusal says why (403 when the owner has not allowed it, 409 otherwise)
+fn live_reply<S: Write>(stream: &mut S, r: Result<serde_json::Value, String>) {
+    match r {
+        Ok(v) => respond(stream, "200 OK", "application/json", &v.to_string()),
+        Err(e) => {
+            let status = if e.contains("центре разрешений") { "403 Forbidden" } else { "409 Conflict" };
+            respond(stream, status, "application/json", &serde_json::json!({ "ok": false, "message": e }).to_string());
+        }
+    }
+}
+
 const APP_ICON: &[u8] = include_bytes!("../../../resources/icons/icon.png");
 const MANIFEST: &str = r##"{"name":"Jarvis","short_name":"Jarvis","description":"Пульт Jarvis для компьютера","start_url":"/","scope":"/","display":"standalone","orientation":"portrait","background_color":"#08090b","theme_color":"#08090b","icons":[{"src":"/icon.png","sizes":"512x512","type":"image/png","purpose":"any"}]}"##;
 
 // the requests of the phone that change something; each carries X-Ts and X-Rid (replay.rs)
-const REPLAY_PROTECTED: [&str; 5] = ["/cmd", "/act", "/voice", "/voiceprint-do", "/voice-audio"];
+const REPLAY_PROTECTED: [&str; 10] = ["/cmd", "/act", "/voice", "/voiceprint-do", "/voice-audio", "/input-start", "/input-stop", "/input", "/camera-start", "/camera-stop"];
 
 // the page of the phone: src/remote_page.html (the build puts the shared sphere code of src/orbkit.js into it)
 const PAGE: &str = include_str!(concat!(env!("OUT_DIR"), "/remote_page.html"));
@@ -2107,6 +2145,74 @@ mod tests {
         let owner = phone_request("/voice-audio", &t, &pcm_base64(&voice(110.0, 1.0, 31, 2.5)));
         assert!(!owner.contains("refused"), "the owner is not refused: {}", owner);
         crate::voiceprint::delete();
+    }
+
+    // The two live sessions of the phone (the mouse and the keyboard, the web camera): every door needs the secret and a request that is not
+    // played again; each needs its own ability (off by default) AND an explicit start; stopping the remote or revoking the phone ends both.
+    #[test]
+    fn the_phone_drives_the_mouse_and_sees_the_camera_only_with_the_ability_and_a_start() {
+        let _g = PHONE_TEST_LOCK.lock();
+        let _i = crate::remote_input::TEST_LOCK.lock();
+        let _c = crate::camera::TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            crate::owner::reset_for_tests();
+            crate::replay::reset_for_tests();
+            crate::remote_input::reset_for_tests();
+            crate::camera::reset_for_tests();
+            crate::remote_input::set_hands_for_tests(Some(Box::new(crate::remote_input::NoHands)));
+            crate::camera::set_source_for_tests(Some(Box::new(crate::camera::FakeCam)));
+            phone_for_tests(true, true);
+            let t = token();
+            let click = r#"{"kind":"click","x":0.5,"y":0.5}"#;
+            // the secret
+            for p in ["/input-start", "/input-stop", "/input", "/camera-start", "/camera-stop"] {
+                assert!(phone_request(p, "wrong-token", "{}").starts_with("HTTP/1.1 403"), "{}", p);
+            }
+            for p in ["/live", "/camera-list", "/camera-frame"] {
+                assert!(phone_get(p, "wrong-token").starts_with("HTTP/1.1 403"), "{}", p);
+            }
+            // off by default: nothing starts, nothing is shown
+            assert!(phone_request("/input-start", &t, "{}").starts_with("HTTP/1.1 403"));
+            assert!(phone_request("/input", &t, click).starts_with("HTTP/1.1 403"));
+            assert!(phone_request("/camera-start", &t, "{}").starts_with("HTTP/1.1 403"));
+            assert!(phone_get("/camera-list", &t).starts_with("HTTP/1.1 403"));
+            assert!(phone_get("/camera-frame", &t).starts_with("HTTP/1.1 403"));
+            // the owner allows: still nothing without a start
+            crate::perms::set(crate::perms::Cap::RemoteInput, true).unwrap();
+            crate::perms::set(crate::perms::Cap::RemoteCamera, true).unwrap();
+            assert!(phone_request("/input", &t, click).starts_with("HTTP/1.1 409"), "no session yet");
+            assert!(phone_get("/camera-frame", &t).starts_with("HTTP/1.1 409"), "no camera yet");
+            // a start, then actions; a wrong action is refused before anything is done
+            assert!(phone_request("/input-start", &t, "{}").starts_with("HTTP/1.1 200"));
+            assert!(phone_request("/input", &t, click).starts_with("HTTP/1.1 200"));
+            std::thread::sleep(Duration::from_millis(120));
+            assert!(phone_request("/input", &t, r#"{"kind":"key","key":"win+r"}"#).starts_with("HTTP/1.1 409"), "a key outside the list");
+            // a recorded request is not run twice
+            let again = phone_request_with("/input", &t, click, &now_secs().to_string(), "same-rid");
+            std::thread::sleep(Duration::from_millis(120));
+            let twice = phone_request_with("/input", &t, click, &now_secs().to_string(), "same-rid");
+            assert!(again.starts_with("HTTP/1.1 200") && twice.contains("\"duplicate\":true"), "{}", twice);
+            // the camera
+            assert!(phone_get("/camera-list", &t).contains("Тестовая камера"));
+            assert!(phone_request("/camera-start", &t, r#"{"index":0,"quality":"low"}"#).contains("\"camera\":\"Тестовая камера\""));
+            std::thread::sleep(Duration::from_millis(300));
+            assert!(phone_get("/camera-frame", &t).contains("\"jpeg\""));
+            assert!(phone_get("/live", &t).contains("\"live\":true"));
+            // revoking a phone ends both sessions at once
+            pairing::reset_for_tests();
+            let code = pairing::start_code(now_secs());
+            pairing::redeem(&code, "Pixel", now_secs()).unwrap();
+            assert!(pairing::revoke(&pairing::list()[0].id));
+            assert!(!crate::remote_input::live() && !crate::camera::live(), "revoking ends both");
+            // the owner switching the ability off ends it too
+            assert!(phone_request("/input-start", &t, "{}").starts_with("HTTP/1.1 200"));
+            crate::perms::set(crate::perms::Cap::RemoteInput, false).unwrap();
+            assert!(phone_request("/input", &t, click).starts_with("HTTP/1.1 403"));
+            assert!(!crate::remote_input::live());
+            // stopping the remote
+            crate::remote_input::set_hands_for_tests(None);
+            crate::camera::set_source_for_tests(None);
+        });
     }
 
     // The ability «Принимать голос с привязанного телефона»: asked by this computer on every phrase; off = the sound goes nowhere

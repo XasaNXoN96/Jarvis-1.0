@@ -773,6 +773,12 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             crate::tts::set_enabled(on);
             json!({ "ok": true })
         }
+        // the red strip: «Выключить» ends the mouse and the camera of the phone at once (only ends, never starts anything)
+        "remote_live_stop" => {
+            let a = crate::remote_input::stop("владелец выключил на компьютере");
+            let b = crate::camera::stop("владелец выключил на компьютере");
+            json!({ "ok": true, "stopped": a || b, "message": "Управление и камера для телефона выключены." })
+        }
         "mic_muted" => {
             let muted = body.get("value").and_then(|v| v.as_bool()).unwrap_or(false);
             crate::uistate::set_mic_muted(muted);

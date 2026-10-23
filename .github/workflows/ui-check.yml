@@ -42,6 +42,14 @@ jobs:
         run: node tests/ui/result_windows.js
         env:
           PW_MODULE: ${{ github.workspace }}/node_modules/playwright
+      - name: Red strip while the phone drives the mouse or watches the camera
+        run: node tests/ui/live_strip.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright
+      - name: Phone page mouse/keyboard and camera of the computer (start only on a press, refusals told)
+        run: node tests/ui/remote_live.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright
       - name: Phone page pairing (code from a link, secret from the application)
         run: node tests/ui/remote_page_pair.js
         env:

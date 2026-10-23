@@ -351,6 +351,113 @@ if (!token) {
   };
   const put = () => { const box = document.getElementById('t-media'); if (box) box.appendChild(b); }; document.addEventListener('DOMContentLoaded', put); put();
 })();
+// the mouse and the keyboard of the computer, and its web camera (each needs its own permission on the computer, off by default, and an explicit start here;
+// the computer shows a red strip while it runs and ends it by itself after silence)
+(function () {
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const say = async r => { try { const j = await r.json(); return j.message || ''; } catch (e) { return 'Ответ компьютера не понят (' + r.status + ')'; } };
+  function overlay(id, title) {
+    const old = document.getElementById(id); if (old) old.remove();
+    const box = document.createElement('div'); box.id = id;
+    box.style.cssText = 'position:fixed;inset:0;z-index:99998;background:#000e;color:#fff;display:flex;flex-direction:column;align-items:center;gap:8px;padding:8px;overflow:auto;font:15px system-ui,sans-serif';
+    box.innerHTML = '<div style="font-weight:700">' + esc(title) + '</div>';
+    document.body.appendChild(box); return box;
+  }
+  const btn = (txt, id, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.id = id; b.textContent = txt; b.onclick = fn; return b; };
+
+  async function control() {
+    const box = overlay('rc-box', '🖱 Управление компьютером');
+    const msg = document.createElement('div'); msg.id = 'rc-msg'; msg.style.cssText = 'color:#ffd58a;text-align:center'; box.appendChild(msg);
+    let alive = false, mode = 'click', timer = 0;
+    const end = async (text) => { alive = false; clearTimeout(timer); try { await postSigned('/input-stop', '{}'); } catch (e) {} if (text) msg.textContent = text; else box.remove(); };
+    box.appendChild(btn('Закрыть и выключить управление', 'rc-close', () => end('')));
+    let r;
+    try { r = await postSigned('/input-start', '{}'); } catch (e) { msg.textContent = 'Нет связи с компьютером.'; return; }
+    if (!r.ok) { msg.textContent = await say(r); return; }
+    alive = true; msg.textContent = 'Управление включено. На компьютере горит красная полоса. Коснитесь картинки, чтобы нажать там мышью.';
+    const img = document.createElement('img'); img.id = 'rc-img'; img.style.cssText = 'max-width:96vw;max-height:55vh;border-radius:8px;touch-action:manipulation'; box.appendChild(img);
+    const send = async (o) => {
+      if (!alive) return;
+      try {
+        const r = await postSigned('/input', JSON.stringify(o));
+        if (!r.ok) { const t = await say(r); msg.textContent = t; if (r.status === 403 || /не включено|выключено/.test(t)) alive = false; }
+        else msg.textContent = 'Готово.';
+      } catch (e) { msg.textContent = 'Нет связи с компьютером.'; }
+    };
+    img.onclick = ev => {
+      const b = img.getBoundingClientRect();
+      const x = (ev.clientX - b.left) / b.width, y = (ev.clientY - b.top) / b.height;
+      send({ kind: mode, x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) });
+    };
+    const row = () => { const d = document.createElement('div'); d.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;justify-content:center'; box.appendChild(d); return d; };
+    const modes = row();
+    [['click', 'Клик'], ['double', 'Двойной клик'], ['right', 'Правая кнопка']].forEach(([m, t]) => modes.appendChild(btn(t, 'rc-mode-' + m, () => { mode = m; msg.textContent = 'Режим касания: ' + t; })));
+    const sc = row();
+    sc.appendChild(btn('▲ Вверх', 'rc-up', () => send({ kind: 'scroll', lines: -3 })));
+    sc.appendChild(btn('▼ Вниз', 'rc-down', () => send({ kind: 'scroll', lines: 3 })));
+    const keys = row();
+    [['enter', 'Enter'], ['escape', 'Esc'], ['tab', 'Tab'], ['backspace', '⌫'], ['left', '←'], ['up', '↑'], ['down', '↓'], ['right', '→']].forEach(([k, t]) => keys.appendChild(btn(t, 'rc-key-' + k, () => send({ kind: 'key', key: k }))));
+    const tx = row();
+    const inp = document.createElement('input'); inp.id = 'rc-text'; inp.maxLength = 200; inp.placeholder = 'Текст для ввода'; inp.style.cssText = 'min-width:60vw;padding:8px;border-radius:6px;border:0';
+    tx.appendChild(inp); tx.appendChild(btn('Напечатать', 'rc-type', () => { if (inp.value) { send({ kind: 'text', text: inp.value }); inp.value = ''; } }));
+    const pic = async () => {
+      if (!alive) return;
+      try {
+        const r = await fetchT('/screen', { headers: { 'X-Token': token } });
+        if (r.ok) { const j = await r.json(); img.src = 'data:image/jpeg;base64,' + j.jpeg; }
+        else if (r.status === 403) { msg.textContent = 'Чтобы видеть экран, включите на компьютере «Показывать экран…» в центре разрешений.'; alive = alive; }
+      } catch (e) {}
+      if (alive && document.getElementById('rc-box')) timer = setTimeout(pic, 1500);
+    };
+    pic();
+    const watch = setInterval(() => { if (!document.getElementById('rc-box')) { clearInterval(watch); end(''); } else if (!alive) clearInterval(watch); }, 1000);
+  }
+
+  async function camera() {
+    const box = overlay('cam-box', '📷 Веб-камера компьютера');
+    const msg = document.createElement('div'); msg.id = 'cam-msg'; msg.style.cssText = 'color:#ffd58a;text-align:center'; box.appendChild(msg);
+    let alive = false, timer = 0;
+    const end = async (text) => { alive = false; clearTimeout(timer); try { await postSigned('/camera-stop', '{}'); } catch (e) {} if (text) msg.textContent = text; else box.remove(); };
+    let list = [];
+    try {
+      const r = await fetchT('/camera-list', { headers: { 'X-Token': token } });
+      if (!r.ok) { msg.textContent = await say(r); box.appendChild(btn('Закрыть', 'cam-close', () => box.remove())); return; }
+      list = (await r.json()).cameras || [];
+    } catch (e) { msg.textContent = 'Нет связи с компьютером.'; box.appendChild(btn('Закрыть', 'cam-close', () => box.remove())); return; }
+    const sel = document.createElement('select'); sel.id = 'cam-sel'; sel.style.cssText = 'padding:8px;border-radius:6px';
+    list.forEach((n, i) => { const o = document.createElement('option'); o.value = i; o.textContent = n; sel.appendChild(o); });
+    const q = document.createElement('select'); q.id = 'cam-q'; q.style.cssText = sel.style.cssText;
+    [['low', 'Низкое качество'], ['medium', 'Среднее'], ['high', 'Высокое']].forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; if (v === 'medium') o.selected = true; q.appendChild(o); });
+    box.appendChild(sel); box.appendChild(q);
+    const img = document.createElement('img'); img.id = 'cam-img'; img.style.cssText = 'max-width:96vw;max-height:60vh;border-radius:8px;display:none'; box.appendChild(img);
+    const frame = async () => {
+      if (!alive) return;
+      try {
+        const r = await fetchT('/camera-frame', { headers: { 'X-Token': token } });
+        if (r.ok) { const j = await r.json(); img.src = 'data:image/jpeg;base64,' + j.jpeg; img.style.display = 'block'; }
+        else if (r.status !== 429) { msg.textContent = await say(r); alive = false; return; }
+      } catch (e) { msg.textContent = 'Нет связи с компьютером.'; alive = false; return; }
+      timer = setTimeout(frame, 500);
+    };
+    const on = btn('Включить камеру', 'cam-start', async () => {
+      const r = await postSigned('/camera-start', JSON.stringify({ index: Number(sel.value) || 0, quality: q.value }));
+      if (!r.ok) { msg.textContent = await say(r); return; }
+      alive = true; msg.textContent = 'Камера компьютера включена. На компьютере горит красная полоса. Выключится сама через 10 минут.'; frame();
+    });
+    box.appendChild(on);
+    box.appendChild(btn('Выключить камеру и закрыть', 'cam-close', () => end('')));
+    if (!list.length) msg.textContent = 'На компьютере не найдена веб-камера.'; else msg.textContent = 'Камера не включится, пока вы не нажмёте «Включить камеру».';
+    const watch = setInterval(() => { if (!document.getElementById('cam-box')) { clearInterval(watch); end(''); } }, 1000);
+  }
+
+  const put = () => {
+    const box = document.getElementById('t-media'); if (!box || document.getElementById('rc-open')) return;
+    const a = document.createElement('button'); a.type = 'button'; a.id = 'rc-open'; a.className = 'btn wide'; a.textContent = '🖱 Управление ПК'; a.onclick = control;
+    const b = document.createElement('button'); b.type = 'button'; b.id = 'cam-open'; b.className = 'btn wide'; b.textContent = '📷 Камера ПК'; b.onclick = camera;
+    box.appendChild(a); box.appendChild(b);
+  };
+  document.addEventListener('DOMContentLoaded', put); put();
+})();
 const rid = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
 // every request that changes something carries the time (by the clock of the COMPUTER: the difference is learned from /poll) and a number that is never used twice;
 // the computer runs a request once and refuses an old or a repeated one (replay.rs)

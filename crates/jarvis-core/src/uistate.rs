@@ -841,6 +841,8 @@ pub fn state_json() -> Value {
         // the object Jarvis works with and the state of the work (only facts of the state machine, nothing invented)
         "object": crate::objects::snapshot(),
         "mic_muted": crate::MIC_MUTED.load(std::sync::atomic::Ordering::SeqCst),
+        // the phone drives the mouse / watches the camera now (the red strip of the window, which cannot be hidden)
+        "remote_live": json!({ "input": crate::remote_input::live(), "camera": crate::camera::live() }),
         "voice_active": crate::VOICE_ACTIVE.load(std::sync::atomic::Ordering::SeqCst),
         "voice_error": crate::VOICE_ERROR.lock().clone(),
         "mic_level": crate::MIC_LEVEL.load(std::sync::atomic::Ordering::Relaxed),

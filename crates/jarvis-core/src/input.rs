@@ -168,6 +168,43 @@ mod win {
         SetCursorPos(p.x + dx, p.y + dy);
     }
 
+    // a click at a place of the main screen given as a share of its width and height (0..1): the same screen the phone is shown
+    pub unsafe fn click_at(xf: f64, yf: f64, right: bool, times: u32) {
+        let w = GetSystemMetrics(SM_CXSCREEN);
+        let h = GetSystemMetrics(SM_CYSCREEN);
+        if w <= 0 || h <= 0 {
+            return;
+        }
+        let x = ((xf * (w - 1) as f64).round() as i32).clamp(0, w - 1);
+        let y = ((yf * (h - 1) as f64).round() as i32).clamp(0, h - 1);
+        SetCursorPos(x, y);
+        click(right, times);
+    }
+
+    // typed text: each character as a Unicode key press of its own (any language, no layout needed); returns how many events Windows took
+    pub unsafe fn type_text(text: &str) -> u32 {
+        let mut inputs: Vec<INPUT> = Vec::new();
+        for unit in text.encode_utf16() {
+            for up in [false, true] {
+                let mut i: INPUT = std::mem::zeroed();
+                i.type_ = INPUT_KEYBOARD;
+                *i.u.ki_mut() = KEYBDINPUT { wVk: 0, wScan: unit, dwFlags: KEYEVENTF_UNICODE | if up { KEYEVENTF_KEYUP } else { 0 }, time: 0, dwExtraInfo: 0 };
+                inputs.push(i);
+            }
+        }
+        if inputs.is_empty() {
+            return 0;
+        }
+        SendInput(inputs.len() as u32, inputs.as_mut_ptr(), std::mem::size_of::<INPUT>() as i32)
+    }
+
+    // like `press`, and says how many events Windows took (0: refused, for example on the sign-in or the UAC screen)
+    pub unsafe fn press_counted(codes: &[u16]) -> u32 {
+        let mut inputs: Vec<INPUT> = codes.iter().map(|&c| key(c, false)).collect();
+        inputs.extend(codes.iter().rev().map(|&c| key(c, true)));
+        SendInput(inputs.len() as u32, inputs.as_mut_ptr(), std::mem::size_of::<INPUT>() as i32)
+    }
+
     pub unsafe fn scroll(lines: i32) {
         let mut i = mouse(MOUSEEVENTF_WHEEL);
         i.u.mi_mut().mouseData = (lines * WHEEL_DELTA as i32) as u32;
@@ -282,6 +319,77 @@ pub fn keys(combo: &str) -> Outcome {
     {
         info!("Input: keys {:?} (Windows only)", codes);
         Outcome::Done
+    }
+}
+
+// ---- the hands of the phone (remote_input.rs): the mouse and the keyboard driven from the linked phone ----
+// No window is moved to the front here: the phone clicks first, and the click gives the focus to the window it hit.
+const NO_INPUT_HERE: &str = "управление мышью и клавиатурой доступно только в Windows";
+const BLOCKED: &str = "Windows не принял ввод: экран входа, окно с запросом прав администратора (UAC) или программа с повышенными правами не принимают ввод от Jarvis";
+
+// a click (or two) at a place of the main screen: x and y are shares of its width and height, 0..1
+pub fn remote_click(x: f64, y: f64, right: bool, times: u32) -> Result<(), String> {
+    if !(0.0..=1.0).contains(&x) || !(0.0..=1.0).contains(&y) {
+        return Err("место на экране вне экрана".into());
+    }
+    #[cfg(target_os = "windows")]
+    unsafe {
+        win::click_at(x, y, right, times.clamp(1, 2));
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (right, times);
+        Err(NO_INPUT_HERE.into())
+    }
+}
+
+// the wheel: positive lines scroll up, negative down
+pub fn remote_scroll(lines: i32) -> Result<(), String> {
+    let lines = lines.clamp(-20, 20);
+    #[cfg(target_os = "windows")]
+    unsafe {
+        win::scroll(lines);
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = lines;
+        Err(NO_INPUT_HERE.into())
+    }
+}
+
+// a shortcut or a key ("enter", "ctrl+c"); the rules of policy.rs apply as they do for every command
+pub fn remote_keys(combo: &str) -> Result<(), String> {
+    let codes = parse_combo(combo).ok_or_else(|| format!("неизвестная клавиша «{}»", combo))?;
+    crate::policy::authorize(&crate::policy::Op::Keys(combo.to_string()))?;
+    #[cfg(target_os = "windows")]
+    unsafe {
+        if win::press_counted(&codes) == 0 {
+            return Err(BLOCKED.into());
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = codes;
+        Err(NO_INPUT_HERE.into())
+    }
+}
+
+// typed text (the caller has limited it)
+pub fn remote_text(text: &str) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    unsafe {
+        if win::type_text(text) == 0 {
+            return Err(BLOCKED.into());
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = text;
+        Err(NO_INPUT_HERE.into())
     }
 }
 

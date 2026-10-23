@@ -64,6 +64,9 @@ libc = "0.2"
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["shellapi", "winuser", "sysinfoapi", "fileapi", "processthreadsapi", "winnt", "combaseapi", "objbase", "mmdeviceapi", "endpointvolume", "winerror", "objidl", "unknwnbase", "handleapi", "winbase", "minwindef", "dpapi", "wincrypt", "wingdi", "libloaderapi", "synchapi", "errhandlingapi", "winreg", "shlobj", "knownfolders", "fileapi", "tlhelp32", "iphlpapi", "iptypes", "ws2def", "inaddr", "ifdef", "nldef", "ipifcons", "psapi", "jobapi2", "playsoundapi", "mmsystem", "aclapi", "accctrl", "sddl", "securitybaseapi", "commdlg", "ntdef", "evntrace", "evntcons", "guiddef", "wmistr"] }
 winrt-notification = { workspace = true, optional = true }
+# the web camera of this computer for «Jarvis Remote» (camera.rs): Media Foundation only, no C decoders (a motion-JPEG frame is read with the pure Rust JPEG reader)
+nokhwa = { version = "0.10", default-features = false, features = ["input-msmf"] }
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
 
 [build-dependencies]
 sha2.workspace = true

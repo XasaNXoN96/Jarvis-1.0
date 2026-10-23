@@ -153,6 +153,9 @@ pub fn revoke(id: &str) -> bool {
         Some(d) => {
             d.revoked = true;
             crate::audit::record("pairing", "revoke", "", "allowed", false, "устройство отозвано");
+            // a revoked phone must not keep the mouse or the camera
+            crate::remote_input::stop("устройство отозвано");
+            crate::camera::stop("устройство отозвано");
             save(&devs).is_ok()
         }
         None => false,
