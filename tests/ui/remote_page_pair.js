@@ -1,5 +1,4 @@
-// Chromium check of the phone page: the pairing code from a link («#c=…») only fills the field — nothing is sent until the owner presses
-// the button; the secret of the device is taken from the Android application when it has one, and handed to it after pairing.
+// Chromium check of the phone page: the pairing code from a link or a QR code («#c=…») pairs by itself — nothing to type, nothing to press; the secret of the device is taken from the Android application when it has one, and handed to it after pairing.
 const { chromium } = require(process.env.PW_MODULE || 'playwright');
 const fs = require('fs'), path = require('path');
 const src = path.join(__dirname, '../../crates/jarvis-core/src');
@@ -24,22 +23,21 @@ const fails = []; const ok = (c, m) => { if (!c) fails.push(m); };
     await check(p, reqs, name);
     await ctx.close();
   };
-  // 1. no secret anywhere, a link with a code: the field is filled, no request to /pair, no data request at all
+  // 1. no secret anywhere, a link with a code: the code goes to /pair by itself, once, and is removed from the address bar
   await run('hint', () => { window.__set = []; }, 'http://pc.test/#pin=sha256/x&c=123456', async (p, reqs, n) => {
-    ok(await p.$eval('#pcode', e => e.value) === '123456', n + ': the code from the link fills the field');
-    ok(!reqs.some(r => r.includes('/pair')), n + ': nothing is sent to /pair before the button: ' + reqs.join(','));
-    ok(!reqs.some(r => r.startsWith('WITH-TOKEN')), n + ': no request carries a secret (there is none yet): ' + reqs.join(','));
+    ok(reqs.filter(r => r.includes('/pair')).length === 1, n + ': the code from the link is sent once without a press: ' + reqs.join(','));
+    ok(reqs.indexOf('POST /pair') >= 0 && reqs.slice(0, reqs.indexOf('POST /pair')).every(r => !r.startsWith('WITH-TOKEN')), n + ': nothing carries a secret before the pairing: ' + reqs.join(','));
     ok(!(await p.url()).includes('c=123456'), n + ': the code is removed from the address bar');
   });
   // 2. a wrong code in the link is not taken
   await run('badhint', () => {}, 'http://pc.test/#c=12ab', async (p, reqs, n) => {
     ok(await p.$eval('#pcode', e => e.value) === '', n + ': a code that is not six digits is ignored');
   });
-  // 3. pressing the button sends the code and hands the new secret to the application
-  await run('pair', () => { window.__native = []; window.JarvisAndroid = { getToken: () => '', setToken: t => window.__native.push(t), battery: () => '{}', keepScreenOn() {}, version: () => '1' }; }, 'http://pc.test/#c=123456', async (p, reqs, n) => {
-    await p.click('#pgo'); await p.waitForTimeout(600);
+  // 3. the secret of the new device is handed to the application; without a link the code is typed and sent by the button
+  await run('pair', () => { window.__native = []; window.JarvisAndroid = { getToken: () => '', setToken: t => window.__native.push(t), battery: () => '{}', keepScreenOn() {}, version: () => '1' }; }, 'http://pc.test/', async (p, reqs, n) => {
+    ok(!reqs.some(r => r.includes('/pair')), n + ': no code, nothing is sent');
+    await p.fill('#pcode', '123456'); await p.click('#pgo'); await p.waitForTimeout(600);
     ok(reqs.filter(r => r.includes('/pair')).length === 1, n + ': exactly one /pair request after the press');
-    // (the page reloads after pairing; the native store got the secret)
   });
   // 4. the application already has the secret of this device (another address of the computer = empty localStorage): no pairing box
   await run('native', () => { window.JarvisAndroid = { getToken: () => 'nativesecret' + 'y'.repeat(20), setToken() {}, battery: () => '{}', keepScreenOn() {}, version: () => '1' }; }, 'http://pc.test/', async (p, reqs, n) => {
