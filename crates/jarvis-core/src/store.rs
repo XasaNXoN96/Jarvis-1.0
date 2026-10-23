@@ -44,8 +44,11 @@ pub fn now() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
+// A number for a new item: the second, a counter of this run of the program and a random part. The counter makes two numbers of the
+// same second differ for certain (the random part alone is 16 bits: among 80 items made in one second two were the same about once in twenty times).
 pub fn new_id() -> String {
-    format!("{:x}{:04x}", now(), rand::random::<u16>())
+    static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    format!("{:x}{:04x}{:04x}", now(), SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed) & 0xffff, rand::random::<u16>())
 }
 
 #[cfg(test)]
@@ -56,4 +59,26 @@ pub fn with_temp<R>(f: impl FnOnce() -> R) -> R {
     let r = f();
     *TEST_DIR.lock() = None;
     r
+}
+
+#[cfg(test)]
+mod id_tests {
+    use super::*;
+
+    #[test]
+    fn numbers_made_in_one_run_never_repeat() {
+        // (fewer than the counter can tell apart: inside one second two numbers can only be the same if the counter wrapped)
+        let n = 20_000;
+        let set: std::collections::HashSet<String> = (0..n).map(|_| new_id()).collect();
+        assert_eq!(set.len(), n, "two items got the same number");
+        assert!(set.iter().all(|i| i.len() <= 24 && i.chars().all(|c| c.is_ascii_hexdigit())), "a number stays short and hexadecimal");
+    }
+
+    #[test]
+    fn many_numbers_from_many_threads_stay_different() {
+        let handles: Vec<_> = (0..8).map(|_| std::thread::spawn(|| (0..2_000).map(|_| new_id()).collect::<Vec<_>>())).collect();
+        let all: Vec<String> = handles.into_iter().flat_map(|h| h.join().unwrap()).collect();
+        let set: std::collections::HashSet<&String> = all.iter().collect();
+        assert_eq!(set.len(), all.len());
+    }
 }
