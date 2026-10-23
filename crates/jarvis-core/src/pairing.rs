@@ -162,6 +162,26 @@ pub fn revoke(id: &str) -> bool {
     }
 }
 
+// a device gets another name (the name is only a label: the secret and the rights do not change)
+pub fn rename(id: &str, name: &str) -> Result<(), String> {
+    let name: String = name.trim().chars().filter(|c| !c.is_control()).take(40).collect();
+    if name.is_empty() {
+        return Err("Имя не может быть пустым.".into());
+    }
+    let mut devs = load();
+    let d = devs.iter_mut().find(|d| d.id == id).ok_or("Такого устройства нет.")?;
+    d.name = name;
+    save(&devs)?;
+    crate::audit::record("pairing", "rename", "", "allowed", false, "устройство переименовано");
+    Ok(())
+}
+
+// every device that is still valid is revoked at once («потерял телефон», «кто-то чужой видел ссылку»); returns how many
+pub fn revoke_all() -> usize {
+    let ids: Vec<String> = load().into_iter().filter(|d| !d.revoked).map(|d| d.id).collect();
+    ids.iter().filter(|id| revoke(id)).count()
+}
+
 pub fn forget_revoked() -> bool {
     let mut devs = load();
     devs.retain(|d| !d.revoked);
@@ -253,6 +273,30 @@ mod tests {
                 redeem(&start_code(0), "d", 1).unwrap();
             }
             assert!(redeem(&start_code(0), "one more", 1).unwrap_err().contains("Слишком много"));
+        });
+    }
+
+    #[test]
+    fn a_device_can_be_renamed_and_all_can_be_revoked_at_once() {
+        store::with_temp(|| {
+            reset_for_tests();
+            let mut secrets = Vec::new();
+            for n in ["Pixel", "Планшет", "Старый"] {
+                let code = start_code(1000);
+                secrets.push(redeem(&code, n, 1000).unwrap());
+            }
+            let id = list()[0].id.clone();
+            rename(&id, "  Телефон жены \n").unwrap();
+            assert_eq!(list()[0].name, "Телефон жены", "spaces around and a line break are gone");
+            assert!(rename(&id, "   ").is_err() && rename("nobody", "x").is_err());
+            assert_eq!(rename(&id, &"я".repeat(100)).map(|_| list()[0].name.chars().count()), Ok(40), "a long name is cut");
+            assert!(check(&secrets[0], 1100).is_some(), "the secret still works after a rename");
+            // one is revoked by hand, the rest by «все»
+            assert!(revoke(&list()[2].id));
+            assert_eq!(revoke_all(), 2, "only the ones that were still valid");
+            assert!(secrets.iter().all(|s| check(s, 1200).is_none()), "nobody is accepted any more");
+            assert_eq!(revoke_all(), 0);
+            assert_eq!(list().len(), 3, "they stay in the list as «отозвано»");
         });
     }
 }

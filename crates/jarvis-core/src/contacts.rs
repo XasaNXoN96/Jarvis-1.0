@@ -94,6 +94,103 @@ pub fn delete(id: &str) -> bool {
     book.contacts.len() != n && store::write(FILE, &book).is_ok()
 }
 
+// The contacts of a .vcf file (what a phone or an e-mail program exports): the name (FN, else N), the first phone (TEL) and a Telegram name when the
+// card has one (X-TELEGRAM or a t.me address in URL). Lines folded by a space, the quoted-printable and the «;type=» marks are read; nothing else of the card is kept
+// (no addresses, birthdays, notes, photos). Returns the cards that were understood and how many had no name or no good number.
+pub fn parse_vcf(text: &str) -> (Vec<Contact>, usize) {
+    // unfold: a line that begins with a space or a tab continues the line before it
+    let mut lines: Vec<String> = Vec::new();
+    for raw in text.replace("\r\n", "\n").replace('\r', "\n").split('\n') {
+        if (raw.starts_with(' ') || raw.starts_with('\t')) && !lines.is_empty() {
+            lines.last_mut().unwrap().push_str(raw[1..].trim_end());
+        } else {
+            lines.push(raw.trim_end().to_string());
+        }
+    }
+    let (mut out, mut skipped) = (Vec::new(), 0usize);
+    let mut cur: Option<(String, String, String, String)> = None; // (fn, n, phone, telegram)
+    for l in lines {
+        let up = l.to_uppercase();
+        if up == "BEGIN:VCARD" {
+            cur = Some(Default::default());
+        } else if up == "END:VCARD" {
+            if let Some((f, n, ph, tg)) = cur.take() {
+                let name = if !f.trim().is_empty() { f.trim().to_string() } else { n.trim().to_string() };
+                let phone = digits(&ph);
+                if name.is_empty() || (phone.is_empty() && tg.is_empty()) || (!phone.is_empty() && !valid_phone(&phone)) {
+                    skipped += 1;
+                } else {
+                    out.push(Contact { name: name.chars().take(60).collect(), phone, telegram: tg, ..Default::default() });
+                }
+            }
+        } else if let Some((key, val)) = l.split_once(':') {
+            let Some(c) = cur.as_mut() else { continue };
+            let key_up = key.to_uppercase();
+            let base = key_up.split(';').next().unwrap_or("");
+            let val = if key_up.contains("QUOTED-PRINTABLE") { qp_decode(val) } else { val.to_string() };
+            match base {
+                "FN" => c.0 = val.replace("\\,", ",").replace("\\;", ";"),
+                "N" => c.1 = val.split(';').filter(|p| !p.trim().is_empty()).rev().collect::<Vec<_>>().join(" "),
+                "TEL" if c.2.is_empty() => c.2 = if val.trim_start().starts_with('+') || val.trim_start().starts_with("00") { val.clone() } else { val },
+                "X-TELEGRAM" | "X-SOCIALPROFILE" if c.3.is_empty() => c.3 = val.trim().trim_start_matches('@').to_string(),
+                "URL" if c.3.is_empty() => {
+                    if let Some(r) = val.trim().strip_prefix("https://t.me/").or_else(|| val.trim().strip_prefix("http://t.me/")) {
+                        c.3 = r.trim_matches('/').to_string();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    (out, skipped)
+}
+
+fn qp_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'=' && i + 2 < b.len() + 0 && b.get(i + 1).zip(b.get(i + 2)).map(|(x, y)| x.is_ascii_hexdigit() && y.is_ascii_hexdigit()).unwrap_or(false) {
+            out.push(u8::from_str_radix(&s[i + 1..i + 3], 16).unwrap_or(b'?'));
+            i += 3;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).to_string()
+}
+
+// adds the cards that are not in the book yet (the same phone or the same Telegram name is the same person: not doubled); each one goes through `save`
+// (its own checks). Returns (added, already there, not understood)
+pub fn import_vcf(text: &str) -> Result<(usize, usize, usize), String> {
+    if text.len() > 3_000_000 {
+        return Err("Файл слишком большой для импорта (больше 3 МБ).".into());
+    }
+    let (cards, skipped) = parse_vcf(text);
+    if cards.is_empty() {
+        return Err("В файле нет подходящих контактов (нужны имя и телефон или Telegram).".into());
+    }
+    let have = list();
+    let (mut added, mut dup, mut bad) = (0usize, 0usize, skipped);
+    let mut seen: Vec<(String, String)> = have.iter().map(|c| (c.phone.clone(), c.telegram.to_lowercase())).collect();
+    for c in cards.into_iter().take(500) {
+        let key = (c.phone.clone(), c.telegram.to_lowercase());
+        if seen.iter().any(|(p, t)| (!key.0.is_empty() && *p == key.0) || (!key.1.is_empty() && *t == key.1)) {
+            dup += 1;
+            continue;
+        }
+        match save(c) {
+            Ok(_) => {
+                added += 1;
+                seen.push(key);
+            }
+            Err(_) => bad += 1,
+        }
+    }
+    Ok((added, dup, bad))
+}
+
 pub fn by_id(id: &str) -> Option<Contact> {
     list().into_iter().find(|c| c.id == id)
 }
@@ -170,6 +267,33 @@ mod tests {
             assert_eq!(got.telegram, "anya");
             assert!(delete(&id));
             assert!(list().is_empty());
+        });
+    }
+
+    #[test]
+    fn a_vcard_file_is_read_and_imported_without_doubles() {
+        store::with_temp(|| {
+            let vcf = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Малика Ахмедова\r\nTEL;TYPE=CELL:+998 90 123-45-67\r\nTEL;TYPE=HOME:+998711112233\r\nEMAIL:m@x.uz\r\nNOTE:секрет\r\nEND:VCARD\r\n\
+BEGIN:VCARD\r\nVERSION:3.0\r\nN:Иванов;Иван;;;\r\nTEL:+7 (900) 111-22-33\r\nURL:https://t.me/ivan_i\r\nEND:VCARD\r\n\
+BEGIN:VCARD\r\nFN:Без номера\r\nEND:VCARD\r\n\
+BEGIN:VCARD\r\nFN:Короткий\r\nTEL:123\r\nEND:VCARD\r\n\
+BEGIN:VCARD\r\nFN:Складной\r\n  Человек\r\nTEL:998935550011\r\nEND:VCARD\r\n\
+BEGIN:VCARD\r\nFN;ENCODING=QUOTED-PRINTABLE:=D0=9F=D0=B5=D1=82=D1=80\r\nTEL:998901110000\r\nEND:VCARD\r\n";
+            let (cards, skipped) = parse_vcf(vcf);
+            assert_eq!(skipped, 2, "one without a number, one with a too short number");
+            assert_eq!(cards.len(), 4);
+            assert_eq!((cards[0].name.as_str(), cards[0].phone.as_str()), ("Малика Ахмедова", "998901234567"), "the first phone, digits only");
+            assert_eq!((cards[1].name.as_str(), cards[1].phone.as_str(), cards[1].telegram.as_str()), ("Иван Иванов", "79001112233", "ivan_i"), "N is turned into «Имя Фамилия», a t.me address is the Telegram name");
+            assert_eq!(cards[2].name, "Складной Человек", "a folded line is joined");
+            assert_eq!(cards[3].name, "Петр", "quoted-printable");
+            let (a, d, b) = import_vcf(vcf).unwrap();
+            assert_eq!((a, d, b), (4, 0, 2));
+            assert_eq!(list().len(), 4);
+            assert!(!list().iter().any(|c| c.name.contains("секрет")), "notes are not kept");
+            let (a, d, _) = import_vcf(vcf).unwrap();
+            assert_eq!((a, d), (0, 4), "the second import adds nobody");
+            assert!(import_vcf("это не карточки").is_err());
+            assert!(import_vcf(&"x".repeat(3_100_000)).unwrap_err().contains("слишком большой"));
         });
     }
 }

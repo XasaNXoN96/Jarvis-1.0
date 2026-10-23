@@ -70,6 +70,10 @@ jobs:
         run: node tests/ui/security_ui.js
         env:
           PW_MODULE: ${{ github.workspace }}/node_modules/playwright
+      - name: Paired devices (rename, revoke all), contacts import and message history filter
+        run: node tests/ui/connect_ui.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright
       - name: Red strip while the phone drives the mouse or watches the camera
         run: node tests/ui/live_strip.js
         env:

@@ -457,7 +457,21 @@ if (!token) {
     const a = document.createElement('button'); a.type = 'button'; a.id = 'rc-open'; a.className = 'btn wide'; a.textContent = '🖱 Управление ПК'; a.onclick = control;
     const b = document.createElement('button'); b.type = 'button'; b.id = 'cam-open'; b.className = 'btn wide'; b.textContent = '📷 Камера ПК'; b.onclick = camera;
     box.appendChild(a); box.appendChild(b);
+    mark();
   };
+  // what the computer allows is written on the buttons (a press would only get a refusal): asked from /live, again when the tab is opened
+  const mark = async () => {
+    try {
+      const r = await fetchT('/live', { headers: { 'X-Token': token } }); if (!r.ok) return; const j = await r.json();
+      for (const [id, txt, st] of [['rc-open', '🖱 Управление ПК', j.input], ['cam-open', '📷 Камера ПК', j.camera]]) {
+        const el = document.getElementById(id); if (!el || !st) continue;
+        el.textContent = st.live ? txt + ' (идёт сеанс)' : st.allowed ? txt : txt + ' (выключено на ПК)';
+        el.title = st.allowed ? '' : 'Включает владелец на компьютере: Настройки → Центр разрешений';
+        el.classList.toggle('off', !st.allowed);
+      }
+    } catch (e) {}
+  };
+  window.liveMark = mark;
   document.addEventListener('DOMContentLoaded', put); put();
 })();
 const rid = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
@@ -937,6 +951,7 @@ function goTab(tab, mark) {
   document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x.dataset.tab === (mark || tab)));
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 't-' + tab));
   document.body.dataset.tab = tab; document.querySelector('.body').scrollTop = 0;
+  if (tab === 'media' && window.liveMark) window.liveMark();
   if (tab === 'more') loadVoices();
   if (tab === 'media') loadNow();
   if (tab === 'hist') loadHistory();

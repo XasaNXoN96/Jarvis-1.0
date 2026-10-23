@@ -200,6 +200,25 @@ impl Adapter for LinkAdapter {
     }
 }
 
+// the history for the page, newest first: `q` is a part of the contact name or of the text (any case), `state` is "" / "all", "done" (opened or sent),
+// "failed", "cancelled" or "waiting" (not confirmed yet); an unknown state is the same as all
+pub fn history_filtered(q: &str, state: &str, n: usize) -> Vec<Outgoing> {
+    let q = crate::textnorm::normalize(q);
+    history()
+        .into_iter()
+        .rev()
+        .filter(|o| match state {
+            "failed" => o.status == Status::Error,
+            "cancelled" => o.status == Status::Cancelled,
+            "waiting" => !o.status.is_final(),
+            "done" => o.status.is_final() && o.status != Status::Error && o.status != Status::Cancelled,
+            _ => true,
+        })
+        .filter(|o| q.is_empty() || crate::textnorm::normalize(&o.contact).contains(&q) || crate::textnorm::normalize(&o.body).contains(&q))
+        .take(n)
+        .collect()
+}
+
 pub fn history() -> Vec<Outgoing> {
     store::read::<Vec<Outgoing>>(FILE).0
 }
@@ -439,6 +458,27 @@ mod tests {
             assert!(!r.url.contains("секретный") && r.note.contains("БЕЗ текста"), "{}", r.note);
             assert_eq!(get(&o.id).unwrap().body, "секретный текст", "the text stays in the history to be pasted");
             assert!(manual_note("whatsapp").contains("с текстом"));
+        });
+    }
+
+    #[test]
+    fn the_history_is_filtered_by_a_word_and_by_state() {
+        store::with_temp(|| {
+            let mk = |id: &str, who: &str, body: &str, st: Status, at: u64| Outgoing { id: id.into(), contact_id: "c".into(), contact: who.into(), channel: "whatsapp".into(), body: body.into(), status: st, created: at, updated: at, note: String::new(), url: String::new() };
+            for o in [mk("1", "Малика", "буду поздно", Status::ManualSendRequired, 1), mk("2", "Иван", "созвон в пять", Status::Cancelled, 2), mk("3", "Малика", "купи хлеб", Status::AwaitingConfirmation, 3), mk("4", "Олег", "ок", Status::Error, 4)] {
+                put(&o).unwrap();
+            }
+            assert_eq!(history_filtered("", "", 10).len(), 4);
+            assert_eq!(history_filtered("", "", 10)[0].id, "4", "newest first");
+            assert_eq!(history_filtered("МАЛИКА", "", 10).len(), 2, "a contact, any case");
+            assert_eq!(history_filtered("хлеб", "", 10).len(), 1, "a word of the text");
+            assert_eq!(history_filtered("", "waiting", 10).iter().map(|o| o.id.as_str()).collect::<Vec<_>>(), vec!["3"]);
+            assert_eq!(history_filtered("", "failed", 10).len(), 1);
+            assert_eq!(history_filtered("", "cancelled", 10).len(), 1);
+            assert_eq!(history_filtered("", "done", 10).iter().map(|o| o.id.as_str()).collect::<Vec<_>>(), vec!["1"], "the one that was opened for a manual send is done; failed and cancelled are not");
+            assert_eq!(history_filtered("Малика", "waiting", 10).len(), 1, "both filters together");
+            assert_eq!(history_filtered("", "garbage", 10).len(), 4);
+            assert_eq!(history_filtered("", "", 2).len(), 2);
         });
     }
 }

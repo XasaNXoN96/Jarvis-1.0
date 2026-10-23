@@ -26,6 +26,7 @@ const PIX = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk
       reqs.push({ m: rq.method(), p: u.pathname, body: rq.postData() || '', h: rq.headers() });
       const deny = () => r.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ ok: false, message: 'Это выключено в центре разрешений: «тест». Включите в Настройки.' }) });
       if (['/input-start', '/camera-list', '/camera-start', '/input', '/camera-frame'].includes(u.pathname) && !allowed) return deny();
+      if (u.pathname === '/live') return j({ input: { allowed: allowed, live: false }, camera: { allowed: allowed, live: false } });
       if (u.pathname === '/input-start') return j({ ok: true });
       if (u.pathname === '/input') return j({ ok: true });
       if (u.pathname === '/input-stop' || u.pathname === '/camera-stop') return j({ ok: true });
@@ -44,6 +45,16 @@ const PIX = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk
   await run('idle', true, async (p, reqs, n) => {
     ok(await p.$('#rc-open') && await p.$('#cam-open'), n + ': both buttons exist');
     ok(!reqs.some(r => /input|camera/.test(r.p)), n + ': nothing is sent before a press: ' + reqs.map(r => r.p).join(','));
+  });
+  // 1b. the buttons say what the computer allows
+  await run('labels-on', true, async (p, reqs, n) => {
+    await p.waitForTimeout(300);
+    ok(!(await p.textContent('#rc-open')).includes('выключено') && !(await p.textContent('#cam-open')).includes('выключено'), n + ': allowed abilities have clean buttons');
+  });
+  await run('labels-off', false, async (p, reqs, n) => {
+    await p.waitForTimeout(300);
+    ok((await p.textContent('#rc-open')).includes('выключено на ПК') && (await p.textContent('#cam-open')).includes('выключено на ПК'), n + ': the buttons say it is off on the computer: ' + await p.textContent('#rc-open'));
+    ok((await p.getAttribute('#rc-open', 'title')).includes('Центр разрешений'), n + ': the hint says where to switch it on');
   });
   // 2. the ability is off: a plain refusal, no picture, no further requests
   await run('off', false, async (p, reqs, n) => {

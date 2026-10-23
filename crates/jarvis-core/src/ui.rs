@@ -265,7 +265,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         }
     }
     // with a password of the owner set, the actions that change what Jarvis keeps or does need the unlocked program
-    if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_edit" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "notes_edit" | "notes_category" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message" | "audit_clear" | "ca_apply" | "pl_add" | "pl_remove" | "persona_set" | "pair_start" | "pair_revoke" | "pair_link" | "remote_http_set" | "remote_key_rotate" | "comp_do" | "sync_folder" | "sync_run" | "sync_clear" | "wol_add" | "wol_remove" | "wol_wake" | "mem_use_ai" | "diag_fix_apply") {
+    if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_edit" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "notes_edit" | "notes_category" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message" | "audit_clear" | "ca_apply" | "pl_add" | "pl_remove" | "persona_set" | "pair_start" | "pair_revoke" | "pair_rename" | "pair_revoke_all" | "ct_import" | "pair_link" | "remote_http_set" | "remote_key_rotate" | "comp_do" | "sync_folder" | "sync_run" | "sync_clear" | "wol_add" | "wol_remove" | "wol_wake" | "mem_use_ai" | "diag_fix_apply") {
         if let Err(m) = crate::owner::guard() {
             return json!({ "ok": false, "locked": true, "code": "locked", "message": m });
         }
@@ -456,6 +456,11 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             json!({ "ok": true, "items": crate::pairing::list(), "code": code, "left": left })
         }
         "pair_revoke" => json!({ "ok": crate::pairing::revoke(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) }),
+        "pair_rename" => match crate::pairing::rename(body.get("id").and_then(|v| v.as_str()).unwrap_or(""), body.get("new_name").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(()) => json!({ "ok": true, "message": "Переименовано." }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "pair_revoke_all" => { let n = crate::pairing::revoke_all(); json!({ "ok": true, "count": n, "message": if n == 0 { "Привязанных устройств нет.".to_string() } else { format!("Отозвано устройств: {}.", n) } }) }
         // character of the AI (humor, language, manner)
         "persona_get" => { let p = crate::persona::get(); json!({ "ok": true, "humor": p.humor, "reply_lang": p.reply_lang, "natural": p.natural }) }
         "persona_set" => match crate::persona::set(body.get("humor").and_then(|v| v.as_u64()).unwrap_or(1) as u8, body.get("reply_lang").and_then(|v| v.as_str()).unwrap_or("auto"), body.get("natural").and_then(|v| v.as_bool()).unwrap_or(true)) {
@@ -750,8 +755,13 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             },
             Err(_) => json!({ "ok": false, "message": "Неверные данные контакта." }),
         },
+        // a .vcf file of the phone (the text is read by the page): the new people are added, the ones that are already there are not doubled
+        "ct_import" => match crate::contacts::import_vcf(body.get("text").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok((a, d, b)) => json!({ "ok": true, "message": format!("Добавлено: {}. Уже были: {}. Не поняты (нет имени или номера): {}.", a, d, b) }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
         "ct_delete" => json!({ "ok": crate::contacts::delete(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) }),
-        "out_list" => { let mut h = crate::messenger::history(); h.reverse(); json!({ "ok": true, "items": h.into_iter().take(50).map(|o| { let label = o.status.label(); let mut v = serde_json::to_value(&o).unwrap_or(json!({})); v["label"] = json!(label); v }).collect::<Vec<_>>() }) }
+        "out_list" => { let h = crate::messenger::history_filtered(body.get("q").and_then(|v| v.as_str()).unwrap_or(""), body.get("state").and_then(|v| v.as_str()).unwrap_or(""), 50); json!({ "ok": true, "items": h.into_iter().map(|o| { let label = o.status.label(); let mut v = serde_json::to_value(&o).unwrap_or(json!({})); v["label"] = json!(label); v }).collect::<Vec<_>>() }) }
         "out_confirm" => match crate::features::confirm_message(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) {
             Ok(o) => json!({ "ok": o.status != crate::messenger::Status::Error, "status": o.status, "message": if o.status == crate::messenger::Status::ManualSendRequired { crate::messenger::manual_note(&o.channel).to_string() } else { o.note.clone() } }),
             Err(e) => json!({ "ok": false, "message": e }),
