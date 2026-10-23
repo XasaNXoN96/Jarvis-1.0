@@ -194,6 +194,24 @@ fn f1(v: Option<f64>, unit: &str) -> String {
     v.map(|x| format!("{:.0}{}", x, unit)).unwrap_or_else(|| "—".into())
 }
 
+// how a session differs from the one before it of the same game: only what both have measured is compared (never a made-up number)
+pub fn compare(prev: &Session, cur: &Session) -> serde_json::Value {
+    use serde_json::json;
+    let d = |a: Option<f64>, b: Option<f64>| match (a, b) {
+        (Some(a), Some(b)) => Some((b - a).round()),
+        _ => None,
+    };
+    json!({
+        "prev_start": prev.start,
+        "mins": (cur.secs() as i64 - prev.secs() as i64) / 60,
+        "fps_avg": d(prev.fps.avg(), cur.fps.avg()),
+        "fps_low1": d(prev.fps_low1(), cur.fps_low1()),
+        "cpu_avg": d(prev.cpu.avg(), cur.cpu.avg()),
+        "gpu_avg": d(prev.gpu.avg(), cur.gpu.avg()),
+        "gpu_temp_max": if prev.gpu_temp.n > 0 && cur.gpu_temp.n > 0 { Some((cur.gpu_temp.max - prev.gpu_temp.max).round()) } else { None },
+    })
+}
+
 pub fn summary_json() -> serde_json::Value {
     use serde_json::json;
     let h = history();
@@ -207,7 +225,8 @@ pub fn summary_json() -> serde_json::Value {
     totals.sort_by(|a, b| b["secs"].as_u64().cmp(&a["secs"].as_u64()));
     json!({
         "games": totals,
-        "sessions": h.iter().rev().take(30).map(|s| json!({
+        "sessions": h.iter().enumerate().rev().take(30).map(|(i, s)| json!({
+            "vs_prev": h[..i].iter().rev().find(|p| p.exe.eq_ignore_ascii_case(&s.exe)).map(|p| compare(p, s)),
             "exe": s.exe, "start": s.start, "secs": s.secs(),
             "fps_avg": s.fps.avg().map(|v| v.round()), "fps_low1": s.fps_low1().map(|v| v.round()),
             "cpu_avg": s.cpu.avg().map(|v| v.round()), "gpu_avg": s.gpu.avg().map(|v| v.round()),
@@ -244,6 +263,24 @@ pub fn report_text() -> String {
         .join("\n")
 }
 
+// the tracker is shared so that the exit of the program can write the session that is still running
+static TRACKER: parking_lot::Mutex<Option<Tracker>> = parking_lot::const_mutex(None);
+
+// the session that is running now is written to the history (the program is closing): what was measured is not lost
+pub fn flush() -> bool {
+    let cur = TRACKER.lock().as_mut().and_then(|t| t.current.take());
+    match cur {
+        Some(mut s) => {
+            // it ended where it was last measured (not at the moment of the exit: the game may have been closed a while ago)
+            s.end = s.end.max(s.start);
+            let long_enough = s.secs() >= MIN_SESSION_SECS;
+            record(s);
+            long_enough
+        }
+        None => false,
+    }
+}
+
 #[cfg(feature = "jarvis_app")]
 pub fn start() {
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -251,19 +288,18 @@ pub fn start() {
     if STARTED.swap(true, Ordering::SeqCst) {
         return;
     }
-    std::thread::spawn(|| {
-        let mut t = Tracker::default();
-        loop {
-            std::thread::sleep(std::time::Duration::from_secs(2));
-            let front = crate::aimassist::front_game_any();
-            // (nothing is read while no game is in front: the monitor costs nothing then)
-            if front.is_none() && t.current.is_none() {
-                continue;
-            }
-            let s = sysstat::sample();
-            if let Some(done) = t.tick(store::now(), front.as_deref(), &s, crate::gamefps::fps_now()) {
-                record(done);
-            }
+    std::thread::spawn(|| loop {
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let front = crate::aimassist::front_game_any();
+        let mut guard = TRACKER.lock();
+        let t = guard.get_or_insert_with(Tracker::default);
+        // (nothing is read while no game is in front: the monitor costs nothing then)
+        if front.is_none() && t.current.is_none() {
+            continue;
+        }
+        let s = sysstat::sample();
+        if let Some(done) = t.tick(store::now(), front.as_deref(), &s, crate::gamefps::fps_now()) {
+            record(done);
         }
     });
 }
@@ -385,5 +421,61 @@ mod tests {
         let done = t.tick(2 + 8 * 3600, None, &s, None).expect("ends at once, not a minute later");
         assert_eq!((done.start, done.end), (0, 2));
         assert!(t.current.is_none());
+    }
+
+    fn session(exe: &str, start: u64, secs: u64, fps: Option<u32>, cpu: u32) -> Session {
+        let mut s = Session::new(exe, start);
+        for t in (0..=secs).step_by(2) {
+            s.add(start + t, &smp(cpu, None), fps);
+        }
+        s
+    }
+
+    #[test]
+    fn a_session_is_compared_with_the_one_before_it_of_the_same_game_and_only_by_what_both_measured() {
+        store::with_temp(|| {
+            record(session("game.exe", 1000, 3600, Some(60), 40));
+            record(session("other.exe", 5000, 600, None, 10));
+            record(session("GAME.exe", 9000, 1800, Some(75), 55));
+            let v = summary_json();
+            let list = v["sessions"].as_array().unwrap();
+            // newest first: game (2nd session), other, game (1st)
+            assert_eq!(list[0]["exe"], "GAME.exe");
+            let c = &list[0]["vs_prev"];
+            assert_eq!(c["prev_start"], 1000, "the previous one of the same game, not the other game");
+            assert_eq!((c["fps_avg"].as_f64(), c["cpu_avg"].as_f64(), c["mins"].as_i64()), (Some(15.0), Some(15.0), Some(-30)));
+            assert!(c["gpu_avg"].is_null() && c["gpu_temp_max"].is_null(), "nothing is compared where one side has no number");
+            assert!(list[1]["vs_prev"].is_null() && list[2]["vs_prev"].is_null(), "the first session of a game has nothing to compare with");
+        });
+    }
+
+    #[test]
+    fn the_running_session_is_written_when_the_program_closes() {
+        store::with_temp(|| {
+            *TRACKER.lock() = Some(Tracker::default());
+            let s = smp(30, None);
+            {
+                let mut g = TRACKER.lock();
+                let t = g.as_mut().unwrap();
+                for k in 0..30u64 {
+                    t.tick(1000 + k * 2, Some("long.exe"), &s, None);
+                }
+            }
+            assert!(flush(), "a session of one minute is kept");
+            let h = history();
+            assert_eq!(h.len(), 1);
+            assert_eq!((h[0].exe.as_str(), h[0].secs()), ("long.exe", 58));
+            assert!(!flush(), "nothing is written twice");
+            // a very short one is not kept
+            {
+                let mut g = TRACKER.lock();
+                let t = g.as_mut().unwrap();
+                t.tick(5000, Some("short.exe"), &s, None);
+                t.tick(5002, Some("short.exe"), &s, None);
+            }
+            assert!(!flush());
+            assert_eq!(history().len(), 1);
+            *TRACKER.lock() = None;
+        });
     }
 }

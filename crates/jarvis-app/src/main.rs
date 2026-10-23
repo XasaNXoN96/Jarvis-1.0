@@ -528,6 +528,9 @@ pub fn shutdown_and_exit() -> ! {
         jarvis_core::ai::stop(&id);
     }
     // (every step writes a line first: if one hangs, the log shows which)
+    // the game that is being played now is written to the statistics (otherwise its hour would be lost)
+    info!("Exit: the game statistics");
+    jarvis_core::gamestats::flush();
     info!("Exit: the frame counter");
     jarvis_core::gamefps::stop();
     info!("Exit: the game mode");

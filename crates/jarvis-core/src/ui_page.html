@@ -1104,7 +1104,7 @@ body.live-on { padding-top: 44px; }
           <div class="b-chainhead"><div class="b-label">ЦЕПОЧКА <b id="b-count">0</b></div><small class="dim">добавить шаг: нажмите или перетащите в цепочку</small></div>
           <div class="b-kinds" id="b-kinds"></div>
           <div class="b-steps" id="b-steps"><div class="empty">Добавьте первый шаг кнопкой выше.</div></div>
-          <div class="b-actions"><button class="btn primary" id="b-save" type="button">Сохранить</button><button class="btn" id="b-test" type="button">Тест сценария</button><label class="b-en"><label class="sw"><input type="checkbox" id="b-enabled" checked><span></span></label> включён</label><span class="grow"></span><button class="btn" id="b-delete" type="button">Удалить сценарий</button></div>
+          <div class="b-actions"><button class="btn primary" id="b-save" type="button">Сохранить</button><button class="btn" id="b-test" type="button">Тест сценария</button><label class="b-en"><label class="sw"><input type="checkbox" id="b-enabled" checked><span></span></label> включён</label><span class="grow"></span><select id="b-versions" hidden title="Прошлые версии этого сценария"></select><button class="btn" id="b-delete" type="button">Удалить сценарий</button></div>
           <div class="msgline" id="b-msg"></div>
           <div class="b-last" id="b-last"></div>
         </div>
@@ -3557,11 +3557,13 @@ $('#ca-discard').onclick = async () => { await action('ca_discard'); $('#ca-diff
 // ---------- game statistics, reading of messages, microphone watch, region of the screen ----------
 const gsDur = sec => sec >= 3600 ? Math.floor(sec / 3600) + ' ч ' + Math.floor(sec % 3600 / 60) + ' мин' : Math.max(1, Math.round(sec / 60)) + ' мин';
 const dash = v => v == null ? '—' : v;
+// «FPS +5 · ЦП −3%»: only what both sessions measured
+function gsDelta(label, d, unit) { return d === null || d === undefined ? '' : label + ' ' + (d > 0 ? '+' : d < 0 ? '−' : '±') + Math.abs(d) + unit + ' · '; }
 async function gsLoad() {
   const r = await action('gs_summary').catch(() => ({ stats: {} })); const st = r.stats || {};
   $('#gs-games').innerHTML = (st.games || []).length ? st.games.map(g => '<div class="mem-item"><span><b>' + gpEsc(g.exe) + '</b><small>сессий: ' + g.sessions + ' · всего ' + gsDur(g.secs) + '</small></span></div>').join('') : '<small class="dim">Пока нет ни одной сессии.</small>';
   $('#gs-list').innerHTML = (st.sessions || []).length ? st.sessions.map(x => '<div class="mem-item"><span><b>' + gpEsc(x.exe) + '</b> · ' + gsDur(x.secs) + ' · ' + new Date(x.start * 1000).toLocaleString('ru-RU') +
-    '<small>FPS ' + dash(x.fps_avg) + ' (1% low ' + dash(x.fps_low1) + ') · ЦП ' + dash(x.cpu_avg) + '% · ВК ' + dash(x.gpu_avg) + '% · ОЗУ до ' + dash(x.ram_max_gb) + ' ГБ · видеопамять до ' + dash(x.vram_max_gb) + ' ГБ · темп. до ' + dash(x.gpu_temp_max) + ' °C</small></span></div>').join('') : '';
+    (x.vs_prev ? '<small class="gs-vs">К прошлой сессии этой игры: ' + gsDelta('FPS', x.vs_prev.fps_avg, '') + gsDelta('1% low', x.vs_prev.fps_low1, '') + gsDelta('ЦП', x.vs_prev.cpu_avg, '%') + gsDelta('ВК', x.vs_prev.gpu_avg, '%') + gsDelta('темп.', x.vs_prev.gpu_temp_max, ' °C') + gsDelta('время', x.vs_prev.mins, ' мин') + '</small>' : '') + '<small>FPS ' + dash(x.fps_avg) + ' (1% low ' + dash(x.fps_low1) + ') · ЦП ' + dash(x.cpu_avg) + '% · ВК ' + dash(x.gpu_avg) + '% · ОЗУ до ' + dash(x.ram_max_gb) + ' ГБ · видеопамять до ' + dash(x.vram_max_gb) + ' ГБ · темп. до ' + dash(x.gpu_temp_max) + ' °C</small></span></div>').join('') : '';
   if (st.fps_note) { const m = $('#gs-msg'); m.className = 'msgline'; m.textContent = st.fps_note; }
 }
 $('#gs-copy').onclick = async () => { const r = await action('gs_report').catch(() => ({})); try { await navigator.clipboard.writeText(r.text || ''); lineMsg('#gs-msg', { ok: true }, 'Скопировано.'); } catch (e) { lineMsg('#gs-msg', { ok: false, message: 'Не удалось скопировать.' }); } };
@@ -4703,7 +4705,21 @@ async function builderLoad(keepId) {
   renderBuilder();
 }
 function bMsg(ok, text) { const m = $('#b-msg'); m.className = 'msgline ' + (ok ? 'ok' : 'bad'); m.textContent = text || ''; }
+function bVersions() {
+  const s = $('#b-versions'); if (!s) return;
+  const v = (bCur && bCur.versions) || [];
+  s.hidden = !v.length || !bCur.id;
+  s.innerHTML = '<option value="">Прошлые версии…</option>' + v.map((x, i) => '<option value="' + i + '">' + new Date(x.at * 1000).toLocaleString('ru-RU') + ' · ' + gpEsc(x.name) + ' (' + x.steps.length + ' шаг.)</option>').join('');
+}
+$('#b-versions').onchange = async e => {
+  const i = e.target.value; if (i === '' || !bCur.id) return;
+  if (!confirm('Вернуть эту версию сценария? Текущая останется в списке прошлых версий.')) { e.target.value = ''; return; }
+  const r = await scApi({ op: 'restore_version', id: bCur.id, index: +i });
+  if (!r.ok) { bMsg(false, r.message); return; }
+  bMsg(true, 'Версия возвращена.'); builderLoad(r.scenario.id);
+};
 function renderBuilder() {
+  bVersions();
   const q = $('#b-search').value.trim().toLowerCase();
   const list = $('#b-list'); list.textContent = '';
   const shown = bData.scenarios.filter(x => !q || (x.name + ' ' + x.phrase).toLowerCase().includes(q));

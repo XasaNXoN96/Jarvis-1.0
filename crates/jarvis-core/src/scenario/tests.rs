@@ -229,3 +229,82 @@ fn importing_with_replace_never_wipes_the_scenarios_for_a_file_without_a_usable_
     let (added, skipped) = import_json(&bad, false).unwrap();
     assert_eq!((added, skipped.len(), list().len()), (0, 1, 1));
 }
+
+#[test]
+fn the_time_and_day_of_a_condition_are_read_exactly() {
+    assert_eq!(parse_window("09:00-18:00"), Some((540, 1080)));
+    assert_eq!(parse_window(" 22:30 - 06:00 "), Some((1350, 360)));
+    for bad in ["", "9", "09:00", "25:00-26:00", "09:60-10:00", "10:00-10:00", "утро-вечер", "09:00-18:00-20:00"] {
+        assert_eq!(parse_window(bad), None, "{:?}", bad);
+    }
+    let day = (540, 1080);
+    assert!(in_window(day, 540) && in_window(day, 1079) && !in_window(day, 1080) && !in_window(day, 539));
+    let night = (1320, 360);
+    assert!(in_window(night, 1400) && in_window(night, 100) && !in_window(night, 600), "a window through midnight");
+    assert_eq!(parse_days("пн-пт"), Some(vec![0, 1, 2, 3, 4]));
+    assert_eq!(parse_days("сб,вс"), Some(vec![5, 6]));
+    assert_eq!(parse_days("Пн, Ср; Пт"), Some(vec![0, 2, 4]));
+    assert_eq!(parse_days("пт-пн"), Some(vec![0, 4, 5, 6]), "a range through the end of the week");
+    for bad in ["", "понедельник", "пн-", "xx", "пн-зз"] {
+        assert_eq!(parse_days(bad), None, "{:?}", bad);
+    }
+    assert!(check_step(&step("if_time", "09:00-18:00")).is_ok() && check_step(&step("if_time", "всегда")).is_err());
+    assert!(check_step(&step("if_day", "пн-пт")).is_ok() && check_step(&step("if_day", "иногда")).is_err());
+}
+
+#[test]
+fn a_condition_that_is_not_true_stops_the_chain_quietly_and_a_true_one_lets_it_go_on() {
+    let _g = LOCK.lock();
+    reset_for_tests();
+    let chain = vec![step("pause", "0.1"), step("if_day", "пн-пт"), step("if_time", "09:00-18:00"), step("pause", "0.1")];
+    let s = sc("Рабочий", "рабочий сценарий", chain);
+    // a Wednesday, 10:00: everything is true, all four steps run
+    TEST_CLOCK.with(|c| c.set(Some((600, 2))));
+    let r = run_draft(&s);
+    assert!(r.ok && r.done == 4 && r.message.contains("выполнен"), "{:?}", r);
+    // a Saturday: the chain stops at the second step, it is done and not a failure
+    TEST_CLOCK.with(|c| c.set(Some((600, 5))));
+    let r = run_draft(&s);
+    assert!(r.ok && r.done == 2 && r.total == 4, "{:?}", r);
+    assert!(r.message.contains("остановился по условию") && r.message.contains("шаг 2") && r.message.contains("сегодня не пн-пт"), "{}", r.message);
+    // a Wednesday at night: the time condition stops it at the third step
+    TEST_CLOCK.with(|c| c.set(Some((60, 2))));
+    let r = run_draft(&s);
+    assert!(r.ok && r.done == 3 && r.message.contains("вне времени 09:00-18:00"), "{:?}", r);
+    TEST_CLOCK.with(|c| c.set(None));
+}
+
+#[test]
+fn the_earlier_versions_of_a_scenario_are_kept_and_can_be_put_back() {
+    let _g = LOCK.lock();
+    reset_for_tests();
+    let a = upsert(sc("Утро", "доброе утро сценарий", vec![step("volume", "30")])).unwrap();
+    assert!(a.versions.is_empty(), "a new scenario has no earlier version");
+    let mut b = a.clone();
+    b.steps = vec![step("volume", "50")];
+    let b = upsert(b).unwrap();
+    assert_eq!(b.versions.len(), 1);
+    assert_eq!(b.versions[0].steps[0].param, "30", "the one before the change is kept");
+    // a save that changes nothing keeps nothing; what the page sends as «versions» is ignored
+    let mut same = b.clone();
+    same.versions = vec![Version { at: 1, name: "подделка".into(), phrase: "x".into(), steps: vec![] }];
+    let same = upsert(same).unwrap();
+    assert_eq!(same.versions.len(), 1, "no new version and the page cannot write versions");
+    assert_eq!(same.versions[0].name, "Утро");
+    // more than MAX_VERSIONS: the oldest go
+    let mut cur = same;
+    for i in 0..8 {
+        cur.steps = vec![step("volume", &format!("{}", 60 + i))];
+        cur = upsert(cur).unwrap();
+    }
+    assert_eq!(cur.versions.len(), MAX_VERSIONS);
+    assert_eq!(cur.versions[0].steps[0].param, "66", "the newest earlier one first");
+    // put back the newest earlier version: it becomes current, the one that was current becomes the newest earlier one
+    let r = restore_version(&cur.id, 0).unwrap();
+    assert_eq!(r.steps[0].param, "66");
+    assert_eq!(r.versions[0].steps[0].param, "67", "the version that was current can be taken back too");
+    assert_eq!(r.versions.len(), MAX_VERSIONS);
+    assert!(restore_version(&cur.id, 9).is_err() && restore_version("nobody", 0).is_err());
+    // an exported file does not carry versions, an import starts without any
+    assert!(export_json().to_string().find("versions").is_none());
+}

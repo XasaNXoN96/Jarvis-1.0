@@ -1346,6 +1346,11 @@ fn scenario_action(body: &serde_json::Value) -> serde_json::Value {
             }
         }
         "delete" => json!({ "ok": crate::scenario::delete(id) }),
+        // an earlier version of a scenario back (0 = the newest one)
+        "restore_version" => match crate::scenario::restore_version(id, body.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize) {
+            Ok(s) => json!({ "ok": true, "scenario": s }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
         "enable" => json!({ "ok": crate::scenario::set_enabled(id, body.get("value").and_then(|v| v.as_bool()).unwrap_or(true)) }),
         // a test run of the saved scenario, or of one step that is being edited
         // "Тест сценария": what the editor shows now (the order of the steps as they were just moved, even before

@@ -26,7 +26,76 @@ pub const STEP_KINDS: &[(&str, &str, &str)] = &[
     ("volume", "Громкость", "число от 0 до 100"),
     ("pause", "Пауза", "секунды (до 60)"),
     ("clipboard", "Буфер", "текст, который окажется в буфере обмена"),
+    // conditions: when it is not true the chain stops quietly (it is not a failure) and the rest of the steps is not run
+    ("if_time", "Условие: время", "только в это время суток: 09:00-18:00 (можно через полночь: 22:00-06:00); иначе сценарий спокойно остановится"),
+    ("if_day", "Условие: день недели", "только в эти дни: пн-пт, сб,вс или пн,ср,пт; иначе сценарий спокойно остановится"),
 ];
+
+// the text with which a step says «the condition is not true, stop here» (not an error: the scenario ends as done)
+pub const COND_MARK: &str = "\u{1}условие:";
+const DAYS: [&str; 7] = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
+
+// «09:00-18:00» → (from, to) in minutes of the day
+pub fn parse_window(p: &str) -> Option<(u32, u32)> {
+    let (a, b) = p.trim().split_once('-')?;
+    let m = |t: &str| -> Option<u32> {
+        let (h, mi) = t.trim().split_once(':')?;
+        let (h, mi): (u32, u32) = (h.parse().ok()?, mi.parse().ok()?);
+        (h < 24 && mi < 60).then_some(h * 60 + mi)
+    };
+    let (a, b) = (m(a)?, m(b)?);
+    (a != b).then_some((a, b))
+}
+
+pub fn in_window(w: (u32, u32), minute: u32) -> bool {
+    if w.0 < w.1 { minute >= w.0 && minute < w.1 } else { minute >= w.0 || minute < w.1 }
+}
+
+// «пн-пт» / «сб,вс» / «пн,ср,пт» / «сб-вс» → the days (0 = Monday)
+pub fn parse_days(p: &str) -> Option<Vec<u32>> {
+    let low = norm_days(p);
+    let mut out = Vec::new();
+    for part in low.split(',').map(|x| x.trim()).filter(|x| !x.is_empty()) {
+        if let Some((a, b)) = part.split_once('-') {
+            let (ia, ib) = (DAYS.iter().position(|d| *d == a.trim())? as u32, DAYS.iter().position(|d| *d == b.trim())? as u32);
+            let mut d = ia;
+            loop {
+                out.push(d);
+                if d == ib {
+                    break;
+                }
+                d = (d + 1) % 7;
+                if out.len() > 14 {
+                    return None;
+                }
+            }
+        } else {
+            out.push(DAYS.iter().position(|d| *d == part)? as u32);
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    (!out.is_empty()).then_some(out)
+}
+
+fn norm_days(p: &str) -> String {
+    p.to_lowercase().replace('–', "-").replace('—', "-").replace(" - ", "-").replace(';', ",")
+}
+
+// (minute of the day, day of the week with 0 = Monday) now; a test sets its own
+fn clock() -> (u32, u32) {
+    #[cfg(test)]
+    if let Some(c) = TEST_CLOCK.with(|t| t.get()) {
+        return c;
+    }
+    use chrono::{Datelike, Timelike};
+    let n = chrono::Local::now();
+    (n.hour() * 60 + n.minute(), n.weekday().num_days_from_monday())
+}
+#[cfg(test)]
+thread_local! {
+    pub(crate) static TEST_CLOCK: std::cell::Cell<Option<(u32, u32)>> = std::cell::Cell::new(None);
+}
 
 const MAX_STEPS: usize = 30;
 const MAX_PAUSE_MS: u64 = 60_000;
@@ -65,6 +134,19 @@ pub struct Scenario {
     pub steps: Vec<Step>,
     pub updated: u64,
     pub last_run: Option<RunResult>,
+    // the earlier versions (the newest first, at most MAX_VERSIONS): kept by every save that changed the name, the phrase or the steps
+    pub versions: Vec<Version>,
+}
+
+pub const MAX_VERSIONS: usize = 5;
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct Version {
+    pub at: u64,
+    pub name: String,
+    pub phrase: String,
+    pub steps: Vec<Step>,
 }
 
 fn default_trigger() -> String {
@@ -115,6 +197,16 @@ pub fn check_step(s: &Step) -> Result<(), String> {
             Ok(v) if v > 0.0 && v <= 60.0 => {}
             _ => return Err("пауза — от 0.1 до 60 секунд".into()),
         },
+        "if_time" => {
+            if parse_window(p).is_none() {
+                return Err("время: от и до, например 09:00-18:00".into());
+            }
+        }
+        "if_day" => {
+            if parse_days(p).is_none() {
+                return Err("дни: например пн-пт, сб,вс или пн,ср,пт".into());
+            }
+        }
         "shell" => return Err("команды оболочки не поддерживаются: так сценарий мог бы запустить что угодно".into()),
         other => return Err(format!("неизвестный тип шага «{}»", other)),
     }
@@ -208,6 +300,14 @@ pub fn upsert(mut sc: Scenario) -> Result<Scenario, String> {
         if sc.last_run.is_none() {
             sc.last_run = old.last_run.clone();
         }
+        // the versions are the program's own record: what the page sends is ignored; a save that changed something keeps the old one
+        sc.versions = old.versions.clone();
+        if old.name != sc.name || old.phrase != sc.phrase || old.steps != sc.steps {
+            sc.versions.insert(0, Version { at: old.updated, name: old.name.clone(), phrase: old.phrase.clone(), steps: old.steps.clone() });
+            sc.versions.truncate(MAX_VERSIONS);
+        }
+    } else {
+        sc.versions.clear();
     }
     sc.updated = now();
     let before = list.clone();
@@ -230,6 +330,37 @@ fn save_or_test(list: &[Scenario]) -> Result<(), String> {
         return Ok(());
     }
     save(list)
+}
+
+// puts an earlier version back (0 = the newest earlier one); the version that was current becomes the newest earlier one, so it can be taken back too
+pub fn restore_version(id: &str, index: usize) -> Result<Scenario, String> {
+    let cur = get(id).ok_or("Такого сценария нет")?;
+    let v = cur.versions.get(index).cloned().ok_or("Такой версии нет")?;
+    let mut sc = cur.clone();
+    sc.name = v.name;
+    sc.phrase = v.phrase;
+    sc.steps = v.steps;
+    // the version that is dropped from the list: the one that is put back
+    sc.versions.remove(index);
+    upsert_keep_versions(sc)
+}
+
+// `upsert` for a restore: the list of versions is the one given (already changed by the caller), with the current one pushed in front
+fn upsert_keep_versions(mut sc: Scenario) -> Result<Scenario, String> {
+    let wanted = sc.versions.clone();
+    let cur = get(&sc.id).ok_or("Такого сценария нет")?;
+    let stored = upsert(sc.clone())?;
+    // `upsert` made its own list (current in front of the old list); the old list is replaced by the wanted one with the current in front
+    let mut list = LIST.lock();
+    if let Some(o) = list.iter_mut().find(|o| o.id == stored.id) {
+        let mut v = wanted;
+        v.insert(0, Version { at: cur.updated, name: cur.name, phrase: cur.phrase, steps: cur.steps });
+        v.truncate(MAX_VERSIONS);
+        o.versions = v.clone();
+        sc = o.clone();
+    }
+    let _ = save_or_test(&list);
+    Ok(sc)
 }
 
 pub fn delete(id: &str) -> bool {
@@ -279,6 +410,7 @@ pub fn import_json(doc: &Value, replace: bool) -> Result<(usize, Vec<String>), S
         let mut sc: Scenario = serde_json::from_value(it.clone()).map_err(|_| "Файл сценариев повреждён")?;
         sc.id.clear();
         sc.last_run = None;
+        sc.versions.clear();
         match check(&sc) {
             Ok(()) => parsed.push(sc),
             Err(e) => skipped.push(format!("«{}»: {}", sc.name, e)),
@@ -473,6 +605,14 @@ pub(crate) fn run_step_in(s: &Step, grid: &mut Vec<isize>) -> Result<(), String>
             #[cfg(not(all(feature = "lua", target_os = "windows")))]
             Err("буфер обмена доступен только в Windows".to_string())
         }
+        "if_time" => {
+            let (minute, _) = clock();
+            if in_window(parse_window(p).ok_or("время: от и до, например 09:00-18:00")?, minute) { Ok(false) } else { Err(format!("{}сейчас вне времени {}", COND_MARK, p)) }
+        }
+        "if_day" => {
+            let (_, day) = clock();
+            if parse_days(p).ok_or("дни: например пн-пт")?.contains(&day) { Ok(false) } else { Err(format!("{}сегодня не {}", COND_MARK, p)) }
+        }
         "pause" => {
             let ms = (p.replace(',', ".").parse::<f64>().unwrap_or(1.0) * 1000.0) as u64;
             std::thread::sleep(Duration::from_millis(ms.min(MAX_PAUSE_MS)));
@@ -658,6 +798,8 @@ fn run_inner(sc: &Scenario, remember: bool, guard: Option<&Guard>) -> RunResult 
 
     let mut done = 0;
     let mut message = String::new();
+    // a condition that is not true ends the chain quietly: what was run is done, the rest is not run, and it is not a failure
+    let mut stopped_by_condition = false;
     let mut grid: Vec<isize> = Vec::new();
     if let Err(e) = preflight(sc) {
         message = e;
@@ -689,6 +831,15 @@ fn run_inner(sc: &Scenario, remember: bool, guard: Option<&Guard>) -> RunResult 
                         (g.journal)(i + 1, total, &s.kind, "ok");
                     }
                 }
+                Err(e) if e.starts_with(COND_MARK) => {
+                    stopped_by_condition = true;
+                    message = format!("шаг {} ({}): {}", i + 1, step_title(&s.kind), &e[COND_MARK.len()..]);
+                    done += 1;
+                    if let Some(g) = guard {
+                        (g.journal)(i + 1, total, &s.kind, "ok");
+                    }
+                    break;
+                }
                 Err(e) => {
                     message = format!("Шаг {} ({}): {}", i + 1, step_title(&s.kind), e);
                     if let Some(g) = guard {
@@ -701,8 +852,10 @@ fn run_inner(sc: &Scenario, remember: bool, guard: Option<&Guard>) -> RunResult 
     }
     // the windows marked "Авто сетка" side by side (also those opened before a step failed)
     crate::input::arrange(&grid);
-    let ok = done == total;
-    if ok {
+    let ok = done == total || stopped_by_condition;
+    if stopped_by_condition {
+        message = format!("Сценарий «{}» остановился по условию ({}): выполнено шагов {} из {}", sc.name, message, done, total);
+    } else if ok {
         message = format!("Сценарий «{}» выполнен: шагов {}", sc.name, total);
     } else {
         message = format!("Сценарий «{}» остановлен. {}", sc.name, message);

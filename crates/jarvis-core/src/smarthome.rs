@@ -205,6 +205,92 @@ pub fn act(_d: &Device, _a: Act) -> Result<(), String> {
     Err("нет сети в этой сборке".into())
 }
 
+
+// «яркость света в гостиной 50 процентов» / «сделай свет на кухне на 30 процентов» / «set the kitchen light to 40 percent» → (50, "света в гостиной")
+pub fn parse_brightness(text: &str) -> Option<(u8, String)> {
+    // (the normalizer drops the sign «%»: it is turned into the word first)
+    let n = textnorm::normalize(&text.replace('%', " процентов "));
+    let mut rest = None;
+    for p in ["установи яркость ", "поставь яркость ", "яркость ", "сделай ", "set brightness of ", "set brightness ", "set "] {
+        if let Some(r) = n.strip_prefix(p) {
+            rest = Some(r.to_string());
+            break;
+        }
+    }
+    let rest = rest?;
+    let words: Vec<&str> = rest.split(' ').collect();
+    // the number must be followed by «процент…» / «%» / «percent» (a bare number is not a brightness: «включи 5 свет» is not this)
+    let pos = words.iter().enumerate().find_map(|(i, w)| {
+        let digits = w.trim_end_matches('%');
+        let v: u32 = digits.parse().ok()?;
+        let followed = w.ends_with('%') || words.get(i + 1).map(|x| x.starts_with("процент") || *x == "percent" || *x == "%").unwrap_or(false);
+        (followed && v <= 100).then_some((i, v as u8, w.ends_with('%')))
+    })?;
+    let (i, v, glued) = pos;
+    let skip = if glued { 1 } else { 2 };
+    // the number and its «процентов», and the little word before the number («на 30 процентов», «to 40 percent»), are not the name of the device
+    let before = if i > 0 && matches!(words[i - 1], "на" | "до" | "to" | "at") { i - 1 } else { i };
+    let name: Vec<&str> = words.iter().enumerate().filter(|(k, w)| !(*k >= before && *k < i + skip) && !matches!(**w, "the" | "яркость")).map(|(_, w)| *w).collect();
+    let name = name.join(" ");
+    if name.is_empty() {
+        return None;
+    }
+    Some((v, name))
+}
+
+// «включен ли свет в гостиной» / «горит ли лампа» / «is the kitchen light on» → "свет в гостиной"
+pub fn parse_state_query(text: &str) -> Option<String> {
+    let n = textnorm::normalize(text);
+    for p in ["включен ли ", "включена ли ", "выключен ли ", "выключена ли ", "горит ли ", "работает ли ", "открыта ли ", "открыт ли ", "is the ", "is "] {
+        if let Some(r) = n.strip_prefix(p) {
+            let r = r.trim_end_matches(" on").trim_end_matches(" off").trim_end_matches(" включен").trim_end_matches(" включена").trim().to_string();
+            // «is the …» only when it ends with on / off (else it is any question)
+            if (p == "is the " || p == "is ") && !(n.ends_with(" on") || n.ends_with(" off")) {
+                return None;
+            }
+            return Some(r).filter(|r| !r.is_empty());
+        }
+    }
+    None
+}
+
+// what the server says about a device, in words (the words of the state are the ones Home Assistant uses)
+pub fn state_words(d: &Device) -> String {
+    let s = d.state.as_str();
+    match (d.domain.as_str(), s) {
+        (_, "on") => "включено".into(),
+        (_, "off") => "выключено".into(),
+        ("cover", "open") => "открыто".into(),
+        ("cover", "closed") => "закрыто".into(),
+        ("cover", "opening") => "открывается".into(),
+        ("cover", "closing") => "закрывается".into(),
+        ("media_player", "playing") => "играет".into(),
+        ("media_player", "paused") => "на паузе".into(),
+        ("media_player", "idle") => "в ожидании".into(),
+        (_, "unavailable") => "недоступно (устройство не отвечает серверу)".into(),
+        (_, other) => format!("состояние «{}»", other),
+    }
+}
+
+#[cfg(feature = "lua")]
+pub fn set_brightness(d: &Device, pct: u8) -> Result<(), String> {
+    perms::check(perms::Cap::SmartHome)?;
+    if d.domain != "light" {
+        return Err(format!("У «{}» нет яркости: это не лампа.", d.name));
+    }
+    let (code, _) = http("POST", "/api/services/light/turn_on", Some(json!({ "entity_id": d.entity_id, "brightness_pct": pct.clamp(1, 100) })))?;
+    match code {
+        200 | 201 => Ok(()),
+        401 | 403 => Err("Home Assistant не принял токен.".into()),
+        404 => Err("Home Assistant не знает такое устройство или действие.".into()),
+        c => Err(format!("Home Assistant ответил кодом {}", c)),
+    }
+}
+#[cfg(not(feature = "lua"))]
+pub fn set_brightness(_d: &Device, _pct: u8) -> Result<(), String> {
+    Err("нет сети в этой сборке".into())
+}
+
 // the devices the server listed last time (to recognise a home phrase when the server does not answer)
 static LAST_DEVICES: parking_lot::Mutex<Vec<Device>> = parking_lot::const_mutex(Vec::new());
 
@@ -227,6 +313,20 @@ pub fn handle(text: &str) -> Option<String> {
     if !is_configured() {
         return None;
     }
+    // «яркость света в гостиной 50 процентов»: a lamp only; 0 means off
+    if let Some((pct, what)) = parse_brightness(text) {
+        return handle_picked(&what, |d| {
+            if pct == 0 {
+                act(d, Act::Off).map(|_| format!("{}: сервер принял команду «выключить».", d.name))
+            } else {
+                set_brightness(d, pct).map(|_| format!("{}: сервер принял яркость {}%.", d.name, pct))
+            }
+        });
+    }
+    // «включен ли свет в гостиной»: only reads what the server says
+    if let Some(what) = parse_state_query(text) {
+        return handle_picked(&what, |d| Ok(format!("{}: {}.", d.name, state_words(d))));
+    }
     let (a, what) = parse(text)?;
     let list = match devices() {
         Ok(l) => {
@@ -243,6 +343,22 @@ pub fn handle(text: &str) -> Option<String> {
             Ok(()) => format!("{}: сервер принял команду «{}».", d.name, if a == Act::On { "включить" } else { "выключить" }),
             Err(e) => e,
         }),
+    }
+}
+
+// the device a phrase is about, asked of the server; `f` does the work. None: the phrase is not about a known device (the normal commands go on)
+fn handle_picked(what: &str, f: impl FnOnce(&Device) -> Result<String, String>) -> Option<String> {
+    let list = match devices() {
+        Ok(l) => {
+            *LAST_DEVICES.lock() = l.clone();
+            l
+        }
+        Err(e) => return failure_for(&LAST_DEVICES.lock(), what, e),
+    };
+    match pick(&list, what) {
+        Pick::None => None,
+        Pick::Many(v) => Some(format!("Какое именно: {}?", v.iter().take(4).map(|d| format!("«{}»", d.name)).collect::<Vec<_>>().join(" или "))),
+        Pick::One(d) => Some(f(&d).unwrap_or_else(|e| e)),
     }
 }
 
@@ -338,6 +454,58 @@ mod tests {
             // the server refuses the token
             let r = handle("выключи свет в гостиной").unwrap();
             assert!(r.contains("не принял токен"), "{}", r);
+        });
+    }
+
+    #[test]
+    fn brightness_and_state_phrases_are_understood_exactly() {
+        assert_eq!(parse_brightness("Яркость света в гостиной 50 процентов"), Some((50, "света в гостиной".into())));
+        assert_eq!(parse_brightness("сделай свет на кухне на 30 процентов"), Some((30, "свет на кухне".into())));
+        assert_eq!(parse_brightness("сделай лампу 70%"), Some((70, "лампу".into())));
+        assert_eq!(parse_brightness("set the kitchen light to 40 percent"), Some((40, "kitchen light".into())));
+        assert_eq!(parse_brightness("сделай 50 процентов"), None, "no device");
+        assert_eq!(parse_brightness("сделай громкость 50"), None, "a bare number is not a brightness");
+        assert_eq!(parse_brightness("яркость 150 процентов"), None, "more than 100");
+        assert_eq!(parse_brightness("открой браузер"), None);
+        assert_eq!(parse_state_query("Включен ли свет в гостиной?"), Some("свет в гостиной".into()));
+        assert_eq!(parse_state_query("горит ли лампа"), Some("лампа".into()));
+        assert_eq!(parse_state_query("is the kitchen light on"), Some("kitchen light".into()));
+        assert_eq!(parse_state_query("is it raining"), None, "any other question");
+        assert_eq!(parse_state_query("включи свет"), None);
+        let d = |dom: &str, st: &str| Device { entity_id: format!("{}.x", dom), name: "Х".into(), domain: dom.into(), state: st.into() };
+        assert_eq!(state_words(&d("light", "on")), "включено");
+        assert_eq!(state_words(&d("cover", "closed")), "закрыто");
+        assert!(state_words(&d("light", "unavailable")).contains("недоступно"));
+        assert!(state_words(&d("fan", "weird")).contains("weird"), "an unknown state is shown as the server said it");
+    }
+
+    #[test]
+    fn brightness_goes_to_a_lamp_only_and_a_question_only_reads() {
+        store::with_temp(|| {
+            crate::owner::reset_for_tests();
+            let states = json!([
+                { "entity_id": "light.living", "state": "on", "attributes": { "friendly_name": "Гостиная" } },
+                { "entity_id": "fan.vent", "state": "off", "attributes": { "friendly_name": "Вентилятор" } }
+            ]).to_string();
+            // 1 a question (list), 2 a brightness (list + post), 3 a fan (list: refused before any post), 4 off at 0% (list + post)
+            let (url, rx) = serve(vec![(200, states.clone()), (200, states.clone()), (200, "[]".into()), (200, states.clone()), (200, states.clone()), (200, "[]".into())]);
+            configure(&url, "tok").unwrap();
+            perms::set(perms::Cap::SmartHome, true).unwrap();
+            let r = handle("включен ли свет в гостиной").unwrap();
+            assert_eq!(r, "Гостиная: включено.", "{}", r);
+            assert!(rx.recv().unwrap().starts_with("GET /api/states"));
+            let r = handle("яркость света в гостиной 40 процентов").unwrap();
+            assert!(r.contains("яркость 40%"), "{}", r);
+            assert!(rx.recv().unwrap().starts_with("GET /api/states"));
+            let post = rx.recv().unwrap();
+            assert!(post.starts_with("POST /api/services/light/turn_on") && post.contains("\"brightness_pct\":40") && post.contains("light.living"), "{}", post);
+            let r = handle("яркость вентилятора 40 процентов").unwrap();
+            assert!(r.contains("нет яркости"), "a fan has no brightness: {}", r);
+            assert!(rx.recv().unwrap().starts_with("GET /api/states"));
+            let r = handle("яркость света в гостиной 0 процентов").unwrap();
+            assert!(r.contains("выключить"), "{}", r);
+            assert!(rx.recv().unwrap().starts_with("GET /api/states"));
+            assert!(rx.recv().unwrap().starts_with("POST /api/services/light/turn_off"));
         });
     }
 

@@ -68,7 +68,7 @@ pub fn parse_plan(answer: &str, request: &str) -> Result<Plan, String> {
         let param = s.get("param").map(|p| match p { Value::String(t) => t.clone(), other => other.to_string() }).unwrap_or_default();
         steps.push(Step { kind, param, window: String::new() });
     }
-    let sc = Scenario { id: "autopilot".into(), name: request.chars().take(60).collect(), phrase: "автопилот".into(), trigger: "voice".into(), enabled: true, steps, updated: 0, last_run: None };
+    let sc = Scenario { id: "autopilot".into(), name: request.chars().take(60).collect(), phrase: "автопилот".into(), trigger: "voice".into(), enabled: true, steps, updated: 0, last_run: None, versions: Vec::new() };
     // the same checks as for a scenario of the builder: unknown kinds, empty or too long parameters, a file that does not exist
     scenario::preflight(&sc)?;
     let summary = v.get("summary").and_then(|s| s.as_str()).unwrap_or("").trim().to_string();
