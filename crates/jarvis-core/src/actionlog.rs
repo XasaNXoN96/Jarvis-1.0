@@ -57,7 +57,9 @@ pub fn record(what: &str, undo: Undo) -> String {
     if n > MAX {
         l.drain(..n - MAX);
     }
-    let _ = store::write(FILE, &l);
+    if let Err(e) = store::write(FILE, &l) {
+        log::warn!("action history: a line could not be saved: {}", e);
+    }
     id
 }
 

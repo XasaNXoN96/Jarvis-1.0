@@ -254,6 +254,28 @@ pub fn keep_copy_if_repaired(path: &std::path::Path, old: &str, clean: &str) -> 
     Some(copy)
 }
 
+// A file can be held for a moment by something else (on Windows: the virus scanner, the search indexer, a backup): the read or the rename then
+// fails with «access denied» / «sharing violation» although nothing is wrong. Such an error is tried again a few times with short pauses
+// (at most about 0.3 s in all); any other error is returned at once.
+pub(crate) fn retry_transient<T>(mut f: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
+    let mut pause = 5u64;
+    for _ in 0..6 {
+        match f() {
+            Err(e) if is_transient(&e) => {
+                std::thread::sleep(std::time::Duration::from_millis(pause));
+                pause *= 2;
+            }
+            r => return r,
+        }
+    }
+    f()
+}
+
+fn is_transient(e: &std::io::Error) -> bool {
+    // 5 access denied, 32 sharing violation, 33 lock violation (Windows)
+    matches!(e.kind(), std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::WouldBlock) || matches!(e.raw_os_error(), Some(5) | Some(32) | Some(33))
+}
+
 pub fn write_atomic(path: &std::path::Path, data: impl AsRef<[u8]>) -> std::io::Result<()> {
     use std::io::Write;
     // (a name of its own for every write: two writes of the same file at once never share the temporary file)
@@ -276,7 +298,7 @@ pub fn write_atomic(path: &std::path::Path, data: impl AsRef<[u8]>) -> std::io::
         };
         let res = f.write_all(data.as_ref()).and_then(|_| f.flush());
         drop(f);
-        let res = res.and_then(|_| std::fs::rename(&tmp, path));
+        let res = res.and_then(|_| retry_transient(|| std::fs::rename(&tmp, path)));
         if let Err(e) = res {
             let _ = std::fs::remove_file(&tmp);
             return Err(e);
@@ -355,3 +377,30 @@ mod write_atomic_tests {
     }
 }
 
+#[cfg(test)]
+mod retry_tests {
+    use super::*;
+    use std::io::{Error, ErrorKind};
+
+    #[test]
+    fn a_busy_file_is_tried_again_and_other_errors_are_not() {
+        let mut n = 0;
+        let r = retry_transient(|| {
+            n += 1;
+            if n < 3 { Err(Error::from(ErrorKind::PermissionDenied)) } else { Ok(n) }
+        });
+        assert_eq!(r.unwrap(), 3, "two refusals, then it works");
+        let mut n = 0;
+        let r: std::io::Result<()> = retry_transient(|| {
+            n += 1;
+            Err(Error::from(ErrorKind::NotFound))
+        });
+        assert!(r.is_err() && n == 1, "a missing file is not retried");
+        let mut n = 0;
+        let r: std::io::Result<()> = retry_transient(|| {
+            n += 1;
+            Err(Error::from_raw_os_error(32))
+        });
+        assert!(r.is_err() && n == 7, "a file that stays busy is given up after a few tries, not forever: {}", n);
+    }
+}

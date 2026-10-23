@@ -20,7 +20,7 @@ pub fn file(name: &str) -> PathBuf {
 // (the value, true when a damaged file was moved aside)
 pub fn read<T: DeserializeOwned + Default>(name: &str) -> (T, bool) {
     let p = file(name);
-    let Ok(text) = std::fs::read_to_string(&p) else { return (T::default(), false) };
+    let Ok(text) = crate::retry_transient(|| std::fs::read_to_string(&p)) else { return (T::default(), false) };
     match serde_json::from_str::<T>(text.trim_start_matches('\u{feff}')) {
         Ok(v) => (v, false),
         Err(_) => {
