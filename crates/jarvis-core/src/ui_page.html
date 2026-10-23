@@ -317,6 +317,8 @@
   #fw-layer { position: fixed; inset: 0; z-index: 400; pointer-events: none; }
   .fw { position: absolute; pointer-events: auto; width: 380px; height: 260px; min-width: 240px; min-height: 120px; max-width: 94vw; max-height: 86vh; resize: both; overflow: hidden; display: flex; flex-direction: column; background: var(--panel2); border: 1px solid var(--line2); border-radius: 12px; box-shadow: 0 10px 40px #000a; }
   .fw.min { height: auto !important; min-height: 0; resize: none; } .fw.min .fw-body { display: none; }
+  .fw.big { left: 3vw !important; top: 3vh !important; width: 94vw !important; height: 90vh !important; max-width: 94vw; max-height: 90vh; resize: none; }
+  .fw.big .fw-body { font-size: 16px; }
   .fw-bar { display: flex; align-items: center; gap: 4px; padding: 6px 8px 6px 12px; background: #ffffff0a; border-bottom: 1px solid var(--line); cursor: move; user-select: none; touch-action: none; }
   .fw-bar b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; } .fw-bar button { border: 0; background: transparent; color: var(--dim); cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 6px; } .fw-bar button:hover { color: var(--text); background: #ffffff14; }
   .fw-body { flex: 1; min-height: 0; overflow: auto; padding: 10px 12px; font-size: 14px; line-height: 1.5; }
@@ -2801,6 +2803,7 @@ $('#h-open').onclick = () => show('chat');
 function renderChatViews() {
   const chat = chatCache;
   aiBusy = !!(lastState && lastState.ai_busy);
+  try { fwAutoFromChat(chat); } catch (e) { /* the windows must never break the rest of the page */ }
   if (currentPage === 'home') homeText(chat);
   if (currentPage === 'chat' && chatTab === 'ai') {
     const log = $('#ai-log'); const n = syncMessages(log, chat);
@@ -3396,14 +3399,14 @@ $('#comp-list').onclick = async e => {
 
 // ---------- floating result windows (inside Jarvis) ----------
 const FW = { n: 0, z: 410, wins: new Map() };
-function fwOpen(title, text, key) {
+function fwOpen(title, text, key, opts) {
   const layer = $('#fw-layer');
   // the same result is raised, not opened twice
   if (key && FW.wins.has(key)) { const w = FW.wins.get(key); w.style.zIndex = ++FW.z; w.classList.remove('min'); return w; }
   while (FW.wins.size >= 6) { const first = FW.wins.keys().next().value; fwClose(first); }
   const w = document.createElement('div'); w.className = 'fw'; w.style.zIndex = ++FW.z;
   const off = (FW.n++ % 6) * 28; w.style.left = Math.min(innerWidth - 400, 120 + off) + 'px'; w.style.top = Math.min(innerHeight - 280, 90 + off) + 'px';
-  w.innerHTML = '<div class="fw-bar"><b></b><button type="button" data-a="copy" title="Копировать">⧉</button><button type="button" data-a="min" title="Свернуть">—</button><button type="button" data-a="close" title="Закрыть">✕</button></div><div class="fw-body"></div>';
+  w.innerHTML = '<div class="fw-bar"><b></b><button type="button" data-a="copy" title="Копировать" aria-label="Копировать">⧉</button><button type="button" data-a="min" title="Свернуть" aria-label="Свернуть">—</button><button type="button" data-a="big" title="На большой экран" aria-label="На большой экран">⛶</button>' + (opts && opts.query ? '<button type="button" data-a="web" title="Открыть в браузере" aria-label="Открыть в браузере">🌐</button>' : '') + '<button type="button" data-a="close" title="Закрыть" aria-label="Закрыть">✕</button></div><div class="fw-body"></div>';
   w.querySelector('b').textContent = title; w.querySelector('.fw-body').innerHTML = md(String(text));
   const id = key || ('w' + FW.n); w.dataset.key = id; FW.wins.set(id, w);
   w.addEventListener('pointerdown', () => { w.style.zIndex = ++FW.z; });
@@ -3412,9 +3415,56 @@ function fwOpen(title, text, key) {
   bar.onpointermove = e => { if (!drag) return; w.style.left = Math.max(0, Math.min(innerWidth - 80, e.clientX - drag[0])) + 'px'; w.style.top = Math.max(0, Math.min(innerHeight - 40, e.clientY - drag[1])) + 'px'; };
   bar.onpointerup = () => { drag = null; };
   bar.querySelector('[data-a="close"]').onclick = () => fwClose(id);
-  bar.querySelector('[data-a="min"]').onclick = () => w.classList.toggle('min');
+  // collapse / expand, and the big screen: one at a time (a window is either folded, normal or big)
+  const minB = bar.querySelector('[data-a="min"]'), bigB = bar.querySelector('[data-a="big"]');
+  minB.onclick = () => { w.classList.remove('big'); const m = w.classList.toggle('min'); minB.title = minB.ariaLabel = m ? 'Развернуть' : 'Свернуть'; minB.textContent = m ? '▢' : '—'; bigB.title = bigB.ariaLabel = 'На большой экран'; };
+  bigB.onclick = () => { w.classList.remove('min'); minB.title = minB.ariaLabel = 'Свернуть'; minB.textContent = '—'; const b = w.classList.toggle('big'); bigB.title = bigB.ariaLabel = b ? 'Обычный размер' : 'На большой экран'; w.style.zIndex = ++FW.z; };
+  const webB = bar.querySelector('[data-a="web"]');
+  if (webB) webB.onclick = async () => { try { const r = await action('web_open', { query: opts.query }); if (!r.ok) showToast(r.message || 'Не удалось открыть браузер'); } catch (e) { showToast('Нет связи с Джарвисом'); } };
   bar.querySelector('[data-a="copy"]').onclick = e => copyText(String(text), e.currentTarget);
   layer.appendChild(w); return w;
+}
+// A search answer opens by itself as 1-3 small windows beside the sphere (a long answer is split into parts); every window can be folded,
+// made big, closed or opened in the browser. Only answers that arrive while the window is open do this: an old conversation stays quiet.
+const FW_PART = 650;
+function fwSplit(text) {
+  const t = String(text || '').trim();
+  if (t.length <= FW_PART) return [t];
+  const parts = Math.min(3, Math.ceil(t.length / FW_PART));
+  const limit = Math.ceil(t.length / parts);
+  const pieces = t.split(/\n{2,}|(?<=[.!?])\s+/).map(x => x.trim()).filter(Boolean);
+  const out = []; let cur = '';
+  for (const p of pieces) {
+    if (cur && cur.length + p.length + 1 > limit && out.length < parts - 1) { out.push(cur); cur = p; } else cur = cur ? cur + '\n\n' + p : p;
+  }
+  if (cur) out.push(cur);
+  return out.slice(0, 3).length === out.length ? out : [out.slice(0, 2).join('\n\n'), out.slice(2).join('\n\n')];
+}
+function fwNearOrb(w, i) {
+  const o = document.getElementById('orb'); const r = o ? o.getBoundingClientRect() : null;
+  const W = w.offsetWidth || 380, H = w.offsetHeight || 260;
+  let x, y;
+  if (r && r.width > 40 && r.height > 40) { x = r.right + 14 + i * 22; y = r.top + 10 + i * 40; if (x + W > innerWidth - 8) x = Math.max(8, r.left - W - 14 - i * 22); }
+  else { x = 120 + i * 28; y = 90 + i * 28; }
+  w.style.left = Math.max(8, Math.min(innerWidth - W - 8, x)) + 'px'; w.style.top = Math.max(8, Math.min(innerHeight - H - 8, y)) + 'px';
+}
+FW.auto = { chat: null, seen: new Set() };
+function fwAutoFromChat(chat) {
+  if (!chat || !chat.messages) return;
+  const A = FW.auto, id = chat.id || '';
+  const msgs = chat.messages;
+  const keyOf = (m, i) => id + ':' + (m.rid || i) + ':' + m.role;
+  // the first look at a conversation only learns what is already there
+  if (A.chat !== id) { A.chat = id; A.seen = new Set(); msgs.forEach((m, i) => A.seen.add(keyOf(m, i))); return; }
+  msgs.forEach((m, i) => {
+    if (m.role !== 'assistant' || m.streaming || m.src !== 'search') return;
+    const k = keyOf(m, i); if (A.seen.has(k)) return; A.seen.add(k);
+    let q = ''; for (let j = i - 1; j >= 0; j--) if (msgs[j].role === 'user') { q = plain(msgs[j].content); break; }
+    fwSplit(m.content).forEach((part, n, all) => {
+      const w = fwOpen('Поиск' + (q ? ': ' + q.slice(0, 40) : '') + (all.length > 1 ? ' (' + (n + 1) + '/' + all.length + ')' : ''), part, 'search:' + k + ':' + n, { query: q });
+      fwNearOrb(w, n);
+    });
+  });
 }
 function fwClose(id) { const w = FW.wins.get(id); if (w) { w.remove(); FW.wins.delete(id); } }
 

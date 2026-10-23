@@ -835,6 +835,17 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
                 Err(e) => json!({ "ok": false, "message": e, "state": crate::autostart::state() }),
             }
         }
+        // the «Открыть в браузере» button of a result window: the address is built HERE from the text of the request (a page cannot hand over any other address)
+        "web_open" => match web_search_url(body.get("query").and_then(|v| v.as_str()).unwrap_or("")) {
+            Err(e) => json!({ "ok": false, "message": e }),
+            #[cfg(all(feature = "lua", target_os = "windows"))]
+            Ok(url) => match crate::lua::shell_open(&url) {
+                Ok(()) => json!({ "ok": true }),
+                Err(e) => json!({ "ok": false, "message": e }),
+            },
+            #[cfg(not(all(feature = "lua", target_os = "windows")))]
+            Ok(url) => json!({ "ok": false, "message": format!("Открытие браузера доступно только в Windows. Адрес: {}", url) }),
+        },
         // "Открыть папку с логами"
         "open_logs" => match crate::APP_LOG_DIR.get() {
             #[cfg(all(feature = "lua", target_os = "windows"))]
@@ -2183,8 +2194,32 @@ fn phone_act_inner(body: &serde_json::Value) -> serde_json::Value {
     }
 }
 
+// the search page for the text of a request: https only, the text is percent-encoded, empty and very long texts are refused
+pub(crate) fn web_search_url(query: &str) -> Result<String, String> {
+    let q = query.split_whitespace().collect::<Vec<_>>().join(" ");
+    if q.is_empty() {
+        return Err("Нечего искать: пустой запрос.".into());
+    }
+    if q.chars().count() > 300 {
+        return Err("Запрос слишком длинный для поиска в браузере.".into());
+    }
+    Ok(format!("https://www.google.com/search?q={}", crate::scenario::url_encode(&q)))
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_browser_button_builds_its_own_search_address_and_refuses_the_rest() {
+        assert_eq!(web_search_url("  как  сварить борщ ").unwrap(), "https://www.google.com/search?q=%D0%BA%D0%B0%D0%BA+%D1%81%D0%B2%D0%B0%D1%80%D0%B8%D1%82%D1%8C+%D0%B1%D0%BE%D1%80%D1%89");
+        // an address in the text is only text: it is encoded and searched for, never opened
+        let u = web_search_url("javascript:alert(1) file:///c:/x https://evil.test/a?b=c&d=e").unwrap();
+        assert!(u.starts_with("https://www.google.com/search?q=") && !u[32..].contains(':') && !u[32..].contains('/') && !u[32..].contains('&') && !u[32..].contains('?'), "{}", u);
+        assert!(web_search_url("").is_err() && web_search_url("   \n ").is_err());
+        assert!(web_search_url(&"а".repeat(301)).is_err());
+        let r = run_action(&json!({ "name": "web_open", "query": "" }));
+        assert_eq!(r["ok"], false);
+    }
+
     // the program is locked: the guarded actions of the window refuse, the phone cannot unlock it or change the password, and the journal says so
     #[test]
     fn a_locked_program_refuses_and_the_phone_cannot_unlock_it() {
