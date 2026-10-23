@@ -122,6 +122,69 @@ pub fn parse(text: &str) -> Option<Parsed> {
     Some(Parsed { who: rest.join(" "), body, channel })
 }
 
+// the same request said without a colon: «отправь сообщение маме через Telegram мама, я скоро буду», «пиши моей жене в ватсап еду домой».
+// The words after the verb are taken as the person only when they are the name or an alias of a saved contact (the same word with another ending is
+// the same word), so an ordinary phrase («отправь файл на почту») is never taken for a message. Then an optional «через / в Telegram», then the text.
+pub fn parse_loose(text: &str) -> Option<Parsed> {
+    parse_loose_in(&contacts::list(), text)
+}
+
+pub fn parse_loose_in(all: &[Contact], text: &str) -> Option<Parsed> {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let clean = |w: &str| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+    let verbs = ["напиши", "напишите", "пиши", "отправь", "отправьте", "пошли", "пришли", "сообщи", "черкни", "передай"];
+    if words.len() < 3 || !verbs.contains(&clean(words[0]).as_str()) {
+        return None;
+    }
+    let filler = ["сообщение", "сообщения", "смс", "sms", "мне", "моей", "моему", "моя", "мой", "моим", "своей", "своему", "своим"];
+    let mut i = 1;
+    while i < words.len() && filler.contains(&clean(words[i]).as_str()) {
+        i += 1;
+    }
+    let names_of = |c: &Contact| -> Vec<String> { std::iter::once(c.name.clone()).chain(c.aliases.iter().cloned()).collect() };
+    // the longest run of words that is a contact (a full name wins over its first word)
+    for k in (1..=3usize.min(words.len().saturating_sub(i))).rev() {
+        let who_words: Vec<String> = words[i..i + k].iter().map(|w| clean(w)).collect();
+        if who_words.iter().any(|w| w.is_empty() || channel_word(w).is_some() || ["через", "в", "по", "на", "что", "via", "on", "in"].contains(&w.as_str())) {
+            continue;
+        }
+        let who = who_words.join(" ");
+        let said: Vec<String> = who_words.iter().map(|w| textnorm::normalize(w)).collect();
+        let same = |a: &str, b: &str| a == b || textnorm::same_stem(a, b);
+        let known = all.iter().any(|c| {
+            names_of(c).iter().any(|n| {
+                let nw: Vec<String> = n.split_whitespace().map(textnorm::normalize).collect();
+                // the same number of words, each one the same word (with another ending), or the first word of a full name
+                (nw.len() == said.len() && nw.iter().zip(&said).all(|(a, b)| same(a, b))) || (said.len() == 1 && nw.first().map(|a| same(a, &said[0])).unwrap_or(false))
+            })
+        });
+        if !known {
+            continue;
+        }
+        let mut j = i + k;
+        let mut channel = None;
+        if j < words.len() && ["через", "в", "по", "на", "via", "on", "in"].contains(&clean(words[j]).as_str()) && j + 1 < words.len() {
+            if let Some(c) = channel_word(&clean(words[j + 1])) {
+                channel = Some(c);
+                j += 2;
+            }
+        } else if j < words.len() {
+            if let Some(c) = channel_word(&clean(words[j])) {
+                channel = Some(c);
+                j += 1;
+            }
+        }
+        let body = words[j..].join(" ");
+        let body = body.trim_start_matches(|c: char| c == ':' || c == ',' || c == '-' || c == '—' || c.is_whitespace());
+        let body = body.strip_prefix("что ").unwrap_or(body).trim();
+        if body.is_empty() {
+            return None;
+        }
+        return Some(Parsed { who, body: body.to_string(), channel });
+    }
+    None
+}
+
 pub enum Prepared {
     Ready(Outgoing),
     // a question for the user (several contacts, no contact, no address, channel to choose)
@@ -301,12 +364,48 @@ pub fn confirm(id: &str, adapter: &dyn Adapter) -> Result<Outgoing, String> {
     Ok(o)
 }
 
-// What the user has to do after the chat is opened. WhatsApp gets the text in the link; the Telegram link opens the chat only (it has no place for a text), so the text must be pasted by hand.
+// the address that opens the chat IN THE APPLICATION (no browser page in between): Telegram Desktop by `tg://`, WhatsApp Desktop by `whatsapp://`;
+// None for an address that is not one of those chat links
+pub fn app_url(url: &str) -> Option<String> {
+    if let Some(u) = url.strip_prefix("https://t.me/+") {
+        return Some(format!("tg://resolve?phone={}", u));
+    }
+    if let Some(u) = url.strip_prefix("https://t.me/") {
+        return (!u.is_empty() && u.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')).then(|| format!("tg://resolve?domain={}", u));
+    }
+    if let Some(r) = url.strip_prefix("https://wa.me/") {
+        let (phone, text) = r.split_once("?text=").unwrap_or((r, ""));
+        return (!phone.is_empty() && phone.chars().all(|c| c.is_ascii_digit())).then(|| format!("whatsapp://send?phone={}&text={}", phone, text));
+    }
+    None
+}
+
+// the result of the automatic send: the keystroke was made (the message is «sent», delivery is not checked) or the reason why not
+pub fn finish_auto(id: &str, result: Result<(), String>) {
+    let _g = LOCK.lock();
+    if let Some(mut o) = get(id) {
+        match result {
+            Ok(()) => {
+                o.status = Status::Sent;
+                o.note = "Чат открыт, текст вставлен и нажат Enter. Дошло ли сообщение, я проверить не могу.".into();
+            }
+            Err(e) => {
+                o.status = Status::ManualSendRequired;
+                o.note = e;
+            }
+        }
+        o.updated = store::now();
+        let _ = put(&o);
+    }
+}
+
+// What happens after the chat is opened: Jarvis pastes the text (Telegram has no text in its link; WhatsApp gets it from the link) and presses Enter itself,
+// when the window of the messenger is in front. It cannot see whether the message arrived.
 pub fn manual_note(channel: &str) -> &'static str {
     if channel == "telegram" {
-        "Чат открыт БЕЗ текста (Telegram не принимает текст из ссылки): вставьте сообщение сами, оно сохранено в истории, и нажмите «Отправить». Я не могу узнать, отправили ли вы."
+        "Чат открыт: вставляю текст и нажимаю Enter сам. Если окно Telegram не появится, сообщение останется в истории: отправьте его сами. Дошло ли оно, я проверить не могу."
     } else {
-        "Чат открыт с текстом: нажмите «Отправить» в приложении. Я не могу узнать, отправили ли вы."
+        "Чат открыт с текстом: нажимаю Enter сам. Если окно WhatsApp не появится, отправьте сами. Дошло ли сообщение, я проверить не могу."
     }
 }
 
@@ -447,6 +546,56 @@ mod tests {
     }
 
     #[test]
+    fn a_message_said_without_a_colon_is_understood_only_for_a_saved_contact() {
+        let all = vec![
+            Contact { id: "1".into(), name: "Мама".into(), telegram: "mama".into(), ..Default::default() },
+            Contact { id: "2".into(), name: "Няшка".into(), aliases: vec!["жена".into()], telegram: "nyashka".into(), ..Default::default() },
+            Contact { id: "3".into(), name: "Тима Ашуров".into(), phone: "998901234567".into(), ..Default::default() },
+        ];
+        let p = parse_loose_in(&all, "отправь сообщение маме через Telegram мама, я через какое-то время буду").unwrap();
+        assert_eq!((p.who.as_str(), p.channel, p.body.as_str()), ("маме", Some("telegram"), "мама, я через какое-то время буду"));
+        let p = parse_loose_in(&all, "пиши моей няшке через телеграм привет, как дела").unwrap();
+        assert_eq!((p.who.as_str(), p.channel, p.body.as_str()), ("няшке", Some("telegram"), "привет, как дела"));
+        let p = parse_loose_in(&all, "напиши жене в ватсап еду домой").unwrap();
+        assert_eq!((p.who.as_str(), p.channel, p.body.as_str()), ("жене", Some("whatsapp"), "еду домой"));
+        let p = parse_loose_in(&all, "напиши Тиме Ашурову что встреча в пять").unwrap();
+        assert_eq!((p.who.as_str(), p.channel, p.body.as_str()), ("тиме ашурову", None, "встреча в пять"));
+        // not a contact: not a message
+        assert!(parse_loose_in(&all, "отправь файл на почту босса").is_none());
+        assert!(parse_loose_in(&all, "напиши программу на питоне").is_none());
+        // no text: nothing to send
+        assert!(parse_loose_in(&all, "отправь маме через телеграм").is_none());
+        assert!(parse_loose_in(&all, "открой телеграм").is_none());
+    }
+
+    #[test]
+    fn the_chat_opens_in_the_application_and_only_known_links_are_converted() {
+        assert_eq!(app_url("https://t.me/tima").as_deref(), Some("tg://resolve?domain=tima"));
+        assert_eq!(app_url("https://t.me/+998901234567").as_deref(), Some("tg://resolve?phone=998901234567"));
+        assert_eq!(app_url("https://wa.me/998901234567?text=%D0%BF").as_deref(), Some("whatsapp://send?phone=998901234567&text=%D0%BF"));
+        for bad in ["https://t.me/ti ma", "https://t.me/", "https://t.me/a&b=c", "https://wa.me/12ab?text=x", "https://evil.test/", "tg://resolve?domain=x", "javascript:alert(1)"] {
+            assert!(app_url(bad).is_none(), "{}", bad);
+        }
+    }
+
+    #[test]
+    fn the_result_of_the_automatic_send_is_written_honestly() {
+        store::with_temp(|| {
+            contacts::save(Contact { id: "t".into(), name: "Тима".into(), telegram: "tima".into(), ..Default::default() }).unwrap();
+            let Prepared::Ready(o) = prepare(&Parsed { who: "Тима".into(), body: "привет".into(), channel: None }) else { panic!() };
+            stage(&o).unwrap();
+            confirm(&o.id, &LinkAdapter { channel: "telegram".into() }).unwrap();
+            finish_auto(&o.id, Err("окно мессенджера не появилось".into()));
+            let r = get(&o.id).unwrap();
+            assert!(r.status == Status::ManualSendRequired && r.note.contains("не появилось"), "{:?} {}", r.status, r.note);
+            finish_auto(&o.id, Ok(()));
+            let r = get(&o.id).unwrap();
+            assert!(r.status == Status::Sent && r.note.contains("не могу"), "the keystroke is not a proof of delivery: {}", r.note);
+            finish_auto("no-such-id", Ok(()));
+        });
+    }
+
+    #[test]
     fn the_telegram_chat_is_said_to_be_opened_without_the_text() {
         store::with_temp(|| {
             contacts::save(Contact { id: "t".into(), name: "Тима".into(), telegram: "tima".into(), ..Default::default() }).unwrap();
@@ -455,7 +604,7 @@ mod tests {
             let r = confirm(&o.id, &LinkAdapter { channel: "telegram".into() }).unwrap();
             assert_eq!(r.status, Status::ManualSendRequired);
             assert_eq!(r.url, "https://t.me/tima");
-            assert!(!r.url.contains("секретный") && r.note.contains("БЕЗ текста"), "{}", r.note);
+            assert!(!r.url.contains("секретный") && r.note.contains("вставляю текст"), "{}", r.note);
             assert_eq!(get(&o.id).unwrap().body, "секретный текст", "the text stays in the history to be pasted");
             assert!(manual_note("whatsapp").contains("с текстом"));
         });

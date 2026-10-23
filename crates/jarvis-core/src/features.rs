@@ -33,14 +33,28 @@ pub fn pending_message() -> Option<String> {
     p.as_ref().filter(|(_, t)| store::now() - t <= PENDING_TTL).map(|(id, _)| id.clone())
 }
 
+// the chat of a confirmed message: opened in the application (the web address when there is no application), then Jarvis presses «Отправить» itself
+// when the messenger comes to the front (input::send_in_messenger); the outcome is written to the history
+fn open_and_send(o: &messenger::Outgoing) -> Result<(), String> {
+    let first = messenger::app_url(&o.url);
+    match &first {
+        Some(native) => open(native).or_else(|_| open(&o.url))?,
+        None => open(&o.url)?,
+    }
+    let (id, channel, body) = (o.id.clone(), o.channel.clone(), o.body.clone());
+    // (Telegram has no text in its link: the text is pasted; WhatsApp has it in the link)
+    let paste = channel == "telegram";
+    std::thread::spawn(move || messenger::finish_auto(&id, crate::input::send_in_messenger(&channel, &body, paste)));
+    Ok(())
+}
+
 fn adapter_for(channel: &str) -> messenger::LinkAdapter {
     messenger::LinkAdapter { channel: channel.to_string() }
 }
 
 fn describe(o: &messenger::Outgoing) -> String {
     match o.status {
-        messenger::Status::ManualSendRequired if o.channel == "telegram" => format!("Открыл чат с «{}» в Telegram, но БЕЗ текста: Telegram не принимает его из ссылки. Вставьте сообщение сами (оно в истории) и нажмите «Отправить»; я не узнаю, отправили ли вы.", o.contact),
-        messenger::Status::ManualSendRequired => format!("Открыл чат с «{}» в WhatsApp с готовым текстом. Нажмите «Отправить» там — сам я отправить не могу и не узнаю, отправили ли вы.", o.contact),
+        messenger::Status::ManualSendRequired => format!("Открыл чат с «{}» и отправляю сообщение сам: вставлю текст и нажму Enter, когда окно будет готово. Дошло ли оно, я проверить не могу; результат будет в истории сообщений.", o.contact),
         messenger::Status::Sent => format!("Отправлено: «{}».", o.contact),
         messenger::Status::Error => format!("Не отправлено: {}.", o.note),
         s => format!("Сообщение «{}»: {}.", o.contact, s.label()),
@@ -55,7 +69,7 @@ pub fn confirm_message(id: &str) -> Result<messenger::Outgoing, String> {
         *PENDING_MSG.lock() = None;
     }
     if o.status == messenger::Status::ManualSendRequired {
-        open(&o.url).map_err(|e| format!("Не удалось открыть чат: {}", e))?;
+        open_and_send(&o).map_err(|e| format!("Не удалось открыть чат: {}", e))?;
     }
     Ok(o)
 }
@@ -115,7 +129,7 @@ fn answer_pending(text: &str) -> Option<Reply> {
                 Some(ch) => match messenger::confirm(&id, &adapter_for(&ch)) {
                     Ok(o) => {
                         if o.status == messenger::Status::ManualSendRequired {
-                            if let Err(e) = open(&o.url) {
+                            if let Err(e) = open_and_send(&o) {
                                 return r(format!("Не удалось открыть чат: {}. Текст сообщения сохранён в истории.", e));
                             }
                         }
@@ -379,7 +393,7 @@ pub fn handle(text: &str) -> Option<Reply> {
     if let Some(req) = translate::parse(text) {
         return r(do_translate(&req));
     }
-    if let Some(p) = messenger::parse(text) {
+    if let Some(p) = messenger::parse(text).or_else(|| messenger::parse_loose(text)) {
         return do_messenger(&p);
     }
     if let Some(r) = do_bixby(text) {

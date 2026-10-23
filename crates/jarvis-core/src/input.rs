@@ -322,6 +322,53 @@ pub fn keys(combo: &str) -> Outcome {
     }
 }
 
+// «напиши … в Telegram»: the chat was opened by Jarvis from the confirmed message. When the window in front is really that messenger (its program or its
+// title; the Jarvis window never counts), the text is pasted (Telegram has no text in its links; WhatsApp gets it from the link, so `paste` is false there)
+// and Enter is pressed. When the messenger does not come to the front in time nothing is pressed: a keystroke into some other window is never made.
+// Whether the message really arrived Jarvis cannot see.
+pub fn send_in_messenger(channel: &str, text: &str, paste: bool) -> Result<(), String> {
+    #[cfg(all(target_os = "windows", feature = "lua"))]
+    {
+        let needle = match channel {
+            "telegram" => "telegram",
+            "whatsapp" => "whatsapp",
+            _ => return Err("этот мессенджер я не умею отправлять".into()),
+        };
+        let is_it = || -> bool {
+            win::foreground().map(|h| win::process_exe(h).unwrap_or_default().contains(needle) || win::title_of(h).to_lowercase().contains(needle)).unwrap_or(false)
+        };
+        let mut waited = 0u64;
+        loop {
+            if is_it() {
+                // the chat is still loading: wait, and make sure that it is still in front
+                std::thread::sleep(std::time::Duration::from_millis(2000));
+                if is_it() {
+                    break;
+                }
+            }
+            if waited >= 15_000 {
+                return Err("окно мессенджера не появилось: сообщение осталось в истории, нажмите «Отправить» сами".into());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            waited += 300;
+        }
+        if paste {
+            crate::lua::set_clipboard_text(text).map_err(|e| format!("не удалось положить текст в буфер: {}", e))?;
+            let codes = parse_combo("ctrl+v").ok_or("клавиши не разобраны")?;
+            unsafe { win::press(&codes) };
+            std::thread::sleep(std::time::Duration::from_millis(400));
+        }
+        let enter = parse_combo("enter").ok_or("клавиши не разобраны")?;
+        unsafe { win::press(&enter) };
+        Ok(())
+    }
+    #[cfg(not(all(target_os = "windows", feature = "lua")))]
+    {
+        let _ = (channel, text, paste);
+        Err("отправка в мессенджер доступна только в Windows".into())
+    }
+}
+
 // ---- the hands of the phone (remote_input.rs): the mouse and the keyboard driven from the linked phone ----
 // No window is moved to the front here: the phone clicks first, and the click gives the focus to the window it hit.
 const NO_INPUT_HERE: &str = "управление мышью и клавиатурой доступно только в Windows";
