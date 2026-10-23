@@ -111,19 +111,27 @@ impl Session {
 pub struct Tracker {
     pub current: Option<Session>,
     away_since: Option<u64>,
+    // when the tracker was fed last (it is fed every 2 s while a session exists): a long silence is a sleep, whatever was in front
+    last_tick: u64,
 }
 
 impl Tracker {
     // `front` = the exe of the game in front (None: no game). Returns a finished session, if one just ended.
     pub fn tick(&mut self, now: u64, front: Option<&str>, s: &sysstat::Sample, fps: Option<u32>) -> Option<Session> {
+        // a silence longer than SLEEP_GAP_SECS: the computer slept (also with the game minimised); the session ends where the game was last seen
+        let slept = if self.current.is_some() && now.saturating_sub(self.last_tick) > SLEEP_GAP_SECS {
+            self.away_since = None;
+            self.current.take()
+        } else {
+            None
+        };
+        self.last_tick = now;
+        let next = self.step(now, front, s, fps);
+        slept.or(next)
+    }
+
+    fn step(&mut self, now: u64, front: Option<&str>, s: &sysstat::Sample, fps: Option<u32>) -> Option<Session> {
         match (&mut self.current, front) {
-            (Some(cur), Some(exe)) if cur.exe.eq_ignore_ascii_case(exe) && now.saturating_sub(cur.end) > SLEEP_GAP_SECS && self.away_since.is_none() => {
-                let done = self.current.take();
-                let mut n = Session::new(exe, now);
-                n.add(now, s, fps);
-                self.current = Some(n);
-                done
-            }
             (Some(cur), Some(exe)) if cur.exe.eq_ignore_ascii_case(exe) => {
                 self.away_since = None;
                 cur.add(now, s, fps);
@@ -356,5 +364,26 @@ mod tests {
             assert_eq!(j["sessions"][0]["gpu_temp_max"], 65.0);
             assert!(j["sessions"][0]["fps_low1"].is_null(), "too few samples for a 1% low");
         });
+    }
+
+    #[test]
+    fn sleep_after_an_alt_tab_is_not_game_time_either() {
+        let mut t = Tracker::default();
+        let s = smp(10, None);
+        t.tick(0, Some("a.exe"), &s, None);
+        t.tick(2, Some("a.exe"), &s, None);
+        // the game is minimised, then the computer sleeps for 8 hours
+        t.tick(4, None, &s, None);
+        t.tick(6, None, &s, None);
+        let done = t.tick(6 + 8 * 3600, Some("a.exe"), &s, None).expect("the old session ends where the game was last seen");
+        assert_eq!((done.start, done.end, done.secs()), (0, 2, 2));
+        assert_eq!(t.current.as_ref().unwrap().start, 6 + 8 * 3600);
+        // and when the computer wakes up with no game in front, the old session also ends where it was last seen
+        let mut t = Tracker::default();
+        t.tick(0, Some("a.exe"), &s, None);
+        t.tick(2, Some("a.exe"), &s, None);
+        let done = t.tick(2 + 8 * 3600, None, &s, None).expect("ends at once, not a minute later");
+        assert_eq!((done.start, done.end), (0, 2));
+        assert!(t.current.is_none());
     }
 }
