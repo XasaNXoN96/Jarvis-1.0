@@ -2259,6 +2259,46 @@ mod tests {
         });
     }
 
+    // «Принимать голос с привязанного телефона»: only the owner switches it, the phone cannot, a locked program keeps its protection
+    #[test]
+    fn the_phone_cannot_switch_on_its_own_microphone_ability_and_the_lock_keeps_it() {
+        let _s = crate::uistate::TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            crate::owner::reset_for_tests();
+            let on = || crate::perms::allowed(crate::perms::Cap::RemoteMicrophone);
+            // the owner switches it off in the window
+            assert_eq!(run_action(&json!({ "name": "perms_set", "id": "remote_microphone", "value": false }))["ok"], true);
+            assert!(!on());
+            // the phone (any way of asking) cannot switch it on: not as an action, not as a setting, not by a made-up name
+            for body in [
+                json!({ "name": "perms_set", "id": "remote_microphone", "value": true }),
+                json!({ "name": "setting", "id": "remote_microphone", "value": true }),
+                json!({ "name": "perms_set", "id": "remote_microphone", "on": true }),
+                json!({ "name": "remote_microphone_on" }),
+            ] {
+                let r = phone_act(&body);
+                assert_eq!(r["ok"], false, "{} -> {}", body, r);
+                assert!(!on(), "{} switched it on", body);
+            }
+            // no password set yet: the window may switch it; with a password and a locked program it may not
+            crate::owner::set_password("пароль-для-теста", "").unwrap();
+            crate::owner::lock();
+            let r = run_action(&json!({ "name": "perms_set", "id": "remote_microphone", "value": true }));
+            assert_eq!((r["locked"].as_bool(), r["code"].as_str()), (Some(true), Some("locked")), "{}", r);
+            assert!(!on());
+            assert!(crate::owner::unlock("не-тот-пароль").is_err());
+            assert_eq!(run_action(&json!({ "name": "perms_set", "id": "remote_microphone", "value": true }))["locked"], true);
+            assert!(!on());
+            // the unlocked owner switches it on; an unknown id (the camera) is not an ability
+            crate::owner::unlock("пароль-для-теста").unwrap();
+            assert_eq!(run_action(&json!({ "name": "perms_set", "id": "remote_microphone", "value": true }))["ok"], true);
+            assert!(on());
+            assert_eq!(run_action(&json!({ "name": "perms_set", "id": "camera", "value": true }))["ok"], false);
+            // the list of the window shows it
+            assert!(crate::perms::json().as_array().unwrap().iter().any(|c| c["id"] == "remote_microphone" && c["title"].as_str().unwrap().contains("голос с привязанного телефона")));
+        });
+    }
+
     // missing and broken parameters of the gateway are an answer, not a crash, and nothing of them reaches the journal
     #[test]
     fn the_gateway_survives_missing_and_broken_parameters() {

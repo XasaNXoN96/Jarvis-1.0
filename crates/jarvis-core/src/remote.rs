@@ -1135,8 +1135,26 @@ fn voiceprint_do(op: &str) -> Result<(), String> {
 // A phrase of speech recorded by the microphone of the page (16 kHz mono). While the voice is being recorded or tested the phrase is
 // only measured. Otherwise: the voice is compared with the print of the owner (when that lock is on), the phrase is recognized here
 // (offline, Vosk) and runs as a command of the phone. What came back: for the page to show.
+// The answer when the owner switched off «Принимать голос с привязанного телефона». It says only what is off and where to turn it on.
+fn voice_denied_json() -> serde_json::Value {
+    serde_json::json!({ "ok": false, "kind": "denied", "code": "denied", "message": "Приём голоса с телефона выключен на компьютере. Включить: Настройки → Безопасность и данные → «Принимать голос с привязанного телефона»." })
+}
+
+// The permission is asked on EVERY phrase, by this computer, before the sound is looked at (nothing the page or the phone says counts).
+fn voice_allowed() -> bool {
+    if crate::perms::check(crate::perms::Cap::RemoteMicrophone).is_ok() {
+        return true;
+    }
+    // (no sound, no length and no text of it in the journal; at most one line a minute)
+    crate::audit::record_rate_limited("remote-voice-denied", 60, "remote", "voice_audio", "refused", "приём голоса с телефона выключен владельцем");
+    false
+}
+
 pub fn voice_audio(samples: &[i16]) -> serde_json::Value {
     use serde_json::json;
+    if !voice_allowed() {
+        return voice_denied_json();
+    }
     if crate::voiceprint::capturing() {
         let message = crate::voiceprint::take_capture(samples, 16_000);
         return json!({ "ok": true, "kind": "capture", "message": message, "status": crate::voiceprint::status_json() });
@@ -1329,6 +1347,10 @@ fn handle_from<S: Read + Write>(stream: &mut S, via_tunnel: bool) -> std::io::Re
             Ok(()) => respond(stream, "200 OK", "application/json", &crate::voiceprint::status_json().to_string()),
             Err(e) => respond(stream, "400 Bad Request", "application/json", &serde_json::json!({ "ok": false, "message": e }).to_string()),
         },
+        ("POST", "/voice-audio") if !voice_allowed() => {
+            // before the body is decoded: a switched-off ability does not even look at the sound
+            respond(stream, "403 Forbidden", "application/json", &voice_denied_json().to_string());
+        }
         ("POST", "/voice-audio") => {
             let bytes = crate::docai::b64_decode(req.body.trim()).unwrap_or_default();
             // from 0.4 s to 10 s of 16 kHz 16-bit audio
@@ -2085,6 +2107,68 @@ mod tests {
         let owner = phone_request("/voice-audio", &t, &pcm_base64(&voice(110.0, 1.0, 31, 2.5)));
         assert!(!owner.contains("refused"), "the owner is not refused: {}", owner);
         crate::voiceprint::delete();
+    }
+
+    // The ability «Принимать голос с привязанного телефона»: asked by this computer on every phrase; off = the sound goes nowhere
+    // (not to the recording of the voice, not to the lock of the voice, not to the recognition); MIC_MUTED is another thing and stays so
+    #[test]
+    fn the_voice_of_the_phone_is_taken_only_while_the_ability_is_on_and_each_phrase_asks_again() {
+        use crate::voiceprint::synth::voice;
+        let _g = PHONE_TEST_LOCK.lock();
+        let _v = crate::voiceprint::TEST_LOCK.lock();
+        let _s = crate::uistate::TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            crate::owner::reset_for_tests();
+            crate::replay::reset_for_tests();
+            phone_for_tests(true, true);
+            crate::voiceprint::delete();
+            let t = token();
+            let step = || crate::voiceprint::status_json()["step"].as_u64().unwrap();
+            let phrase = |seed: u64| pcm_base64(&voice(110.0, 1.0, seed, 2.5));
+            assert!(phone_request("/voiceprint-do", &t, "start").contains("\"enrolling\":true"));
+            // 1. on by default (as before the ability existed): the phrase goes the old way
+            assert!(crate::perms::allowed(crate::perms::Cap::RemoteMicrophone));
+            let r = phone_request("/voice-audio", &t, &phrase(1));
+            assert!(r.starts_with("HTTP/1.1 200") && r.contains("\"kind\":\"capture\""), "{}", r);
+            assert_eq!(step(), 1);
+            // 2. off: refused with a plain answer, the sound reaches nothing (the recording did not move)
+            crate::perms::set(crate::perms::Cap::RemoteMicrophone, false).unwrap();
+            let bad = phrase(2);
+            let r = phone_request("/voice-audio", &t, &bad);
+            assert!(r.starts_with("HTTP/1.1 403") && r.contains("\"code\":\"denied\"") && r.contains("Приём голоса с телефона выключен"), "{}", r);
+            assert!(!r.contains("panic") && !r.contains("Vosk") && !r.contains("os error"), "no inner error: {}", r);
+            assert_eq!(step(), 1, "the sound was not given to the recording");
+            // the same for a phrase that is not even valid audio: the sound is not looked at
+            assert!(phone_request("/voice-audio", &t, "это не звук!").starts_with("HTTP/1.1 403"));
+            // a wrong secret is still the answer of the secret, not of the permission
+            let w = phone_request("/voice-audio", "wrong-token", &phrase(3));
+            assert!(w.starts_with("HTTP/1.1 403") && !w.contains("denied"), "{}", w);
+            // the function itself does not trust its caller either
+            assert_eq!(voice_audio(&voice(110.0, 1.0, 4, 2.5))["kind"], "denied");
+            assert_eq!(step(), 1);
+            // the journal: a line without any sound or text (not even the size)
+            let log = serde_json::to_string(&crate::audit::list(50)).unwrap();
+            assert!(log.contains("voice_audio") && log.contains("refused"), "{}", log);
+            assert!(!log.contains(&bad[..40]) && !log.contains("samples"), "{}", log);
+            // 3. the owner takes it off and puts it back: each phrase is judged by the state of that moment
+            crate::perms::set(crate::perms::Cap::RemoteMicrophone, true).unwrap();
+            assert!(phone_request("/voice-audio", &t, &phrase(5)).contains("\"kind\":\"capture\""));
+            assert_eq!(step(), 2);
+            crate::perms::set(crate::perms::Cap::RemoteMicrophone, false).unwrap();
+            assert!(phone_request("/voice-audio", &t, &phrase(6)).starts_with("HTTP/1.1 403"));
+            assert_eq!(step(), 2, "the withdrawal acted on the very next phrase");
+            // 4. MIC_MUTED (the microphone of this computer) is another switch: it does not open the ability, and the ability does not touch it
+            crate::uistate::set_mic_muted(true);
+            assert!(phone_request("/voice-audio", &t, &phrase(7)).starts_with("HTTP/1.1 403"), "muted PC microphone does not turn the phone ability on");
+            crate::perms::set(crate::perms::Cap::RemoteMicrophone, true).unwrap();
+            assert!(crate::MIC_MUTED.load(std::sync::atomic::Ordering::SeqCst), "switching the ability on did not touch MIC_MUTED");
+            assert!(phone_request("/voice-audio", &t, &phrase(8)).contains("\"kind\":\"capture\""), "the phone voice does not depend on the PC microphone being on");
+            assert_eq!(step(), 3);
+            crate::uistate::set_mic_muted(false);
+            crate::perms::set(crate::perms::Cap::RemoteMicrophone, false).unwrap();
+            assert!(!crate::MIC_MUTED.load(std::sync::atomic::Ordering::SeqCst), "switching the ability off did not touch MIC_MUTED");
+            crate::voiceprint::delete();
+        });
     }
 
     // replay: a request is run once; an old one, a repeated one (also after a restart of the server) and one without time or number are not run

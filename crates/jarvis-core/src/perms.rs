@@ -29,9 +29,11 @@ pub enum Cap {
     Automation,
     // the phone may look at the screen of this computer through the remote
     RemoteScreen,
+    // the linked phone may send its voice (audio of the microphone of the page / application) to this computer for recognition
+    RemoteMicrophone,
 }
 
-pub const ALL: [Cap; 10] = [Cap::AiNetwork, Cap::Messenger, Cap::Memory, Cap::ScreenCapture, Cap::FileSearch, Cap::Scheduler, Cap::Install, Cap::SmartHome, Cap::Automation, Cap::RemoteScreen];
+pub const ALL: [Cap; 11] = [Cap::AiNetwork, Cap::Messenger, Cap::Memory, Cap::ScreenCapture, Cap::FileSearch, Cap::Scheduler, Cap::Install, Cap::SmartHome, Cap::Automation, Cap::RemoteScreen, Cap::RemoteMicrophone];
 
 impl Cap {
     pub fn id(self) -> &'static str {
@@ -46,6 +48,7 @@ impl Cap {
             Cap::SmartHome => "smart_home",
             Cap::Automation => "automation",
             Cap::RemoteScreen => "remote_screen",
+            Cap::RemoteMicrophone => "remote_microphone",
         }
     }
     pub fn title(self) -> &'static str {
@@ -60,6 +63,7 @@ impl Cap {
             Cap::SmartHome => "Управлять умным домом",
             Cap::Automation => "Управлять компьютером по плану (многошаговые задачи)",
             Cap::RemoteScreen => "Показывать экран компьютера на привязанном телефоне",
+            Cap::RemoteMicrophone => "Принимать голос с привязанного телефона",
         }
     }
     pub fn from_id(s: &str) -> Option<Cap> {
@@ -135,6 +139,23 @@ mod tests {
             assert!(allowed(Cap::Messenger));
             assert_eq!(Cap::from_id("memory"), Some(Cap::Memory));
             assert_eq!(json().as_array().unwrap().len(), ALL.len());
+        });
+    }
+
+    #[test]
+    fn the_phone_voice_is_on_by_default_is_kept_in_the_file_and_survives_a_restart() {
+        store::with_temp(|| {
+            owner::reset_for_tests();
+            assert!(allowed(Cap::RemoteMicrophone), "on by default: the behaviour before the ability existed");
+            assert_eq!(Cap::from_id("remote_microphone"), Some(Cap::RemoteMicrophone));
+            assert!(Cap::from_id("camera").is_none(), "there is no camera ability");
+            set(Cap::RemoteMicrophone, false).unwrap();
+            // the state is the file permissions.json of the data folder: a new start reads it again (nothing is kept in memory)
+            let raw = std::fs::read_to_string(store::file(FILE)).unwrap();
+            assert!(raw.contains("remote_microphone"), "{}", raw);
+            assert!(!allowed(Cap::RemoteMicrophone));
+            set(Cap::RemoteMicrophone, true).unwrap();
+            assert!(allowed(Cap::RemoteMicrophone));
         });
     }
 
