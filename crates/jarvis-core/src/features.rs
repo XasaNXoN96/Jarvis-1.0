@@ -319,7 +319,7 @@ fn do_programs(text: &str) -> Option<Reply> {
 fn answer_plan(text: &str) -> Option<Reply> {
     let run = |sc: crate::scenario::Scenario| {
         std::thread::spawn(move || {
-            let r = crate::scenario::run_draft(&sc);
+            let r = autopilot::execute(&sc);
             actionlog::record(&format!("План выполнен: {}", sc.name), actionlog::Undo::None);
             announce_later(&r.message);
         });

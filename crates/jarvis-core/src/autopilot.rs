@@ -127,6 +127,21 @@ pub fn answer(text: &str, run: &dyn Fn(Scenario)) -> Answer {
     }
 }
 
+// The rights are asked again before EVERY step of a plan, not only when «да» was said
+pub fn gate() -> Result<(), String> {
+    crate::perms::check(crate::perms::Cap::Automation)?;
+    crate::owner::guard()
+}
+
+// Runs the plan the one way (the scenario engine) with the gate; one record in the security journal under one operation number:
+// how many steps, how many were done, why it stopped. No parameters of the steps are written (they may hold text of the user).
+pub fn execute(sc: &Scenario) -> scenario::RunResult {
+    let r = scenario::run_gated(sc, &gate);
+    let decision = if r.ok { "allow" } else { "stopped" };
+    crate::audit::record("autopilot", "plan", "high", decision, true, &format!("шагов {} из {}. {}", r.done, r.total, if r.ok { "" } else { r.message.as_str() }));
+    r
+}
+
 // «стоп» during the run: the chain stops before the next step
 pub fn stop_requested(text: &str) -> bool {
     matches!(crate::textnorm::normalize(text).as_str(), "стоп автопилот" | "останови план" | "отмени план" | "cancel the plan")
@@ -135,6 +150,50 @@ pub fn stop_requested(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pauses(n: usize) -> Scenario {
+        let steps: Vec<String> = (0..n).map(|_| r#"{"kind":"pause","param":"0.1"}"#.to_string()).collect();
+        parse_plan(&format!("{{\"steps\":[{}]}}", steps.join(",")), "пауза").unwrap().scenario
+    }
+
+    #[test]
+    fn the_rights_are_asked_before_every_step_and_the_plan_stops_when_one_is_taken_away() {
+        let _l = scenario::RUN_TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            crate::owner::reset_for_tests();
+            let sc = pauses(4);
+            let asked = std::cell::Cell::new(0);
+            // all rights stay: every step asks, all steps run
+            let r = scenario::run_gated(&sc, &|| { asked.set(asked.get() + 1); Ok(()) });
+            assert!(r.ok && r.done == 4 && asked.get() == 4, "{:?}", r);
+            // taken away after two steps: the 3rd and 4th do not run, the message says before which step
+            asked.set(0);
+            let r = scenario::run_gated(&sc, &|| { asked.set(asked.get() + 1); if asked.get() > 2 { Err("разрешение выключено".into()) } else { Ok(()) } });
+            assert!(!r.ok && r.done == 2 && r.message.contains("перед шагом 3") && r.message.contains("разрешение выключено"), "{:?}", r);
+            // the real gate: the permission is off by default
+            let r = execute(&sc);
+            assert!(!r.ok && r.done == 0, "{:?}", r);
+        });
+    }
+
+    #[test]
+    fn a_stop_said_while_the_plan_starts_is_not_lost_and_a_stale_stop_does_not_stop_the_next_plan() {
+        let _l = scenario::RUN_TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            let sc = pauses(3);
+            // the stop arrives during the first step
+            let sc2 = sc.clone();
+            let h = std::thread::spawn(move || scenario::run_gated(&sc2, &|| Ok(())));
+            std::thread::sleep(std::time::Duration::from_millis(40));
+            assert!(scenario::cancel());
+            let r = h.join().unwrap();
+            assert!(!r.ok && r.done >= 1 && r.done < 3 && r.message.contains("отменено перед шагом"), "{:?}", r);
+            // nothing runs now: a «стоп» is refused and leaves no trace for the next plan
+            assert!(!scenario::cancel());
+            let r = scenario::run_gated(&sc, &|| Ok(()));
+            assert!(r.ok && r.done == 3, "{:?}", r);
+        });
+    }
 
     #[test]
     fn phrases() {

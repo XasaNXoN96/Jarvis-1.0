@@ -496,6 +496,10 @@ fn run_step_in(s: &Step, grid: &mut Vec<isize>) -> Result<(), String> {
 // What runs now (the window shows "Шаг 2 из 4: Громкость"): (scenario id, step number from 1, steps, step title)
 static RUNNING: Lazy<Mutex<Option<(String, usize, usize, String)>>> = Lazy::new(|| Mutex::new(None));
 
+// the tests of the engine and of the autopilot share the one global «what runs now»: they take turns
+#[cfg(test)]
+pub(crate) static RUN_TEST_LOCK: Mutex<()> = parking_lot::const_mutex(());
+
 static CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 // «стоп» for a chain that is running: it stops before the next step (a step that has started finishes)
@@ -531,16 +535,22 @@ pub fn preflight(sc: &Scenario) -> Result<(), String> {
 // order, each one must report success; the first failure stops the chain with its number, kind and reason.
 // The same chain never runs twice at once (a second start while it runs is refused, not queued).
 pub fn run(sc: &Scenario) -> RunResult {
-    run_inner(sc, true)
+    run_inner(sc, true, None)
 }
 
 // a test of what the editor shows but is not saved: the same engine, but its result is not written into the history
 // of the stored scenario (its steps differ from what was run)
 pub fn run_draft(sc: &Scenario) -> RunResult {
-    run_inner(sc, false)
+    run_inner(sc, false, None)
 }
 
-fn run_inner(sc: &Scenario, remember: bool) -> RunResult {
+// a plan made by the AI (autopilot): `gate` is asked BEFORE EVERY step, so a permission taken away or the owner lock
+// closed in the middle of a long plan stops it at once instead of letting the rest run
+pub fn run_gated(sc: &Scenario, gate: &dyn Fn() -> Result<(), String>) -> RunResult {
+    run_inner(sc, false, Some(gate))
+}
+
+fn run_inner(sc: &Scenario, remember: bool, gate: Option<&dyn Fn() -> Result<(), String>>) -> RunResult {
     let total = sc.steps.len();
     {
         let mut running = RUNNING.lock();
@@ -549,6 +559,9 @@ fn run_inner(sc: &Scenario, remember: bool) -> RunResult {
             return RunResult { at: now(), ok: false, done: 0, total, message: format!("Сценарий «{}» не запущен: {} уже выполняется (шаг {} из {})", sc.name, what, step, n) };
         }
         *running = Some((sc.id.clone(), 0, total, String::new()));
+        // a stale «стоп» of an earlier chain must not stop this one; a «стоп» said from here on (also while the checks
+        // before the first step run) is kept
+        CANCEL.store(false, std::sync::atomic::Ordering::SeqCst);
     }
     struct Done;
     impl Drop for Done {
@@ -564,11 +577,16 @@ fn run_inner(sc: &Scenario, remember: bool) -> RunResult {
     if let Err(e) = preflight(sc) {
         message = e;
     } else {
-        CANCEL.store(false, std::sync::atomic::Ordering::SeqCst);
         for (i, s) in sc.steps.iter().enumerate() {
             if CANCEL.swap(false, std::sync::atomic::Ordering::SeqCst) {
                 message = format!("отменено перед шагом {}", i + 1);
                 break;
+            }
+            if let Some(g) = gate {
+                if let Err(e) = g() {
+                    message = format!("остановлено перед шагом {}: {}", i + 1, e);
+                    break;
+                }
             }
             *RUNNING.lock() = Some((sc.id.clone(), i + 1, total, step_title(&s.kind).to_string()));
             match run_step_in(s, &mut grid) {

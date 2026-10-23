@@ -1,6 +1,6 @@
 use super::*;
 
-static LOCK: Mutex<()> = Mutex::new(());
+use super::RUN_TEST_LOCK as LOCK;
 
 fn step(kind: &str, param: &str) -> Step {
     Step { kind: kind.into(), param: param.into(), window: String::new() }
