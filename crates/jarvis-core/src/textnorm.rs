@@ -89,7 +89,8 @@ pub fn best_match(input: &str, candidates: &[&str]) -> Match {
     if let Some(i) = candidates.iter().position(|c| normalize(c) == norm) {
         return Match::Exact(i);
     }
-    let variants = [norm.clone(), normalize(&en_to_ru(&norm)), normalize(&ru_to_en(&norm))];
+    // (the layout is changed on the RAW input: х ъ ж э б ю ё sit on the keys of the punctuation, which the normalising would wipe out first)
+    let variants = [norm.clone(), normalize(&en_to_ru(&norm)), normalize(&ru_to_en(&norm)), normalize(&en_to_ru(input)), normalize(&ru_to_en(input))];
     let mut scored: Vec<(usize, f32)> = candidates
         .iter()
         .enumerate()
@@ -203,5 +204,18 @@ mod tests {
         assert_eq!(detect_lang("Salom, qanday yoz menga"), "uz");
         assert_eq!(detect_lang("Салом, қандай"), "uz");
         assert_eq!(detect_lang("1234"), "");
+    }
+
+    #[test]
+    fn letters_on_punctuation_keys_are_fixed_in_a_wrong_layout_too() {
+        // х ъ ж э б ю ё are on the keys [ ] ; ' , . ` : the layout is fixed BEFORE the punctuation is cleared
+        assert!(matches!(best_match("[jhjij", &["хорошо", "плохо"]), Match::Fuzzy(0, _)), "хорошо typed in the Latin layout");
+        assert!(matches!(best_match("gj,tlf", &["победа", "беда"]), Match::Fuzzy(0, _)), "победа");
+        // short words have nothing to hide a lost letter behind
+        assert!(matches!(best_match(",jn", &["бот", "сон"]), Match::Fuzzy(0, _)), "бот");
+        assert!(matches!(best_match("nt,z", &["тебя", "меня"]), Match::Fuzzy(0, _)), "тебя");
+        // an ordinary phrase with punctuation is not spoiled
+        assert_eq!(best_match("привет, мир", &["привет мир"]), Match::Exact(0));
+        assert_eq!(best_match("hello, world", &["hello world"]), Match::Exact(0));
     }
 }
