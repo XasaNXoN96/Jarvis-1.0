@@ -44,7 +44,12 @@ pub fn list() -> Vec<Entry> {
     store::read::<Vec<Entry>>(FILE).0
 }
 
+// The list is read, changed and written back: two changes at the same moment (a command from the voice and one from the phone, an undo and a new
+// record) must not lose each other's line. Only the short read-change-write is under the lock, never the undo itself.
+static LOCK: parking_lot::Mutex<()> = parking_lot::const_mutex(());
+
 pub fn record(what: &str, undo: Undo) -> String {
+    let _g = LOCK.lock();
     let mut l = list();
     let id = store::new_id();
     l.push(Entry { id: id.clone(), at: store::now(), what: what.chars().take(200).collect(), undo, undone: false });
@@ -82,20 +87,39 @@ fn apply(u: &Undo) -> Result<String, String> {
     }
 }
 
-// undoes the entry (or the last one that can be undone when `id` is empty); marks it undone only when it worked
+// undoes the entry (or the last one that can be undone when `id` is empty); marks it undone only when it worked.
+// The entry is CLAIMED first (marked under the lock), so two undos at once cannot both apply it; if the undo fails the mark is taken off.
 pub fn undo(id: &str) -> Result<String, String> {
-    let mut l = list();
-    let i = if id.is_empty() { l.iter().rposition(can_undo) } else { l.iter().position(|e| e.id == id) }.ok_or("Нечего отменять.")?;
-    if l[i].undone {
-        return Err("Это уже отменено.".into());
+    let (entry_id, what, action) = {
+        let _g = LOCK.lock();
+        let mut l = list();
+        let i = if id.is_empty() { l.iter().rposition(can_undo) } else { l.iter().position(|e| e.id == id) }.ok_or("Нечего отменять.")?;
+        if l[i].undone {
+            return Err("Это уже отменено.".into());
+        }
+        if l[i].undo == Undo::None {
+            return Err("Это действие нельзя отменить.".into());
+        }
+        l[i].undone = true;
+        store::write(FILE, &l)?;
+        (l[i].id.clone(), l[i].what.clone(), l[i].undo.clone())
+    };
+    match apply(&action) {
+        Ok(r) => Ok(format!("{} ({})", r, what)),
+        Err(e) => {
+            let _g = LOCK.lock();
+            let mut l = list();
+            if let Some(x) = l.iter_mut().find(|x| x.id == entry_id) {
+                x.undone = false;
+            }
+            let _ = store::write(FILE, &l);
+            Err(e)
+        }
     }
-    let r = apply(&l[i].undo)?;
-    l[i].undone = true;
-    store::write(FILE, &l)?;
-    Ok(format!("{} ({})", r, l[i].what))
 }
 
 pub fn clear() -> bool {
+    let _g = LOCK.lock();
     store::write(FILE, &Vec::<Entry>::new()).is_ok()
 }
 
@@ -213,6 +237,41 @@ mod tests {
             let id = record("Правка", Undo::NoteRevert(n.id.clone(), old, "купить молоко".into()));
             assert!(undo(&id).is_ok());
             assert_eq!(notes::get(&n.id).unwrap().text, "купить хлеб");
+        });
+    }
+
+    // two records at once keep both lines; two undos of one entry apply it once
+    #[test]
+    fn simultaneous_records_are_all_kept_and_one_entry_is_undone_only_once() {
+        store::with_temp(|| {
+            let threads: Vec<_> = (0..8).map(|t| std::thread::spawn(move || for k in 0..10 { record(&format!("действие {}-{}", t, k), Undo::None); })).collect();
+            for h in threads {
+                h.join().unwrap();
+            }
+            assert_eq!(list().len(), 80, "no line was lost");
+            let mut ids: Vec<String> = list().into_iter().map(|e| e.id).collect();
+            ids.sort();
+            ids.dedup();
+            assert_eq!(ids.len(), 80);
+            // one added fact, undone from 6 threads at once: it is taken back exactly once
+            let added = match memory::add("факт для гонки", "t").unwrap() { memory::Added::Added(i) => i, _ => panic!() };
+            let id = record("Запомнил", Undo::MemoryAdd(added));
+            let results: Vec<_> = (0..6).map(|_| { let id = id.clone(); std::thread::spawn(move || undo(&id)) }).collect::<Vec<_>>().into_iter().map(|h| h.join().unwrap()).collect();
+            assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1, "{:?}", results);
+            assert!(memory::load().items.is_empty());
+            assert!(list().iter().find(|e| e.id == id).unwrap().undone);
+        });
+    }
+
+    #[test]
+    fn an_action_that_cannot_be_undone_says_so_and_a_failed_undo_stays_open() {
+        store::with_temp(|| {
+            let id = record("Открыл чат", Undo::None);
+            assert_eq!(undo(&id).unwrap_err(), "Это действие нельзя отменить.");
+            assert!(!list()[0].undone);
+            let id = record("Запись, которой уже нет", Undo::MemoryAdd("нет-такой".into()));
+            assert!(undo(&id).is_err());
+            assert!(!list().last().unwrap().undone, "a failed undo can be tried again later");
         });
     }
 }
