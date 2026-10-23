@@ -284,6 +284,11 @@ pub fn import_json(doc: &Value, replace: bool) -> Result<(usize, Vec<String>), S
             Err(e) => skipped.push(format!("«{}»: {}", sc.name, e)),
         }
     }
+    // «replace» must never wipe the scenarios of the user for a file in which not one scenario is usable
+    if replace && parsed.is_empty() {
+        let why = if skipped.is_empty() { "в файле нет сценариев".to_string() } else { skipped.join("; ") };
+        return Err(format!("Ничего не заменено: в файле нет ни одного пригодного сценария ({}). Ваши сценарии остались как были.", why));
+    }
     if replace {
         let mut list = LIST.lock();
         list.clear();

@@ -205,3 +205,27 @@ fn a_scenario_cannot_do_what_needs_the_confirmation_of_the_user() {
     // the same step outside of a scenario (the rules of the operation alone) would not name the risk of the command
     assert!(crate::policy::running().is_none(), "the limits of a step end with the step");
 }
+
+#[test]
+fn importing_with_replace_never_wipes_the_scenarios_for_a_file_without_a_usable_one() {
+    let _g = LOCK.lock();
+    reset_for_tests();
+    let keep = upsert(sc("Мой", "моя фраза", vec![step("pause", "0.1")])).unwrap();
+    // a file whose only scenario is broken (a step of a kind that does not exist)
+    let bad = json!({ "jarvis_scenarios": 1, "scenarios": [{ "name": "Битый", "phrase": "битая фраза", "trigger": "voice", "enabled": true, "steps": [{ "kind": "shell", "param": "del x" }] }] });
+    let e = import_json(&bad, true).unwrap_err();
+    assert!(e.contains("Ничего не заменено") && e.contains("остались как были") && e.contains("Битый"), "{}", e);
+    assert_eq!(list().len(), 1);
+    assert_eq!(get(&keep.id).unwrap().phrase, "моя фраза");
+    // an empty list in the file: the same
+    let empty = json!({ "jarvis_scenarios": 1, "scenarios": [] });
+    assert!(import_json(&empty, true).unwrap_err().contains("нет сценариев"));
+    assert_eq!(list().len(), 1);
+    // a usable file still replaces; without «replace» a broken one only reports what it skipped
+    let good = json!({ "jarvis_scenarios": 1, "scenarios": [{ "name": "Новый", "phrase": "новая фраза", "trigger": "voice", "enabled": true, "steps": [{ "kind": "pause", "param": "0.2" }] }] });
+    let (added, skipped) = import_json(&good, true).unwrap();
+    assert_eq!((added, skipped.len(), list().len()), (1, 0, 1));
+    assert_eq!(list()[0].phrase, "новая фраза");
+    let (added, skipped) = import_json(&bad, false).unwrap();
+    assert_eq!((added, skipped.len(), list().len()), (0, 1, 1));
+}
