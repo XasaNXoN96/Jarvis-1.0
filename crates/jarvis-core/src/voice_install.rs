@@ -180,6 +180,12 @@ fn voice_for(lang: &str) -> Option<(&'static str, &'static str)> {
 
 #[cfg(feature = "lua")]
 fn download(url: &str, dest: &Path, label: &str, from: u8, to: u8, verify: &dyn Fn(&Path) -> Result<(), String>) -> Result<(), String> {
+    download_with(url, dest, label, from, to, verify, &set)
+}
+
+// the same download with its own way to show the progress (the speech model installer has its own status)
+#[cfg(feature = "lua")]
+pub(crate) fn download_with(url: &str, dest: &Path, label: &str, from: u8, to: u8, verify: &dyn Fn(&Path) -> Result<(), String>, set: &dyn Fn(&str, u8)) -> Result<(), String> {
     use std::io::{Read, Write};
     let client = reqwest::blocking::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(20))
@@ -223,6 +229,11 @@ fn download(url: &str, dest: &Path, label: &str, from: u8, to: u8, verify: &dyn 
         return Err(e);
     }
     std::fs::rename(&part, dest).map_err(|e| e.to_string())
+}
+
+#[cfg(not(feature = "lua"))]
+pub(crate) fn download_with(_url: &str, _dest: &Path, _label: &str, _from: u8, _to: u8, _verify: &dyn Fn(&Path) -> Result<(), String>, _set: &dyn Fn(&str, u8)) -> Result<(), String> {
+    Err("в этой сборке нет сетевого модуля".to_string())
 }
 
 #[cfg(not(feature = "lua"))]

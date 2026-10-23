@@ -3511,6 +3511,7 @@ dependencies = [
  "vosk",
  "winapi",
  "winrt-notification",
+ "zip",
 ]
 
 [[package]]
@@ -10019,6 +10020,7 @@ dependencies = [
  "crc32fast",
  "crossbeam-utils",
  "displaydoc",
+ "flate2",
  "indexmap 2.13.0",
  "num_enum",
  "thiserror 1.0.69",

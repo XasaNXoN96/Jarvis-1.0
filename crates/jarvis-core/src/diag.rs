@@ -514,7 +514,7 @@ pub fn resources_check(commands: usize, missing: &[String], vosk: bool) -> Check
         return check(key, name, Status::Error, format!("Загружено команд: {}. Нет: {}.", commands, missing.join(", ")), "Переустановите Джарвиса или распакуйте commands-update.zip в папку resources.");
     }
     if !vosk {
-        return check(key, name, Status::Warn, format!("Загружено команд: {}. Модель распознавания речи (Vosk) не найдена — голос недоступен.", commands), "Установите полный установщик (Jarvis-Setup.exe) или модель из resources/vosk/README.md.");
+        return check(key, name, Status::Warn, format!("Загружено команд: {}. Модель распознавания речи (Vosk) не найдена — голос недоступен.", commands), "Откройте Настройки → Компоненты и нажмите «Установить» у модели распознавания речи вашего языка (нужен интернет, около 40–80 МБ), потом перезапустите Джарвиса. Либо используйте полный установщик.");
     }
     check(key, name, Status::Ok, format!("Загружено команд: {}; звуки, модель речи и команды на месте.", commands), "")
 }

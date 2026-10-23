@@ -3,7 +3,7 @@
 //! the real operations: install, check, remove. Nothing here is a plugin that runs foreign code: these are data files from the fixed official
 //! addresses of the program. Removing deletes only the named files of the component.
 
-use crate::{aimmodel, voice_install};
+use crate::{aimmodel, voice_install, vosk_install};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::path::Path;
@@ -60,6 +60,30 @@ pub fn list() -> Vec<Item> {
             ops: vec!["install", "remove"],
         });
     }
+    // the speech models (Vosk): without one the microphone understands nothing (the small installer has none)
+    let vs = vosk_install::status_json();
+    for p in vosk_install::MODELS.iter() {
+        let mine_busy = vs["running"].as_bool().unwrap_or(false);
+        let this = vs["id"].as_str() == Some(p.id);
+        let mut about = "Модель, по которой Jarvis понимает речь. Работает на этом компьютере, звук никуда не уходит. После установки перезапустите Джарвиса.".to_string();
+        if this && mine_busy {
+            about = format!("{} — {}%", vs["step"].as_str().unwrap_or(""), vs["percent"]);
+        } else if this && !vs["error"].as_str().unwrap_or("").is_empty() {
+            about = format!("Ошибка: {}", vs["error"].as_str().unwrap_or(""));
+        } else if this && vs["done"].as_bool().unwrap_or(false) {
+            about = vs["step"].as_str().unwrap_or("").to_string();
+        }
+        v.push(Item {
+            id: format!("vosk-{}", p.id),
+            name: p.label.to_string(),
+            about,
+            installed: vosk_install::installed(p),
+            size_mb: vosk_install::size_mb(p),
+            integrity: "архив с официального сервера моделей Vosk принимается, только если его размер и SHA-256 совпали с зафиксированными; распаковка проверяет каждый путь".into(),
+            busy: mine_busy,
+            ops: vec!["install", "remove"],
+        });
+    }
     let cfg = crate::gamemode::aim_config();
     let m = aimmodel::status_json(&cfg);
     v.push(Item {
@@ -93,6 +117,8 @@ pub fn remove_files(files: &[std::path::PathBuf], keep_inside: &Path) -> Result<
 
 pub fn run(id: &str, op: &str) -> Result<String, String> {
     match (id, op) {
+        (i, "install") if i.starts_with("vosk-") => vosk_install::start(&i[5..]).map(|_| "Загрузка модели речи начата.".to_string()),
+        (i, "remove") if i.starts_with("vosk-") => vosk_install::remove(&i[5..]).map(|had| if had { "Модель удалена. Перезапустите Джарвиса.".to_string() } else { "Модели уже нет на диске.".to_string() }),
         ("voice-main", "install") => voice_install::start(None).map(|_| "Установка голоса начата.".to_string()),
         (i, "install") if i.starts_with("voice-") => voice_install::start(Some(&i[6..])).map(|_| "Установка голоса начата.".to_string()),
         (i, "remove") if i.starts_with("voice-") && i != "voice-main" => {
@@ -139,11 +165,14 @@ mod tests {
         let m = l.iter().find(|i| i.id == "aim-model").unwrap();
         assert!(m.ops.contains(&"remove") && m.integrity.contains("SHA-256"));
         assert!(l.iter().all(|i| !i.integrity.is_empty() && !i.about.is_empty()));
+        assert_eq!(l.iter().filter(|i| i.id.starts_with("vosk-")).count(), 3, "the three speech models are listed");
+
     }
 
     #[test]
     fn unknown_things_are_refused_and_only_files_of_the_component_are_removed() {
         assert!(run("voice-nobody", "remove").is_err());
+        assert!(run("vosk-../x", "install").is_err() && run("vosk-fr", "remove").is_err());
         assert!(run("voice-main", "remove").is_err());
         assert!(run("aim-model", "format").is_err());
         let d = tempfile::tempdir().unwrap();
