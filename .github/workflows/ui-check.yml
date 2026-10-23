@@ -46,10 +46,6 @@ jobs:
         run: node tests/ui/web_results.js
         env:
           PW_MODULE: ${{ github.workspace }}/node_modules/playwright
-      - name: Light theme «День» (contrast, window and phone page)
-        run: node tests/ui/day_theme.js
-        env:
-          PW_MODULE: ${{ github.workspace }}/node_modules/playwright
       - name: Detail card of a command
         run: node tests/ui/command_detail.js
         env:

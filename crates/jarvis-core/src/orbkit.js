@@ -6,10 +6,9 @@ const THEMES = {
   avengers: [44, 100, 44, 'holo', 'Avengers: Эра Альтрона'],
   matrix: [130, 90, 130, 'wave', 'Matrix'],
   ice: [200, 80, 200, 'core', 'Ice'],
-  sunset: [18, 90, 340, 'orbit', 'Sunset'],
-  day: [214, 80, 214, 'core', 'День (светлая)']
+  sunset: [18, 90, 340, 'orbit', 'Sunset']
 };
-const LEGACY_THEME = { graphite: 'jarvis', ocean: 'ice', amber: 'avengers', ruby: 'sunset', violet: 'cyberpunk', lime: 'matrix' };
+const LEGACY_THEME = { day: 'jarvis', graphite: 'jarvis', ocean: 'ice', amber: 'avengers', ruby: 'sunset', violet: 'cyberpunk', lime: 'matrix' };
 const SPHERES = { dots: 'Частицы', core: 'Реактор', holo: 'Голограмма', neon: 'Неон', wave: 'Волна', orbit: 'Орбиты' };
 const SPEEDS = { slow: 0.45, normal: 1, fast: 1.8, hyper: 3 }, GLOWS = { soft: 0.6, normal: 1, strong: 1.5 };
 // ---- the spheres. Every one draws from the same few things: the colour of the theme and of the state (palette), `level` (how loud/active),

@@ -347,15 +347,6 @@
     --bgimg: radial-gradient(900px 600px at 20% 0, #7dd3fc22, transparent), radial-gradient(700px 500px at 100% 100%, #3b82f622, transparent); }
   :root[data-theme="sunset"] { --nav-hi:#ff8a4c; --brand-grad:linear-gradient(90deg,#ffe0a8,#ff8a4c 55%,#ff3d7a); --brand-glow:#ff8a4ca0; --fx-bg:radial-gradient(900px 560px at 50% 118%,#ff8a4c44,transparent 70%),radial-gradient(800px 560px at 0% 0,#7a2bd62a,transparent 65%),linear-gradient(#0b0509,#1a0a14); --fx-after:radial-gradient(70% 55% at 50% 110%,#ff3d7a26,transparent 70%); --bg1: #0b0509; --bg2: #1d0b17; --panel: #230d1ae6; --panel2: #2c1220; --line: #4d2038; --line2: #ff8a4c66; --text: #fff0e6; --dim: #c29a9c; --accent: #ff8a4c; --ink: #1a0810; --nav-bg: #12060eaa; --nav-sel: #ff8a4c22; --row-line: #ff8a4c1a; --row-hover: #ff8a4c0d; --field-bg: #260f1c; --font: Candara, "Segoe UI", sans-serif; --head-tf: none; --ls: .03em;
     --bgimg: linear-gradient(180deg, transparent 40%, #ff5e6c22 80%, #ff8a4c33 100%), radial-gradient(800px 500px at 50% 110%, #ffb34733, transparent); }
-  /* the light theme: dark text on a light ground; the sphere is darkened by a filter so that it is seen on white */
-  :root[data-theme="day"] { color-scheme: light; --nav-hi:#1f6feb; --brand-grad:linear-gradient(90deg,#1f6feb,#7c3aed); --brand-glow:#1f6feb55; --fx-bg:linear-gradient(#f4f7fb,#e6edf6); --fx-after:radial-gradient(60% 45% at 50% 110%,#1f6feb14,transparent 70%); --bg1: #f4f7fb; --bg2: #e6edf6; --panel: #ffffffee; --panel2: #ffffff; --line: #cfd9e6; --line2: #1f6feb66; --text: #1b2430; --dim: #566578; --accent: #1f6feb; --ink: #ffffff; --nav-bg: #ffffffcc; --nav-sel: #1f6feb1a; --row-line: #1b243016; --row-hover: #1f6feb0d; --field-bg: #ffffff; --ok: #137a45; --err: #c4161c; --warn: #8a5a00; --focus: 0 0 0 3px #1f6feb33;
-    --font: "Segoe UI", system-ui, sans-serif; --head-tf: none; --ls: .01em; --bgimg: none; }
-  :root[data-theme="day"] body { background: linear-gradient(#f4f7fb, #e6edf6); }
-  :root[data-theme="day"] #wincap { background: #ffffff; }
-  :root[data-theme="day"] #mic, :root[data-theme="day"] #orb { filter: brightness(.55) saturate(1.6) contrast(1.15); }
-  :root[data-theme="day"] .bottom { background: #ffffffe6 !important; }
-  :root[data-theme="day"] #input, :root[data-theme="day"] textarea#input, :root[data-theme="day"] .composer input, :root[data-theme="day"] .composer textarea { background: #ffffff !important; color: var(--text); }
-  :root[data-theme="day"] #bgfx .wm, :root[data-theme="day"] #bgfx canvas { display: none; }
   /* the surfaces that were coloured by hand follow the theme */
   .bottom { background: color-mix(in srgb, var(--bg1) 85%, transparent); } nav { background: var(--nav-bg); }
   #input, textarea#input { background: var(--field-bg); } .composer textarea { background: color-mix(in srgb, var(--accent) 5%, transparent); }
@@ -1359,7 +1350,6 @@ body.live-on { padding-top: 44px; }
             <button type="button" data-cat="main"><span class="ei" data-ico="gear"></span><span>Основное</span></button>
             <button type="button" data-cat="look"><span class="ei" data-ico="grid"></span><span>Внешний вид</span></button>
             <button type="button" data-cat="connect"><span class="ei" data-ico="phone"></span><span>Подключения</span></button>
-            <button type="button" data-cat="more"><span class="ei" data-ico="shield"></span><span>Дополнительно</span></button>
           </div>
         </aside>
         <div class="set-main" id="set-main">
@@ -1376,7 +1366,7 @@ body.live-on { padding-top: 44px; }
         <div class="msgline" id="gen-msg"></div>
       </div>
 
-      <div class="card acc" data-cat="more" id="archive-card" data-tab="Архив диалогов"><h3><span class="ei">🗃</span>Архив диалогов</h3>
+      <div class="card acc" data-cat="off" id="archive-card" data-tab="Архив диалогов"><h3><span class="ei">🗃</span>Архив диалогов</h3>
         <div class="privacy">Когда вы удаляете диалог, он попадает сюда и хранится как текст только на этом компьютере. Отсюда его можно прочитать, скопировать, вернуть в «Диалоги» или удалить навсегда.</div>
         <div class="setrow"><div class="l">Поиск по архиву<small id="ar-count">—</small></div>
           <div class="r"><input type="text" id="ar-query" placeholder="название или слово из переписки"><button class="btn" id="ar-clear" type="button">Очистить архив</button></div></div>
@@ -1388,7 +1378,7 @@ body.live-on { padding-top: 44px; }
         <div class="msgline" id="ar-msg"></div>
       </div>
 
-      <div class="card acc" data-cat="more" id="privacy-card" data-tab="Приватность"><h3><span class="ei">🛡</span>Приватность и разрешения</h3>
+      <div class="card acc" data-cat="off" id="privacy-card" data-tab="Приватность"><h3><span class="ei">🛡</span>Приватность и разрешения</h3>
         <div class="setrow"><div class="l">Микрофон<small>выключенный микрофон не начинает новых записей, текущая запись останавливается; остаётся выключенным после перезапуска</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="pv-mic"><span></span></label></div></div>
         <div class="setrow"><div class="l">Голосовое озвучивание<small>при выключении текущая речь сразу останавливается; голос Windows вместо Piper не подставляется</small></div>
@@ -1410,7 +1400,7 @@ body.live-on { padding-top: 44px; }
         <div id="pv-net"></div>
       </div>
 
-      <div class="card" data-cat="connect" id="notify-card" data-tab="Джарвис"><h3><span class="ei">🔔</span>Уведомления Джарвиса</h3>
+      <div class="card" data-cat="off" id="notify-card" data-tab="Джарвис"><h3><span class="ei">🔔</span>Уведомления Джарвиса</h3>
         <div class="setrow"><div class="l">Показывать уведомления<small>карточка «JARVIS // …» в правом верхнем углу экрана: таймеры, будильники, напоминания, завершённые задачи, ошибки. Не забирает фокус ввода</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="nt-show"><span></span></label></div></div>
         <div class="setrow"><div class="l">Озвучивать уведомления<small>голосом Джарвиса (Piper); ответ, уже сказанный в диалоге, повторно не озвучивается</small></div>
@@ -1424,7 +1414,7 @@ body.live-on { padding-top: 44px; }
         <div id="nt-list"><div class="empty">Уведомлений пока нет.</div></div>
       </div>
 
-      <div class="card acc" data-cat="more" id="sms-card" data-tab="Чтение сообщений"><h3><span class="ei">🗣</span>Как читать сообщения</h3>
+      <div class="card acc" data-cat="off" id="sms-card" data-tab="Чтение сообщений"><h3><span class="ei">🗣</span>Как читать сообщения</h3>
         <div class="setrow"><div class="l">Что зачитывать<small>полностью — отправитель и текст; только отправитель; или лишь «пришло сообщение». «Повтори сообщение» читает последнее ещё раз полностью, «стоп» останавливает голос.</small></div>
           <div class="r"><select id="sms-privacy"><option value="full">Отправитель и текст</option><option value="sender">Только отправитель</option><option value="silent">Только факт сообщения</option></select></div></div>
         <div class="setrow"><div class="l">Язык фраз<small>ссылки в тексте читаются словом «ссылка», длинные тексты сокращаются</small></div>
@@ -1432,7 +1422,7 @@ body.live-on { padding-top: 44px; }
         <div class="setrow"><div class="l">Прочитать последнее<small>проверка звучания</small></div><div class="r"><button class="btn" id="sms-repeat" type="button">Повторить сообщение</button></div></div>
         <div class="msgline" id="sms-msg"></div>
       </div>
-      <div class="card" data-cat="connect" id="ext-card" data-tab="Другие программы"><h3><span class="ei">📨</span>Уведомления других программ</h3>
+      <div class="card" data-cat="connect" id="ext-card" data-tab="Другие программы"><h3><span class="ei">📨</span>Другие программы</h3>
         <small class="dim">Джарвис может показывать и читать уведомления мессенджеров, почты и других программ — только с вашего разрешения и разрешения Windows (Windows 10 1809+ и Windows 11). При включении Windows может спросить разрешение; без него ничего не читается. Не все программы отправляют уведомления так, чтобы их можно было прочитать, а обычным (не из Microsoft Store) программам Windows иногда не даёт доступ совсем — тогда это будет видно в статусе. Тексты уведомлений остаются на этом компьютере: не сохраняются на диск, не попадают в историю и не отправляются в ИИ или в интернет.</small>
         <div class="setrow"><div class="l">Читать уведомления других программ<small id="ext-status">выключено</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="ext-on"><span></span></label></div></div>
@@ -1441,6 +1431,7 @@ body.live-on { padding-top: 44px; }
           <div class="soc-grid" id="soc-grid"></div>
           <small class="dim" id="soc-hint"></small>
         </div>
+        <div id="ext-adv" hidden>
         <div class="setrow"><div class="l">Показывать в окне уведомлений</div><div class="r"><label class="sw"><input type="checkbox" id="ext-show"><span></span></label></div></div>
         <div class="setrow"><div class="l">Озвучивать остальные программы<small>Джарвис прочитает вслух программу и текст уведомления; у соцсетей — свой переключатель «Читать вслух» выше</small></div><div class="r"><label class="sw"><input type="checkbox" id="ext-speak"><span></span></label></div></div>
         <div class="setrow"><div class="l">Только разрешённые программы<small>неизвестные программы не пропускаются</small></div><div class="r"><label class="sw"><input type="checkbox" id="ext-strict"><span></span></label></div></div>
@@ -1448,6 +1439,7 @@ body.live-on { padding-top: 44px; }
         <div><b>Исключённые программы</b> <small class="dim">(никогда не показываются; нажмите, чтобы убрать)</small><div class="chips" id="ext-blocked"></div></div>
         <div><b>Программы, приславшие уведомления</b> <small class="dim">(только названия) — нажмите «+», чтобы разрешить, «⊘», чтобы исключить</small><div class="chips" id="ext-seen"></div></div>
         <div class="setrow"><div class="l">Добавить программу по названию</div><div class="r"><input type="text" id="ext-name" placeholder="например: Telegram" maxlength="80"><button class="btn" id="ext-add" type="button">Разрешить</button><button class="btn" id="ext-block" type="button">Исключить</button></div></div>
+        </div>
       </div>
 
       <div class="card" data-cat="main" data-ord="2" id="mic-card" data-tab="Микрофон"><h3><span class="ei">🎤</span>Микрофон и звук</h3>
@@ -1485,7 +1477,7 @@ body.live-on { padding-top: 44px; }
         <div class="setrow"><div class="l">Озвучка ответов</div>
           <div class="r"><label class="sw"><input type="checkbox" id="tts-on"><span></span></label><button class="btn primary" id="tts-test">Проверить звук</button></div></div>
       </div>
-      <div class="card acc" data-cat="more" id="voice-extra-card" data-tab="Облачный голос и память"><h3><span class="ei">☁</span>Облачный голос и память</h3>
+      <div class="card acc" data-cat="off" id="voice-extra-card" data-tab="Облачный голос и память"><h3><span class="ei">☁</span>Облачный голос и память</h3>
         <div class="setrow" id="cloud-row"><div class="l">Облачный голос (Яндекс SpeechKit)<small id="cloud-hint">Необязательно. Нужен ваш ключ от Yandex Cloud (сервисный аккаунт с ролью ai.speechkit-tts.user). <b>Текст ответов уходит в Яндекс</b> и услуга платная по тарифу Яндекса. После сохранения ключа голоса Яндекса появятся в списке «Голос». Если облако не отвечает, говорит голос Джарвиса.</small></div>
           <div class="r"><input type="password" id="cloud-key" placeholder="ключ Яндекса" autocomplete="off"><button type="button" class="btn small" id="cloud-save">Сохранить ключ</button><button type="button" class="btn small" id="cloud-forget">Удалить ключ</button></div></div>
         <div class="setrow"><div class="l">Держать голос в памяти<small>голос Джарвиса (Piper) загружается один раз, речь начинается быстрее; занимает около 100 МБ памяти. Выключите, если памяти мало</small></div>
@@ -1510,7 +1502,7 @@ body.live-on { padding-top: 44px; }
         <div class="setrow"><div class="l">Отвечать ИИ на непонятные фразы, сказанные голосом<small>Всё, что вы напечатали и что не является командой, идёт выбранному ИИ, если он подключён. Вопросы голосом («что такое…», «объясни…») тоже. Этот переключатель добавляет к ним остальные непонятные фразы, сказанные голосом.</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="ai-fallback"><span></span></label></div></div>
       </div>
-      <div class="card acc" data-cat="more" id="owner-card" data-tab="Пароль владельца"><h3><span class="ei">🔐</span>Пароль владельца</h3>
+      <div class="card" data-cat="main" data-ord="6" id="owner-card" data-tab="Пароль владельца"><h3><span class="ei">🔐</span>Пароль владельца</h3>
         <div class="setrow"><div class="l">Состояние<small id="ow-state"></small></div><div class="r"><button class="btn" id="ow-lock" type="button">Заблокировать</button></div></div>
         <div class="setrow"><div class="l">Войти<small>пока пароль задан, отправка сообщений, удаление памяти и контактов, расписание, разрешения и установка программ работают только после ввода пароля (на 15 минут). Голосом пароль не вводится.</small></div>
           <div class="r"><input type="password" id="ow-pw" autocomplete="off" placeholder="Пароль"><button class="btn primary" id="ow-unlock" type="button">Разблокировать</button></div></div>
@@ -1521,7 +1513,7 @@ body.live-on { padding-top: 44px; }
         <div class="setrow"><div class="l">Снять пароль</div><div class="r"><input type="password" id="ow-rm" autocomplete="off" placeholder="Текущий пароль"><button class="btn" id="ow-remove" type="button">Снять</button></div></div>
         <div class="msgline" id="ow-msgline"></div>
       </div>
-      <div class="card acc" data-cat="more" id="audit-card" data-tab="Журнал безопасности"><h3><span class="ei">📜</span>Журнал безопасности</h3>
+      <div class="card acc" data-cat="off" id="audit-card" data-tab="Журнал безопасности"><h3><span class="ei">📜</span>Журнал безопасности</h3>
         <div class="setrow"><div class="l">Что здесь записано<small>кто просил (голос, окно, телефон, Telegram), какое действие, риск, разрешено или отказано и почему. Текст команд, пути, пароли и ключи сюда не попадают. Хранится только на этом компьютере, последние 500 записей.</small></div>
           <div class="r"><button class="btn" id="au-refresh" type="button">Обновить</button><button class="btn" id="au-clear" type="button">Очистить</button></div></div>
         <div class="setrow" id="au-filters"><div class="l">Поиск и фильтры<small>слово ищется в названии, виде и причине</small></div>
@@ -1533,25 +1525,25 @@ body.live-on { padding-top: 44px; }
         <div class="msgline ok" id="au-opbar" hidden>Показаны записи одной операции, по порядку. <button class="btn" id="au-opoff" type="button">Показать все</button></div>
         <div class="hi-list" id="au-list"></div>
       </div>
-      <div class="card acc" data-cat="more" id="perm-card" data-tab="Разрешения"><h3><span class="ei">🛡</span>Центр разрешений</h3>
+      <div class="card" data-cat="connect" id="perm-card" data-tab="Разрешения"><h3><span class="ei">🛡</span>Центр разрешений</h3>
         <div class="setrow"><div class="l">Что Jarvis может делать сам<small>выключенное действительно останавливает способность: обработчик проверяет переключатель перед тем, как что-то сделать.</small></div></div>
         <div id="perm-list"></div><div class="msgline" id="perm-msg"></div>
       </div>
-      <div class="card" data-cat="connect" id="sync-card" data-tab="Синхронизация"><h3><span class="ei">🔄</span>Синхронизация между компьютерами</h3>
+      <div class="card" data-cat="off" id="sync-card" data-tab="Синхронизация"><h3><span class="ei">🔄</span>Синхронизация между компьютерами</h3>
         <div class="setrow"><div class="l">Общая папка<small>У Jarvis нет своего облака. Укажите папку, которую вы уже синхронизируете сами (OneDrive, Dropbox, Syncthing, флешка): в ней лежит один файл с памятью, контактами и заметками. На другом компьютере укажите ту же папку. Новая версия записи побеждает, удаление передаётся. Настройки, ключи, сообщения и расписание в файл не попадают. В файле личные данные: папка должна быть вашей.</small></div>
           <div class="r"><input type="text" id="sync-path" placeholder="C:\\Users\\Вы\\OneDrive\\Jarvis"><button class="btn" id="sync-set" type="button">Выбрать</button><button class="btn primary" id="sync-run" type="button">Синхронизировать</button><button class="btn" id="sync-clear" type="button">Отключить</button></div></div>
         <div class="msgline" id="sync-msg"></div>
       </div>
-      <div class="card" data-cat="connect" id="wol-card" data-tab="Разбудить компьютер"><h3><span class="ei">⏻</span>Разбудить другой компьютер (Wake-on-LAN)</h3>
+      <div class="card" data-cat="off" id="wol-card" data-tab="Разбудить компьютер"><h3><span class="ei">⏻</span>Разбудить другой компьютер (Wake-on-LAN)</h3>
         <div class="setrow"><div class="l">Компьютеры<small>Нужен MAC-адрес (на том компьютере: ipconfig /all). Сработает, если у него включён Wake-on-LAN и он в этой же сети. Jarvis отправит сигнал, но не узнает, проснулся ли компьютер. Голосом: «разбуди компьютер папы».</small></div></div>
         <div class="ct-form"><input type="text" id="wol-name" maxlength="40" placeholder="Название"><input type="text" id="wol-mac" maxlength="20" placeholder="AA:BB:CC:DD:EE:FF"><button class="btn primary" id="wol-add" type="button">Добавить</button></div>
         <div id="wol-list" class="mem-list"></div><div class="msgline" id="wol-msg"></div>
       </div>
-      <div class="card acc" data-cat="more" id="comp-card" data-tab="Компоненты"><h3><span class="ei">🧩</span>Компоненты и модули</h3>
+      <div class="card" data-cat="main" data-ord="7" id="comp-card" data-tab="Компоненты"><h3><span class="ei">🧩</span>Компоненты и модули</h3>
         <div class="setrow"><div class="l">Что скачивается отдельно<small>Файлы с фиксированных официальных адресов (голоса Piper, модель помощи прицела). Здесь видно, что установлено, чем гарантирована целостность, и можно установить, проверить или удалить. Включить и выключить разделы команд можно на странице «Команды».</small></div></div>
         <div id="comp-list" class="mem-list"></div><div class="msgline" id="comp-msg"></div>
       </div>
-      <div class="card acc" data-cat="more" id="kb-card" data-tab="База знаний"><h3><span class="ei">📚</span>База знаний (мои документы)</h3>
+      <div class="card acc" data-cat="off" id="kb-card" data-tab="База знаний"><h3><span class="ei">📚</span>База знаний (мои документы)</h3>
         <div class="setrow"><div class="l">Папки<small>Читаются только добавленные вами папки (txt, md, csv, rtf, docx, xlsx, pptx, odt). Вопросы: «найди в моих документах …», «ответь по документам …». Ответ всегда с источниками; тексты файлов для ИИ — только данные, не приказы.</small></div>
           <div class="r"><input type="text" id="kb-path" placeholder="C:\Users\Вы\Documents\Заметки"><button class="btn" id="kb-add" type="button">Добавить папку</button></div></div>
         <div id="kb-folders" class="mem-list"></div>
@@ -1559,23 +1551,23 @@ body.live-on { padding-top: 44px; }
         <div class="setrow"><div class="l">Проверить поиск</div><div class="r"><input type="text" id="kb-q" placeholder="что искать"><button class="btn" id="kb-find" type="button">Найти</button></div></div>
         <div id="kb-hits" class="mem-list"></div><div class="msgline" id="kb-msg"></div>
       </div>
-      <div class="card acc" data-cat="more" id="undo-card" data-tab="История действий"><h3><span class="ei">↩</span>История действий</h3>
+      <div class="card acc" data-cat="off" id="undo-card" data-tab="История действий"><h3><span class="ei">↩</span>История действий</h3>
         <div class="setrow"><div class="l">Что Jarvis сделал сам<small>«Отменить» есть только у действий, которые можно честно вернуть (запись, задание, созданная картинка). Отправленное сообщение или запущенную программу вернуть нельзя. Голосом: «верни как было».</small></div></div>
         <div class="setrow"><div class="l">Найти в истории</div><div class="r"><input type="text" id="undo-q" maxlength="60" placeholder="Поиск по истории действий"> <select id="undo-state"><option value="">Все</option><option value="undoable">Можно отменить</option><option value="undone">Отменённые</option><option value="irreversible">Нельзя отменить</option></select></div></div>
         <div id="undo-list" class="mem-list"></div><div class="msgline" id="undo-msg"></div>
       </div>
-      <div class="card" data-cat="connect" id="home-card" data-tab="Умный дом"><h3><span class="ei">🏠</span>Умный дом (Home Assistant)</h3>
+      <div class="card" data-cat="off" id="home-card" data-tab="Умный дом"><h3><span class="ei">🏠</span>Умный дом (Home Assistant)</h3>
         <div class="setrow"><div class="l">Подключение<small id="home-state">Нужен ваш сервер Home Assistant и долгосрочный токен из профиля. Устройства берутся с сервера, выдуманных нет. Замки, двери и сигнализация голосом не управляются.</small></div>
           <div class="r"><input type="text" id="home-url" placeholder="http://homeassistant.local:8123"><input type="password" id="home-token" autocomplete="off" placeholder="Токен (пусто — оставить прежний)"><button class="btn primary" id="home-save" type="button">Сохранить</button><button class="btn" id="home-forget" type="button">Забыть</button></div></div>
         <div class="setrow"><div class="l">Устройства<small>включите разрешение «Управлять умным домом» в центре разрешений</small></div><div class="r"><button class="btn" id="home-load" type="button">Показать устройства</button></div></div>
         <div id="home-list" class="mem-list"></div><div class="msgline" id="home-msg"></div>
       </div>
-      <div class="card acc" data-cat="more" id="sched-card" data-tab="Расписание"><h3><span class="ei">⏰</span>Расписание заданий</h3>
+      <div class="card acc" data-cat="off" id="sched-card" data-tab="Расписание"><h3><span class="ei">⏰</span>Расписание заданий</h3>
         <div class="setrow"><div class="l">Новое задание<small>Фраза с временем: «каждый день в 9:00 открой почту», «завтра в 8:30 напомни про встречу», «каждые 30 минут пей воду», «каждую пятницу в 18:00 …». Задание выполняется так, будто вы сказали фразу. Пропущенное при выключенном Jarvis: выполняется один раз, если опоздание до часа, иначе пропускается.</small></div>
           <div class="r"><input type="text" id="sch-text" maxlength="300" placeholder="каждый день в 9:00 открой почту"><button class="btn primary" id="sch-add" type="button">Поставить</button></div></div>
         <div id="sch-list" class="mem-list"></div><div class="msgline" id="sch-msg"></div>
       </div>
-      <div class="card acc" data-cat="more" id="persona-card" data-tab="Характер"><h3><span class="ei">🎭</span>Характер ответов</h3>
+      <div class="card acc" data-cat="off" id="persona-card" data-tab="Характер"><h3><span class="ei">🎭</span>Характер ответов</h3>
         <div class="setrow"><div class="l">Юмор<small>только манера ответа; о здоровье, деньгах, безопасности и горе Jarvis не шутит ни на каком уровне</small></div>
           <div class="r"><select id="pe-humor"><option value="0">Серьёзно</option><option value="1">Чуть-чуть</option><option value="2">Умеренно</option><option value="3">Весело</option></select></div></div>
         <div class="setrow"><div class="l">Язык ответов<small>«Как вопрос» — на языке вашего вопроса (русский, английский, узбекский)</small></div>
@@ -1583,7 +1575,7 @@ body.live-on { padding-top: 44px; }
         <div class="setrow"><div class="l">Живая речь<small>короткие фразы без канцелярита; при неясном запросе — один уточняющий вопрос вместо догадок</small></div><div class="r"><label class="sw"><input type="checkbox" id="pe-natural"><span></span></label></div></div>
         <div class="msgline" id="pe-msg"></div>
       </div>
-      <div class="card acc" data-cat="more" id="ca-card" data-tab="Правка кода"><h3><span class="ei">🧑‍💻</span>Помощник программиста</h3>
+      <div class="card acc" data-cat="off" id="ca-card" data-tab="Правка кода"><h3><span class="ei">🧑‍💻</span>Помощник программиста</h3>
         <div class="setrow"><div class="l">Файл и просьба<small>Укажите полный путь к текстовому файлу и что изменить. Jarvis покажет, какие строки уйдут и какие появятся, и ничего не запишет, пока вы не нажмёте «Применить». Перед записью рядом кладётся копия <code>.jarvis-bak</code>, вернуть можно в «Истории действий». Текст файла уходит ИИ-провайдеру, который вы настроили.</small></div></div>
         <div class="ct-form"><input type="text" id="ca-path" maxlength="260" placeholder="C:\\Проекты\\script.py"><input type="text" id="ca-text" maxlength="400" placeholder="Что изменить, например: добавь проверку на пустой ввод"><button class="btn primary" id="ca-go" type="button">Предложить правку</button></div>
         <div class="ct-form"><input type="text" id="cf-path" maxlength="260" placeholder="C:\\Проекты\\мой-проект"><input type="text" id="cf-q" maxlength="80" placeholder="что искать"><button class="btn" id="cf-go" type="button">Найти в проекте</button></div>
@@ -1592,19 +1584,19 @@ body.live-on { padding-top: 44px; }
         <div class="r" id="ca-actions" hidden><button class="btn primary" id="ca-apply" type="button">Применить</button><button class="btn" id="ca-discard" type="button">Отклонить</button></div>
         <div class="msgline" id="ca-msg"></div>
       </div>
-      <div class="card acc" data-cat="more" id="img-card" data-tab="Картинки"><h3><span class="ei">🎨</span>Генерация картинок</h3>
+      <div class="card acc" data-cat="off" id="img-card" data-tab="Картинки"><h3><span class="ei">🎨</span>Генерация картинок</h3>
         <div class="setrow"><div class="l">Описание<small id="img-info">Картинка делается вашим ИИ-провайдером (OpenAI, Gemini или совместимым сервером) и сохраняется в Изображения\\Jarvis. Запрос может быть платным: решает провайдер. Видео пока недоступно: общего способа у провайдеров нет.</small></div></div>
         <div class="ct-form"><input type="text" id="img-prompt" maxlength="1500" placeholder="например: рыжий кот на крыше ночью, акварель"><input type="text" id="img-model" maxlength="80" placeholder="модель (пусто — по умолчанию)"><button class="btn primary" id="img-go" type="button">Создать</button><button class="btn" id="img-cancel" type="button" disabled>Отмена</button></div>
         <div class="msgline" id="img-msg"></div><img id="img-out" class="img-out" alt="" hidden>
         <div class="setrow"><div class="l">Форма картинки<small>«Как решит провайдер» — по умолчанию. Размер зависит от модели: для моделей, которые принимают только соотношение сторон, форма не задаётся.</small></div><div class="r"><select id="img-size"><option value="">Как решит провайдер</option><option value="square">Квадрат</option><option value="wide">Широкая</option><option value="tall">Высокая</option></select></div></div>
         <h4 style="margin:12px 0 6px">Мои картинки</h4><div id="img-gallery" class="mem-list"></div>
       </div>
-      <div class="card acc" data-cat="more" id="notes-card" data-tab="Дневник"><h3><span class="ei">📓</span>Голосовой дневник и заметки</h3>
+      <div class="card acc" data-cat="off" id="notes-card" data-tab="Дневник"><h3><span class="ei">📓</span>Голосовой дневник и заметки</h3>
         <div class="setrow"><div class="l">Записи<small>«запиши в дневник: …», «заметка: …», «что я записывал вчера», «найди в дневнике …». Пишется только то, что вы сами сказали записать.</small></div></div>
         <div class="setrow"><div class="l">Экспорт<small>скопировать все записи текстом</small></div><div class="r"><button class="btn" id="notes-export" type="button">Копировать всё</button></div></div>
         <div id="notes-list" class="mem-list"></div>
       </div>
-      <div class="card acc" data-cat="more" id="mem-card" data-tab="Память"><h3><span class="ei">🧠</span>Память Jarvis</h3>
+      <div class="card acc" data-cat="off" id="mem-card" data-tab="Память"><h3><span class="ei">🧠</span>Память Jarvis</h3>
         <div class="setrow"><div class="l">Что я помню<small>Скажите «запомни, что …», «что ты помнишь про …», «забудь …». Пароли, ключи, токены и номера карт не запоминаются. Файл лежит только на этом компьютере.</small></div>
           <div class="r"><label class="sw" title="ИИ сам предлагает запомнить важное (пока только хранит выбор)"><input type="checkbox" id="mem-auto"><span></span></label></div></div>
         <div class="setrow"><div class="l">Подсказывать ИИ<small>последние факты (до 15) добавляются к запросам: ИИ-провайдер видит их, когда вы с ним говорите</small></div>
@@ -1613,7 +1605,7 @@ body.live-on { padding-top: 44px; }
         <div class="setrow"><div class="l">Найти<small>по словам записи</small></div><div class="r"><input type="text" id="mem-q" placeholder="поиск"><button class="btn" id="mem-export" type="button">Копировать всё</button></div></div>
         <div id="mem-list" class="mem-list"></div><div class="msgline" id="mem-msg"></div>
       </div>
-      <div class="card acc" data-cat="more" id="ct-card" data-tab="Мои контакты"><h3><span class="ei">👥</span>Мои контакты</h3>
+      <div class="card" data-cat="connect" id="ct-card" data-tab="Мои контакты"><h3><span class="ei">👥</span>Мои контакты</h3>
         <div class="setrow"><div class="l">Кому писать голосом<small>«напиши жене: буду поздно». В «Именах» перечислите слова, которыми вы называете человека (жена, любимая). Сообщение всегда ждёт вашего «да». WhatsApp и Telegram открываются с готовым текстом — «Отправить» нажимаете вы.</small></div></div>
         <div class="ct-form">
           <input type="text" id="ct-name" maxlength="60" placeholder="Имя"><input type="text" id="ct-alias" maxlength="120" placeholder="Имена через запятую: жена, Малика">
@@ -1626,7 +1618,7 @@ body.live-on { padding-top: 44px; }
         <h4 style="margin:14px 0 6px">История сообщений</h4><div class="r"><input type="text" id="out-q" maxlength="60" placeholder="Поиск по контакту и тексту"> <select id="out-state"><option value="">Все</option><option value="waiting">Ждут подтверждения</option><option value="done">Отправлено или открыто</option><option value="failed">С ошибкой</option><option value="cancelled">Отменены</option></select></div><div id="out-list" class="mem-list"></div>
         <div class="r"><button class="btn small" id="out-clear" type="button">Очистить историю</button></div>
       </div>
-      <div class="card acc" data-cat="more" id="ai-extra-card" data-tab="Режим и возможности"><h3><span class="ei">🎭</span>Режим ответов и возможности</h3>
+      <div class="card acc" data-cat="off" id="ai-extra-card" data-tab="Режим и возможности"><h3><span class="ei">🎭</span>Режим ответов и возможности</h3>
         <div class="setrow"><div class="l">Режим ответов<small>меняется только манера ответа ИИ. Голосом: «режим психолога», «режим учителя», «режим программиста», «режим друга», «обычный режим»</small></div>
           <div class="r"><select id="ai-mode"><option value="">Обычный</option><option value="psychologist">Психолог</option><option value="teacher">Учитель</option><option value="coder">Программист</option><option value="friend">Друг</option></select></div></div>
         <div class="setrow"><div class="l">Разговорчивость<small>насколько длинно отвечает ИИ: коротко (одно-два предложения), обычно или подробно и тепло, как в беседе</small></div>
@@ -1638,7 +1630,7 @@ body.live-on { padding-top: 44px; }
         <small class="dim">Ответы ИИ появляются на странице «Диалог». Ключ хранится только на этом компьютере в зашифрованном виде (шифрование Windows) и не показывается в окне. Сообщения уходят провайдеру, когда вы нажимаете «Отправить» или задаёте вопрос; команды компьютера («открой ворд», «поставь таймер») в ИИ не отправляются.</small>
       </div>
 
-      <div class="card acc" data-cat="more" id="game-card" data-tab="Игры"><h3><span class="ei">🎮</span>Игровой режим (голосовое управление игрой)</h3>
+      <div class="card acc" data-cat="off" id="game-card" data-tab="Игры"><h3><span class="ei">🎮</span>Игровой режим (голосовое управление игрой)</h3>
         <div class="setrow"><div class="l">Голосовое управление для игр<small id="game-hint">Только для одиночных игр, в окне игры из списка. Если запущена защита от читов, режим не включается</small></div>
           <div class="r"><span id="game-state" class="dim"></span> <button class="btn" id="game-on" type="button">Включить</button> <button class="btn" id="game-off" type="button">Выключить</button></div></div>
         <div class="setrow"><div class="l">Помощь прицела (эксперимент)<small id="aim-hint">Только в одиночных играх: пока удерживается клавиша прицела, подводит прицел к голове. Подробности и настройки — в разделе «Игры»</small></div>
@@ -1647,11 +1639,11 @@ body.live-on { padding-top: 44px; }
         <div class="msgline" id="game-msg"></div>
         <small class="dim">Фразы: иди вперёд / назад / влево / вправо, беги, стой · смотри налево / направо / вверх / вниз (можно «на 45 градусов», «чуть», «разворот») · стреляй, огонь очередью, прекрати огонь · целься, не целься · перезаряди, гранату, нож, прыгай, присядь, используй. «Стой» отпускает все клавиши. Работает только если окно игры впереди.<br>Гонки: газ, тормоз, влево, вправо, прямо, ручник, нитро, сигнал, смени камеру · Экшен/приключения: атакуй, тяжёлый удар, блок, перекат, инвентарь, карта, полечись, садись в машину · свои фразы для любого жанра — в game_profile.json (docs/GAME-MODE.md).</small></details>
       </div>
-      <div class="card acc" data-cat="more" id="micw-card" data-tab="Микрофон"><h3><span class="ei">🎙</span>Состояние микрофона</h3>
+      <div class="card acc" data-cat="off" id="micw-card" data-tab="Микрофон"><h3><span class="ei">🎙</span>Состояние микрофона</h3>
         <div class="setrow"><div class="l">Идёт ли звук<small id="micw-text">…</small></div><div class="r"><button class="btn" id="micw-refresh" type="button">Проверить</button></div></div>
         <small class="dim">Если звук перестал приходить, Jarvis сам переоткрывает микрофон (не чаще раза в 20 секунд, не больше 5 раз подряд) и честно пишет, если не вышло. Слово «Джарвис» он при этом не «слышит»: это только проверка потока звука.</small>
       </div>
-      <div class="card acc" data-cat="more" id="vp-card" data-tab="Мой голос"><h3><span class="ei">🗣</span>Мой голос</h3>
+      <div class="card acc" data-cat="off" id="vp-card" data-tab="Мой голос"><h3><span class="ei">🗣</span>Мой голос</h3>
         <div class="setrow"><div class="l">Слушать только мой голос<small id="vp-hint">Jarvis будет игнорировать чужие голоса, игру, фильм и свой собственный голос. Сначала запишите образец своего голоса. По умолчанию выключено.</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="vp-on"><span></span></label></div></div>
         <div class="setrow"><div class="l">Образец голоса<small id="vp-note"></small></div>
@@ -1661,7 +1653,7 @@ body.live-on { padding-top: 44px; }
         <small class="dim" id="vp-stat"></small>
         <small class="dim">Это простая защита (экспериментально): голос различается по тембру и высоте. Она может ошибаться на похожих голосах и в шумной комнате и не защищает от записи вашего голоса. Хранятся только числа (без звука), на этом компьютере. Очень короткие команды из одного слова пропускаются без проверки. Отказы видны в «Диагностике» с расстоянием и порогом.</small>
       </div>
-      <div class="card acc" data-cat="more" id="upd-card" data-tab="Обновления"><h3><span class="ei">⟳</span>Обновления</h3>
+      <div class="card" data-cat="main" data-ord="8" id="upd-card" data-tab="Обновления"><h3><span class="ei">⟳</span>Обновления</h3>
         <div class="setrow"><div class="l">Версия программы<small id="upd-hint">Проверка и установка обновлений только по вашей кнопке</small></div>
           <div class="r"><b id="upd-cur"></b> <button class="btn" id="upd-check" type="button">Проверить обновления</button> <button class="btn primary" id="upd-go" type="button" hidden>Скачать</button></div></div>
         <div class="msgline" id="upd-msg"></div>
@@ -1671,7 +1663,7 @@ body.live-on { padding-top: 44px; }
           <div class="r"><input type="text" id="city-input" placeholder="например: Ташкент" maxlength="80"><button class="btn primary" id="city-save" type="button">Сохранить</button></div></div>
         <div class="msgline" id="city-msg"></div>
       </div>
-      <div class="card" data-cat="connect" id="hist-card" data-tab="История ПК и телефона"><h3><span class="ei">🧠</span>История: ПК и телефон</h3>
+      <div class="card" data-cat="off" id="hist-card" data-tab="История ПК и телефона"><h3><span class="ei">🧠</span>История: ПК и телефон</h3>
         <div class="setrow"><div class="l">Что вы говорили<small>одна общая память: команды с телефона видны здесь, а команды с компьютера — в пульте на телефоне. «ПК» — голос, окно, консоль; «Телефон» — пульт и Telegram. Пароли и ключи не сохраняются.</small></div>
           <div class="r"><div class="seg" id="hi-seg"><button type="button" data-door="pc" class="active">ПК <span id="hi-npc"></span></button><button type="button" data-door="phone">Телефон <span id="hi-nph"></span></button></div></div></div>
         <div class="hi-list" id="hi-list"></div>
@@ -1691,7 +1683,7 @@ body.live-on { padding-top: 44px; }
         </div>
       </div>
 
-      <div class="card" data-cat="connect" id="tg-card" data-tab="Telegram"><h3><span class="ei">✈</span>Управление через Telegram</h3>
+      <div class="card" data-cat="off" id="tg-card" data-tab="Telegram"><h3><span class="ei">✈</span>Управление через Telegram</h3>
         <small class="dim">Пишите команды своему Telegram-боту с телефона из любой сети, как в окне Джарвиса: «поставь таймер на 1 минуту», «сверни все окна», «выключи компьютер» (спросит «да / нет»). Джарвис сам опрашивает Telegram — входящие порты на компьютере не открываются. <b>Тексты команд и ответов проходят через серверы Telegram.</b> Бот слушается только одного привязанного аккаунта.</small>
         <div class="setrow"><div class="l">1. Токен бота<small id="tg-token-hint">создайте бота в Telegram у @BotFather (команда /newbot) и вставьте токен сюда. Он хранится в зашифрованном виде и больше не показывается</small></div>
           <div class="r"><input type="password" id="tg-token" placeholder="123456789:AA…" autocomplete="off"><button class="btn" id="tg-token-save" type="button">Сохранить</button></div></div>
@@ -1713,7 +1705,7 @@ body.live-on { padding-top: 44px; }
         <div class="msgline" id="tg-msg"></div>
       </div>
 
-      <div class="card acc" data-cat="more" id="perf-card" data-tab="Производительность"><h3><span class="ei">⚡</span>Производительность</h3>
+      <div class="card acc" data-cat="off" id="perf-card" data-tab="Производительность"><h3><span class="ei">⚡</span>Производительность</h3>
         <div class="setrow"><div class="l">Режим<small id="perf-hint">«Слабый ноут»: сфера рисуется меньшим числом точек и реже, анимация останавливается, когда окно скрыто или открыта другая страница. Команды и голос работают так же</small></div>
           <div class="r"><div class="seg" id="perf-seg"><button data-perf="low" type="button">Слабый ноут</button><button data-perf="normal" type="button">Обычный ПК</button></div></div></div>
         <div class="setrow"><div class="l">Память Джарвиса<small>сколько оперативной памяти сейчас занимает сам Джарвис (с голосовыми моделями)</small></div>
@@ -1726,7 +1718,7 @@ body.live-on { padding-top: 44px; }
         <div class="setrow"><div class="l">Сфера<small>что показывать на главном экране</small></div>
           <div class="r"><div class="seg"><button data-mode="wire">Сфера из частиц</button><button data-mode="avatar">Моё фото</button></div></div></div>
         <div class="setrow"><div class="l">Тема<small>Тема меняет всё сразу: цвета и фон, шрифт, эффекты фона, искры и сферу в центре</small></div>
-          <div class="r"><div class="seg" id="theme-seg"><button data-theme-pick="jarvis" type="button">Jarvis</button><button data-theme-pick="cyberpunk" type="button">Cyberpunk</button><button data-theme-pick="avengers" type="button">Avengers: Эра Альтрона</button><button data-theme-pick="matrix" type="button">Matrix</button><button data-theme-pick="ice" type="button">Ice</button><button data-theme-pick="sunset" type="button">Sunset</button><button data-theme-pick="day" type="button">День (светлая)</button></div></div></div>
+          <div class="r"><div class="seg" id="theme-seg"><button data-theme-pick="jarvis" type="button">Jarvis</button><button data-theme-pick="cyberpunk" type="button">Cyberpunk</button><button data-theme-pick="avengers" type="button">Avengers: Эра Альтрона</button><button data-theme-pick="matrix" type="button">Matrix</button><button data-theme-pick="ice" type="button">Ice</button><button data-theme-pick="sunset" type="button">Sunset</button></div></div></div>
         <div class="setrow"><div class="l">Вид сферы<small>у каждой темы своя сфера по умолчанию; здесь можно выбрать любую</small></div>
           <div class="r"><div class="seg"><button data-sphere-pick="dots" type="button">Частицы</button><button data-sphere-pick="holo" type="button">Голограмма</button><button data-sphere-pick="neon" type="button">Неон</button><button data-sphere-pick="core" type="button">Реактор</button><button data-sphere-pick="wave" type="button">Волна</button><button data-sphere-pick="orbit" type="button">Орбиты</button></div></div></div>
         <div class="setrow"><div class="l">Скорость анимации сферы</div>
@@ -3678,7 +3670,7 @@ $('#rg-send').onclick = async () => {
 const lineMsg = (id, r, okText) => { const m = $(id); m.className = 'msgline ' + (r && r.ok === false ? 'bad' : 'ok'); m.textContent = (r && r.message) || (r && r.ok !== false ? (okText || '') : 'Не получилось'); };
 async function ownerLoad() {
   const r = await action('owner_status').catch(() => ({}));
-  $('#ow-state').textContent = r.set ? (r.unlocked ? 'пароль задан, сейчас разблокировано' + (r.unlock_left ? ' (ещё ' + Math.ceil(r.unlock_left / 60) + ' мин, потом заблокируется само)' : '') : 'пароль задан, защищённое заблокировано') : 'пароль не задан: защита выключена';
+  $('#ow-state').textContent = r.set ? (r.unlocked ? 'пароль задан, сейчас разблокировано' + ' (закроется кнопкой «Заблокировать», командой «заблокируй компьютер» или при перезапуске)' : 'пароль задан, защищённое заблокировано') : 'пароль не задан: защита выключена';
   $('#ow-msg').value = r.message || ''; $('#ow-lock').disabled = !r.set || !r.unlocked; OWNER_LOCKED = !!(r.set && !r.unlocked);
 }
 function showRecovery(r) { if (r && r.recovery) alert('Код восстановления (покажется один раз, запишите):\n\n' + r.recovery); }
@@ -4543,6 +4535,8 @@ function setView() {
   }
   let shown = 0;
   document.querySelectorAll('#set-main > .card').forEach(c => {
+    // the blocks that were taken out of the window (their commands by voice stay) are never shown, not even by the search
+    if (c.dataset.cat === 'off') { c.style.display = 'none'; return; }
     const rows = [...c.children].filter(x => x.classList.contains('setrow'));
     let show;
     if (!q) { show = SET_STACK[setCat] || SET_FOLD[setCat] ? c.dataset.cat === setCat : c === sel; rows.forEach(r => { r.style.display = ''; }); }
@@ -5186,7 +5180,8 @@ function commandActions(list) {
 let socNets = [], socOn = [], socSpeak = [];
 function socInitial(t) { return (String(t).match(/[A-Za-zА-Яа-яЁё]/) || ['?'])[0].toUpperCase(); }
 function renderSocial(s) {
-  socNets = s.social_networks || []; socOn = s.ext_social || []; socSpeak = s.ext_social_speak || [];
+  // only the main ones are shown (the others keep working by the same switches of the settings file)
+  socNets = (s.social_networks || []).filter(n => ['telegram', 'whatsapp', 'instagram', 'vk'].includes(n.key)); socOn = s.ext_social || []; socSpeak = s.ext_social_speak || [];
   const g = $('#soc-grid'); g.textContent = '';
   for (const n of socNets) {
     const on = socOn.includes(n.key), sp = socSpeak.includes(n.key);

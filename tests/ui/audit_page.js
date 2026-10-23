@@ -35,6 +35,8 @@ function serve(body) {
     });
     await p.goto('http://jarvis.test/'); await p.waitForTimeout(500);
     await p.evaluate(() => show('settings')); await p.waitForTimeout(300);
+    // (the journal block is taken out of the window; the page code is still checked: the block is put back for the test)
+    await p.evaluate(() => { const c = document.getElementById('audit-card'); c.dataset.cat = 'main'; c.classList.remove('acc'); setView(); });
     await p.evaluate(() => auLoad()); await p.waitForTimeout(300);
     const tag = `${w}x${h}@${dpr}`;
     const n = () => p.$$eval('#au-list .hi-item', a => a.length);
