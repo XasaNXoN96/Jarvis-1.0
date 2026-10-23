@@ -616,6 +616,7 @@
   .ccard { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 10px 14px; display: flex; gap: 10px; align-items: flex-start; }
   .ccard .cb { flex: 1; min-width: 0; } .ccard .cb > b { font-size: 15px; cursor: pointer; } .ccard .cb > b:hover { color: var(--accent); } .ccard .cd { color: var(--dim); font-size: 12.5px; margin-top: 2px; }
   #commands.cgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; align-items: stretch; } #commands.cgrid .ccard { flex-direction: column; } .cmarks { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; } .cmarks .pill { position: static; }
+  .ncat { margin-left: 8px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 3px 6px; font-size: 12px; }
   .ccard.off { opacity: .55; } .ccard .chip { font-size: 12px; } .ccard .cact { margin-top: 8px; font-size: 12px; padding: 4px 10px; }
   @media (max-width: 760px) { .cat-grid { grid-template-columns: 1fr; } .cat-side { flex-direction: row; flex-wrap: wrap; } .cat-side button { flex: 1 1 45%; } }
   details.grp { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); margin-bottom: 10px; }
@@ -3540,8 +3541,13 @@ $('#sch-add').onclick = async () => { const r = await action('sched_add', { text
 $('#sch-list').onclick = async e => { const b = e.target.closest('button[data-op]'); if (!b) return; const id = b.closest('.mem-item').dataset.id; if (b.dataset.op === 'del') await action('sched_remove', { id }); else await action('sched_toggle', { id, value: b.dataset.on === '1' }); schLoad(); };
 async function notesLoad() {
   const r = await action('notes_list').catch(() => ({ items: [] }));
-  $('#notes-list').innerHTML = (r.items || []).length ? r.items.map(n => '<div class="mem-item" data-id="' + gpEsc(n.id) + '"><span>' + gpEsc(n.text) + '<small>' + (n.kind === 'diary' ? 'дневник' : 'заметка') + ' · ' + new Date(n.at * 1000).toLocaleString('ru-RU') + '</small></span><button class="btn small" data-op="edit" type="button">Изменить</button><button class="btn small" data-op="del" type="button">Удалить</button></div>').join('') : '<small class="dim">Записей нет.</small>';
+  $('#notes-list').innerHTML = (r.items || []).length ? r.items.map(n => '<div class="mem-item" data-id="' + gpEsc(n.id) + '"><span>' + gpEsc(n.text) + '<small>' + (n.kind === 'diary' ? 'дневник' : 'заметка') + ' · ' + new Date(n.at * 1000).toLocaleString('ru-RU') + '</small></span><select class="ncat" data-cat="1" title="Категория" aria-label="Категория записи"><option value="">Без категории</option>' + (r.categories || []).map(c => '<option value="' + gpEsc(c.id) + '"' + (n.category === c.id ? ' selected' : '') + '>' + gpEsc(c.title) + '</option>').join('') + '</select><button class="btn small" data-op="edit" type="button">Изменить</button><button class="btn small" data-op="del" type="button">Удалить</button></div>').join('') : '<small class="dim">Записей нет.</small>';
 }
+$('#notes-list').onchange = async e => {
+  const sel = e.target.closest('select[data-cat]'); if (!sel) return;
+  const r = await action('notes_category', { id: sel.closest('.mem-item').dataset.id, category: sel.value }).catch(() => ({}));
+  memMsg(r.message || (r.ok ? 'Категория сохранена.' : 'Не удалось.'), r.ok !== false); notesLoad();
+};
 $('#notes-list').onclick = async e => {
   const b = e.target.closest('button[data-op]'); if (!b) return; const row = b.closest('.mem-item'), id = row.dataset.id;
   if (b.dataset.op === 'del') { const r = await action('notes_delete', { id }).catch(() => ({})); undoMsg(r, 'Запись удалена.'); notesLoad(); return; }

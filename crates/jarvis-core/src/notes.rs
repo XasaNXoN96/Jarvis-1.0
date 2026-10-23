@@ -20,6 +20,20 @@ pub struct Note {
     // the last change (unix seconds); older records have none and count from `at`
     #[serde(default)]
     pub updated: u64,
+    // one of CATEGORIES ("" = none: all the records made before the categories, and the ones nobody sorted)
+    #[serde(default)]
+    pub category: String,
+}
+
+// the fixed set of categories: (id kept in the file, name shown)
+pub const CATEGORIES: [(&str, &str); 4] = [("work", "Работа"), ("personal", "Личное"), ("ideas", "Идеи"), ("study", "Учёба")];
+
+pub fn category_title(id: &str) -> Option<&'static str> {
+    CATEGORIES.iter().find(|c| c.0 == id).map(|c| c.1)
+}
+
+pub fn categories_json() -> serde_json::Value {
+    serde_json::json!(CATEGORIES.iter().map(|c| serde_json::json!({ "id": c.0, "title": c.1 })).collect::<Vec<_>>())
 }
 
 pub fn list() -> Vec<Note> {
@@ -52,7 +66,7 @@ pub fn add(text: &str, kind: &str, at: u64) -> Result<Note, String> {
     if all.len() >= MAX_ITEMS {
         return Err("Дневник заполнен.".into());
     }
-    let n = Note { id: store::new_id(), text: text.to_string(), at, updated: at, kind: if kind == "diary" { "diary" } else { "note" }.into() };
+    let n = Note { id: store::new_id(), text: text.to_string(), at, updated: at, kind: if kind == "diary" { "diary" } else { "note" }.into(), category: String::new() };
     all.push(n.clone());
     store::write(FILE, &all)?;
     Ok(n)
@@ -82,6 +96,27 @@ pub fn update(id: &str, text: &str) -> Result<String, String> {
     Ok(old)
 }
 
+// assigns or changes the category ("" takes it off); an unknown one is refused and nothing changes. Returns the previous category.
+pub fn set_category(id: &str, category: &str) -> Result<String, String> {
+    let category = category.trim();
+    if !category.is_empty() && category_title(category).is_none() {
+        return Err("Такой категории нет.".into());
+    }
+    let mut all = list();
+    let n = all.iter_mut().find(|n| n.id == id).ok_or("такой записи нет")?;
+    let old = std::mem::replace(&mut n.category, category.to_string());
+    if old != n.category {
+        n.updated = store::now();
+        store::write(FILE, &all)?;
+    }
+    Ok(old)
+}
+
+// the notes of one category ("" = those without a category)
+pub fn in_category(category: &str) -> Vec<Note> {
+    list().into_iter().filter(|n| n.category == category).collect()
+}
+
 // puts a deleted note back (the undo of a delete)
 pub fn restore(n: Note) -> Result<(), String> {
     let mut all = list();
@@ -108,7 +143,7 @@ pub fn export_text() -> String {
     let mut v = list();
     v.sort_by_key(|n| n.at);
     v.iter()
-        .map(|n| format!("[{}] {}: {}", chrono::DateTime::from_timestamp(n.at as i64, 0).map(|d| d.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_default(), if n.kind == "diary" { "дневник" } else { "заметка" }, n.text))
+        .map(|n| format!("[{}] {}{}: {}", chrono::DateTime::from_timestamp(n.at as i64, 0).map(|d| d.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_default(), if n.kind == "diary" { "дневник" } else { "заметка" }, category_title(&n.category).map(|t| format!(" ({})", t)).unwrap_or_default(), n.text))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -217,6 +252,57 @@ mod tests {
             assert!(get(&a.id).unwrap().updated >= a.updated);
             let t = export_text();
             assert!(t.starts_with("[2023-11-14") && t.contains("заметка: первая, исправлено") && t.lines().nth(1).unwrap().contains("дневник: вторая"), "{}", t);
+        });
+    }
+
+    #[test]
+    fn a_category_can_be_assigned_changed_and_taken_off_and_a_wrong_one_changes_nothing() {
+        store::with_temp(|| {
+            let n = add("созвон с Маликой в пятницу", "note", 1000).unwrap();
+            assert_eq!(n.category, "", "a new record has none");
+            assert_eq!(set_category(&n.id, "work").unwrap(), "");
+            assert_eq!(get(&n.id).unwrap().category, "work");
+            assert!(get(&n.id).unwrap().updated >= n.updated);
+            assert_eq!(set_category(&n.id, "ideas").unwrap(), "work");
+            assert_eq!(in_category("ideas").len(), 1);
+            assert!(in_category("work").is_empty());
+            // wrong values: not in the set, other case, a path, the name instead of the id, too long
+            for bad in ["Работа", "WORK", "../etc", "работа", &"x".repeat(500), "work;drop", "all"] {
+                assert_eq!(set_category(&n.id, bad).unwrap_err(), "Такой категории нет.", "{}", bad);
+                assert_eq!(get(&n.id).unwrap().category, "ideas", "{} changed it", bad);
+            }
+            // a record that does not exist
+            assert!(set_category("нет-такой", "work").is_err());
+            // taken off ("" and spaces)
+            assert_eq!(set_category(&n.id, "  ").unwrap(), "ideas");
+            assert_eq!(get(&n.id).unwrap().category, "");
+            // the text and the kind are not touched
+            assert_eq!(get(&n.id).unwrap().text, "созвон с Маликой в пятницу");
+        });
+    }
+
+    #[test]
+    fn records_made_before_the_categories_still_load_and_the_category_is_kept_in_the_file_and_the_export() {
+        store::with_temp(|| {
+            // an old file: no "category" field at all
+            store::write("notes.json", &serde_json::json!([{ "id": "old1", "text": "старая запись", "at": 500, "kind": "diary" }])).unwrap();
+            let n = get("old1").unwrap();
+            assert_eq!((n.category.as_str(), n.updated), ("", 500));
+            assert!(export_text().contains("дневник: старая запись"), "{}", export_text());
+            set_category("old1", "personal").unwrap();
+            // after a new start the category is read from the file
+            assert_eq!(get("old1").unwrap().category, "personal");
+            assert!(export_text().contains("дневник (Личное): старая запись"), "{}", export_text());
+            // a deleted record comes back with its category (the undo of a delete)
+            let n = get("old1").unwrap();
+            assert!(delete("old1"));
+            restore(n).unwrap();
+            assert_eq!(get("old1").unwrap().category, "personal");
+            // a file from another computer with an unknown category: it loads, the record is kept, the unknown id is shown as «без категории»
+            store::write("notes.json", &serde_json::json!([{ "id": "x", "text": "t", "at": 1, "kind": "note", "category": "future" }])).unwrap();
+            assert_eq!(get("x").unwrap().text, "t");
+            assert!(export_text().contains("заметка: t"));
+            assert_eq!(categories_json().as_array().unwrap().len(), CATEGORIES.len());
         });
     }
 }

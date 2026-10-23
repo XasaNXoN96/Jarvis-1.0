@@ -265,7 +265,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         }
     }
     // with a password of the owner set, the actions that change what Jarvis keeps or does need the unlocked program
-    if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "notes_edit" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message" | "audit_clear" | "ca_apply" | "pl_add" | "pl_remove" | "persona_set" | "pair_start" | "pair_revoke" | "pair_link" | "remote_http_set" | "remote_key_rotate" | "comp_do" | "sync_folder" | "sync_run" | "sync_clear" | "wol_add" | "wol_remove" | "wol_wake" | "mem_use_ai" | "diag_fix_apply") {
+    if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "notes_edit" | "notes_category" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message" | "audit_clear" | "ca_apply" | "pl_add" | "pl_remove" | "persona_set" | "pair_start" | "pair_revoke" | "pair_link" | "remote_http_set" | "remote_key_rotate" | "comp_do" | "sync_folder" | "sync_run" | "sync_clear" | "wol_add" | "wol_remove" | "wol_wake" | "mem_use_ai" | "diag_fix_apply") {
         if let Err(m) = crate::owner::guard() {
             return json!({ "ok": false, "locked": true, "code": "locked", "message": m });
         }
@@ -613,7 +613,12 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             Err(e) => json!({ "ok": false, "message": e }),
         },
         // notes and diary
-        "notes_list" => { let mut n = crate::notes::list(); n.reverse(); json!({ "ok": true, "items": n.into_iter().take(200).collect::<Vec<_>>() }) }
+        "notes_list" => { let mut n = crate::notes::list(); n.reverse(); json!({ "ok": true, "items": n.into_iter().take(200).collect::<Vec<_>>(), "categories": crate::notes::categories_json() }) }
+        // a category is assigned or changed (or taken off with ""); an unknown one is refused
+        "notes_category" => match crate::notes::set_category(body.get("id").and_then(|v| v.as_str()).unwrap_or(""), body.get("category").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok(_) => json!({ "ok": true, "code": "saved", "message": "Категория сохранена." }),
+            Err(e) => json!({ "ok": false, "code": "refused", "message": e }),
+        },
         "notes_delete" => {
             let id = body.get("id").and_then(|v| v.as_str()).unwrap_or("");
             let note = crate::notes::get(id);

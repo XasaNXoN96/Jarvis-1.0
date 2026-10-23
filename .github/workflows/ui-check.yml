@@ -34,6 +34,10 @@ jobs:
         run: node tests/ui/memory_undo.js
         env:
           PW_MODULE: ${{ github.workspace }}/node_modules/playwright
+      - name: Diary categories
+        run: node tests/ui/notes_category.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright
       - name: Phone page pairing (code from a link, secret from the application)
         run: node tests/ui/remote_page_pair.js
         env:
