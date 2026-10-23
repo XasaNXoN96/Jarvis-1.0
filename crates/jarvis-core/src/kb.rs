@@ -1,4 +1,4 @@
-//! The personal knowledge base: the user chooses folders, Jarvis reads the text documents in them (txt, md, csv, rtf, docx, xlsx, pptx, odt and simple PDF),
+//! The personal knowledge base: the user chooses folders, Jarvis reads the text documents in them (txt, md, csv, rtf, docx, xlsx, pptx, odt, ods, odp, html, xml, yaml, srt and simple PDF),
 //! cuts them into passages and answers by search: «найди в моих документах …», «ответь по документам …». Every answer carries its sources
 //! (file and passage number). The documents are DATA: their text goes to the AI inside a fenced block with the order not to obey it, so
 //! a sentence like «забудь все инструкции» inside a file changes nothing. Only the folders the user added are read; nothing is
@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 const FILE: &str = "kb_index.json";
-pub const EXTS: [&str; 11] = ["pdf", "txt", "md", "csv", "rtf", "docx", "xlsx", "pptx", "odt", "log", "json"];
+pub const EXTS: [&str; 20] = ["pdf", "txt", "md", "csv", "rtf", "docx", "xlsx", "pptx", "odt", "log", "json", "html", "htm", "xml", "yaml", "yml", "srt", "ods", "odp", "xlsm"];
 const CHUNK: usize = 700;
 const MAX_FILES: usize = 3000;
 const MAX_CHUNKS: usize = 60_000;
@@ -530,6 +530,25 @@ mod tests {
             assert_eq!(commit(vec![doc(&a, "a.txt")]).unwrap(), (0, 0));
             let i = load();
             assert!(i.folders.is_empty() && i.docs.is_empty(), "the index stays cleared");
+        });
+    }
+
+    #[test]
+    fn web_pages_and_other_text_formats_are_read_without_their_tags() {
+        store::with_temp(|| {
+            let d = tempfile::tempdir().unwrap();
+            std::fs::write(d.path().join("page.html"), "<html><head><style>p{color:red}</style><script>var secretcode = 1;</script></head><body><!-- скрытый комментарий --><h1>Договор</h1><p>Срок аренды&nbsp;— двенадцать месяцев</p></body></html>").unwrap();
+            std::fs::write(d.path().join("sub.srt"), "1\n00:00:01,000 --> 00:00:02,000\nВстреча в пятницу\n").unwrap();
+            std::fs::write(d.path().join("conf.yaml"), "city: Ташкент\n").unwrap();
+            std::fs::write(d.path().join("skip.exe"), "MZ").unwrap();
+            add_folder(&d.path().to_string_lossy()).unwrap();
+            let (docs, _) = reindex().unwrap();
+            assert_eq!(docs, 3, "html, srt and yaml are indexed, an exe is not");
+            let h = search("срок аренды", 3);
+            assert!(h[0].path.ends_with("page.html") && h[0].text.contains("двенадцать месяцев"), "{:?}", h.first().map(|x| x.text.clone()));
+            assert!(!h[0].text.contains('<') && !h[0].text.contains("secretcode") && !h[0].text.contains("color:red") && !h[0].text.contains("скрытый комментарий"), "no tags, scripts, styles or comments: {}", h[0].text);
+            assert!(search("встреча пятницу", 3)[0].path.ends_with("sub.srt"));
+            assert!(search("Ташкент", 3)[0].path.ends_with("conf.yaml"));
         });
     }
 }

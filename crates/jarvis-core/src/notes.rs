@@ -178,10 +178,47 @@ pub fn on_day(day: NaiveDate, offset: i64) -> Vec<Note> {
 
 #[derive(Debug, PartialEq)]
 pub enum Cmd {
-    Write { text: String, kind: &'static str },
+    // `category` is one of the ids of CATEGORIES, or "" when the phrase names none
+    Write { text: String, kind: &'static str, category: &'static str },
+    // «что в дневнике по работе» / «прочитай записи категории идеи»
+    ReadCategory(&'static str),
     // today / yesterday / (days back)
     Read { days_back: i64 },
     Find(String),
+}
+
+// the category a word names (the word as it is said: «работа», «по работе», «идеи», «учёба»); None when it is none of the four
+pub fn category_of(word: &str) -> Option<&'static str> {
+    let w = textnorm::normalize(word);
+    let w = w.trim_start_matches("по ").trim();
+    if w.starts_with("работ") {
+        Some("work")
+    } else if w.starts_with("личн") {
+        Some("personal")
+    } else if w.starts_with("иде") {
+        Some("ideas")
+    } else if w.starts_with("учеб") || w.starts_with("учёб") {
+        Some("study")
+    } else {
+        None
+    }
+}
+
+// «в категорию работа: купить кофе» / «в категории идеи купить кофе» / «(работа) купить кофе» → (the category, the text); no category named: ("", the text)
+fn split_category(body: &str) -> (&'static str, String) {
+    let low = body.to_lowercase();
+    for p in ["в категорию ", "в категории ", "категория "] {
+        if let Some(rest) = low.strip_prefix(p) {
+            let rest_orig: String = body.chars().skip(low.chars().count() - rest.chars().count()).collect();
+            let word_end = rest_orig.find(|c: char| c == ':' || c == ',' || c == ' ').unwrap_or(rest_orig.len());
+            let (word, tail) = rest_orig.split_at(word_end);
+            if let Some(cat) = category_of(word) {
+                return (cat, tail.trim_start_matches([':', ',', ' ']).trim().to_string());
+            }
+            return ("", body.to_string());
+        }
+    }
+    ("", body.to_string())
 }
 
 pub fn parse(text: &str) -> Option<Cmd> {
@@ -190,14 +227,20 @@ pub fn parse(text: &str) -> Option<Cmd> {
     for (p, kind) in [("запиши в дневник: ", "diary"), ("запиши в дневник ", "diary"), ("дневник: ", "diary"), ("заметка: ", "note"), ("запиши заметку: ", "note"), ("запиши заметку ", "note"), ("add to diary: ", "diary"), ("note: ", "note"), ("kundalikka yoz: ", "diary"), ("eslatma: ", "note")] {
         if low.starts_with(p) {
             let body: String = t.chars().skip(p.chars().count()).collect();
+            let (category, body) = split_category(body.trim());
             let body = body.trim().to_string();
-            return if body.is_empty() { None } else { Some(Cmd::Write { text: body, kind }) };
+            return if body.is_empty() { None } else { Some(Cmd::Write { text: body, kind, category }) };
         }
     }
     let n = textnorm::normalize(t);
     for (p, back) in [("что я записывал сегодня", 0), ("что я записывал вчера", 1), ("что в дневнике за сегодня", 0), ("что в дневнике за вчера", 1), ("what did i write today", 0), ("what did i write yesterday", 1)] {
         if n == p {
             return Some(Cmd::Read { days_back: back });
+        }
+    }
+    for p in ["прочитай записи категории ", "что в дневнике по категории ", "покажи записи категории ", "read my diary category "] {
+        if let Some(r) = n.strip_prefix(p) {
+            return category_of(r.trim()).map(Cmd::ReadCategory);
         }
     }
     for p in ["найди в дневнике ", "найди в заметках ", "search my diary for "] {
@@ -233,7 +276,14 @@ mod tests {
     }
     #[test]
     fn phrases() {
-        assert_eq!(parse("Запиши в дневник: был хороший день"), Some(Cmd::Write { text: "был хороший день".into(), kind: "diary" }));
+        assert_eq!(parse("Запиши в дневник: был хороший день"), Some(Cmd::Write { text: "был хороший день".into(), kind: "diary", category: "" }));
+        assert_eq!(parse("запиши в дневник в категорию Работа: созвон в пять"), Some(Cmd::Write { text: "созвон в пять".into(), kind: "diary", category: "work" }));
+        assert_eq!(parse("запиши в дневник в категории идеи сделать сайт"), Some(Cmd::Write { text: "сделать сайт".into(), kind: "diary", category: "ideas" }));
+        assert_eq!(parse("запиши в дневник категория учёба, выучить урок").map(|c| matches!(c, Cmd::Write { category: "study", .. })), Some(true));
+        assert_eq!(parse("запиши в дневник в категорию космос: привет"), Some(Cmd::Write { text: "в категорию космос: привет".into(), kind: "diary", category: "" }), "an unknown category is not taken: the whole phrase is the text");
+        assert_eq!(parse("запиши в дневник в категорию работа:"), None, "no text");
+        assert_eq!(parse("Прочитай записи категории работа"), Some(Cmd::ReadCategory("work")));
+        assert_eq!(parse("прочитай записи категории космос"), None);
         assert_eq!(parse("что я записывал вчера"), Some(Cmd::Read { days_back: 1 }));
         assert_eq!(parse("найди в дневнике поездка"), Some(Cmd::Find("поездка".into())));
         assert_eq!(parse("открой браузер"), None);

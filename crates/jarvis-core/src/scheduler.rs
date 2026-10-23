@@ -92,6 +92,49 @@ pub fn remove(id: &str) -> bool {
     j.len() != n && save(&j).is_ok()
 }
 
+// Changes a job: a new phrase with a time («каждый день в 10:00 открой почту») replaces its text, its time and its repeat. The job keeps its
+// number, its switch, its count of runs and the door that asked for it (a change cannot turn a phone job into a job with more trust).
+// Returns (the job as it was, the job as it is).
+pub fn edit(id: &str, phrase: &str, now: NaiveDateTime, offset: i64) -> Result<(Job, Job), String> {
+    let plan = parse(phrase, now, offset).ok_or("Не понял время. Примеры: «каждый день в 10:00 открой почту», «завтра в 8:30 напомни про встречу».")?;
+    let text = plan.text.trim();
+    if text.is_empty() || text.chars().count() > 300 {
+        return Err("Фраза задания пустая или слишком длинная.".into());
+    }
+    if let Repeat::Every(s) = plan.repeat {
+        if s < MIN_EVERY {
+            return Err("Чаще раза в минуту повторять нельзя.".into());
+        }
+    }
+    let mut jobs = list();
+    let j = jobs.iter_mut().find(|x| x.id == id).ok_or("Такого задания нет.")?;
+    let old = j.clone();
+    j.text = text.to_string();
+    j.at = plan.at;
+    j.repeat = plan.repeat;
+    // a one-time job that already ran was switched off by its run: editing it sets it up again (a job the user switched off by hand stays off)
+    if old.repeat == Repeat::Once && old.runs > 0 {
+        j.enabled = true;
+    }
+    let new = j.clone();
+    save(&jobs)?;
+    Ok((old, new))
+}
+
+// puts a job back as it was (the undo of an edit); only while the job is still as the edit left it
+pub fn restore(old: &Job, expect_now: &Job) -> Result<(), String> {
+    let mut jobs = list();
+    let j = jobs.iter_mut().find(|x| x.id == old.id).ok_or("Задания уже нет.")?;
+    if j.text != expect_now.text || j.at != expect_now.at || j.repeat != expect_now.repeat {
+        return Err("Задание уже менялось после этой правки: вернуть старое нельзя.".into());
+    }
+    j.text = old.text.clone();
+    j.at = old.at;
+    j.repeat = old.repeat;
+    j.enabled = old.enabled;
+    save(&jobs)
+}
+
 pub fn set_enabled(id: &str, on: bool) -> bool {
     let mut j = list();
     match j.iter_mut().find(|x| x.id == id) {
@@ -361,6 +404,30 @@ mod tests {
             v.as_object_mut().unwrap().remove("door");
             let old: Job = serde_json::from_value(v).unwrap();
             assert_eq!(old.door, "");
+        });
+    }
+
+    #[test]
+    fn a_job_can_be_edited_keeping_its_number_runs_and_door_and_the_edit_can_be_taken_back() {
+        store::with_temp(|| {
+            let j = crate::origin::run_as(crate::origin::Source::Phone, || add("открой почту", 100, Repeat::Once)).unwrap();
+            claim_with_door(&j.id, 100);
+            let (old, new) = edit(&j.id, "каждый день в 10:00 открой блокнот", t(8, 0), 0).unwrap();
+            assert_eq!((old.text.as_str(), new.text.as_str()), ("открой почту", "открой блокнот"));
+            assert!(!old.enabled && new.enabled, "a finished one-time job is set up again by an edit");
+            assert_eq!(new.repeat, Repeat::Daily);
+            let now = list().into_iter().find(|x| x.id == j.id).unwrap();
+            assert_eq!((now.id.as_str(), now.runs, now.door.as_str(), now.enabled), (j.id.as_str(), 1, "phone", true), "number, runs, door and switch are kept");
+            // a phrase without a time, an empty one, an unknown job and a too frequent repeat change nothing
+            assert!(edit(&j.id, "открой почту", t(8, 0), 0).is_err());
+            assert!(edit(&j.id, "", t(8, 0), 0).is_err());
+            assert!(edit("nobody", "каждый день в 10:00 открой блокнот", t(8, 0), 0).is_err());
+            assert_eq!(list().iter().find(|x| x.id == j.id).unwrap().text, "открой блокнот");
+            // the undo puts the old one back, but not when the job has changed again
+            restore(&old, &new).unwrap();
+            let back = list().into_iter().find(|x| x.id == j.id).unwrap();
+            assert_eq!((back.text.as_str(), back.repeat), ("открой почту", Repeat::Once));
+            assert!(restore(&old, &new).is_err(), "the job is no longer as the edit left it");
         });
     }
 

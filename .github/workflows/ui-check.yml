@@ -58,6 +58,10 @@ jobs:
         run: node tests/ui/ui_language.js
         env:
           PW_MODULE: ${{ github.workspace }}/node_modules/playwright
+      - name: History filter, job edit and project search
+        run: node tests/ui/data_tools.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright
       - name: Red strip while the phone drives the mouse or watches the camera
         run: node tests/ui/live_strip.js
         env:

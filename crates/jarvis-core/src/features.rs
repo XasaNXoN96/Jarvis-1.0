@@ -238,13 +238,30 @@ fn do_notes(text: &str) -> Option<Reply> {
     }
     let (now, off) = local_now();
     match cmd {
-        Cmd::Write { text, kind } => match notes::add(&text, kind, store::now()) {
+        Cmd::Write { text, kind, category } => match notes::add(&text, kind, store::now()) {
             Ok(n) => {
+                let id = n.id.clone();
                 actionlog::record(&format!("Записал в {}: {}", if kind == "diary" { "дневник" } else { "заметки" }, text), actionlog::Undo::NoteAdd(n.id));
-                r(if kind == "diary" { "Записал в дневник." } else { "Записал заметку." })
+                // the category is set after the record is made: the record of the history stays «added», and a refusal of the category does not lose the text
+                let shown = if category.is_empty() { None } else { notes::set_category(&id, category).ok().map(|_| notes::category_title(category).unwrap_or("")) };
+                r(match (kind == "diary", shown) {
+                    (true, Some(c)) => format!("Записал в дневник, категория «{}».", c),
+                    (true, None) => "Записал в дневник.".to_string(),
+                    (false, Some(c)) => format!("Записал заметку, категория «{}».", c),
+                    (false, None) => "Записал заметку.".to_string(),
+                })
             }
             Err(e) => r(e),
         },
+        Cmd::ReadCategory(c) => {
+            let list = notes::in_category(c);
+            let title = notes::category_title(c).unwrap_or("");
+            if list.is_empty() {
+                r(format!("В категории «{}» записей нет.", title))
+            } else {
+                r(format!("Категория «{}»: {}", title, list.iter().rev().take(10).map(|n| n.text.clone()).collect::<Vec<_>>().join(". ")))
+            }
+        }
         Cmd::Read { days_back } => {
             let list = notes::on_day(notes::day_for(now.date(), days_back), off);
             if list.is_empty() {

@@ -265,7 +265,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         }
     }
     // with a password of the owner set, the actions that change what Jarvis keeps or does need the unlocked program
-    if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "notes_edit" | "notes_category" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message" | "audit_clear" | "ca_apply" | "pl_add" | "pl_remove" | "persona_set" | "pair_start" | "pair_revoke" | "pair_link" | "remote_http_set" | "remote_key_rotate" | "comp_do" | "sync_folder" | "sync_run" | "sync_clear" | "wol_add" | "wol_remove" | "wol_wake" | "mem_use_ai" | "diag_fix_apply") {
+    if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_edit" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "notes_edit" | "notes_category" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message" | "audit_clear" | "ca_apply" | "pl_add" | "pl_remove" | "persona_set" | "pair_start" | "pair_revoke" | "pair_link" | "remote_http_set" | "remote_key_rotate" | "comp_do" | "sync_folder" | "sync_run" | "sync_clear" | "wol_add" | "wol_remove" | "wol_wake" | "mem_use_ai" | "diag_fix_apply") {
         if let Err(m) = crate::owner::guard() {
             return json!({ "ok": false, "locked": true, "code": "locked", "message": m });
         }
@@ -486,6 +486,11 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
                 },
             }
         }
+        // a search for a word in the files of a project folder (reads only)
+        "ca_find" => match crate::codeassist::search_project(body.get("path").and_then(|v| v.as_str()).unwrap_or(""), body.get("q").and_then(|v| v.as_str()).unwrap_or("")) {
+            Ok((hits, cut)) => json!({ "ok": true, "cut": cut, "items": hits.iter().map(|h| json!({ "path": h.path, "line": h.line, "text": h.text })).collect::<Vec<_>>() }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
         "ca_discard" => { *CODE_PROPOSAL.lock() = None; json!({ "ok": true }) }
         // library of programs
         "pl_get" => json!({ "ok": true, "lib": crate::proglib::json() }),
@@ -601,10 +606,20 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
                 None => json!({ "ok": false, "message": "Не понял время. Примеры: «каждый день в 9:00 открой почту», «завтра в 8:30 напомни про встречу», «каждые 30 минут пей воду»." }),
             }
         }
+        "sched_edit" => {
+            let l = chrono::Local::now();
+            match crate::perms::check(crate::perms::Cap::Scheduler).and_then(|_| crate::scheduler::edit(body.get("id").and_then(|v| v.as_str()).unwrap_or(""), body.get("text").and_then(|v| v.as_str()).unwrap_or(""), l.naive_local(), l.offset().local_minus_utc() as i64)) {
+                Ok((old, new)) => {
+                    let undo = crate::actionlog::record(&format!("Изменено задание: {}", new.text), crate::actionlog::Undo::JobRevert(old, new));
+                    json!({ "ok": true, "message": "Задание изменено.", "undo": undo })
+                }
+                Err(e) => json!({ "ok": false, "message": e }),
+            }
+        }
         "sched_remove" => json!({ "ok": crate::scheduler::remove(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) }),
         "sched_toggle" => json!({ "ok": crate::scheduler::set_enabled(body.get("id").and_then(|v| v.as_str()).unwrap_or(""), body.get("value").and_then(|v| v.as_bool()).unwrap_or(false)) }),
         // history of actions and undo
-        "undo_list" => json!({ "ok": true, "items": crate::actionlog::list().iter().rev().take(50).map(|e| json!({ "id": e.id, "at": e.at, "what": e.what, "undone": e.undone, "can_undo": crate::actionlog::can_undo(e) })).collect::<Vec<_>>() }),
+        "undo_list" => json!({ "ok": true, "items": crate::actionlog::filtered(body.get("q").and_then(|v| v.as_str()).unwrap_or(""), body.get("state").and_then(|v| v.as_str()).unwrap_or(""), 50).iter().map(|e| json!({ "id": e.id, "at": e.at, "what": e.what, "undone": e.undone, "can_undo": crate::actionlog::can_undo(e) })).collect::<Vec<_>>() }),
         "undo_do" => match crate::actionlog::undo(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) {
             Ok(m) => json!({ "ok": true, "message": m }),
             Err(e) => json!({ "ok": false, "message": e }),

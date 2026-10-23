@@ -293,6 +293,91 @@ pub fn quick_check(path: &Path, new: &str) -> (bool, bool, String) {
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// the search in a project folder: the lines that contain a word, in the files of the types this assistant knows. Only reads; nothing leaves the computer.
+// ---------------------------------------------------------------------------------------------
+pub const SEARCH_MAX_FILES: usize = 3000;
+pub const SEARCH_MAX_HITS: usize = 60;
+const SKIP_DIRS: [&str; 10] = [".git", "node_modules", "target", ".venv", "venv", "__pycache__", "dist", "build", ".idea", ".vs"];
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodeHit {
+    pub path: String,
+    pub line: usize,
+    pub text: String,
+}
+
+// the project folder must be a plain folder (not a link, not a system folder)
+pub fn allowed_folder(p: &str) -> Result<PathBuf, String> {
+    let path = PathBuf::from(p.trim());
+    if !path.is_absolute() {
+        return Err("Нужен полный путь к папке проекта.".into());
+    }
+    let meta = std::fs::symlink_metadata(&path).map_err(|_| "Такой папки нет.".to_string())?;
+    if !meta.is_dir() {
+        return Err("Это не папка (файл или ссылка).".into());
+    }
+    let low = path.to_string_lossy().to_lowercase().replace('/', "\\");
+    for bad in ["\\windows\\", "\\program files", "\\programdata\\", "\\appdata\\roaming\\com.priler.jarvis"] {
+        if low.contains(bad) {
+            return Err("Системные папки и данные Jarvis не просматриваю.".into());
+        }
+    }
+    Ok(path)
+}
+
+// (the hits, whether the search stopped at a limit)
+pub fn search_project(folder: &str, query: &str) -> Result<(Vec<CodeHit>, bool), String> {
+    let root = allowed_folder(folder)?;
+    let q = query.trim().to_lowercase();
+    if q.chars().count() < 2 || q.chars().count() > 80 {
+        return Err("Слово для поиска: от 2 до 80 символов.".into());
+    }
+    let mut hits = Vec::new();
+    let mut files = 0usize;
+    let mut cut = false;
+    let mut stack = vec![(root, 0usize)];
+    'outer: while let Some((dir, depth)) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        let mut entries: Vec<_> = rd.flatten().collect();
+        entries.sort_by_key(|e| e.file_name());
+        for e in entries {
+            let Ok(t) = e.file_type() else { continue };
+            if t.is_symlink() {
+                continue;
+            }
+            let p = e.path();
+            let name = e.file_name().to_string_lossy().to_string();
+            if t.is_dir() {
+                if depth < 8 && !SKIP_DIRS.contains(&name.as_str()) {
+                    stack.push((p, depth + 1));
+                }
+                continue;
+            }
+            let ext = p.extension().map(|x| x.to_string_lossy().to_lowercase()).unwrap_or_default();
+            if !EXTS.contains(&ext.as_str()) || e.metadata().map(|m| m.len() as usize > MAX_BYTES).unwrap_or(true) {
+                continue;
+            }
+            files += 1;
+            if files > SEARCH_MAX_FILES {
+                cut = true;
+                break 'outer;
+            }
+            let Ok(text) = std::fs::read_to_string(&p) else { continue };
+            for (i, l) in text.lines().enumerate() {
+                if l.to_lowercase().contains(&q) {
+                    hits.push(CodeHit { path: p.to_string_lossy().to_string(), line: i + 1, text: l.trim().chars().take(160).collect() });
+                    if hits.len() >= SEARCH_MAX_HITS {
+                        cut = true;
+                        break 'outer;
+                    }
+                }
+            }
+        }
+    }
+    Ok((hits, cut))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -398,5 +483,43 @@ mod tests {
             restore(&f.to_string_lossy(), &bak1.to_string_lossy()).unwrap();
             assert_eq!(std::fs::read_to_string(&f).unwrap(), "original\n");
         });
+    }
+
+    #[test]
+    fn the_search_in_a_project_finds_lines_and_stays_out_of_the_wrong_places() {
+        let d = tempfile::tempdir().unwrap();
+        let r = d.path();
+        std::fs::create_dir_all(r.join("src")).unwrap();
+        std::fs::create_dir_all(r.join("node_modules/x")).unwrap();
+        std::fs::create_dir_all(r.join(".git")).unwrap();
+        std::fs::write(r.join("src/main.py"), "import os\ndef Load_Config():\n    return 1\n").unwrap();
+        std::fs::write(r.join("src/readme.md"), "load_config описан здесь\n").unwrap();
+        std::fs::write(r.join("node_modules/x/lib.js"), "load_config()").unwrap();
+        std::fs::write(r.join(".git/notes.txt"), "load_config").unwrap();
+        std::fs::write(r.join("src/app.exe"), "load_config").unwrap();
+        let (h, cut) = search_project(&r.to_string_lossy(), "LOAD_CONFIG").unwrap();
+        assert!(!cut);
+        let names: Vec<String> = h.iter().map(|x| std::path::Path::new(&x.path).file_name().unwrap().to_string_lossy().to_string()).collect();
+        assert_eq!(names, vec!["main.py", "readme.md"], "any case; not the dependencies, the git folder or other file types: {:?}", names);
+        assert_eq!((h[0].line, h[0].text.as_str()), (2, "def Load_Config():"));
+        // wrong requests
+        assert!(search_project("relative/dir", "abc").is_err());
+        assert!(search_project(&r.join("src/main.py").to_string_lossy(), "abc").is_err(), "a file is not a folder");
+        assert!(search_project(&r.to_string_lossy(), "a").is_err(), "a word that is too short");
+        assert!(search_project("C:\\Windows\\System32", "abc").is_err());
+        // a limit on the hits is reported
+        let big: String = (0..100).map(|i| format!("needle {}\n", i)).collect();
+        std::fs::write(r.join("src/big.py"), big).unwrap();
+        let (h, cut) = search_project(&r.to_string_lossy(), "needle").unwrap();
+        assert!(cut && h.len() == SEARCH_MAX_HITS);
+        // a link is not followed
+        #[cfg(unix)]
+        {
+            let other = tempfile::tempdir().unwrap();
+            std::fs::write(other.path().join("secret.py"), "needle outside").unwrap();
+            std::os::unix::fs::symlink(other.path(), r.join("link")).unwrap();
+            let (h, _) = search_project(&r.to_string_lossy(), "outside").unwrap();
+            assert!(h.is_empty(), "a link to another folder is not followed");
+        }
     }
 }

@@ -262,7 +262,14 @@ pub fn auto_fact(text: &str) -> Option<String> {
         return None;
     }
     let n = textnorm::normalize(t);
-    let shapes: [(&str, &str); 5] = [("меня зовут ", "Меня зовут "), ("я живу в ", "Я живу в "), ("у меня аллергия на ", "У меня аллергия на "), ("мой день рождения ", "Мой день рождения "), ("моя любимая еда ", "Моя любимая еда ")];
+    // (what the user says, how it is written down). Only statements of fact about oneself: never «я люблю …» (that may be addressed to someone).
+    let shapes: [(&str, &str); 22] = [
+        ("меня зовут ", "Меня зовут "), ("я живу в ", "Я живу в "), ("у меня аллергия на ", "У меня аллергия на "), ("мой день рождения ", "Мой день рождения "), ("моя любимая еда ", "Моя любимая еда "),
+        ("я работаю ", "Я работаю "), ("я учусь ", "Я учусь "), ("мой любимый цвет ", "Мой любимый цвет "), ("моя любимая музыка ", "Моя любимая музыка "), ("мой любимый фильм ", "Мой любимый фильм "),
+        ("у меня есть собака ", "У меня есть собака "), ("у меня есть кошка ", "У меня есть кошка "), ("я не ем ", "Я не ем "), ("я родился в ", "Я родился в "),
+        ("my name is ", "My name is "), ("i live in ", "I live in "), ("i am allergic to ", "I am allergic to "), ("my birthday is ", "My birthday is "), ("my favorite food is ", "My favorite food is "), ("i work as ", "I work as "),
+        ("mening ismim ", "Mening ismim "), ("men yashayman ", "Men yashayman "),
+    ];
     for (p, shown) in shapes {
         if let Some(rest) = n.strip_prefix(p) {
             if rest.trim().is_empty() {
@@ -405,6 +412,12 @@ mod tests {
         assert_eq!(auto_fact("Меня зовут Хасан").as_deref(), Some("Меня зовут Хасан"));
         assert_eq!(auto_fact("я живу в Ташкенте.").as_deref(), Some("Я живу в Ташкенте"));
         assert_eq!(auto_fact("у меня аллергия на орехи").as_deref(), Some("У меня аллергия на орехи"));
+        assert_eq!(auto_fact("Я работаю программистом").as_deref(), Some("Я работаю программистом"));
+        assert_eq!(auto_fact("my name is Alex").as_deref(), Some("My name is Alex"));
+        assert_eq!(auto_fact("Mening ismim Hasan").as_deref(), Some("Mening ismim Hasan"));
+        assert_eq!(auto_fact("я люблю тебя очень"), None, "a feeling that may be addressed to someone is not a fact about the user");
+        assert_eq!(auto_fact("я работаю а ты как?"), None);
+        assert_eq!(auto_fact("my name is"), None);
         assert_eq!(auto_fact("меня зовут как?"), None);
         assert_eq!(auto_fact("открой браузер"), None);
         assert_eq!(auto_fact("я живу в"), None);

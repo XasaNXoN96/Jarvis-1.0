@@ -520,7 +520,9 @@ pub(crate) fn file_text(path: &Path, ext: &str) -> Option<String> {
             let u: Vec<u16> = bytes[2..].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
             return Some(String::from_utf16_lossy(&u));
         }
-        return Some(decode_text(bytes));
+        let text = decode_text(bytes);
+        // a page of the web: the words, not the tags, the scripts and the styles
+        return Some(if matches!(ext, "html" | "htm" | "xml") { strip_html(&text) } else { text });
     }
     if ZIP_DOCS.contains(&ext) {
         let bytes = std::fs::read(path).ok()?;
@@ -629,6 +631,25 @@ fn zip_entries(bytes: &[u8], wanted: &dyn Fn(&str) -> bool) -> Vec<(String, Vec<
         out.push((name, raw));
     }
     out
+}
+
+// the text of a page: the blocks of <script> and <style> and the comments are dropped first, then the tags
+pub(crate) fn strip_html(html: &str) -> String {
+    let mut s = html.to_string();
+    for (open, close) in [("<script", "</script>"), ("<style", "</style>"), ("<!--", "-->")] {
+        loop {
+            let low = s.to_ascii_lowercase();
+            // (ASCII lower case keeps every byte position, so the positions found in `low` are positions in `s`)
+            let Some(a) = low.find(open) else { break };
+            let end = low[a..].find(close).map(|e| a + e + close.len()).unwrap_or(s.len());
+            if !s.is_char_boundary(a) || !s.is_char_boundary(end) {
+                break;
+            }
+            s.replace_range(a..end, " ");
+        }
+    }
+    let t = strip_xml(&s).replace("&nbsp;", " ");
+    t.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn strip_xml(xml: &str) -> String {

@@ -28,6 +28,8 @@ pub enum Undo {
     // a fact / a note that was edited: (id, the old text, the text the edit made); undone only while the text is still the edited one
     MemoryRevert(String, String, String),
     NoteRevert(String, String, String),
+    // a job that was edited: (the job before, the job after the edit); undone only while the job is still as the edit left it
+    JobRevert(scheduler::Job, scheduler::Job),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -73,6 +75,7 @@ fn apply(u: &Undo) -> Result<String, String> {
         Undo::MemoryAdd(id) => if memory::delete(id) { Ok("Убрал запись из памяти.".into()) } else { Err("Записи уже нет в памяти.".into()) },
         Undo::NoteAdd(id) => if notes::delete(id) { Ok("Убрал запись из дневника.".into()) } else { Err("Записи уже нет.".into()) },
         Undo::JobAdd(id) => if scheduler::remove(id) { Ok("Убрал задание из расписания.".into()) } else { Err("Задания уже нет.".into()) },
+        Undo::JobRevert(old, now) => scheduler::restore(old, now).map(|_| "Вернул прежнее время и фразу задания.".to_string()),
         Undo::MemoryRestore(e) => memory::restore(e.clone()).map(|_| "Вернул запись в память.".to_string()),
         Undo::NoteRestore(n) => notes::restore(n.clone()).map(|_| "Вернул запись в дневник.".to_string()),
         Undo::MemoryRevert(id, old, now) => memory::revert(id, old, now).map(|_| "Вернул прежний текст записи.".to_string()),
@@ -135,6 +138,24 @@ pub fn parse(text: &str) -> Option<bool> {
     }
 }
 
+// The list for the page, newest first: `q` (a part of the text, case does not matter) and `state`: "" / "all", "undoable" (can be taken back
+// now), "undone", "irreversible" (cannot be taken back). An unknown state shows nothing wrong: it is the same as all.
+pub fn filtered(q: &str, state: &str, n: usize) -> Vec<Entry> {
+    let q = crate::textnorm::normalize(q);
+    list()
+        .into_iter()
+        .rev()
+        .filter(|e| match state {
+            "undoable" => can_undo(e),
+            "undone" => e.undone,
+            "irreversible" => !e.undone && e.undo == Undo::None,
+            _ => true,
+        })
+        .filter(|e| q.is_empty() || crate::textnorm::normalize(&e.what).contains(&q))
+        .take(n)
+        .collect()
+}
+
 pub fn summary(n: usize) -> String {
     let l = list();
     if l.is_empty() {
@@ -159,6 +180,42 @@ mod tests {
             assert!(memory::load().items.is_empty());
             assert!(undo("").is_err(), "nothing left, and the same one is not undone twice");
             assert!(summary(5).contains("Открыл чат") && summary(5).contains("(нельзя отменить)") && summary(5).contains("(отменено)"));
+        });
+    }
+
+    #[test]
+    fn an_edited_job_is_put_back_by_the_undo() {
+        store::with_temp(|| {
+            let j = scheduler::add("открой почту", 10, scheduler::Repeat::Once).unwrap();
+            let now = chrono::NaiveDate::from_ymd_opt(2026, 10, 22).unwrap().and_hms_opt(8, 0, 0).unwrap();
+            let (old, new) = scheduler::edit(&j.id, "каждый день в 10:00 открой блокнот", now, 0).unwrap();
+            record("Изменено задание", Undo::JobRevert(old, new));
+            assert!(undo("").unwrap().contains("прежнее время"));
+            assert_eq!(scheduler::list()[0].text, "открой почту");
+            assert!(undo("").is_err());
+        });
+    }
+
+    #[test]
+    fn the_history_can_be_filtered_by_a_word_and_by_state() {
+        store::with_temp(|| {
+            let id = match memory::add("мой кот — Барсик", "t").unwrap() { memory::Added::Added(i) => i, _ => panic!() };
+            record("Запомнил: кот Барсик", Undo::MemoryAdd(id));
+            record("Открыл чат с Маликой", Undo::None);
+            let j = scheduler::add("открой почту", 10, scheduler::Repeat::Daily).unwrap();
+            record("Задание: почта", Undo::JobAdd(j.id));
+            assert_eq!(filtered("", "", 10).len(), 3);
+            assert_eq!(filtered("", "all", 10).len(), 3);
+            assert_eq!(filtered("БАРСИК", "", 10).len(), 1, "a word, any case");
+            assert_eq!(filtered("чат", "irreversible", 10).len(), 1);
+            assert_eq!(filtered("чат", "undoable", 10).len(), 0);
+            assert_eq!(filtered("", "undoable", 10).len(), 2);
+            assert_eq!(filtered("", "garbage", 10).len(), 3, "an unknown state is the same as all");
+            assert_eq!(filtered("", "", 2).len(), 2, "cut to n");
+            assert!(filtered("", "", 10)[0].what.starts_with("Задание"), "newest first");
+            undo("").unwrap();
+            assert_eq!(filtered("", "undone", 10).len(), 1);
+            assert_eq!(filtered("", "irreversible", 10).len(), 1, "an undone entry is not «irreversible»");
         });
     }
 
