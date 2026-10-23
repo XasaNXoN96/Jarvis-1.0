@@ -616,7 +616,7 @@
   .ccard { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 10px 14px; display: flex; gap: 10px; align-items: flex-start; }
   .ccard .cb { flex: 1; min-width: 0; } .ccard .cb > b { font-size: 15px; cursor: pointer; } .ccard .cb > b:hover { color: var(--accent); } .ccard .cd { color: var(--dim); font-size: 12.5px; margin-top: 2px; }
   #commands.cgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; align-items: stretch; } #commands.cgrid .ccard { flex-direction: column; } .cmarks { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; } .cmarks .pill { position: static; }
-  .ccard.off { opacity: .55; } .ccard .chip { font-size: 12px; }
+  .ccard.off { opacity: .55; } .ccard .chip { font-size: 12px; } .ccard .cact { margin-top: 8px; font-size: 12px; padding: 4px 10px; }
   @media (max-width: 760px) { .cat-grid { grid-template-columns: 1fr; } .cat-side { flex-direction: row; flex-wrap: wrap; } .cat-side button { flex: 1 1 45%; } }
   details.grp { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); margin-bottom: 10px; }
   details.grp > summary { list-style: none; cursor: pointer; padding: 12px 14px; display: flex; align-items: center; gap: 10px; }
@@ -4929,7 +4929,14 @@ function renderCommands() {
     card.innerHTML = '<div class="cb"><b></b><div class="cd"></div><div class="ph"></div></div><span class="pill"></span>';
     const insert = p => { const i = $('#h-input'); i.value = p.replace(/\{[^}]*\}/g, '').trim(); show('home'); i.focus(); updateComposers(); };
     const main = card.querySelector('b'); main.textContent = c.phrases[0]; main.title = 'Вставить в поле ввода'; main.onclick = () => insert(c.phrases[0]);
-    card.querySelector('.cd').textContent = (c.description || ('Пакет: ' + c.pack)) + (cmdCat ? '' : ' · ' + (grp.title || ''));
+    // the description of the pack; a command without one shows what to say (its own first phrase), nothing is invented
+    card.querySelector('.cd').textContent = (c.description || ('Скажите: «' + c.phrases[0].replace(/\{[^}]*\}/g, '…') + '»')) + (cmdCat ? '' : ' · ' + (grp.title || ''));
+    // an explicit action: put the phrase into the input field (the same as a click on the name; nothing runs until the user sends it)
+    const act = document.createElement('button'); act.type = 'button'; act.className = 'btn cact'; act.textContent = 'Подставить в поле';
+    act.setAttribute('aria-label', 'Подставить фразу «' + c.phrases[0] + '» в поле ввода');
+    if (c.status === 'unavailable' || c.status === 'off') { act.disabled = true; act.title = c.status === 'off' ? 'Раздел выключен' : (c.note || 'Команда сейчас недоступна'); }
+    else act.onclick = () => insert(c.phrases[0]);
+    card.querySelector('.cb').appendChild(act);
     const ph = card.querySelector('.ph');
     for (const p of c.phrases.slice(1)) { const chip = document.createElement('span'); chip.className = 'chip'; chip.textContent = p; chip.onclick = () => insert(p); ph.appendChild(chip); }
     const PILL = { on: ['РАБОТАЕТ', 'ok'], partial: ['ЧАСТИЧНО', 'warn'], unavailable: ['НЕДОСТУПНО', 'bad'], duplicate: ['ДУБЛЬ', ''], off: ['РАЗДЕЛ ВЫКЛЮЧЕН', ''] };

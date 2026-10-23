@@ -54,3 +54,7 @@ jobs:
         run: node tests/ui/orb_states.js
         env:
           PW_MODULE: ${{ github.workspace }}/node_modules/playwright
+      - name: Command cards (description, explicit action)
+        run: node tests/ui/commands_cards.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright
