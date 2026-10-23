@@ -149,6 +149,13 @@ impl JCommand {
                 all.extend(en.iter().cloned());
             }
         }
+        // Uzbek commands (Latin letters) work whatever the language of the program is: for typed text, the phone and Telegram
+        // (the recognizer of speech has no Uzbek model, so they are not heard from the microphone)
+        if lang != "uz" {
+            if let Some(uz) = self.triggers.get("uz") {
+                all.extend(uz.iter().cloned());
+            }
+        }
         all
     }
 

@@ -54,6 +54,10 @@ jobs:
         run: node tests/ui/program_icons.js
         env:
           PW_MODULE: ${{ github.workspace }}/node_modules/playwright
+      - name: Interface language (English words of the window, Russian restored)
+        run: node tests/ui/ui_language.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright
       - name: Red strip while the phone drives the mouse or watches the camera
         run: node tests/ui/live_strip.js
         env:

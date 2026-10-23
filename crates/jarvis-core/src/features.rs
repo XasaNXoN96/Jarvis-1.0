@@ -349,6 +349,9 @@ pub fn handle(text: &str) -> Option<Reply> {
     if crate::smsread::repeat_requested(text) {
         return r(crate::smsread::repeat_last());
     }
+    if let Some(all) = crate::smsread::unread_requested(text) {
+        return r(crate::smsread::read_unread(all));
+    }
     if let Some(req) = autopilot::parse(text) {
         *PENDING_MSG.lock() = None;
         return r(match autopilot::propose(&req) { Ok(d) => d, Err(e) => e });

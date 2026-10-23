@@ -642,6 +642,41 @@ mod layout_tests {
         assert!(fetch_by_triggers("открой браузер", &p).is_some());
     }
 
+    // the real packs: Uzbek (Latin letters) typed phrases reach the right command, and the Russian and English ones are not taken by them
+    #[test]
+    fn uzbek_phrases_find_their_commands_in_the_real_packs() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../resources/commands");
+        let mut all = Vec::new();
+        for pack in std::fs::read_dir(&dir).unwrap().flatten() {
+            let f = pack.path().join("command.toml");
+            if let Ok(text) = std::fs::read_to_string(&f) {
+                let l: JCommandsList = toml::from_str(&text).unwrap_or_else(|e| panic!("{}: {}", f.display(), e));
+                all.push(JCommandsList { path: pack.path(), commands: l.commands });
+            }
+        }
+        let id = |p: &str| fetch_by_triggers(p, &all).map(|(_, c)| c.id.clone());
+        for (phrase, want) in [
+            ("ovozni oshir", "assistant_volume_up"), ("ovozni pasaytir", "assistant_volume_down"), ("ovozni o'chir", "assistant_volume_mute"), ("ovozni ochir", "assistant_volume_mute"),
+            ("ovozni yoq", "assistant_volume_unmute"), ("ovozni 50 ga qo'y", "assistant_volume_set"), ("taymer 5 daqiqaga", "assistant_timer_set"), ("taymerni bekor qil", "assistant_timer_cancel"),
+            ("soat necha", "assistant_info_time"), ("bugun qaysi kun", "assistant_info_date"), ("musiqani to'xtat", "assistant_media_playpause"), ("keyingi qo'shiq", "assistant_media_next"),
+            ("Salom!", "assistant_greet"), ("qalaysan", "assistant_howareyou"), ("sen kimsan", "assistant_who"), ("ob-havo qanday", "weather"), ("yorqinroq", "assistant_brightness_up"),
+        ] {
+            assert_eq!(id(phrase).as_deref(), Some(want), "{}", phrase);
+        }
+        // the old ones are unchanged
+        for (phrase, want) in [("громче", "assistant_volume_up"), ("volume up", "assistant_volume_up"), ("поставь таймер на 5 минут", "assistant_timer_set"), ("сколько времени", "assistant_info_time")] {
+            assert_eq!(id(phrase).as_deref(), Some(want), "{}", phrase);
+        }
+        // nothing dangerous has an Uzbek trigger
+        for l in &all {
+            for c in &l.commands {
+                if c.triggers.contains_key("uz") {
+                    assert!(c.risk != "high", "{} is a high-risk command and must not have Uzbek triggers without a review", c.id);
+                }
+            }
+        }
+    }
+
     fn pack2() -> Vec<JCommandsList> {
         let file: JCommandsList = toml::from_str(
             r#"

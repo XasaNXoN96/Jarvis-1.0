@@ -132,7 +132,78 @@ pub fn say(network: &str, parts: &[String]) -> String {
         _ => (parts[0].clone(), parts[1..].join(" — ")),
     };
     *LAST.lock() = Some((network.to_string(), who.clone(), text.clone()));
-    phrase(network, &who, &text, &conf(), &crate::i18n::get_language())
+    let c = conf();
+    // a message whose text was not read aloud (the silent level, or the speech is off) waits in the list of the unread ones
+    let spoken_text = c.privacy == Privacy::Full && crate::tts::is_enabled();
+    note_message(network, &who, &text, !spoken_text);
+    phrase(network, &who, &text, &c, &crate::i18n::get_language())
+}
+
+const QUEUE_MAX: usize = 10;
+struct Item {
+    net: String,
+    who: String,
+    text: String,
+    unread: bool,
+}
+#[cfg(not(test))]
+static QUEUE: Mutex<Vec<Item>> = parking_lot::const_mutex(Vec::new());
+// (a test has its own list: other tests that say a message at the same time must not change it)
+#[cfg(test)]
+thread_local! {
+    static QUEUE_T: std::cell::RefCell<Vec<Item>> = std::cell::RefCell::new(Vec::new());
+}
+fn with_queue<R>(f: impl FnOnce(&mut Vec<Item>) -> R) -> R {
+    #[cfg(not(test))]
+    {
+        f(&mut QUEUE.lock())
+    }
+    #[cfg(test)]
+    {
+        QUEUE_T.with(|q| f(&mut q.borrow_mut()))
+    }
+}
+
+fn note_message(net: &str, who: &str, text: &str, unread: bool) {
+    with_queue(|q| {
+        q.push(Item { net: net.to_string(), who: who.to_string(), text: text.to_string(), unread });
+        let extra = q.len().saturating_sub(QUEUE_MAX);
+        q.drain(..extra);
+    });
+}
+
+// «что пришло» / «прочитай новые сообщения» (all the unread ones) and «следующее сообщение» / «прочитай дальше» (one): Some(all)
+pub fn unread_requested(text: &str) -> Option<bool> {
+    match textnorm::normalize(text).as_str() {
+        "что пришло" | "какие новые сообщения" | "прочитай новые сообщения" | "прочитай непрочитанные сообщения" | "прочитай все новые сообщения" | "read new messages" | "read my messages" | "yangi xabarlarni o qi" => Some(true),
+        "следующее сообщение" | "прочитай дальше" | "прочитай следующее сообщение" | "прочитай следующее" | "next message" | "read the next message" | "keyingi xabar" => Some(false),
+        _ => None,
+    }
+}
+
+// reads (and marks as read) the unread messages, with their text whatever the privacy level is: the owner asked for them
+pub fn read_unread(all: bool) -> String {
+    let c = Conf { privacy: Privacy::Full, ..conf() };
+    let lang = crate::i18n::get_language();
+    with_queue(|q| {
+        let mut out = Vec::new();
+        for it in q.iter_mut().filter(|i| i.unread) {
+            out.push(phrase(&it.net, &it.who, &it.text, &c, &lang));
+            it.unread = false;
+            if !all {
+                break;
+            }
+        }
+        if out.is_empty() {
+            return "Непрочитанных сообщений нет.".to_string();
+        }
+        let left = q.iter().filter(|i| i.unread).count();
+        let mut text = out.join(". ");
+        if !all && left > 0 {
+            text.push_str(&format!(". Ещё непрочитанных: {}. Скажите «следующее сообщение».", left));
+        }
+        text
+    })
 }
 
 // «повтори сообщение» / «прочитай ещё раз» / «repeat the message»: the last message again, with the text even if the privacy level is lower
@@ -187,6 +258,31 @@ mod tests {
         let t = clean_text(&long, "ru");
         assert!(t.chars().count() <= MAX_CHARS + 1 && t.ends_with('…') && !t.contains("  "));
         assert_eq!(clean_text("a\u{7}b\nc", "ru"), "ab c".replace("ab c", "ab c"));
+    }
+
+    #[test]
+    fn unread_messages_wait_and_are_read_on_request_one_by_one_or_all() {
+        store::with_temp(|| {
+            set(Privacy::Silent, "ru").unwrap();
+            say("Telegram", &["Иван".to_string(), "первое".to_string()]);
+            say("WhatsApp", &["Анна".to_string(), "второе".to_string()]);
+            say("Telegram", &["Олег".to_string(), "третье".to_string()]);
+            assert_eq!(unread_requested("Следующее сообщение"), Some(false));
+            assert_eq!(unread_requested("что пришло"), Some(true));
+            assert_eq!(unread_requested("открой браузер"), None);
+            let one = read_unread(false);
+            assert!(one.contains("Иван: первое") && one.contains("Ещё непрочитанных: 2"), "{}", one);
+            let rest = read_unread(true);
+            assert!(rest.contains("Анна: второе") && rest.contains("Олег: третье") && !rest.contains("первое"), "{}", rest);
+            assert_eq!(read_unread(true), "Непрочитанных сообщений нет.");
+            // only the last ten are kept
+            for i in 0..15 {
+                say("Telegram", &["X".to_string(), format!("m{}", i)]);
+            }
+            let all = read_unread(true);
+            assert!(all.contains("m14") && all.contains("m5") && !all.contains("m4:") && !all.contains("m0"), "{}", all);
+            // a message that was read aloud in full is not left unread (when the speech is on); here the level is silent, so they waited
+        });
     }
 
     #[test]

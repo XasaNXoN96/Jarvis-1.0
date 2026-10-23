@@ -102,11 +102,12 @@ fn fraction_word(t: &str) -> Option<f64> {
 
 // seconds in a unit, by word prefix
 fn unit_seconds(t: &str) -> Option<f64> {
-    if t.starts_with("сек") || t.starts_with("second") || t == "sec" || t == "secs" {
+    // (Uzbek in Latin letters: soniya, sekund, daqiqa, minut, soat; only timers and reminders ask for a duration, «soat necha» is another command)
+    if t.starts_with("сек") || t.starts_with("second") || t == "sec" || t == "secs" || t.starts_with("soniy") || t.starts_with("sekund") {
         Some(1.0)
-    } else if t.starts_with("мин") || t.starts_with("minute") || t == "min" || t == "mins" {
+    } else if t.starts_with("мин") || t.starts_with("minute") || t == "min" || t == "mins" || t.starts_with("daqiq") || t.starts_with("minut") {
         Some(60.0)
-    } else if t.starts_with("час") || t.starts_with("hour") || t == "hr" || t == "hrs" {
+    } else if t.starts_with("час") || t.starts_with("hour") || t == "hr" || t == "hrs" || t.starts_with("soat") {
         Some(3600.0)
     } else {
         None
@@ -535,6 +536,9 @@ mod tests {
         assert_eq!(parse_duration("таймер 30 секунд").unwrap().0, 30);
         assert_eq!(parse_duration("timer for 2 minutes").unwrap().0, 120);
         assert_eq!(parse_duration("таймер 5min").unwrap().0, 300);
+        assert_eq!(parse_duration("taymer 5 daqiqaga qo'y").unwrap().0, 300);
+        assert_eq!(parse_duration("taymer 30 soniya").unwrap().0, 30);
+        assert_eq!(parse_duration("2 soatdan keyin").unwrap().0, 7200);
         assert_eq!(parse_duration("выключи компьютер"), None);
         assert_eq!(parse_duration("через 0 минут"), None);
     }

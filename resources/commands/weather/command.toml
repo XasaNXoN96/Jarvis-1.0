@@ -4,6 +4,7 @@ risk = "low"
 type = "lua"
 triggers.ru = ["погод"]
 triggers.en = ["weather"]
+triggers.uz = ["ob havo", "havo qanday"]
 script = "script.lua"
 timeout = 20000
 sandbox = "standard"
@@ -11,6 +12,7 @@ sandbox = "standard"
 [commands.phrases]
 ru = ["какая погода в {city}", "погода {city}"]
 en = ["what's the weather in {city}", "weather in {city}"]
+uz = ["ob-havo {city}"]
 
 [commands.sounds]
 ru = ["weather_ru_1", "weather_ru_2"]

@@ -34,10 +34,77 @@ fn target_code(word: &str) -> Option<&'static str> {
     }
 }
 
+
+// the text without a beginning, when the text starts with it (case does not matter, the rest keeps its letters)
+fn after_ci(t: &str, p: &str) -> Option<String> {
+    let n = p.chars().count();
+    let head: String = t.chars().take(n).collect();
+    (head.to_lowercase() == p).then(|| t.chars().skip(n).collect())
+}
+
+// the text without an ending
+fn before_ci(t: &str, p: &str) -> Option<String> {
+    let n = p.chars().count();
+    let total = t.chars().count();
+    if total < n {
+        return None;
+    }
+    let tail: String = t.chars().skip(total - n).collect();
+    (tail.to_lowercase() == p).then(|| t.chars().take(total - n).collect())
+}
+
+// «по-английски» / «по английски» / «по-русски» / «по-узбекски» at the start or the end of the text: the language it names
+fn by_adverb(w: &str) -> Option<&'static str> {
+    let w = w.trim().trim_matches(|c: char| ",.!?:;".contains(c)).to_lowercase().replace("по-", "по ");
+    match w.as_str() {
+        "по английски" => Some("en"),
+        "по русски" => Some("ru"),
+        "по узбекски" => Some("uz"),
+        _ => None,
+    }
+}
+
+// «как будет привет по-английски» / «как сказать спасибо по-русски» / «как по-английски спасибо» / «скажи по-английски привет» /
+// «переведи привет на английский»: the other ways people ask for a translation
+fn parse_other_forms(t: &str) -> Option<Request> {
+    let ends = [(" на английский язык", "en"), (" на русский язык", "ru"), (" на узбекский язык", "uz"), (" на английский", "en"), (" на русский", "ru"), (" на узбекский", "uz")];
+    for p in ["переведи ", "переведи это ", "translate "] {
+        if let Some(rest) = after_ci(t, p) {
+            for (e, code) in ends {
+                if let Some(body) = before_ci(rest.trim_end(), e) {
+                    let body = body.trim().trim_matches(':').trim().to_string();
+                    return Some(Request { text: body, target: Some(code) }).filter(|r| !r.text.is_empty());
+                }
+            }
+        }
+    }
+    for p in ["как будет ", "как сказать ", "как переводится "] {
+        if let Some(rest) = after_ci(t, p) {
+            for adv in [" по-английски", " по английски", " по-русски", " по русски", " по-узбекски", " по узбекски"] {
+                if let Some(body) = before_ci(rest.trim_end().trim_end_matches(['?', '.', '!']), adv) {
+                    let code = by_adverb(adv)?;
+                    return Some(Request { text: body.trim().to_string(), target: Some(code) }).filter(|r| !r.text.is_empty());
+                }
+            }
+        }
+    }
+    for p in ["как по-английски ", "как по английски ", "как по-русски ", "как по русски ", "как по-узбекски ", "как по узбекски ", "скажи по-английски ", "скажи по английски ", "скажи по-русски ", "скажи по русски "] {
+        if let Some(body) = after_ci(t, p) {
+            let code = by_adverb(&p.replace("как ", "").replace("скажи ", ""))?;
+            return Some(Request { text: body.trim().trim_end_matches(['?', '.', '!']).trim().to_string(), target: Some(code) }).filter(|r| !r.text.is_empty());
+        }
+    }
+    None
+}
+
 // «переведи на английский: привет» / «переведи привет» / «translate to russian: hello» / «translate hello»
 pub fn parse(text: &str) -> Option<Request> {
     let t = text.trim();
     let low = t.to_lowercase();
+    // «переведи привет на английский» must not be read as «переведи» + the whole rest in the language of the text
+    if let Some(r) = parse_other_forms(t) {
+        return Some(r);
+    }
     for p in ["переведи на ", "переведи это на ", "translate to ", "translate into "] {
         if low.starts_with(p) {
             let rest: String = t.chars().skip(p.chars().count()).collect();
@@ -159,6 +226,24 @@ mod tests {
         assert_eq!(parse("переведи привет"), Some(Request { text: "привет".into(), target: None }));
         assert_eq!(parse("переведи на английский"), None);
         assert_eq!(parse("открой браузер"), None);
+    }
+
+    #[test]
+    fn the_other_ways_to_ask_for_a_translation() {
+        let r = |t: &str, to: &'static str, text: &str| assert_eq!(parse(t), Some(Request { text: text.into(), target: Some(to) }), "{}", t);
+        r("Переведи привет на английский", "en", "привет");
+        r("переведи добрый день на узбекский язык", "uz", "добрый день");
+        r("translate good morning на русский", "ru", "good morning");
+        r("как будет спасибо по-английски?", "en", "спасибо");
+        r("Как сказать thank you по-русски", "ru", "thank you");
+        r("как по-английски до свидания", "en", "до свидания");
+        r("как по узбекски спасибо", "uz", "спасибо");
+        r("скажи по-английски доброе утро", "en", "доброе утро");
+        // the old forms still work, and a text that only ends with a language word in another sense is not cut
+        assert_eq!(parse("переведи привет"), Some(Request { text: "привет".into(), target: None }));
+        assert_eq!(parse("переведи на английский: привет мир").unwrap().text, "привет мир");
+        assert_eq!(parse("как будет по-английски"), None, "nothing to translate");
+        assert_eq!(parse("как дела по-английски"), None, "not a translation request");
     }
     #[test]
     fn direction_is_detected() {
