@@ -119,24 +119,38 @@ pub fn same_stem(a: &str, b: &str) -> bool {
 
 // Russian, English or Uzbek (Latin / Cyrillic): the language of a text; "" when it cannot be said
 pub fn detect_lang(s: &str) -> &'static str {
+    detect_lang_sure(s).0
+}
+
+// the language and whether it is certain: a Latin text with no known word of English or Uzbek is only GUESSED to be English
+pub fn detect_lang_sure(s: &str) -> (&'static str, bool) {
     let low = s.to_lowercase();
     if low.chars().any(|c| "ўқғҳ".contains(c)) {
-        return "uz";
+        return ("uz", true);
     }
     let cyr = low.chars().filter(|c| ('\u{400}'..='\u{4ff}').contains(c)).count();
     let lat = low.chars().filter(|c| c.is_ascii_alphabetic()).count();
     if cyr == 0 && lat == 0 {
-        return "";
+        return ("", false);
     }
     if cyr >= lat {
-        return "ru";
+        return ("ru", true);
     }
     let words: Vec<String> = normalize(&low).split(' ').map(|w| w.to_string()).collect();
     let uz = ["salom", "qanday", "yoz", "menga", "uchun", "bilan", "emas", "yo'q", "ha", "xabar", "kerak", "xotinimga", "onamga", "aka", "rahmat", "iltimos", "va", "bu", "men", "sen", "nima", "bor"];
-    let en = ["the", "is", "are", "and", "to", "of", "you", "me", "send", "write", "what", "how", "please", "my", "a", "in", "it", "this", "that", "message", "wife", "tell"];
+    let en = ["the", "is", "are", "and", "to", "of", "you", "me", "send", "write", "what", "how", "please", "my", "a", "in", "it", "this", "that", "message", "wife", "tell", "hello", "hi", "good", "morning", "evening", "thanks", "thank", "yes", "no", "with", "for", "from", "we", "they", "have", "can", "will", "not"];
     let u = words.iter().filter(|w| uz.contains(&w.as_str())).count() + low.matches("o'").count() + low.matches("g'").count();
     let e = words.iter().filter(|w| en.contains(&w.as_str())).count();
-    if u > e { "uz" } else if e > 0 || u == 0 { "en" } else { "uz" }
+    if u > e {
+        ("uz", true)
+    } else if e > 0 {
+        ("en", true)
+    } else if u == 0 {
+        // nothing is known about the words: «English» is a guess
+        ("en", false)
+    } else {
+        ("uz", true)
+    }
 }
 
 #[cfg(test)]

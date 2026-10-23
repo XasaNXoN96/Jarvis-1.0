@@ -134,8 +134,9 @@ pub fn system_prompt(target: &str) -> String {
 // `ask(system, user)` is the provider call
 pub fn translate(req: &Request, ask: &dyn Fn(&str, &str) -> Result<String, String>) -> Result<String, String> {
     let target = target_for(req);
-    let source = textnorm::detect_lang(&req.text);
-    if source == target {
+    let (source, sure) = textnorm::detect_lang_sure(&req.text);
+    // the text is given back untouched ONLY when it is certainly in the target language; a guess is not a reason to show the original as a translation
+    if source == target && sure {
         return Ok(req.text.clone());
     }
     let (masked, kept) = protect(&req.text);
@@ -185,5 +186,18 @@ mod tests {
         // provider errors are passed on
         let err = |_: &str, _: &str| -> Result<String, String> { Err("нет ключа".into()) };
         assert_eq!(translate(&Request { text: "привет".into(), target: None }, &err).unwrap_err(), "нет ключа");
+    }
+
+    #[test]
+    fn a_latin_text_of_an_unknown_language_is_not_taken_for_english() {
+        // Uzbek in Latin letters without the usual small words: the detector can only guess «English», and the original must not be given back as a translation
+        let called = std::cell::Cell::new(0);
+        let ask = |_: &str, u: &str| { called.set(called.get() + 1); Ok(format!("The book is on the table ({})", u.len())) };
+        let r = translate(&Request { text: "Kitob stolda".into(), target: Some("en") }, &ask).unwrap();
+        assert_eq!(called.get(), 1, "the provider is asked");
+        assert!(r.starts_with("The book"), "{}", r);
+        // a text that really is English (known words) is still returned without a call
+        let never = |_: &str, _: &str| -> Result<String, String> { panic!("called") };
+        assert_eq!(translate(&Request { text: "send me the message".into(), target: Some("en") }, &never).unwrap(), "send me the message");
     }
 }
