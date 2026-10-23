@@ -95,6 +95,8 @@ pub fn recognize_speech(data: &[i16]) -> Option<String> {
 // a recording that is not the microphone (a voice message of Telegram): a recognizer of its own on the same model, so
 // the live recognition of the microphone is never disturbed. 16 kHz mono.
 pub fn transcribe(data: &[i16]) -> Result<String, String> {
+    // the sphere shows «распознаю» while the phrase is being recognized
+    let _busy = crate::activity::enter(crate::activity::Kind::Recognizing);
     init_vosk()?;
     let model = VOSK_MODEL.get().ok_or("модель распознавания не загружена")?;
     let mut r = Recognizer::new(&model.model, 16000.0).ok_or("не удалось запустить распознавание")?;

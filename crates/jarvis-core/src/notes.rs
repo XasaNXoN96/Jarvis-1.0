@@ -121,6 +121,7 @@ pub fn delete(id: &str) -> bool {
 }
 
 pub fn search(q: &str) -> Vec<Note> {
+    let _busy = crate::activity::enter(crate::activity::Kind::Searching);
     let q = textnorm::normalize(q);
     let words: Vec<&str> = q.split(' ').filter(|w| w.chars().count() > 2).collect();
     let mut v: Vec<Note> = list()

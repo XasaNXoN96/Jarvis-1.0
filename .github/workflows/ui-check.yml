@@ -50,3 +50,7 @@ jobs:
         run: node tests/ui/diag_fix.js
         env:
           PW_MODULE: ${{ github.workspace }}/node_modules/playwright
+      - name: Sphere states (recognizing, searching, executing)
+        run: node tests/ui/orb_states.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright

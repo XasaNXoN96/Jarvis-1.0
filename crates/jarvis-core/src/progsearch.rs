@@ -178,6 +178,7 @@ mod win {
     }
 
     pub fn search(q: &str) -> Result<Vec<Package>, String> {
+        let _busy = crate::activity::enter(crate::activity::Kind::Searching);
         if !valid_query(q) {
             return Err("Запрос должен быть коротким и без спецсимволов.".into());
         }
@@ -274,6 +275,7 @@ pub use win::{cancel, install, search};
 
 #[cfg(not(target_os = "windows"))]
 pub fn search(_q: &str) -> Result<Vec<Package>, String> {
+    let _busy = crate::activity::enter(crate::activity::Kind::Searching);
     Err("Каталог программ (winget) есть только в Windows.".into())
 }
 #[cfg(not(target_os = "windows"))]

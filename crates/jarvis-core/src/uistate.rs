@@ -867,6 +867,8 @@ pub fn state_json() -> Value {
         "active_chat": crate::ai::store().active().unwrap_or_default(),
         "piper": crate::tts::piper_available(),
         "speech": json!({ "enabled": crate::tts::is_enabled(), "piper": crate::tts::piper_available(), "windows_voice": voice_name().starts_with("win:"), "problem": crate::tts::speech_problem() }),
+        // what Jarvis is doing now ("recognizing" | "searching" | "executing" | ""): the sphere of the window
+        "activity": crate::activity::current(),
         "ai_busy": crate::ai::store().active().map(|id| crate::ai::is_busy(&id)).unwrap_or(false),
         "health": crate::health::json(),
         "weather": crate::weather::json(),

@@ -321,6 +321,7 @@ pub fn search_in(idx: &Index, query: &str, k: usize) -> Vec<Hit> {
 }
 
 pub fn search(query: &str, k: usize) -> Vec<Hit> {
+    let _busy = crate::activity::enter(crate::activity::Kind::Searching);
     search_in(&load(), query, k)
 }
 

@@ -197,6 +197,7 @@ pub fn delete(id: &str) -> bool {
 
 // the entries that mention the words of the query (all the words, typos allowed), best first
 pub fn search(query: &str) -> Vec<Entry> {
+    let _busy = crate::activity::enter(crate::activity::Kind::Searching);
     let q = textnorm::normalize(query);
     let words: Vec<&str> = q.split(' ').filter(|w| w.chars().count() > 2).collect();
     let m = load();

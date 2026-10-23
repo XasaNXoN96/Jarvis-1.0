@@ -5193,13 +5193,16 @@ if (!SPHERES[sphere]) sphere = THEMES[theme][3];
 if (!SPEEDS[speed]) speed = 'normal'; if (!GLOWS[glow]) glow = 'normal';
 const ORB_KINDS = {
   error: ['ошибка', [352, 75], 0.6], off: ['нет связи', [220, 6], 0], muted: ['микрофон выключен', [220, 10], 0.02], listening: ['слушаю', null, 0.55],
-  speaking: ['говорю', null, 0.75], thinking: ['думаю', null, 0.4], game: ['игровой режим', [135, 55], 0.15], locked: ['защита включена', [40, 40], 0.05], idle: ['готов', null, 0.05]
+  speaking: ['говорю', null, 0.75], thinking: ['думаю', null, 0.4], recognizing: ['распознаю', null, 0.5], searching: ['ищу', null, 0.45], executing: ['выполняю', null, 0.6], game: ['игровой режим', [135, 55], 0.15], locked: ['защита включена', [40, 40], 0.05], idle: ['готов', null, 0.05]
 };
 function orbKind() {
   if (state === 'error') return 'error';
   if (state === 'off' || !connected) return 'off';
   if (state === 'listening' || state === 'wake') return 'listening';
   if (state === 'speaking') return 'speaking';
+  // what the program does now (from the state of the server); an unknown word is ignored, so an old server never breaks the sphere
+  const act = lastState && lastState.activity;
+  if (act === 'recognizing' || act === 'searching' || act === 'executing') return act;
   if (state === 'busy' || (lastState && lastState.ai_busy)) return 'thinking';
   const v = lastState && lastState.voice_state && lastState.voice_state.state;
   if (v === 'DISABLED') return 'muted';

@@ -7,6 +7,7 @@ use std::path::PathBuf;
 #[macro_use]
 extern crate log;
 
+pub mod activity;
 pub mod time;
 
 pub mod audio;

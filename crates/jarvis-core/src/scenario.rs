@@ -627,6 +627,7 @@ pub fn orphan_steps() -> usize {
 }
 
 fn run_inner(sc: &Scenario, remember: bool, guard: Option<&Guard>) -> RunResult {
+    let _busy = crate::activity::enter(crate::activity::Kind::Executing);
     let total = sc.steps.len();
     {
         let mut running = RUNNING.lock();
