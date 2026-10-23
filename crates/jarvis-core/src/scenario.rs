@@ -410,7 +410,7 @@ pub fn run_step(s: &Step) -> Result<(), String> {
     r
 }
 
-fn run_step_in(s: &Step, grid: &mut Vec<isize>) -> Result<(), String> {
+pub(crate) fn run_step_in(s: &Step, grid: &mut Vec<isize>) -> Result<(), String> {
     // scenarios (and their steps) are a paid function: every way to run one comes through here
     crate::access::check("scenario_run").map_err(|d| d.message)?;
     check_step(s)?;
@@ -546,11 +546,58 @@ pub fn run_draft(sc: &Scenario) -> RunResult {
 
 // a plan made by the AI (autopilot): `gate` is asked BEFORE EVERY step, so a permission taken away or the owner lock
 // closed in the middle of a long plan stops it at once instead of letting the rest run
-pub fn run_gated(sc: &Scenario, gate: &dyn Fn() -> Result<(), String>) -> RunResult {
-    run_inner(sc, false, Some(gate))
+pub fn run_gated(sc: &Scenario, guard: &Guard) -> RunResult {
+    run_inner(sc, false, Some(guard))
 }
 
-fn run_inner(sc: &Scenario, remember: bool, gate: Option<&dyn Fn() -> Result<(), String>>) -> RunResult {
+// What a plan of the AI is run under (a saved scenario of the user has none of it):
+// - `gate`: asked before EVERY step (rights, owner lock);
+// - `limit`: the time one step may take; when it passes the chain stops (the step itself cannot be taken back, see `timed`);
+// - `journal(step number from 1, steps, kind of the step, outcome)`: ONE line per step in the security journal.
+//   Outcome is one of ok / error / timeout / cancelled / denied; the parameters of a step and the text of its error are NOT given (they may hold the text of the user, a path or a password);
+// - `exec`: how one step is done (the real one by default; a test puts a mock here, so no mouse or keys are touched).
+pub struct Guard<'a> {
+    pub gate: &'a dyn Fn() -> Result<(), String>,
+    pub journal: &'a dyn Fn(usize, usize, &str, &str),
+    pub limit: fn(&Step) -> Duration,
+    pub exec: fn(&Step, &mut Vec<isize>) -> Result<(), String>,
+}
+
+// the time one step may take: a pause as long as it says and a few seconds more; a program up to 20 s (it is waited for 8 s, a window 10 s); the rest 30 s
+pub fn step_limit(s: &Step) -> Duration {
+    match s.kind.as_str() {
+        "pause" => Duration::from_millis((s.param.trim().replace(',', ".").parse::<f64>().unwrap_or(1.0).clamp(0.0, 60.0) * 1000.0) as u64 + 5_000),
+        "app" | "link" | "file" => Duration::from_secs(20),
+        _ => Duration::from_secs(30),
+    }
+}
+
+// One step on its own thread, the caller waits for it no longer than `limit`. On time out the chain goes on WITHOUT the step, but
+// the step is not stopped: a mouse click or a keystroke that has started cannot be taken back, and the thread cannot be killed
+// safely. It may still finish later; that is said in the message and nothing after it is run.
+fn timed(s: &Step, grid: &mut Vec<isize>, limit: Duration, exec: fn(&Step, &mut Vec<isize>) -> Result<(), String>) -> Result<(), String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let st = s.clone();
+    let mut g = grid.clone();
+    let ctx = crate::origin::capture();
+    let spawned = std::thread::Builder::new().name("plan-step".into()).spawn(move || {
+        let _o = crate::origin::adopt(ctx);
+        let r = exec(&st, &mut g);
+        let _ = tx.send((r, g));
+    });
+    if spawned.is_err() {
+        return Err("не удалось запустить шаг".into());
+    }
+    match rx.recv_timeout(limit) {
+        Ok((r, g)) => {
+            *grid = g;
+            r
+        }
+        Err(_) => Err(format!("шаг не завершился за {} с; он мог продолжить работу, остановить его нельзя", limit.as_secs().max(1))),
+    }
+}
+
+fn run_inner(sc: &Scenario, remember: bool, guard: Option<&Guard>) -> RunResult {
     let total = sc.steps.len();
     {
         let mut running = RUNNING.lock();
@@ -580,19 +627,35 @@ fn run_inner(sc: &Scenario, remember: bool, gate: Option<&dyn Fn() -> Result<(),
         for (i, s) in sc.steps.iter().enumerate() {
             if CANCEL.swap(false, std::sync::atomic::Ordering::SeqCst) {
                 message = format!("отменено перед шагом {}", i + 1);
+                if let Some(g) = guard {
+                    (g.journal)(i + 1, total, &s.kind, "cancelled");
+                }
                 break;
             }
-            if let Some(g) = gate {
-                if let Err(e) = g() {
+            if let Some(g) = guard {
+                if let Err(e) = (g.gate)() {
                     message = format!("остановлено перед шагом {}: {}", i + 1, e);
+                    (g.journal)(i + 1, total, &s.kind, "denied");
                     break;
                 }
             }
             *RUNNING.lock() = Some((sc.id.clone(), i + 1, total, step_title(&s.kind).to_string()));
-            match run_step_in(s, &mut grid) {
-                Ok(()) => done += 1,
+            let res = match guard {
+                Some(g) => timed(s, &mut grid, (g.limit)(s), g.exec),
+                None => run_step_in(s, &mut grid),
+            };
+            match res {
+                Ok(()) => {
+                    done += 1;
+                    if let Some(g) = guard {
+                        (g.journal)(i + 1, total, &s.kind, "ok");
+                    }
+                }
                 Err(e) => {
                     message = format!("Шаг {} ({}): {}", i + 1, step_title(&s.kind), e);
+                    if let Some(g) = guard {
+                        (g.journal)(i + 1, total, &s.kind, if e.starts_with("шаг не завершился") { "timeout" } else { "error" });
+                    }
                     break;
                 }
             }

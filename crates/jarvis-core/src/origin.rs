@@ -112,6 +112,19 @@ pub fn run_as<R>(source: Source, f: impl FnOnce() -> R) -> R {
     f()
 }
 
+// the door and the operation number of this thread, to hand them to a worker thread that does a part of the same operation
+pub fn capture() -> (Option<Source>, u64) {
+    (CURRENT.with(|c| c.get()), OP.with(|c| c.get()))
+}
+
+// the worker thread takes over what `capture` gave on the thread that started it (same operation number, same door)
+pub fn adopt(c: (Option<Source>, u64)) -> Entered {
+    let prev = capture();
+    CURRENT.with(|x| x.set(c.0));
+    OP.with(|x| x.set(c.1));
+    Entered(prev.0, prev.1)
+}
+
 // the door of the command that runs now; None outside of a command (a test, the command line tool)
 pub fn current() -> Option<Source> {
     CURRENT.with(|c| c.get())

@@ -133,12 +133,25 @@ pub fn gate() -> Result<(), String> {
     crate::owner::guard()
 }
 
-// Runs the plan the one way (the scenario engine) with the gate; one record in the security journal under one operation number:
-// how many steps, how many were done, why it stopped. No parameters of the steps are written (they may hold text of the user).
+// Runs the plan the one way (the scenario engine) with the gate, the time limit of a step and a line in the security journal for
+// EVERY step (kind of the step and outcome only: no parameters, no text of errors), then one line for the whole plan, all under
+// one operation number.
 pub fn execute(sc: &Scenario) -> scenario::RunResult {
-    let r = scenario::run_gated(sc, &gate);
+    execute_with(sc, scenario::step_limit, scenario::run_step_in, &gate)
+}
+
+pub(crate) fn execute_with(
+    sc: &Scenario,
+    limit: fn(&scenario::Step) -> std::time::Duration,
+    exec: fn(&scenario::Step, &mut Vec<isize>) -> Result<(), String>,
+    gate: &dyn Fn() -> Result<(), String>,
+) -> scenario::RunResult {
+    let journal = |n: usize, total: usize, kind: &str, outcome: &str| {
+        crate::audit::record("autopilot_step", kind, "high", outcome, true, &format!("шаг {} из {}", n, total));
+    };
+    let r = scenario::run_gated(sc, &scenario::Guard { gate, journal: &journal, limit, exec });
     let decision = if r.ok { "allow" } else { "stopped" };
-    crate::audit::record("autopilot", "plan", "high", decision, true, &format!("шагов {} из {}. {}", r.done, r.total, if r.ok { "" } else { r.message.as_str() }));
+    crate::audit::record("autopilot", "plan", "high", decision, true, &format!("выполнено шагов {} из {}", r.done, r.total));
     r
 }
 
@@ -151,48 +164,130 @@ pub fn stop_requested(text: &str) -> bool {
 mod tests {
     use super::*;
 
-    fn pauses(n: usize) -> Scenario {
-        let steps: Vec<String> = (0..n).map(|_| r#"{"kind":"pause","param":"0.1"}"#.to_string()).collect();
-        parse_plan(&format!("{{\"steps\":[{}]}}", steps.join(",")), "пауза").unwrap().scenario
+    fn plan(params: &[&str]) -> Scenario {
+        let steps: Vec<String> = params.iter().map(|p| format!(r#"{{"kind":"pause","param":"{}"}}"#, p)).collect();
+        parse_plan(&format!("{{\"steps\":[{}]}}", steps.join(",")), "секретная просьба 12345").unwrap().scenario
+    }
+
+    // mocks: the param of the step says what it does; nothing real is touched
+    fn mock(s: &scenario::Step, _g: &mut Vec<isize>) -> Result<(), String> {
+        match s.param.as_str() {
+            "0.4" => Err("не получилось открыть C:\\\\секрет\\\\пароль.txt".into()),
+            "0.3" => {
+                std::thread::sleep(std::time::Duration::from_millis(900));
+                Ok(())
+            }
+            "0.2" => {
+                std::thread::sleep(std::time::Duration::from_millis(120));
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+    fn short(_: &scenario::Step) -> std::time::Duration {
+        std::time::Duration::from_millis(300)
+    }
+    fn open() -> Result<(), String> {
+        Ok(())
+    }
+    fn lines() -> Vec<(String, String)> {
+        let mut l = crate::audit::list(100);
+        // the journal lists the newest first; the second is too coarse to sort by
+        l.reverse();
+        // (a server thread left by another test can write its own lines into the same folder: only the lines of the plan count)
+        l.into_iter().filter(|e| e.kind.starts_with("autopilot")).map(|e| (e.kind, e.decision)).collect()
     }
 
     #[test]
-    fn the_rights_are_asked_before_every_step_and_the_plan_stops_when_one_is_taken_away() {
+    fn several_steps_run_in_order_and_each_one_is_in_the_journal_in_that_order() {
         let _l = scenario::RUN_TEST_LOCK.lock();
         crate::store::with_temp(|| {
-            crate::owner::reset_for_tests();
-            let sc = pauses(4);
-            let asked = std::cell::Cell::new(0);
-            // all rights stay: every step asks, all steps run
-            let r = scenario::run_gated(&sc, &|| { asked.set(asked.get() + 1); Ok(()) });
-            assert!(r.ok && r.done == 4 && asked.get() == 4, "{:?}", r);
-            // taken away after two steps: the 3rd and 4th do not run, the message says before which step
-            asked.set(0);
-            let r = scenario::run_gated(&sc, &|| { asked.set(asked.get() + 1); if asked.get() > 2 { Err("разрешение выключено".into()) } else { Ok(()) } });
+            let sc = plan(&["0.1", "0.1", "0.2"]);
+            let r = execute_with(&sc, short, mock, &open);
+            assert!(r.ok && r.done == 3, "{:?}", r);
+            let got = lines();
+            let want: Vec<(String, String)> = [("autopilot_step", "ok"), ("autopilot_step", "ok"), ("autopilot_step", "ok"), ("autopilot", "allow")].iter().map(|(a, b)| (a.to_string(), b.to_string())).collect();
+            assert_eq!(got, want);
+            // all of one operation carry one number or none (no thread of the plan invents a new one)
+            let ops: std::collections::HashSet<u64> = crate::audit::list(100).iter().filter(|e| e.kind.starts_with("autopilot")).map(|e| e.op).collect();
+            assert_eq!(ops.len(), 1, "{:?}", ops);
+        });
+    }
+
+    #[test]
+    fn a_step_that_takes_too_long_stops_the_plan_and_the_next_steps_never_start() {
+        let _l = scenario::RUN_TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            let sc = plan(&["0.1", "0.3", "0.1", "0.1"]);
+            let t = std::time::Instant::now();
+            let r = execute_with(&sc, short, mock, &open);
+            assert!(t.elapsed() < std::time::Duration::from_millis(800), "the plan waited for the whole step");
+            assert!(!r.ok && r.done == 1 && r.message.contains("Шаг 2") && r.message.contains("не завершился") && r.message.contains("остановить его нельзя"), "{:?}", r);
+            assert_eq!(lines().iter().map(|l| l.1.as_str()).collect::<Vec<_>>(), ["ok", "timeout", "stopped"]);
+            std::thread::sleep(std::time::Duration::from_millis(700));
+            // steps 3 and 4 were never started: nothing more in the journal
+            assert_eq!(lines().len(), 3);
+        });
+    }
+
+    #[test]
+    fn an_error_of_a_step_stops_the_plan_and_the_journal_does_not_keep_the_text_of_the_error_or_the_request() {
+        let _l = scenario::RUN_TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            let sc = plan(&["0.1", "0.4", "0.1"]);
+            let r = execute_with(&sc, short, mock, &open);
+            assert!(!r.ok && r.done == 1 && r.message.contains("Шаг 2"), "{:?}", r);
+            assert_eq!(lines().iter().map(|l| l.1.as_str()).collect::<Vec<_>>(), ["ok", "error", "stopped"]);
+            let mine: Vec<_> = crate::audit::list(100).into_iter().filter(|e| e.kind.starts_with("autopilot")).collect();
+            let all = serde_json::to_string(&mine).unwrap();
+            for secret in ["секрет", "пароль", "12345", "0.4", "0.3"] {
+                assert!(!all.contains(secret), "{} in the journal: {}", secret, all);
+            }
+        });
+    }
+
+    #[test]
+    fn a_right_taken_away_in_the_middle_stops_the_plan_before_the_next_step() {
+        let _l = scenario::RUN_TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            static ASKED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            ASKED.store(0, std::sync::atomic::Ordering::SeqCst);
+            let gate = || if ASKED.fetch_add(1, std::sync::atomic::Ordering::SeqCst) >= 2 { Err("разрешение выключено".to_string()) } else { Ok(()) };
+            let r = execute_with(&plan(&["0.1", "0.1", "0.1", "0.1"]), short, mock, &gate);
             assert!(!r.ok && r.done == 2 && r.message.contains("перед шагом 3") && r.message.contains("разрешение выключено"), "{:?}", r);
+            assert_eq!(lines().iter().map(|l| l.1.as_str()).collect::<Vec<_>>(), ["ok", "ok", "denied", "stopped"]);
             // the real gate: the permission is off by default
-            let r = execute(&sc);
+            crate::owner::reset_for_tests();
+            let r = execute(&plan(&["0.1"]));
             assert!(!r.ok && r.done == 0, "{:?}", r);
         });
     }
 
     #[test]
-    fn a_stop_said_while_the_plan_starts_is_not_lost_and_a_stale_stop_does_not_stop_the_next_plan() {
+    fn a_stop_between_steps_is_kept_and_a_started_step_is_not_claimed_to_be_cancelled() {
         let _l = scenario::RUN_TEST_LOCK.lock();
         crate::store::with_temp(|| {
-            let sc = pauses(3);
-            // the stop arrives during the first step
-            let sc2 = sc.clone();
-            let h = std::thread::spawn(move || scenario::run_gated(&sc2, &|| Ok(())));
+            let sc = plan(&["0.2", "0.2", "0.2"]);
+            let h = std::thread::spawn(move || execute_with(&sc, short, mock, &open));
             std::thread::sleep(std::time::Duration::from_millis(40));
             assert!(scenario::cancel());
             let r = h.join().unwrap();
-            assert!(!r.ok && r.done >= 1 && r.done < 3 && r.message.contains("отменено перед шагом"), "{:?}", r);
-            // nothing runs now: a «стоп» is refused and leaves no trace for the next plan
+            // the first step (already started) was finished, the second never began
+            assert!(!r.ok && r.done == 1 && r.message.contains("отменено перед шагом 2"), "{:?}", r);
+            assert_eq!(lines().iter().map(|l| l.1.as_str()).collect::<Vec<_>>(), ["ok", "cancelled", "stopped"]);
+            // a stop with nothing running is refused and leaves no trace for the next plan
             assert!(!scenario::cancel());
-            let r = scenario::run_gated(&sc, &|| Ok(()));
-            assert!(r.ok && r.done == 3, "{:?}", r);
+            let r = execute_with(&plan(&["0.1", "0.1"]), short, mock, &open);
+            assert!(r.ok && r.done == 2, "{:?}", r);
         });
+    }
+
+    #[test]
+    fn the_limit_of_a_step_follows_what_the_step_is() {
+        let p = |k: &str, v: &str| scenario::Step { kind: k.into(), param: v.into(), window: String::new() };
+        assert_eq!(scenario::step_limit(&p("pause", "10")).as_secs(), 15);
+        assert_eq!(scenario::step_limit(&p("app", "calc")).as_secs(), 20);
+        assert_eq!(scenario::step_limit(&p("volume", "30")).as_secs(), 30);
     }
 
     #[test]
