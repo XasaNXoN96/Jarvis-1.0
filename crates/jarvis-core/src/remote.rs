@@ -1808,6 +1808,41 @@ mod tests {
         });
     }
 
+    // the QR code and the button «Копировать ссылку привязки» take the link from one function (ui::pairing_link_for)
+    #[test]
+    fn the_pairing_link_of_the_window_is_one_for_the_qr_and_the_button_and_keeps_the_code_out_of_the_request() {
+        let _g = PHONE_TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            pairing::reset_for_tests();
+            // the remote is off: no link, an explicit reason (nothing is invented)
+            RUNNING.store(false, Ordering::SeqCst);
+            let e = crate::ui::pairing_link_for(None).unwrap_err();
+            assert!(e.contains("Пульт выключен"), "{}", e);
+            RUNNING.store(true, Ordering::SeqCst);
+            let (_, pin, _) = crate::remote_tls::current_pin().unwrap();
+            // no code shown yet: only the pin, still a valid link (the owner types the code on the phone)
+            let l = crate::ui::pairing_link_for(None).unwrap();
+            assert!(l.starts_with("https://") && l.ends_with(&format!("/#pin={}", pin)), "{}", l);
+            assert!(!l.contains('?') && !l.contains("c="), "no query and no code: {}", l);
+            // a code is shown: the link carries it AFTER the «#» (the part that never goes over the network), nothing before
+            let code = pairing::start_code(now_secs());
+            let l = crate::ui::pairing_link_for(None).unwrap();
+            let (before, after) = l.split_once('#').unwrap();
+            assert_eq!(after, format!("pin={}&c={}", pin, code));
+            assert!(!before.contains(&code) && !before.contains('?'), "the code is not in the address part: {}", before);
+            // the same function gives the same link for an unknown address (an address that is not of this PC is never used)
+            assert_eq!(crate::ui::pairing_link_for(Some("203.0.113.9")).unwrap(), l);
+            // it is exactly what the QR code is made of, and the QR code can be made of it
+            assert!(crate::ui::qr_svg_for_tests(&l).is_some());
+            // the key of the PC cannot be used: an explicit error, no made-up link
+            std::fs::write(crate::store::file(crate::remote_tls::KEY_FILE), "garbage").unwrap();
+            let e = crate::ui::pairing_link_for(None).unwrap_err();
+            assert!(e.contains("Ключ ПК недоступен"), "{}", e);
+            pairing::reset_for_tests();
+            RUNNING.store(false, Ordering::SeqCst);
+        });
+    }
+
     #[test]
     fn the_address_header_of_cloudflare_is_believed_only_on_the_tunnel_connection() {
         let _g = PHONE_TEST_LOCK.lock();

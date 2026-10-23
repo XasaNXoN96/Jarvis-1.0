@@ -265,7 +265,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
         }
     }
     // with a password of the owner set, the actions that change what Jarvis keeps or does need the unlocked program
-    if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "notes_edit" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message" | "audit_clear" | "ca_apply" | "pl_add" | "pl_remove" | "persona_set" | "pair_start" | "pair_revoke" | "remote_http_set" | "remote_key_rotate" | "comp_do" | "sync_folder" | "sync_run" | "sync_clear" | "wol_add" | "wol_remove" | "wol_wake" | "mem_use_ai") {
+    if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "notes_edit" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message" | "audit_clear" | "ca_apply" | "pl_add" | "pl_remove" | "persona_set" | "pair_start" | "pair_revoke" | "pair_link" | "remote_http_set" | "remote_key_rotate" | "comp_do" | "sync_folder" | "sync_run" | "sync_clear" | "wol_add" | "wol_remove" | "wol_wake" | "mem_use_ai") {
         if let Err(m) = crate::owner::guard() {
             return json!({ "ok": false, "locked": true, "message": m });
         }
@@ -417,6 +417,17 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             }
             let code = crate::pairing::start_code(crate::store::now());
             json!({ "ok": true, "code": code })
+        }
+        // «Копировать ссылку привязки»: the same link as the QR code (the code, while one is shown, stays after «#»; it is not in the request)
+        "pair_link" => {
+            let ip = body.get("ip").and_then(|v| v.as_str()).map(|s| s.to_string());
+            match pairing_link_for(ip.as_deref()) {
+                Ok(link) => {
+                    crate::audit::record("remote", "pair_link_copy", "medium", "allowed", false, "ссылка привязки скопирована в окне");
+                    json!({ "ok": true, "link": link, "has_code": crate::pairing::active_code(crate::store::now()).is_some() })
+                }
+                Err(e) => json!({ "ok": false, "message": e }),
+            }
         }
         // plain http in the home network: OFF by default; switching it on needs the owner and an explicit confirmation
         "remote_http_set" => {
@@ -1441,6 +1452,21 @@ fn chat_action(body: &serde_json::Value) -> serde_json::Value {
     }
 }
 
+// The pairing link of the window: https://<address>/#pin=<pin of the key of the PC>[&c=<code>] (remote::pair_link). The QR code and the button
+// «Копировать ссылку привязки» both take it from here, so they always carry the same link. `ip` is only taken when it is an address of this PC.
+// Everything after «#» stays on the phone; the link is made on demand and is never logged.
+pub(crate) fn pairing_link_for(ip: Option<&str>) -> Result<String, String> {
+    if !crate::remote::is_running() {
+        return Err("Пульт выключен: включите его, чтобы получить ссылку привязки.".into());
+    }
+    let addrs = crate::remote::addresses();
+    let ip = match ip {
+        Some(ip) if addrs.iter().any(|a| a.ip == ip) => ip.to_string(),
+        _ => addrs.first().map(|a| a.ip.clone()).unwrap_or_else(|| "localhost".to_string()),
+    };
+    crate::remote::pair_link(&ip).map_err(|e| format!("Ключ ПК недоступен, ссылку привязки сделать нельзя: {}", e))
+}
+
 // QR code (SVG) of the phone-remote link
 fn qr_svg(data: &str) -> Option<String> {
     use qrcode::render::svg;
@@ -1664,13 +1690,9 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
             if !crate::remote::is_running() {
                 respond(&mut stream, "404 Not Found", "text/plain", "remote control is off");
             } else {
-                // ?ip=… : only an address of this PC (never a link to somewhere else)
+                // ?ip=… : only an address of this PC (never a link to somewhere else); the same link as the button «Копировать ссылку привязки»
                 let ip = req.query.split('&').find_map(|kv| kv.strip_prefix("ip=")).map(|v| v.to_string());
-                let ip = match ip {
-                    Some(ip) if crate::remote::addresses().iter().any(|a| a.ip == ip) => ip,
-                    _ => crate::remote::addresses().first().map(|a| a.ip.clone()).unwrap_or_else(|| "localhost".to_string()),
-                };
-                match crate::remote::pair_link(&ip).ok().and_then(|l| qr_svg(&l)) {
+                match pairing_link_for(ip.as_deref()).ok().and_then(|l| qr_svg(&l)) {
                     Some(svg) => respond_bytes(&mut stream, "200 OK", "image/svg+xml", svg.as_bytes()),
                     None => respond(&mut stream, "500 Internal Server Error", "text/plain", "qr failed"),
                 }
@@ -2670,4 +2692,9 @@ mod tests {
             assert!(PAGE.contains("page-licmgr") && PAGE.contains("license-admin"));
         }
     }
+}
+
+#[cfg(test)]
+pub(crate) fn qr_svg_for_tests(data: &str) -> Option<String> {
+    qr_svg(data)
 }

@@ -945,6 +945,9 @@
             <div id="rm-on" style="display:none">
               <div class="qrbox"><img id="rm-qr" alt="QR-код пульта"></div>
               <button class="btn small" id="rm-copy" type="button">Копировать ссылку</button>
+              <button class="btn small primary" id="rm-copypair" type="button" title="Ссылка с отпечатком ПК (и кодом, если он сейчас показан) для приложения Jarvis на телефоне">Копировать ссылку привязки</button>
+              <div class="msgline" id="rm-pairmsg" role="status"></div>
+              <div id="rm-pairfallback" hidden><small class="dim">Не удалось скопировать автоматически. Ссылка выделена: нажмите Ctrl+C.</small><input type="text" id="rm-pairlink" readonly style="width:100%"></div>
               <button class="btn small" id="rm-renew" type="button" title="Старая ссылка перестанет работать на всех телефонах">Новая ссылка</button>
               <div class="rmoff" id="rm-fp" style="word-break:break-all"></div>
               <div class="msgline bad" id="rm-httpwarn" hidden>Обычный http в локальной сети ВКЛЮЧЁН: пароли и секреты видны в сети. <button class="btn small" id="rm-httpoff" type="button">Выключить</button></div>
@@ -956,7 +959,7 @@
                 <div class="msgline" id="rm-secmsg"></div>
               </details>
               <details class="gp-more" id="pair-box"><summary>Привязанные устройства (по коду)</summary>
-                <small class="dim">Каждый телефон получает свой доступ и отзывается отдельно. Откройте на телефоне ссылку пульта без секрета, введите код и нажмите «Привязать». Код действует 5 минут и одну привязку.</small>
+                <small class="dim">Каждый телефон получает свой доступ и отзывается отдельно. В приложении Jarvis для Android вставьте ссылку привязки (кнопка ниже) или введите адрес, сверьте отпечаток и введите код. Код действует 5 минут и одну привязку.</small>
                 <div class="rmrow"><button class="btn small primary" id="pair-start" type="button">Привязать телефон по коду</button><b id="pair-code" class="pair-code"></b></div>
                 <div id="pair-list" class="mem-list"></div><div class="msgline" id="pair-msg"></div>
               </details>
@@ -1663,7 +1666,7 @@
           <div class="r"><button class="btn" data-cmd="включи удалённое управление" data-stay="1">Включить</button><button class="btn" data-cmd="выключи удалённое управление" data-stay="1">Выключить</button></div></div>
         <div id="remote-box" style="display:none;text-align:center;padding-top:10px">
           <div style="background:#fff;border-radius:16px;padding:10px;display:inline-block"><img id="remote-qr" alt="QR" style="width:220px;height:220px;display:block"></div>
-          <div><small class="dim">Ссылка не содержит секрета: телефон подключается по одноразовому коду (кнопка «Привязать телефон по коду») и запоминает ключ этого компьютера. Телефон и компьютер должны быть в одной сети (или используйте «Из любой сети»). Браузер телефона покажет предупреждение о сертификате: приложение Jarvis для Android проверяет отпечаток ключа, браузер — нет.</small></div>
+          <div><small class="dim">Ссылка не содержит секрета: телефон подключается по одноразовому коду и запоминает ключ этого компьютера. Код, отпечаток ПК и копирование ссылки привязки — на странице «Система» → «Пульт телефона» → «Привязанные устройства» и «Безопасность соединения». Телефон и компьютер должны быть в одной сети (или используйте «Из любой сети»). Браузер телефона покажет предупреждение о сертификате: приложение Jarvis для Android проверяет отпечаток ключа, браузер — нет.</small></div>
           <div><small class="dim" id="remote-url" style="word-break:break-all;user-select:all"></small></div>
           <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px;text-align:left">
             <b>Голос с телефона</b>
@@ -2346,6 +2349,25 @@ $('#rm-renew').onclick = async () => {
   if (!confirm('Сделать новую ссылку? Старая ссылка и QR-код перестанут работать на всех телефонах — их нужно будет подключить заново.')) return;
   try { const r = await action('remote_new_link'); $('#rm-err').textContent = r.ok ? '' : (r.message || 'Не удалось сделать новую ссылку'); } catch (e) { $('#rm-err').textContent = 'Нет связи с Джарвисом'; }
   remoteLink = ''; remoteSeen = ''; remoteAt = 0; await pollNow();
+};
+// «Копировать ссылку привязки»: the same link as the QR code (https://адрес/#pin=…[&c=код]). The link is asked from the program when the button is
+// pressed and is not shown in the page unless the clipboard refuses (then it is shown selected, once, so that it can be copied by hand).
+function copyChecked(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text).then(() => true, () => false);
+  const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select();
+  let ok = false; try { ok = document.execCommand('copy'); } catch (e) {} t.remove(); return Promise.resolve(ok);
+}
+$('#rm-copypair').onclick = async () => {
+  const m = $('#rm-pairmsg'), fb = $('#rm-pairfallback'); fb.hidden = true; $('#rm-pairlink').value = '';
+  const say = (t, ok) => { m.className = 'msgline ' + (ok ? 'ok' : 'bad'); m.textContent = t; };
+  const r = await action('pair_link', { ip: remoteIp }).catch(() => null);
+  if (!r) { say('Нет ответа от Jarvis: ссылку получить не удалось.', false); return; }
+  if (r.locked) { say(r.message || 'Программа заблокирована паролем владельца.', false); return; }
+  if (!r.ok || !r.link) { say(r.message || 'Не удалось получить ссылку привязки.', false); return; }
+  const copied = await copyChecked(r.link);
+  if (!copied) { const i = $('#rm-pairlink'); i.value = r.link; fb.hidden = false; i.focus(); i.select(); say('Автоматическое копирование не сработало: скопируйте выделенную ссылку вручную.', false); return; }
+  say(r.has_code ? 'Ссылка привязки скопирована (с кодом, действует 5 минут). Вставьте её в приложение Jarvis на телефоне.' : 'Ссылка скопирована, но кода привязки сейчас нет: в ней только отпечаток ПК. Нажмите «Привязать телефон по коду» и скопируйте ссылку ещё раз (или введите код на телефоне).', true);
+  setTimeout(() => { if (m.textContent.startsWith('Ссылка')) m.textContent = ''; }, 15000);
 };
 $('#rm-copy').onclick = () => { if (remoteLink) copyText(remoteLink, $('#rm-copy')); };
 // what the phone page reports: only what it really told us (nothing is shown as known when it is not)

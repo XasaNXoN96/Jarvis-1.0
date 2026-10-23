@@ -38,6 +38,10 @@ jobs:
         run: node tests/ui/remote_page_pair.js
         env:
           PW_MODULE: ${{ github.workspace }}/node_modules/playwright
+      - name: Copy the pairing link (same link as the QR, failures said aloud)
+        run: node tests/ui/pair_link_copy.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright
       - name: Security journal page
         run: node tests/ui/audit_page.js
         env:
