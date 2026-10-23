@@ -709,7 +709,10 @@ fn run_inner(sc: &Scenario, remember: bool, guard: Option<&Guard>) -> RunResult 
             let _ = save_or_test(&list);
         }
     }
-    crate::uistate::log_event(if ok { "command" } else { "error" }, &r.message);
+    // the page of the diagnostics can be copied and shown to others: for a plan of the AI (its name is the request of the user, an error of a step may
+    // hold a path) the event says only how far it went; the full text is for the user who started it
+    let event = if guard.is_some() { format!("План: выполнено шагов {} из {}{}", r.done, r.total, if ok { "" } else { ", остановлен" }) } else { r.message.clone() };
+    crate::uistate::log_event(if ok { "command" } else { "error" }, &event);
     r
 }
 

@@ -248,6 +248,7 @@ mod tests {
     #[test]
     fn an_error_of_a_step_stops_the_plan_and_the_journal_does_not_keep_the_text_of_the_error_or_the_request() {
         let _l = scenario::RUN_TEST_LOCK.lock();
+        let _s = crate::uistate::TEST_LOCK.lock();
         crate::store::with_temp(|| {
             let sc = plan(&["0.1", "0.4", "0.1"]);
             let r = execute_with(&sc, short, mock, &open);
@@ -257,6 +258,12 @@ mod tests {
             let all = serde_json::to_string(&mine).unwrap();
             for secret in ["секрет", "пароль", "12345", "0.4", "0.3"] {
                 assert!(!all.contains(secret), "{} in the journal: {}", secret, all);
+            }
+            // nor in the events of the diagnostics page (it can be copied and shown to others)
+            let ev = serde_json::to_string(&crate::uistate::recent_events(30).into_iter().filter(|e| e.text.starts_with("План")).map(|e| e.text).collect::<Vec<_>>()).unwrap();
+            assert!(ev.contains("остановлен"), "{}", ev);
+            for secret in ["секрет", "пароль", "12345"] {
+                assert!(!ev.contains(secret), "{} in the events: {}", secret, ev);
             }
         });
     }

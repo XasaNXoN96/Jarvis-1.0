@@ -267,7 +267,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
     // with a password of the owner set, the actions that change what Jarvis keeps or does need the unlocked program
     if matches!(name, "mem_delete" | "mem_edit" | "ct_save" | "ct_delete" | "out_confirm" | "out_clear" | "sched_add" | "sched_remove" | "sched_toggle" | "kb_add" | "kb_remove" | "kb_clear" | "kb_reindex" | "prog_install" | "undo_do" | "notes_delete" | "notes_edit" | "home_config" | "home_forget" | "home_act" | "perms_set" | "owner_message" | "audit_clear" | "ca_apply" | "pl_add" | "pl_remove" | "persona_set" | "pair_start" | "pair_revoke" | "pair_link" | "remote_http_set" | "remote_key_rotate" | "comp_do" | "sync_folder" | "sync_run" | "sync_clear" | "wol_add" | "wol_remove" | "wol_wake" | "mem_use_ai" | "diag_fix_apply") {
         if let Err(m) = crate::owner::guard() {
-            return json!({ "ok": false, "locked": true, "message": m });
+            return json!({ "ok": false, "locked": true, "code": "locked", "message": m });
         }
     }
     match name {
@@ -2231,7 +2231,12 @@ mod tests {
             crate::owner::set_password("пароль-для-теста", "").unwrap();
             crate::owner::lock();
             let r = run_action(&json!({ "name": "diag_fix_apply", "id": "mic_unmute", "confirm": true }));
-            assert_eq!(r["locked"].as_bool(), Some(true));
+            assert_eq!((r["locked"].as_bool(), r["code"].as_str()), (Some(true), Some("locked")));
+            assert!(muted());
+            // a wrong password does not unlock it, and the fix is refused again
+            assert!(crate::owner::unlock("не-тот-пароль").is_err());
+            let r = run_action(&json!({ "name": "diag_fix_apply", "id": "mic_unmute", "confirm": true }));
+            assert_eq!(r["code"].as_str(), Some("locked"));
             assert!(muted());
             // the owner confirmed: done once; a second time there is nothing to change
             crate::owner::unlock("пароль-для-теста").unwrap();

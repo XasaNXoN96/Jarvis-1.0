@@ -153,7 +153,11 @@ pub fn piper_check_play(tts_on: bool, windows_voice: bool, test: PiperFacts, las
             // synthesis proven; playing is proven only by a real playback of this run
             let st = if !tts_on { Status::Warn } else if play.is_some() { Status::Ok } else { Status::Unchecked };
             let fix = if !tts_on { "Включите озвучку: Настройки → Приватность." } else if play.is_none() { "Нажмите «Проверить звук» в Настройках → Голос, затем повторите проверку." } else { "" };
-            check(key, name, st, format!("Пробная фраза синтезирована ({} КБ звука, без воспроизведения).{}{}", bytes / 1024, last_txt, off), fix)
+            let mut c = check(key, name, st, format!("Пробная фраза синтезирована ({} КБ звука, без воспроизведения).{}{}", bytes / 1024, last_txt, off), fix);
+            if !tts_on {
+                c.fix_id = FIX_TTS_ENABLE;
+            }
+            c
         }
         PiperFacts::Failed(e) => check(key, name, Status::Error, format!("Piper не смог создать звук: {}.{}", e, last_txt), "Переустановите голос: Настройки → Голос → «Установить голос Джарвиса». Проверьте, что антивирус не блокирует piper.exe."),
         PiperFacts::Interrupted => check(key, name, Status::Unchecked, format!("Проверка прервана: Джарвис начал говорить.{}", last_txt), "Повторите проверку."),
@@ -973,37 +977,105 @@ mod new_checks {
 // The window first asks for the preview, the owner reads it and confirms; without the confirmation nothing changes. There is no «fix all».
 // ---------------------------------------------------------------------------------------------
 pub const FIX_MIC_UNMUTE: &str = "mic_unmute";
+pub const FIX_TTS_ENABLE: &str = "tts_enable";
+
+// What a fix looks at and changes: only the own state of Jarvis. A trait so the tests put a mock here (and can make the change fail).
+pub trait FixEnv {
+    fn mic_muted(&self) -> bool;
+    fn unmute_mic(&self) -> Result<(), String>;
+    fn speech_on(&self) -> bool;
+    fn enable_speech(&self) -> Result<(), String>;
+}
+
+pub struct Live;
+
+impl FixEnv for Live {
+    fn mic_muted(&self) -> bool {
+        crate::MIC_MUTED.load(Ordering::SeqCst)
+    }
+    fn unmute_mic(&self) -> Result<(), String> {
+        crate::uistate::set_mic_muted(false);
+        if self.mic_muted() { Err("микрофон остался выключенным".into()) } else { Ok(()) }
+    }
+    fn speech_on(&self) -> bool {
+        crate::tts::is_enabled()
+    }
+    fn enable_speech(&self) -> Result<(), String> {
+        crate::tts::set_enabled(true);
+        if self.speech_on() { Ok(()) } else { Err("озвучка осталась выключенной".into()) }
+    }
+}
 
 // what the fix will do, in words, and whether it still applies to the state of the program now
 pub fn fix_preview(id: &str) -> Option<String> {
+    fix_preview_in(id, &Live)
+}
+
+pub fn fix_preview_in(id: &str, env: &dyn FixEnv) -> Option<String> {
     match id {
-        FIX_MIC_UNMUTE => Some(if crate::MIC_MUTED.load(Ordering::SeqCst) {
+        FIX_MIC_UNMUTE => Some(if env.mic_muted() {
             "Включить микрофон в Jarvis: голосовые команды снова будут слушаться. Настройки Windows и других программ не меняются.".to_string()
         } else {
             "Микрофон в Jarvis уже включён: менять нечего.".to_string()
+        }),
+        FIX_TTS_ENABLE => Some(if !env.speech_on() {
+            "Включить озвучку ответов в Jarvis: он снова будет говорить вслух. Громкость и устройства Windows не меняются.".to_string()
+        } else {
+            "Озвучка в Jarvis уже включена: менять нечего.".to_string()
         }),
         _ => None,
     }
 }
 
+// ONE shape of the answer of a fix, success or not: ok, code, message, op (the number of the operation, the same as in the security journal).
+// codes: unknown_fix | needs_confirm | applied | nothing_to_do | apply_failed  (the locked program answers with code "locked" before this is reached)
+fn fix_answer(ok: bool, code: &str, message: &str, op: u64, extra: Value) -> Value {
+    let mut v = json!({ "ok": ok, "code": code, "message": message, "op": op });
+    if let (Some(o), Some(e)) = (v.as_object_mut(), extra.as_object()) {
+        for (k, x) in e {
+            o.insert(k.clone(), x.clone());
+        }
+    }
+    v
+}
+
 pub fn fix_apply(id: &str, confirmed: bool) -> Value {
-    let Some(preview) = fix_preview(id) else {
-        return json!({ "ok": false, "message": "Такого исправления нет." });
+    fix_apply_in(id, confirmed, &Live)
+}
+
+pub fn fix_apply_in(id: &str, confirmed: bool, env: &dyn FixEnv) -> Value {
+    // the answer, the line of the security journal and the event of the page share ONE number
+    let _op = crate::origin::ensure_op();
+    let op = crate::origin::op();
+    let Some(preview) = fix_preview_in(id, env) else {
+        return fix_answer(false, "unknown_fix", "Такого исправления нет.", op, json!({}));
     };
     if !confirmed {
         crate::audit::record("diag_fix", id, "medium", "declined", false, "владелец не подтвердил");
-        return json!({ "ok": false, "needs_confirm": true, "preview": preview, "message": "Исправление не выполнено: нужно подтверждение." });
+        return fix_answer(false, "needs_confirm", "Исправление не выполнено: нужно подтверждение.", op, json!({ "needs_confirm": true, "preview": preview }));
     }
-    let done = match id {
-        FIX_MIC_UNMUTE if crate::MIC_MUTED.load(Ordering::SeqCst) => {
-            crate::uistate::set_mic_muted(false);
-            true
-        }
-        _ => false,
+    let result: Result<bool, String> = match id {
+        FIX_MIC_UNMUTE if env.mic_muted() => env.unmute_mic().map(|_| true),
+        FIX_TTS_ENABLE if !env.speech_on() => env.enable_speech().map(|_| true),
+        _ => Ok(false),
     };
-    crate::audit::record("diag_fix", id, "medium", if done { "applied" } else { "nothing_to_do" }, true, "подтверждено владельцем");
-    crate::uistate::log_event("info", &format!("Исправление «{}»: {}", id, if done { "выполнено" } else { "менять нечего" }));
-    json!({ "ok": true, "applied": done, "message": if done { "Готово." } else { "Менять нечего." } })
+    // (nothing of the error text of the system goes to the journal: only the fixed words)
+    let (decision, reason) = match &result {
+        Ok(true) => ("applied", "подтверждено владельцем"),
+        Ok(false) => ("nothing_to_do", "подтверждено владельцем"),
+        Err(_) => ("apply_failed", "подтверждено владельцем, но изменить не удалось"),
+    };
+    crate::audit::record("diag_fix", id, "medium", decision, true, reason);
+    match result {
+        Ok(done) => {
+            crate::uistate::log_event("info", &format!("Исправление «{}»: {}", id, if done { "выполнено" } else { "менять нечего" }));
+            fix_answer(true, if done { "applied" } else { "nothing_to_do" }, if done { "Готово." } else { "Менять нечего." }, op, json!({ "applied": done }))
+        }
+        Err(_) => {
+            crate::uistate::log_event("error", &format!("Исправление «{}» не удалось", id));
+            fix_answer(false, "apply_failed", "Не удалось применить исправление. Подробностей в журнале нет: проверьте настройки вручную.", op, json!({ "applied": false }))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1021,5 +1093,91 @@ mod fix_tests {
         // the microphone journal carries the number too
         let e = crate::voicediag::Event { at: 9, kind: "device".into(), text: "x".into(), op: 3 };
         assert_eq!(merge_mic_events(vec![], vec![e], 5)[0]["op"], 3);
+    }
+
+    use std::cell::Cell;
+    struct Mock {
+        mic: Cell<bool>,
+        speech: Cell<bool>,
+        fail: bool,
+    }
+    impl FixEnv for Mock {
+        fn mic_muted(&self) -> bool {
+            self.mic.get()
+        }
+        fn unmute_mic(&self) -> Result<(), String> {
+            if self.fail { Err("C:\\Users\\x\\секрет.cfg недоступен".into()) } else { self.mic.set(false); Ok(()) }
+        }
+        fn speech_on(&self) -> bool {
+            self.speech.get()
+        }
+        fn enable_speech(&self) -> Result<(), String> {
+            if self.fail { Err("токен sk-123456 отклонён".into()) } else { self.speech.set(true); Ok(()) }
+        }
+    }
+    fn kinds() -> Vec<(String, String)> {
+        let mut l = crate::audit::list(100);
+        l.reverse();
+        l.into_iter().filter(|e| e.kind == "diag_fix").map(|e| (e.subject, e.decision)).collect()
+    }
+
+    #[test]
+    fn the_second_fix_follows_the_same_rules_and_every_answer_has_one_shape() {
+        let _s = crate::uistate::TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            let env = Mock { mic: Cell::new(true), speech: Cell::new(false), fail: false };
+            // the check of Piper offers it only while the speech is off
+            let piper = |on| piper_check_play(on, false, PiperFacts::Ok(2048), None, None);
+            assert_eq!(piper(false).fix_id, FIX_TTS_ENABLE);
+            assert_eq!(piper(true).fix_id, "");
+            // preview changes nothing
+            assert!(fix_preview_in(FIX_TTS_ENABLE, &env).unwrap().contains("Включить озвучку") && !env.speech.get());
+            // no confirmation: nothing changes
+            let r = fix_apply_in(FIX_TTS_ENABLE, false, &env);
+            assert_eq!((r["ok"].as_bool(), r["code"].as_str()), (Some(false), Some("needs_confirm")));
+            assert!(!env.speech.get());
+            // unknown ids (a command, a path, «all») are not fixes; none of them is journaled as a fix
+            for id in ["", "all", "shell", "C:\\a.exe", "mic_unmute "] {
+                let r = fix_apply_in(id, true, &env);
+                assert_eq!(r["code"], "unknown_fix", "{}", id);
+            }
+            assert!(env.mic.get() && !env.speech.get());
+            // confirmed: applied once, then nothing to do; each answer has ok/code/message/op, and op equals the number in the journal
+            let r = fix_apply_in(FIX_TTS_ENABLE, true, &env);
+            assert_eq!((r["ok"].as_bool(), r["code"].as_str()), (Some(true), Some("applied")));
+            assert!(env.speech.get());
+            let r2 = fix_apply_in(FIX_TTS_ENABLE, true, &env);
+            assert_eq!(r2["code"], "nothing_to_do");
+            for x in [&r, &r2] {
+                for k in ["ok", "code", "message", "op"] {
+                    assert!(x.get(k).is_some(), "{} missing in {}", k, x);
+                }
+                assert!(x["op"].as_u64().unwrap() > 0);
+            }
+            let ops: Vec<u64> = crate::audit::list(100).into_iter().rev().filter(|e| e.kind == "diag_fix" && e.decision == "applied").map(|e| e.op).collect();
+            assert_eq!(ops, [r["op"].as_u64().unwrap()]);
+            // the event of the page carries the same number
+            assert!(crate::uistate::recent_events(10).iter().any(|e| e.op == r["op"].as_u64().unwrap()));
+            assert_eq!(kinds(), [("tts_enable".to_string(), "declined".to_string()), ("tts_enable".to_string(), "applied".to_string()), ("tts_enable".to_string(), "nothing_to_do".to_string())]);
+        });
+    }
+
+    #[test]
+    fn a_failed_fix_says_so_and_neither_the_answer_nor_the_journal_keeps_the_text_of_the_error() {
+        let _s = crate::uistate::TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            let env = Mock { mic: Cell::new(true), speech: Cell::new(false), fail: true };
+            for id in [FIX_MIC_UNMUTE, FIX_TTS_ENABLE] {
+                let r = fix_apply_in(id, true, &env);
+                assert_eq!((r["ok"].as_bool(), r["code"].as_str(), r["applied"].as_bool()), (Some(false), Some("apply_failed"), Some(false)), "{}", r);
+            }
+            assert!(env.mic.get() && !env.speech.get(), "nothing was changed");
+            let all = format!("{}{}", serde_json::to_string(&crate::audit::list(100)).unwrap(), serde_json::to_string(&crate::uistate::recent_events(20)).unwrap());
+            for secret in ["секрет", "sk-123456", "C:\\Users", "токен"] {
+                assert!(!all.contains(secret), "{} leaked: {}", secret, all);
+            }
+            assert_eq!(kinds().iter().filter(|k| k.1 == "apply_failed").count(), 2);
+            assert!(crate::uistate::recent_events(5).iter().any(|e| e.kind == "error" && e.op > 0));
+        });
     }
 }
