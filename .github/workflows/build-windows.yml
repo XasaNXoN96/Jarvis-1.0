@@ -53,6 +53,9 @@ jobs:
   build:
     needs: stamp
     runs-on: windows-latest
+    # A normal run takes about 11 minutes. Without a limit a stuck runner kept the job for ~55 minutes and ended it without a failed step
+    # and without logs (run 265). The limit turns that into a visible timeout; the step below keeps what can still be read.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -844,6 +847,29 @@ jobs:
   # The release "build-latest": only from main and only when BOTH the tests and the build passed.
   # dev/* branches stop before this job (the check of a branch is never published).
       # everything the real-Windows checks found, in one place (read the end of this job)
+      # What was running when the job ended badly (a failed step, a timeout, a cancel). Only names, ids, times and the tail of the installer
+      # log and of the program logs of this temporary machine; the token file and settings are never printed. It does not change the result.
+      - name: Runner diagnostics (processes, installer and program logs)
+        if: failure() || cancelled()
+        continue-on-error: true
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
+          Write-Host "===== RUNNER DIAGNOSTICS ($(Get-Date -Format o)) ====="
+          Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'jarvis|Jarvis|Setup|unins|powershell|pwsh|msedgewebview2|iscc|cargo|rustc|link' } |
+            Select-Object ProcessId, ParentProcessId, Name, CreationDate | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
+          $mem = Get-CimInstance Win32_OperatingSystem; Write-Host ("memory free MB: {0} of {1}" -f [int]($mem.FreePhysicalMemory/1024), [int]($mem.TotalVisibleMemorySize/1024))
+          Get-PSDrive -PSProvider FileSystem | ForEach-Object { Write-Host ("drive {0}: free GB {1}" -f $_.Name, [int]($_.Free/1GB)) }
+          if (Test-Path install.log) { Write-Host "--- install.log (tail) ---"; Get-Content install.log -Tail 30 }
+          foreach ($d in @("$env:APPDATA\com.priler.jarvis", "C:\JarvisSmoke")) {
+            if (Test-Path $d) {
+              Write-Host "--- $d (names and sizes) ---"
+              Get-ChildItem $d -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'ui_token' } | Select-Object -First 60 FullName, Length, LastWriteTime | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
+              Get-ChildItem $d -Recurse -File -Filter *.log -ErrorAction SilentlyContinue | Select-Object -First 5 | ForEach-Object { Write-Host "--- $($_.FullName) (tail) ---"; Get-Content $_.FullName -Tail 30 -ErrorAction SilentlyContinue }
+            }
+          }
+          if (Test-Path evidence.txt) { Write-Host "--- evidence.txt ---"; Get-Content evidence.txt -Encoding UTF8 }
+
       - name: Evidence summary
         if: always()
         shell: pwsh

@@ -777,10 +777,14 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             json!({ "ok": true })
         }
         // ---- diagnostics: the checks run in the background; the report is built from their last results ----
-        "diag_run" => json!({ "ok": true, "started": crate::diag::start() }),
+        // (the answers of the diagnostics all have `ok`, `code` and `message`; old fields stay for the pages that read them)
+        "diag_run" => {
+            let started = crate::diag::start();
+            json!({ "ok": true, "started": started, "code": if started { "started" } else { "already_running" }, "message": if started { "Проверка запущена." } else { "Проверка уже идёт." } })
+        }
         "diag_fix_preview" => match crate::diag::fix_preview(body.get("id").and_then(|v| v.as_str()).unwrap_or("")) {
-            Some(p) => json!({ "ok": true, "preview": p }),
-            None => json!({ "ok": false, "message": "Такого исправления нет." }),
+            Some(p) => json!({ "ok": true, "code": "preview", "message": "Вот что изменится.", "preview": p }),
+            None => json!({ "ok": false, "code": "unknown_fix", "message": "Такого исправления нет." }),
         },
         // nothing changes without "confirm": true, which the window sends only after the owner read the preview
         "diag_fix_apply" => crate::diag::fix_apply(body.get("id").and_then(|v| v.as_str()).unwrap_or(""), body.get("confirm").and_then(|v| v.as_bool()) == Some(true)),
@@ -2213,6 +2217,12 @@ mod tests {
             // the preview changes nothing
             let r = run_action(&json!({ "name": "diag_fix_preview", "id": "mic_unmute" }));
             assert!(r["preview"].as_str().unwrap().contains("Включить микрофон") && muted(), "{}", r);
+            assert_eq!(run_action(&json!({ "name": "diag_fix_preview", "id": "shell" }))["code"], "unknown_fix");
+            // every answer of the diagnostics has ok / code / message (the old fields stay)
+            let r = run_action(&json!({ "name": "diag_run" }));
+            for k in ["ok", "code", "message", "started"] {
+                assert!(r.get(k).is_some(), "{} missing in {}", k, r);
+            }
             // no confirmation / a confirmation that is not a plain true: refused, nothing changed, the refusal is in the journal
             for body in [json!({ "name": "diag_fix_apply", "id": "mic_unmute" }), json!({ "name": "diag_fix_apply", "id": "mic_unmute", "confirm": "true" }), json!({ "name": "diag_fix_apply", "id": "mic_unmute", "confirm": false })] {
                 let r = run_action(&body);
