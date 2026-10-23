@@ -1,9 +1,11 @@
-# Manual, read-only: downloads the Vosk speech models from their official address and PRINTS their size and SHA-256.
+# Read-only, runs only when THIS file changes on the development branch: downloads the Vosk speech models from their official address and PRINTS their size and SHA-256.
 # The numbers are then pinned in the program (the in-program installer of a speech model checks the download against them).
 # It builds nothing, publishes nothing and uses no secret.
 name: Vosk model hashes
 on:
-  workflow_dispatch:
+  push:
+    branches: [dev/punkt-9-11-13]
+    paths: ['.github/workflows/vosk-model-hash.yml']
 permissions:
   contents: read
 jobs:
