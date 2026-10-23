@@ -41,6 +41,15 @@ const ok = (c, m) => { if (!c) fails.push(m); };
   await p.waitForTimeout(500);
   const t2 = await p.evaluate(() => document.querySelector('canvas[data-kind]').dataset.kind);
   ok(t2 === 'idle', 'the canvas is back to idle: ' + t2);
+  // no answer from the program: the sphere does not stay in «выполняю»
+  await p.evaluate(() => { state = 'idle'; connected = true; lastState = { activity: 'executing' }; window.__f = window.fetch; window.fetch = () => Promise.reject(new Error('down')); });
+  ok(await p.evaluate(() => orbKind()) === 'executing', 'executing before the failure');
+  await p.evaluate(() => pollNow());
+  ok(await p.evaluate(() => orbKind()) === 'idle', 'a failed poll returns the sphere to normal');
+  await p.evaluate(() => { window.fetch = window.__f; });
+  // the state is asked often while something works and calmly otherwise
+  const delays = await p.evaluate(() => { fastUntil = 0; const out = []; for (const a of ['executing', 'searching', 'recognizing', '']) { lastState = { activity: a }; out.push(nextDelay()); } return out; });
+  ok(JSON.stringify(delays) === '[100,100,100,1500]', 'poll delays: ' + delays);
   await b.close();
   console.log(fails.length ? 'FAILED:\n' + fails.join('\n') : 'ORB STATES: all checks passed');
   process.exit(fails.length ? 1 : 0);

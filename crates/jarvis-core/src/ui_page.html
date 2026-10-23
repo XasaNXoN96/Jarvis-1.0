@@ -2822,12 +2822,17 @@ async function pollNow(force) {
     const s = await (await fetch(document.hidden ? '/state' : '/state?v=1')).json();
     lastState = s; applyState(s); applyCloseRequest(s);
     if (force || s.rev !== chatRev || (s.active_chat || '') !== aiActive) await loadChat(s.active_chat || '');
-  } catch (e) {}
+  } catch (e) {
+    // no answer from the program: its last «выполняю / ищу / распознаю» is not true any more, the sphere must not stay in it
+    if (lastState) lastState.activity = '';
+  }
 }
 function nextDelay() {
   if (document.hidden) return 4000;
   const speaking = lastState && lastState.voice_state && lastState.voice_state.state === 'SPEAKING';
-  return (performance.now() < fastUntil || (lastState && lastState.ai_busy) || speaking) ? 100 : 1500;
+  // (while the program recognizes / searches / executes the state is asked often, so the sphere comes back to normal at once when it ends)
+  const working = lastState && lastState.activity;
+  return (performance.now() < fastUntil || (lastState && lastState.ai_busy) || speaking || working) ? 100 : 1500;
 }
 (function loop() { pollNow().finally(() => setTimeout(loop, nextDelay())); })();
 
