@@ -205,6 +205,23 @@ pub fn act(_d: &Device, _a: Act) -> Result<(), String> {
     Err("нет сети в этой сборке".into())
 }
 
+// the devices the server listed last time (to recognise a home phrase when the server does not answer)
+static LAST_DEVICES: parking_lot::Mutex<Vec<Device>> = parking_lot::const_mutex(Vec::new());
+
+// words of things at home: «выключи свет» must get the honest error even when no device list is known yet
+const HOME_WORDS: [&str; 12] = ["свет", "лампа", "люстра", "розетка", "вентилятор", "штора", "жалюзи", "light", "lamp", "fan", "curtain", "chiroq"];
+
+// Some(error) when the phrase is about the home (a known device or a word of the home), None: it is an ordinary command
+fn failure_for(known: &[Device], what: &str, err: String) -> Option<String> {
+    let n = textnorm::normalize(what);
+    let about_home = !matches!(pick(known, what), Pick::None) || n.split(' ').any(|w| HOME_WORDS.iter().any(|h| textnorm::same_stem(h, w)));
+    if about_home {
+        Some(err)
+    } else {
+        None
+    }
+}
+
 // the whole voice path: None = this phrase is not about the smart home (the normal commands go on)
 pub fn handle(text: &str) -> Option<String> {
     if !is_configured() {
@@ -212,8 +229,12 @@ pub fn handle(text: &str) -> Option<String> {
     }
     let (a, what) = parse(text)?;
     let list = match devices() {
-        Ok(l) => l,
-        Err(e) => return Some(e),
+        Ok(l) => {
+            *LAST_DEVICES.lock() = l.clone();
+            l
+        }
+        // the server cannot be asked: the phrase is taken over ONLY when it is about the home, else «включи музыку» would get the error of Home Assistant
+        Err(e) => return failure_for(&LAST_DEVICES.lock(), &what, e),
     };
     match pick(&list, &what) {
         Pick::None => None,
@@ -317,6 +338,33 @@ mod tests {
             // the server refuses the token
             let r = handle("выключи свет в гостиной").unwrap();
             assert!(r.contains("не принял токен"), "{}", r);
+        });
+    }
+
+    #[test]
+    fn an_ordinary_phrase_is_not_taken_over_when_the_server_cannot_be_asked() {
+        let err = "Home Assistant не ответил".to_string();
+        let known = vec![dev("light.a", "Гостиная")];
+        assert_eq!(failure_for(&[], "музыку", err.clone()), None, "«включи музыку» goes on to the normal commands");
+        assert_eq!(failure_for(&known, "браузер", err.clone()), None);
+        assert_eq!(failure_for(&[], "свет на кухне", err.clone()), Some(err.clone()), "a word of the home gets the honest error");
+        assert_eq!(failure_for(&known, "гостиную", err.clone()), Some(err.clone()), "a known device gets it too");
+        assert_eq!(failure_for(&[], "the kitchen light", err.clone()), Some(err));
+    }
+
+    #[test]
+    fn with_the_server_down_an_ordinary_phrase_is_left_to_the_normal_commands() {
+        store::with_temp(|| {
+            crate::owner::reset_for_tests();
+            // a port nobody listens on
+            let free = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = format!("http://{}", free.local_addr().unwrap());
+            drop(free);
+            configure(&url, "tok").unwrap();
+            perms::set(perms::Cap::SmartHome, true).unwrap();
+            LAST_DEVICES.lock().clear();
+            assert!(handle("включи музыку").is_none());
+            assert!(handle("включи свет").unwrap().contains("не ответил"));
         });
     }
 }
