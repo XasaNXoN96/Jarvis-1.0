@@ -49,6 +49,9 @@ fn save(i: &Index) -> Result<(), String> {
     store::write(FILE, i)
 }
 
+// the index is changed under this lock: a folder added or removed, the «Очистить» button and the end of a long re-reading must not overwrite one another
+static LOCK: parking_lot::Mutex<()> = parking_lot::const_mutex(());
+
 pub fn add_folder(path: &str) -> Result<(), String> {
     let p = Path::new(path.trim());
     if !p.is_dir() {
@@ -58,6 +61,7 @@ pub fn add_folder(path: &str) -> Result<(), String> {
     if p.parent().is_none() || p.to_string_lossy().to_lowercase().contains("windows") && p.to_string_lossy().to_lowercase().contains("system32") {
         return Err("Выберите обычную папку с документами, а не диск целиком.".into());
     }
+    let _g = LOCK.lock();
     let mut i = load();
     let s = p.to_string_lossy().to_string();
     if !i.folders.contains(&s) {
@@ -67,6 +71,7 @@ pub fn add_folder(path: &str) -> Result<(), String> {
 }
 
 pub fn remove_folder(path: &str) -> bool {
+    let _g = LOCK.lock();
     let mut i = load();
     let n = i.folders.len();
     i.folders.retain(|f| f != path);
@@ -76,6 +81,7 @@ pub fn remove_folder(path: &str) -> bool {
 }
 
 pub fn clear() -> bool {
+    let _g = LOCK.lock();
     save(&Index::default()).is_ok()
 }
 
@@ -260,9 +266,18 @@ pub fn reindex() -> Result<(usize, usize), String> {
             idx.docs.push(doc);
         }
     }
-    idx.updated = store::now();
-    let r = (idx.docs.len(), idx.docs.iter().map(|d| d.chunks.len()).sum());
-    save(&idx)?;
+    commit(idx.docs)
+}
+
+// The re-reading takes long: the folders may have been removed (or everything cleared) meanwhile. The result is therefore put into the index
+// as it is NOW, and only the passages of the folders that are still there come in; what the user removed does not come back.
+fn commit(docs: Vec<Doc>) -> Result<(usize, usize), String> {
+    let _g = LOCK.lock();
+    let mut cur = load();
+    cur.docs = docs.into_iter().filter(|d| cur.folders.iter().any(|f| Path::new(&d.path).starts_with(f))).collect();
+    cur.updated = store::now();
+    let r = (cur.docs.len(), cur.docs.iter().map(|d| d.chunks.len()).sum());
+    save(&cur)?;
     Ok(r)
 }
 
@@ -494,5 +509,27 @@ mod tests {
         assert_eq!(parse("Найди в моих документах срок аренды"), Some((false, "срок аренды".into())));
         assert_eq!(parse("ответь по документам когда оплата"), Some((true, "когда оплата".into())));
         assert_eq!(parse("открой браузер"), None);
+    }
+
+    #[test]
+    fn a_long_reindex_does_not_bring_back_a_folder_removed_meanwhile() {
+        store::with_temp(|| {
+            let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+            add_folder(&a.path().to_string_lossy()).unwrap();
+            add_folder(&b.path().to_string_lossy()).unwrap();
+            let doc = |dir: &tempfile::TempDir, n: &str| Doc { path: dir.path().join(n).to_string_lossy().to_string(), mtime: 1, size: 1, chunks: vec!["текст".into()] };
+            // the re-reading has read both folders ... and meanwhile the user removes B
+            let read = vec![doc(&a, "a.txt"), doc(&b, "b.txt")];
+            assert!(remove_folder(&b.path().to_string_lossy()));
+            assert_eq!(commit(read).unwrap(), (1, 1));
+            let i = load();
+            assert_eq!(i.folders, vec![a.path().to_string_lossy().to_string()], "the folder stays removed");
+            assert!(i.docs.iter().all(|d| d.path.starts_with(&*a.path().to_string_lossy())));
+            // ... or presses «Очистить»
+            assert!(clear());
+            assert_eq!(commit(vec![doc(&a, "a.txt")]).unwrap(), (0, 0));
+            let i = load();
+            assert!(i.folders.is_empty() && i.docs.is_empty(), "the index stays cleared");
+        });
     }
 }
