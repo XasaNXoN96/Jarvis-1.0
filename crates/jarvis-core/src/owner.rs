@@ -120,6 +120,37 @@ pub fn set_message(m: &str) -> Result<(), String> {
     save(&s)
 }
 
+// A password that is a guess of the first try is refused (a short list of the most common ones, one character repeated, a plain run of digits or
+// letters in a row, the word «jarvis»/«джарвис» alone). Nothing else is demanded: a long phrase of ordinary words is a good password.
+pub fn weak_reason(pw: &str) -> Option<&'static str> {
+    let p = pw.trim().to_lowercase();
+    let chars: Vec<char> = p.chars().collect();
+    if chars.len() >= 2 && chars.iter().all(|c| *c == chars[0]) {
+        return Some("пароль из одного повторяющегося символа слишком простой");
+    }
+    // (all but at most one step is +1 or −1: 123456, abcdef, 12345678901 where 9→0 breaks the run)
+    let run = |step: i32| chars.windows(2).filter(|w| (w[1] as i32 - w[0] as i32) != step).count() <= 1 && chars.len() >= 4 && chars.windows(2).filter(|w| (w[1] as i32 - w[0] as i32) == step).count() >= chars.len() - 2;
+    if chars.len() >= 4 && (run(1) || run(-1)) {
+        return Some("пароль из символов подряд (123456, abcdef) слишком простой");
+    }
+    const COMMON: [&str; 24] = ["password", "qwerty", "qwerty123", "qwertyuiop", "123123", "1q2w3e", "1q2w3e4r", "iloveyou", "admin123", "letmein", "welcome", "пароль", "парольпароль", "йцукен", "йцукенг", "qazwsx", "111222", "000000", "jarvis", "джарвис", "jarvis123", "джарвис123", "123456789", "1234567890"];
+    if COMMON.contains(&p.as_str()) {
+        return Some("это один из самых частых паролей, его угадают первым");
+    }
+    if p.chars().all(|c| c.is_ascii_digit()) && p.chars().count() < 8 {
+        return Some("только цифры и меньше 8 знаков — слишком просто");
+    }
+    None
+}
+
+// seconds left until the program locks itself again (0: locked, or no password is set)
+pub fn unlock_left() -> u64 {
+    if !is_set() {
+        return 0;
+    }
+    (*UNLOCKED_UNTIL.lock()).saturating_sub(store::now())
+}
+
 // the wait after the wrong tries: 5 free, then 30 s, 60 s, 120 s … up to 15 minutes
 pub fn wait_after(fails: u32) -> u64 {
     if fails < FREE_TRIES {
@@ -149,6 +180,9 @@ fn hash_into(s: &mut State, pw: &str) -> String {
 pub fn set_password(new: &str, old: &str) -> Result<String, String> {
     if new.chars().count() < MIN_LEN {
         return Err(format!("Пароль короче {} символов.", MIN_LEN));
+    }
+    if let Some(why) = weak_reason(new) {
+        return Err(format!("Придумайте пароль посложнее: {}.", why));
     }
     let mut s = load();
     if !s.hash.is_empty() {
@@ -214,6 +248,7 @@ pub fn remove_password(pw: &str) -> Result<(), String> {
     s.hash.clear();
     s.salt.clear();
     s.recovery_hash.clear();
+    s.recovery_salt.clear();
     crate::audit::record("owner", "remove_password", "", "allowed", false, "пароль удалён");
     save(&s)
 }
@@ -222,6 +257,9 @@ pub fn remove_password(pw: &str) -> Result<(), String> {
 pub fn recover(code: &str, new: &str) -> Result<String, String> {
     if new.chars().count() < MIN_LEN {
         return Err(format!("Пароль короче {} символов.", MIN_LEN));
+    }
+    if let Some(why) = weak_reason(new) {
+        return Err(format!("Придумайте пароль посложнее: {}.", why));
     }
     let _one_at_a_time = TRY_LOCK.lock();
     let mut s = load();
@@ -384,6 +422,27 @@ mod tests {
             assert!(!is_set());
             assert!(guard().is_ok());
             let _ = code3;
+        });
+    }
+
+    #[test]
+    fn a_password_that_is_guessed_first_is_refused_and_a_phrase_is_not() {
+        for bad in ["111111", "aaaaaa", "123456", "abcdef", "654321", "password", "Qwerty", "ПАРОЛЬ", "Джарвис", "12345678901", "1234567", "qwerty123"] {
+            assert!(weak_reason(bad).is_some(), "{} must be refused", bad);
+        }
+        for good in ["пароль-владельца", "кот и три пирожка", "x7!kQ2mz", "Jarvis-2026-кофе", "мойсамыйлучшийпароль", "7391-4826-a"] {
+            assert!(weak_reason(good).is_none(), "{} must pass: {:?}", good, weak_reason(good));
+        }
+        store::with_temp(|| {
+            reset_for_tests();
+            let e = set_password("123456", "").unwrap_err();
+            assert!(e.contains("посложнее") && !is_set(), "{}", e);
+            assert!(set_password("abc", "").unwrap_err().contains("короче"), "the length is checked first");
+            set_password("кот и три пирожка", "").unwrap();
+            assert!(set_password("111111", "кот и три пирожка").unwrap_err().contains("посложнее"), "also when changing");
+            assert!(unlock_left() > 800 && unlock_left() <= UNLOCK_SECS, "the time left is reported");
+            lock();
+            assert_eq!(unlock_left(), 0);
         });
     }
 }

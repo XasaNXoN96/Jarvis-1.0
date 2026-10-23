@@ -569,7 +569,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             },
             None => json!({ "ok": false, "message": "Неизвестное разрешение." }),
         },
-        "owner_status" => json!({ "ok": true, "set": crate::owner::is_set(), "unlocked": crate::owner::unlocked(), "message": crate::owner::message() }),
+        "owner_status" => json!({ "ok": true, "set": crate::owner::is_set(), "unlocked": crate::owner::unlocked(), "unlock_left": crate::owner::unlock_left(), "message": crate::owner::message() }),
         "owner_set" => match crate::owner::set_password(body.get("new").and_then(|v| v.as_str()).unwrap_or(""), body.get("old").and_then(|v| v.as_str()).unwrap_or("")) {
             Ok(code) => json!({ "ok": true, "recovery": code, "message": "Пароль сохранён. Запишите код восстановления: он показан один раз." }),
             Err(e) => json!({ "ok": false, "message": e }),

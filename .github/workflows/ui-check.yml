@@ -66,6 +66,10 @@ jobs:
         run: node tests/ui/automation_ui.js
         env:
           PW_MODULE: ${{ github.workspace }}/node_modules/playwright
+      - name: Permissions (description, risk) and owner lock time
+        run: node tests/ui/security_ui.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright
       - name: Red strip while the phone drives the mouse or watches the camera
         run: node tests/ui/live_strip.js
         env:

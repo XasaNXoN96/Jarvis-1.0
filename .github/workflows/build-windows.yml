@@ -264,6 +264,16 @@ jobs:
         shell: pwsh
         run: Get-ChildItem dist | Format-Table Name, Length
 
+      # the SHA-256 of every file that is given out (after the signing, so the sums are of the files as they are downloaded): the owner can compare
+      # a downloaded installer with this list (Get-FileHash file.exe -Algorithm SHA256). It is a check of the download, not a signature.
+      - name: SHA-256 sums of the files in dist
+        shell: pwsh
+        run: |
+          $lines = Get-ChildItem dist -File | Where-Object { $_.Name -ne "SHA256SUMS.txt" } | Sort-Object Name | ForEach-Object { "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name }
+          if (-not $lines) { throw "dist is empty" }
+          $lines | Set-Content -Encoding ascii dist\SHA256SUMS.txt
+          Get-Content dist\SHA256SUMS.txt
+
       - name: Upload dist folder
         uses: actions/upload-artifact@v4
         with:
