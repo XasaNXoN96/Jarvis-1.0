@@ -5,8 +5,9 @@
 //!   centre; it is asked on EVERY action, so switching it off stops the phone at once;
 //! - nothing happens without a session started on purpose by the phone (`start`); a session ends by itself after a silence or after the longest
 //!   time, and by the «Выключить» button of the sign that is always shown on this computer while a session runs;
-//! - only a short list of actions: a tap (click, double click, right click) at a place of the main screen, the wheel, a short list of keys and
-//!   shortcuts (the rules of policy.rs apply too), and text up to 200 characters. No dragging, no raw key codes, no arbitrary combinations;
+//! - only a short list of actions: a tap (click, double click, right click) at a place of the main screen, a small move of the pointer and a left
+//!   click where it stands (the touchpad of the phone), the wheel, a short list of keys and shortcuts (the rules of policy.rs apply too), and text
+//!   up to 200 characters. No dragging, no raw key codes, no arbitrary combinations;
 //! - the text that is typed is never written to the journal (the journal has the start, the stop, the number of actions and the refusals);
 //! - Windows does not take input from Jarvis on the sign-in screen and in UAC windows: that is said as it is, nothing is bypassed.
 
@@ -19,11 +20,16 @@ use std::time::{Duration, Instant};
 pub const IDLE: Duration = Duration::from_secs(60);
 pub const MAX: Duration = Duration::from_secs(10 * 60);
 const MIN_GAP: Duration = Duration::from_millis(80);
+// the pointer moves many times a second (the finger on the touchpad of the phone)
+const MOVE_GAP: Duration = Duration::from_millis(15);
+// one move of the pointer: at most this many pixels in each direction
+pub const MAX_MOVE: i32 = 300;
 pub const MAX_TEXT: usize = 200;
 
 static LIVE: Lazy<Mutex<Live>> = Lazy::new(|| Mutex::new(Live::new(IDLE, MAX)));
 static ACTIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static LAST_ACT: Lazy<Mutex<Option<Instant>>> = Lazy::new(|| Mutex::new(None));
+static LAST_MOVE: Lazy<Mutex<Option<Instant>>> = Lazy::new(|| Mutex::new(None));
 
 // the keys the phone may press (single names), and the shortcuts it may press
 const KEYS: [&str; 16] = ["enter", "escape", "esc", "tab", "space", "backspace", "delete", "up", "down", "left", "right", "home", "end", "page_up", "page_down", "f5"];
@@ -33,6 +39,10 @@ const COMBOS: [&str; 11] = ["ctrl+c", "ctrl+v", "ctrl+x", "ctrl+a", "ctrl+z", "c
 pub enum Act {
     // a tap at a place of the main screen (shares of width and height, 0..1)
     Click { x: f64, y: f64, right: bool, times: u32 },
+    // the pointer is moved by this many pixels from where it is (the touchpad)
+    Move { dx: i32, dy: i32 },
+    // a left click where the pointer stands, once or twice
+    Tap { times: u32 },
     // lines of the wheel: positive = up
     Scroll(i32),
     Key(String),
@@ -42,6 +52,8 @@ pub enum Act {
 // What does the work. The program uses the real hands (input.rs); a test puts its own recorder here.
 pub trait Hands: Send + Sync {
     fn click(&self, x: f64, y: f64, right: bool, times: u32) -> Result<(), String>;
+    fn move_by(&self, dx: i32, dy: i32) -> Result<(), String>;
+    fn tap(&self, times: u32) -> Result<(), String>;
     fn scroll(&self, lines: i32) -> Result<(), String>;
     fn key(&self, combo: &str) -> Result<(), String>;
     fn text(&self, text: &str) -> Result<(), String>;
@@ -51,6 +63,12 @@ struct SystemHands;
 impl Hands for SystemHands {
     fn click(&self, x: f64, y: f64, right: bool, times: u32) -> Result<(), String> {
         crate::input::remote_click(x, y, right, times)
+    }
+    fn move_by(&self, dx: i32, dy: i32) -> Result<(), String> {
+        crate::input::remote_move(dx, dy)
+    }
+    fn tap(&self, times: u32) -> Result<(), String> {
+        crate::input::remote_tap(times)
     }
     fn scroll(&self, lines: i32) -> Result<(), String> {
         crate::input::remote_scroll(lines)
@@ -89,6 +107,14 @@ pub fn parse(body: &Value) -> Result<Act, String> {
             }
             Ok(Act::Click { x, y, right: kind == "right", times: if kind == "double" { 2 } else { 1 } })
         }
+        "move" => {
+            let (Some(dx), Some(dy)) = (num("dx"), num("dy")) else { return Err("нужны dx и dy — сдвиг в пикселях".into()) };
+            if dx.fract() != 0.0 || dy.fract() != 0.0 || dx.abs() > MAX_MOVE as f64 || dy.abs() > MAX_MOVE as f64 || (dx == 0.0 && dy == 0.0) {
+                return Err(format!("сдвиг: целые числа до {} пикселей, не оба нули", MAX_MOVE));
+            }
+            Ok(Act::Move { dx: dx as i32, dy: dy as i32 })
+        }
+        "tap" | "double_tap" => Ok(Act::Tap { times: if kind == "double_tap" { 2 } else { 1 } }),
         "scroll" => {
             let lines = num("lines").ok_or("нужно число строк")?;
             if lines.fract() != 0.0 || lines == 0.0 || lines.abs() > 20.0 {
@@ -177,15 +203,19 @@ pub fn act(a: &Act) -> Result<(), String> {
         return Err(if e == End::Stopped { "Управление не включено: нажмите «Включить управление» на телефоне.".to_string() } else { format!("Управление выключено: {}. Включите его снова.", e.text()) });
     }
     {
-        let mut last = LAST_ACT.lock();
+        let moving = matches!(a, Act::Move { .. });
+        let mut last = if moving { LAST_MOVE.lock() } else { LAST_ACT.lock() };
         let now = Instant::now();
-        if last.map(|l| now.saturating_duration_since(l) < MIN_GAP).unwrap_or(false) {
+        let gap = if moving { MOVE_GAP } else { MIN_GAP };
+        if last.map(|l| now.saturating_duration_since(l) < gap).unwrap_or(false) {
             return Err("слишком часто: подождите долю секунды".into());
         }
         *last = Some(now);
     }
     let r = with_hands(|h| match a {
         Act::Click { x, y, right, times } => h.click(*x, *y, *right, *times),
+        Act::Move { dx, dy } => h.move_by(*dx, *dy),
+        Act::Tap { times } => h.tap(*times),
         Act::Scroll(n) => h.scroll(*n),
         Act::Key(k) => h.key(k),
         Act::Text(t) => h.text(t),
@@ -214,6 +244,12 @@ impl Hands for NoHands {
     fn click(&self, _: f64, _: f64, _: bool, _: u32) -> Result<(), String> {
         Ok(())
     }
+    fn move_by(&self, _: i32, _: i32) -> Result<(), String> {
+        Ok(())
+    }
+    fn tap(&self, _: u32) -> Result<(), String> {
+        Ok(())
+    }
     fn scroll(&self, _: i32) -> Result<(), String> {
         Ok(())
     }
@@ -232,6 +268,7 @@ pub(crate) static TEST_LOCK: Mutex<()> = parking_lot::const_mutex(());
 pub(crate) fn reset_for_tests() {
     *LIVE.lock() = Live::new(IDLE, MAX);
     *LAST_ACT.lock() = None;
+    *LAST_MOVE.lock() = None;
     ACTIONS.store(0, std::sync::atomic::Ordering::SeqCst);
 }
 
@@ -244,6 +281,14 @@ mod tests {
     impl Hands for Recorder {
         fn click(&self, x: f64, y: f64, right: bool, times: u32) -> Result<(), String> {
             self.0.lock().push(format!("click {:.2} {:.2} {} {}", x, y, right, times));
+            Ok(())
+        }
+        fn move_by(&self, dx: i32, dy: i32) -> Result<(), String> {
+            self.0.lock().push(format!("move {} {}", dx, dy));
+            Ok(())
+        }
+        fn tap(&self, times: u32) -> Result<(), String> {
+            self.0.lock().push(format!("tap {}", times));
             Ok(())
         }
         fn scroll(&self, lines: i32) -> Result<(), String> {
@@ -295,6 +340,41 @@ mod tests {
         assert!(parse(&json!({ "kind": "text", "text": "я".repeat(201) })).is_err());
         assert!(parse(&json!({ "kind": "text", "text": "я".repeat(200) })).is_ok());
         assert!(parse(&json!({ "kind": "drag", "x": 0.1, "y": 0.1 })).is_err() && parse(&json!({ "kind": "move" })).is_err() && parse(&json!({})).is_err());
+    }
+
+    #[test]
+    fn the_touchpad_of_the_phone_moves_taps_and_scrolls_within_limits() {
+        assert_eq!(parse(&json!({ "kind": "move", "dx": 12, "dy": -7 })), Ok(Act::Move { dx: 12, dy: -7 }));
+        assert_eq!(parse(&json!({ "kind": "tap" })), Ok(Act::Tap { times: 1 }));
+        assert_eq!(parse(&json!({ "kind": "double_tap" })), Ok(Act::Tap { times: 2 }));
+        for bad in [json!({ "kind": "move", "dx": 0, "dy": 0 }), json!({ "kind": "move", "dx": 301, "dy": 0 }), json!({ "kind": "move", "dx": 1.5, "dy": 0 }), json!({ "kind": "move", "dx": "5", "dy": 0 }), json!({ "kind": "move", "dx": f64::NAN, "dy": 1 })] {
+            assert!(parse(&bad).is_err(), "{}", bad);
+        }
+        let _g = TEST_LOCK.lock();
+        crate::store::with_temp(|| {
+            crate::owner::reset_for_tests();
+            let log = setup();
+            crate::perms::set(crate::perms::Cap::RemoteInput, true).unwrap();
+            assert!(start().is_ok());
+            pause();
+            // the pointer moves many times a second; only a stream faster than the limit is refused
+            act(&Act::Move { dx: 5, dy: 0 }).unwrap();
+            assert!(act(&Act::Move { dx: 5, dy: 0 }).is_err(), "two moves in the same instant");
+            std::thread::sleep(MOVE_GAP + Duration::from_millis(10));
+            act(&Act::Move { dx: -3, dy: 4 }).unwrap();
+            // a move does not delay a tap and a tap does not delay a move
+            act(&Act::Tap { times: 1 }).unwrap();
+            std::thread::sleep(MOVE_GAP + Duration::from_millis(10));
+            act(&Act::Move { dx: 1, dy: 1 }).unwrap();
+            assert!(act(&Act::Tap { times: 2 }).is_err(), "taps keep the longer pause");
+            pause();
+            act(&Act::Tap { times: 2 }).unwrap();
+            assert_eq!(*log.lock(), vec!["move 5 0".to_string(), "move -3 4".into(), "tap 1".into(), "move 1 1".into(), "tap 2".into()]);
+            // the switch of the owner stops the touchpad at once
+            crate::perms::set(crate::perms::Cap::RemoteInput, false).unwrap();
+            assert!(act(&Act::Move { dx: 5, dy: 5 }).is_err());
+            set_hands_for_tests(None);
+        });
     }
 
     #[test]
@@ -374,6 +454,8 @@ mod tests {
         struct Blocked;
         impl Hands for Blocked {
             fn click(&self, _: f64, _: f64, _: bool, _: u32) -> Result<(), String> { Err("Windows не принял ввод".into()) }
+            fn move_by(&self, _: i32, _: i32) -> Result<(), String> { Err("Windows не принял ввод".into()) }
+            fn tap(&self, _: u32) -> Result<(), String> { Err("Windows не принял ввод".into()) }
             fn scroll(&self, _: i32) -> Result<(), String> { Err("Windows не принял ввод".into()) }
             fn key(&self, _: &str) -> Result<(), String> { Err("Windows не принял ввод".into()) }
             fn text(&self, _: &str) -> Result<(), String> { Err("Windows не принял ввод".into()) }

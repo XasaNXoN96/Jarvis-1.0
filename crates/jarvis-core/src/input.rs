@@ -406,6 +406,35 @@ pub fn remote_scroll(lines: i32) -> Result<(), String> {
     }
 }
 
+// the touchpad of the phone: the pointer moves by a few pixels from where it stands
+pub fn remote_move(dx: i32, dy: i32) -> Result<(), String> {
+    let (dx, dy) = (dx.clamp(-300, 300), dy.clamp(-300, 300));
+    #[cfg(target_os = "windows")]
+    unsafe {
+        win::move_by(dx, dy);
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (dx, dy);
+        Err(NO_INPUT_HERE.into())
+    }
+}
+
+// a left click where the pointer stands (once or twice)
+pub fn remote_tap(times: u32) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    unsafe {
+        win::click(false, times.clamp(1, 2));
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = times;
+        Err(NO_INPUT_HERE.into())
+    }
+}
+
 // a shortcut or a key ("enter", "ctrl+c"); the rules of policy.rs apply as they do for every command
 pub fn remote_keys(combo: &str) -> Result<(), String> {
     let codes = parse_combo(combo).ok_or_else(|| format!("неизвестная клавиша «{}»", combo))?;
