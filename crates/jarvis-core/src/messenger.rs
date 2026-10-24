@@ -122,67 +122,156 @@ pub fn parse(text: &str) -> Option<Parsed> {
     Some(Parsed { who: rest.join(" "), body, channel })
 }
 
-// the same request said without a colon: «отправь сообщение маме через Telegram мама, я скоро буду», «пиши моей жене в ватсап еду домой».
+// The same request said as people really say it, without a colon and in any order:
+//   «отправь сообщение маме через Telegram мама, я скоро буду», «отправь маме через Telegram, привет, как дела?», «пиши моей жене в ватсап еду домой»,
+//   «напиши в телеграм Тиме что встреча в пять», «скинь маме в ватсап текст еду домой», «send mom on telegram I will be late».
 // The words after the verb are taken as the person only when they are the name or an alias of a saved contact (the same word with another ending is
-// the same word), so an ordinary phrase («отправь файл на почту») is never taken for a message. Then an optional «через / в Telegram», then the text.
+// the same word), so an ordinary phrase («отправь файл на почту») is never taken for a message. The channel («через / в / на Telegram») may stand before
+// or after the name; everything after that is the text, as it was said. When the phrase is clearly a message but the contact is not saved, or there is
+// no text, the answer says exactly that (instead of the phrase going to the AI, which answers nonsense).
 pub fn parse_loose(text: &str) -> Option<Parsed> {
     parse_loose_in(&contacts::list(), text)
 }
 
-pub fn parse_loose_in(all: &[Contact], text: &str) -> Option<Parsed> {
-    let words: Vec<&str> = text.split_whitespace().collect();
+// the same, as a hint for the user (None: the phrase is not a message at all)
+pub fn loose_hint(text: &str) -> Option<String> {
+    loose_hint_in(&contacts::list(), text)
+}
+
+const LOOSE_VERBS: [&str; 22] = [
+    "напиши", "напишите", "написать", "пиши", "отправь", "отправьте", "отправить", "пошли", "пришли", "шли", "скинь", "кинь", "сбрось", "передай", "сообщи", "черкни",
+    "send", "text", "message", "write", "tell", "ping",
+];
+const LOOSE_FILLER: [&str; 24] = [
+    "сообщение", "сообщения", "смс", "sms", "мне", "моей", "моему", "моя", "мой", "моим", "мою", "своей", "своему", "своим", "пожалуйста", "джарвис", "please", "a", "an", "message", "my", "to", "ей", "ему",
+];
+const LOOSE_PREPS: [&str; 8] = ["через", "в", "по", "на", "via", "on", "in", "by"];
+// people that are said by the role: if the first word after the verb is one of them and there is no such contact, the user is told so
+const ROLES: [&str; 22] = [
+    "мама", "мамочка", "папа", "отец", "жена", "муж", "брат", "сестра", "сын", "дочь", "бабушка", "дедушка", "друг", "подруга", "босс", "начальник", "коллега", "няша", "няшка", "любимая", "любимый", "mom",
+];
+
+enum Loose {
+    Msg(Parsed),
+    NoText(String),
+    NoContact(String),
+}
+
+fn loose(all: &[Contact], text: &str) -> Option<Loose> {
+    let mut words: Vec<&str> = text.split_whitespace().collect();
     let clean = |w: &str| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
-    let verbs = ["напиши", "напишите", "пиши", "отправь", "отправьте", "пошли", "пришли", "сообщи", "черкни", "передай"];
-    if words.len() < 3 || !verbs.contains(&clean(words[0]).as_str()) {
+    // the name of the assistant in front of the request is not a part of it
+    if words.first().map(|w| matches!(clean(w).as_str(), "джарвис" | "jarvis" | "джарвиз")).unwrap_or(false) {
+        words.remove(0);
+    }
+    if words.len() < 2 || !LOOSE_VERBS.contains(&clean(words[0]).as_str()) {
         return None;
     }
-    let filler = ["сообщение", "сообщения", "смс", "sms", "мне", "моей", "моему", "моя", "мой", "моим", "своей", "своему", "своим"];
     let mut i = 1;
-    while i < words.len() && filler.contains(&clean(words[i]).as_str()) {
-        i += 1;
+    let mut channel: Option<&'static str> = None;
+    let mut message_word = false;
+    // the filler words and a channel that stands before the name
+    loop {
+        if i >= words.len() {
+            break;
+        }
+        let w = clean(words[i]);
+        if LOOSE_FILLER.contains(&w.as_str()) {
+            if matches!(w.as_str(), "сообщение" | "сообщения" | "смс" | "sms" | "message") {
+                message_word = true;
+            }
+            i += 1;
+        } else if LOOSE_PREPS.contains(&w.as_str()) && i + 1 < words.len() && channel_word(&clean(words[i + 1])).is_some() {
+            channel = channel_word(&clean(words[i + 1]));
+            i += 2;
+        } else if let Some(c) = channel_word(&w) {
+            channel = Some(c);
+            i += 1;
+        } else {
+            break;
+        }
+    }
+    if i >= words.len() {
+        return None;
     }
     let names_of = |c: &Contact| -> Vec<String> { std::iter::once(c.name.clone()).chain(c.aliases.iter().cloned()).collect() };
+    let same = |a: &str, b: &str| a == b || textnorm::same_stem(a, b);
     // the longest run of words that is a contact (a full name wins over its first word)
-    for k in (1..=3usize.min(words.len().saturating_sub(i))).rev() {
+    for k in (1..=3usize.min(words.len() - i)).rev() {
         let who_words: Vec<String> = words[i..i + k].iter().map(|w| clean(w)).collect();
-        if who_words.iter().any(|w| w.is_empty() || channel_word(w).is_some() || ["через", "в", "по", "на", "что", "via", "on", "in"].contains(&w.as_str())) {
+        if who_words.iter().any(|w| w.is_empty() || channel_word(w).is_some() || LOOSE_PREPS.contains(&w.as_str()) || w == "что" || w == "текст") {
             continue;
         }
-        let who = who_words.join(" ");
         let said: Vec<String> = who_words.iter().map(|w| textnorm::normalize(w)).collect();
-        let same = |a: &str, b: &str| a == b || textnorm::same_stem(a, b);
         let known = all.iter().any(|c| {
             names_of(c).iter().any(|n| {
                 let nw: Vec<String> = n.split_whitespace().map(textnorm::normalize).collect();
-                // the same number of words, each one the same word (with another ending), or the first word of a full name
                 (nw.len() == said.len() && nw.iter().zip(&said).all(|(a, b)| same(a, b))) || (said.len() == 1 && nw.first().map(|a| same(a, &said[0])).unwrap_or(false))
             })
         });
         if !known {
             continue;
         }
+        let who = who_words.join(" ");
         let mut j = i + k;
-        let mut channel = None;
-        if j < words.len() && ["через", "в", "по", "на", "via", "on", "in"].contains(&clean(words[j]).as_str()) && j + 1 < words.len() {
-            if let Some(c) = channel_word(&clean(words[j + 1])) {
-                channel = Some(c);
+        // the channel after the name
+        if j < words.len() {
+            let w = clean(words[j]);
+            if LOOSE_PREPS.contains(&w.as_str()) && j + 1 < words.len() && channel_word(&clean(words[j + 1])).is_some() {
+                channel = channel_word(&clean(words[j + 1]));
                 j += 2;
-            }
-        } else if j < words.len() {
-            if let Some(c) = channel_word(&clean(words[j])) {
+            } else if let Some(c) = channel_word(&w) {
                 channel = Some(c);
                 j += 1;
             }
         }
         let body = words[j..].join(" ");
-        let body = body.trim_start_matches(|c: char| c == ':' || c == ',' || c == '-' || c == '—' || c.is_whitespace());
-        let body = body.strip_prefix("что ").unwrap_or(body).trim();
-        if body.is_empty() {
-            return None;
+        let mut body = body.trim_start_matches(|c: char| matches!(c, ':' | ',' | '-' | '—' | '.' | ';') || c.is_whitespace()).to_string();
+        // «что …» / «текст …» only introduce the text
+        for intro in ["что ", "текст:", "текст ", "сообщение:", "сообщение "] {
+            let low = body.to_lowercase();
+            if low.starts_with(intro) {
+                body = body[intro.len()..].trim_start_matches(|c: char| matches!(c, ':' | ',' | '-' | '—') || c.is_whitespace()).to_string();
+                break;
+            }
         }
-        return Some(Parsed { who, body: body.to_string(), channel });
+        let body = body.trim().to_string();
+        if body.is_empty() {
+            return Some(Loose::NoText(who));
+        }
+        return Some(Loose::Msg(Parsed { who, body, channel }));
+    }
+    // not a saved contact: a message anyway when the phrase says so (a message word, a channel) or names a person by the role
+    let first = clean(words[i]);
+    let by_role = ROLES.iter().any(|r| same(r, &textnorm::normalize(&first)));
+    let channel_near = words[i..].iter().take(4).any(|w| channel_word(&clean(w)).is_some());
+    if message_word || channel.is_some() || channel_near || by_role {
+        let who = if first.is_empty() || channel_word(&first).is_some() { String::new() } else { first };
+        return Some(Loose::NoContact(who));
     }
     None
+}
+
+pub fn parse_loose_in(all: &[Contact], text: &str) -> Option<Parsed> {
+    match loose(all, text)? {
+        Loose::Msg(p) => Some(p),
+        _ => None,
+    }
+}
+
+pub fn loose_hint_in(all: &[Contact], text: &str) -> Option<String> {
+    match loose(all, text)? {
+        Loose::Msg(_) => None,
+        Loose::NoText(who) => Some(format!("Что написать «{}»? Скажите, например: «отправь {} привет, как дела».", who, who)),
+        Loose::NoContact(who) => {
+            let known: Vec<String> = all.iter().take(6).map(|c| c.name.clone()).collect();
+            Some(format!(
+                "Не нашёл контакт{} в «Мои контакты» Джарвиса (контакты из самого Telegram или телефона мне недоступны). Добавьте человека: Настройки → Подключения → Мои контакты — имя и ник в Telegram или номер.{}",
+                if who.is_empty() { String::new() } else { format!(" «{}»", who) },
+                if known.is_empty() { " Сейчас там пусто.".to_string() } else { format!(" Сейчас там: {}.", known.join(", ")) }
+            ))
+        }
+    }
 }
 
 pub enum Prepared {
@@ -546,26 +635,49 @@ mod tests {
     }
 
     #[test]
-    fn a_message_said_without_a_colon_is_understood_only_for_a_saved_contact() {
+    fn a_message_said_without_a_colon_is_understood_in_any_order_and_only_for_a_saved_contact() {
         let all = vec![
-            Contact { id: "1".into(), name: "Мама".into(), telegram: "mama".into(), ..Default::default() },
+            Contact { id: "1".into(), name: "Мама".into(), aliases: vec!["mom".into()], telegram: "mama".into(), ..Default::default() },
             Contact { id: "2".into(), name: "Няшка".into(), aliases: vec!["жена".into()], telegram: "nyashka".into(), ..Default::default() },
             Contact { id: "3".into(), name: "Тима Ашуров".into(), phone: "998901234567".into(), ..Default::default() },
         ];
-        let p = parse_loose_in(&all, "отправь сообщение маме через Telegram мама, я через какое-то время буду").unwrap();
-        assert_eq!((p.who.as_str(), p.channel, p.body.as_str()), ("маме", Some("telegram"), "мама, я через какое-то время буду"));
-        let p = parse_loose_in(&all, "пиши моей няшке через телеграм привет, как дела").unwrap();
-        assert_eq!((p.who.as_str(), p.channel, p.body.as_str()), ("няшке", Some("telegram"), "привет, как дела"));
-        let p = parse_loose_in(&all, "напиши жене в ватсап еду домой").unwrap();
-        assert_eq!((p.who.as_str(), p.channel, p.body.as_str()), ("жене", Some("whatsapp"), "еду домой"));
-        let p = parse_loose_in(&all, "напиши Тиме Ашурову что встреча в пять").unwrap();
-        assert_eq!((p.who.as_str(), p.channel, p.body.as_str()), ("тиме ашурову", None, "встреча в пять"));
-        // not a contact: not a message
-        assert!(parse_loose_in(&all, "отправь файл на почту босса").is_none());
-        assert!(parse_loose_in(&all, "напиши программу на питоне").is_none());
-        // no text: nothing to send
-        assert!(parse_loose_in(&all, "отправь маме через телеграм").is_none());
-        assert!(parse_loose_in(&all, "открой телеграм").is_none());
+        let check = |phrase: &str, who: &str, ch: Option<&'static str>, body: &str| {
+            let p = parse_loose_in(&all, phrase).unwrap_or_else(|| panic!("not understood: {}", phrase));
+            assert_eq!((p.who.as_str(), p.channel, p.body.as_str()), (who, ch, body), "{}", phrase);
+        };
+        check("отправь сообщение маме через Telegram мама, я через какое-то время буду", "маме", Some("telegram"), "мама, я через какое-то время буду");
+        check("отправь маме через Telegram, привет, как дела?", "маме", Some("telegram"), "привет, как дела?");
+        check("отправь маме привет, как дела?", "маме", None, "привет, как дела?");
+        check("отправь в телеграм маме привет как дела", "маме", Some("telegram"), "привет как дела");
+        check("отправь сообщение моей маме. Привет, как дела?", "маме", None, "Привет, как дела?");
+        check("пиши моей няшке через телеграм привет, как дела", "няшке", Some("telegram"), "привет, как дела");
+        check("напиши жене в ватсап еду домой", "жене", Some("whatsapp"), "еду домой");
+        check("скинь маме в ватсап текст еду домой", "маме", Some("whatsapp"), "еду домой");
+        check("напиши в телеграм Тиме что встреча в пять", "тиме", Some("telegram"), "встреча в пять");
+        check("напиши Тиме Ашурову что встреча в пять", "тиме ашурову", None, "встреча в пять");
+        check("передай маме: буду поздно", "маме", None, "буду поздно");
+        check("Джарвис отправь маме через телеграм текст привет", "маме", Some("telegram"), "привет");
+        check("send mom on telegram I will be late", "mom", Some("telegram"), "I will be late");
+    }
+
+    #[test]
+    fn a_clear_message_without_a_contact_or_a_text_gets_an_answer_and_other_phrases_stay_alone() {
+        let all = vec![Contact { id: "1".into(), name: "Мама".into(), telegram: "mama".into(), ..Default::default() }];
+        // unknown person, clear message: told, not given to the AI
+        let h = loose_hint_in(&all, "отправь сообщение начальнику привет").unwrap();
+        assert!(h.contains("«начальнику»") && h.contains("Мои контакты") && h.contains("Мама"), "{}", h);
+        assert!(loose_hint_in(&[], "отправь Боре через телеграм привет").unwrap().contains("Сейчас там пусто"));
+        // a role word with no such contact
+        assert!(loose_hint_in(&all, "напиши папе привет").unwrap().contains("«папе»"));
+        // a contact but no text
+        let h = loose_hint_in(&all, "отправь маме через телеграм").unwrap();
+        assert!(h.contains("Что написать «маме»"), "{}", h);
+        // not messages
+        for phrase in ["отправь файл на почту босса", "напиши программу на питоне", "открой телеграм", "отправь", "пошли всех лесом", "скажи привет"] {
+            assert!(loose_hint_in(&all, phrase).is_none() && parse_loose_in(&all, phrase).is_none(), "{}", phrase);
+        }
+        // a phrase that is a message is not a hint
+        assert!(loose_hint_in(&all, "отправь маме привет").is_none());
     }
 
     #[test]

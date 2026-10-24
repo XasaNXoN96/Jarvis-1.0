@@ -396,6 +396,10 @@ pub fn handle(text: &str) -> Option<Reply> {
     if let Some(p) = messenger::parse(text).or_else(|| messenger::parse_loose(text)) {
         return do_messenger(&p);
     }
+    // clearly a message, but there is no such contact or no text: said plainly (the AI would answer nonsense to it)
+    if let Some(h) = messenger::loose_hint(text) {
+        return r(h);
+    }
     if let Some(r) = do_bixby(text) {
         return Some(r);
     }
@@ -479,6 +483,45 @@ mod tests {
         assert!(r.contains("нет открытого интерфейса") && r.contains("не буду делать вид"));
         assert!(do_bixby("найди рецепт борща").is_none());
         assert!(do_bixby("привет Bixby").is_none());
+    }
+
+    // the phrases as the owner says them (speech recognition gives them with a full stop or a comma, with «моей» before the name)
+    #[test]
+    fn messenger_understands_the_phrases_as_they_are_spoken() {
+        store::with_temp(|| {
+            contacts::save(contacts::Contact { name: "Мама".into(), aliases: vec!["мамочка".into()], telegram: "mama_tg".into(), ..Default::default() }).unwrap();
+            contacts::save(contacts::Contact { name: "Няшка".into(), telegram: "nyashka".into(), ..Default::default() }).unwrap();
+            for phrase in [
+                "отправь сообщение моей маме. Привет, как дела?",
+                "отправь сообщение маме привет, как дела",
+                "Отправь сообщение моей маме через Телеграм привет как дела",
+                "напиши маме в телеграм: привет, как дела?",
+                "отправь сообщение моей маме Привет. Как дела?",
+            ] {
+                let q = handle(phrase).map(|r| r.text).unwrap_or_default();
+                assert!(q.contains("Отправить?") && q.contains("Мама") && q.to_lowercase().contains("как дела"), "{} => {}", phrase, q);
+                let id = pending_message().unwrap();
+                handle("нет");
+                assert_eq!(messenger::get(&id).unwrap().status, messenger::Status::Cancelled);
+            }
+            let q = handle("пиши моей няшке через телеграм я скоро буду").unwrap().text;
+            assert!(q.contains("Няшка") && q.contains("я скоро буду"), "{}", q);
+            // every way of saying it reaches the confirmation with the right person, channel and text
+            for (phrase, ch, text) in [
+                ("отправь маме через Telegram, привет, как дела?", "Telegram", "привет, как дела?"),
+                ("отправь маме привет", "Telegram", "привет"),
+                ("скинь маме в телеграм текст буду поздно", "Telegram", "буду поздно"),
+                ("напиши в телеграм няшке что люблю", "Telegram", "люблю"),
+            ] {
+                let q = handle(phrase).unwrap().text;
+                assert!(q.contains("Отправить?") && q.contains(ch) && q.to_lowercase().contains(text), "{} => {}", phrase, q);
+                handle("нет");
+            }
+            // an unknown person or no text: an answer, nothing staged, nothing goes to the AI
+            let q = handle("отправь сообщение начальнику привет").unwrap().text;
+            assert!(q.contains("Не нашёл контакт") && pending_message().is_none(), "{}", q);
+            assert!(handle("отправь маме через телеграм").unwrap().text.contains("Что написать"));
+        });
     }
 
     #[test]
