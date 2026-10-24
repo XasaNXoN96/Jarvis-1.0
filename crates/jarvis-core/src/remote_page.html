@@ -338,20 +338,35 @@ if (!token) {
   // a link or a QR code of the computer carries the code: nothing to type and nothing to press (the code is valid 5 minutes, five wrong tries burn it)
   if (pairHint) box.querySelector('#pgo').click();
 }
-// the screen of the computer (needs the permission on the computer; one picture on each press)
+// the screen of the computer (needs the permission on the computer): the picture is asked for again about every 1.5 seconds while this window is open and
+// stops with it. When the computer cannot take the picture, the reason is written here as the computer told it.
 (function () {
-  const b = document.createElement('button'); b.type = 'button'; b.textContent = '🖥 Экран ПК'; b.className = 'btn wide';
-  b.onclick = async () => {
-    try {
-      const r = await fetchT('/screen', { headers: { 'X-Token': token } });
-      if (!r.ok) { alert(await r.text()); return; }
-      const j = await r.json();
-      let box = document.getElementById('scrbox');
-      if (!box) { box = document.createElement('div'); box.id = 'scrbox'; box.style.cssText = 'position:fixed;inset:0;z-index:99998;background:#000d;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px'; box.onclick = () => box.remove(); document.body.appendChild(box); }
-      box.innerHTML = '<img style="max-width:96vw;max-height:88vh;border-radius:8px" src="data:image/jpeg;base64,' + j.jpeg + '"><span style="color:#aaa">Нажмите, чтобы закрыть. Это один снимок, не трансляция.</span>';
-    } catch (e) { alert('Нет связи с компьютером'); }
+  const b = document.createElement('button'); b.type = 'button'; b.id = 'scr-open'; b.textContent = '🖥 Экран ПК'; b.className = 'btn wide';
+  b.onclick = () => {
+    const old = document.getElementById('scrbox'); if (old) old.remove();
+    const box = document.createElement('div'); box.id = 'scrbox';
+    box.style.cssText = 'position:fixed;inset:0;z-index:99998;background:#000e;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#fff;font:15px system-ui,sans-serif;padding:8px';
+    const img = document.createElement('img'); img.id = 'scr-img'; img.style.cssText = 'max-width:96vw;max-height:80vh;border-radius:8px;display:none';
+    const msg = document.createElement('div'); msg.id = 'scr-msg'; msg.style.cssText = 'color:#ffd58a;text-align:center;max-width:92vw'; msg.textContent = 'Получаю картинку экрана…';
+    const close = document.createElement('button'); close.type = 'button'; close.id = 'scr-close'; close.className = 'btn'; close.textContent = 'Закрыть';
+    box.append(img, msg, close); document.body.appendChild(box);
+    let timer = 0, alive = true;
+    const stop = () => { alive = false; clearTimeout(timer); box.remove(); };
+    close.onclick = stop;
+    const pic = async () => {
+      if (!alive) return;
+      let delay = 1500;
+      try {
+        const r = await fetchT('/screen', { headers: { 'X-Token': token } });
+        if (r.ok) { const j = await r.json(); img.src = 'data:image/jpeg;base64,' + j.jpeg; img.style.display = ''; msg.textContent = 'Экран компьютера. Картинка обновляется сама, пока это окно открыто.'; }
+        else if (r.status === 403) { msg.textContent = 'Чтобы видеть экран, включите на компьютере «Показывать экран…» в центре разрешений.'; alive = false; return; }
+        else if (r.status !== 429) { let t = ''; try { t = await r.text(); } catch (e) {} msg.textContent = 'Экран пока не виден: ' + (t || 'компьютер не отдал картинку') + '. Пробую снова…'; delay = 4000; }
+      } catch (e) { msg.textContent = 'Нет связи с компьютером. Пробую снова…'; delay = 4000; }
+      if (alive && document.getElementById('scrbox')) timer = setTimeout(pic, delay);
+    };
+    pic();
   };
-  const put = () => { const box = document.getElementById('t-media'); if (box) box.appendChild(b); }; document.addEventListener('DOMContentLoaded', put); put();
+  const put = () => { const box = document.getElementById('t-media'); if (box && !document.getElementById('scr-open')) box.appendChild(b); }; document.addEventListener('DOMContentLoaded', put); put();
 })();
 // the mouse and the keyboard of the computer, and its web camera (each needs its own permission on the computer, off by default, and an explicit start here;
 // the computer shows a red strip while it runs and ends it by itself after silence)
@@ -391,6 +406,58 @@ if (!token) {
       const x = (ev.clientX - b.left) / b.width, y = (ev.clientY - b.top) / b.height;
       send({ kind: mode, x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) });
     };
+    // THE TOUCHPAD: the empty place under the picture works like the pad of a laptop. One finger moves the pointer of the computer, a short touch
+    // is a left click (two quick touches make a double click by themselves), two fingers moving up or down turn the wheel.
+    const pad = document.createElement('div'); pad.id = 'rc-pad';
+    pad.style.cssText = 'width:min(96vw,640px);min-height:30vh;border:1px dashed #5d7a99;border-radius:12px;display:flex;align-items:center;justify-content:center;text-align:center;color:#8fa7c0;font-size:14px;padding:10px;touch-action:none;user-select:none;-webkit-user-select:none';
+    pad.textContent = 'Тачпад: двигайте пальцем: курсор на компьютере двигается. Коснулись: клик. Два касания подряд: двойной клик. Два пальца вверх и вниз: прокрутка.';
+    box.appendChild(pad);
+    const GAIN = 1.6;                       // the normal speed of the pointer: a pixel of the finger is a bit more than a pixel of the screen
+    const pt = { fingers: new Map(), t0: 0, moved: 0, wasTwo: false, accX: 0, accY: 0, accScroll: 0, busy: false, last: 0 };
+    const flush = async () => {
+      if (!alive || pt.busy) return;
+      let dx = Math.round(pt.accX), dy = Math.round(pt.accY);
+      if (dx || dy) {
+        dx = Math.max(-300, Math.min(300, dx)); dy = Math.max(-300, Math.min(300, dy));
+        pt.accX -= dx; pt.accY -= dy; pt.busy = true;
+        try { const r = await postSigned('/input', JSON.stringify({ kind: 'move', dx, dy })); if (!r.ok) { const t = await say(r); msg.textContent = t; if (r.status === 403 || /не включено|выключено/.test(t)) alive = false; } } catch (e) { msg.textContent = 'Нет связи с компьютером.'; }
+        pt.busy = false;
+      } else if (Math.abs(pt.accScroll) >= 1) {
+        const lines = Math.max(-20, Math.min(20, Math.trunc(pt.accScroll))); pt.accScroll -= lines; pt.busy = true;
+        try { await postSigned('/input', JSON.stringify({ kind: 'scroll', lines })); } catch (e) {}
+        pt.busy = false;
+      }
+    };
+    const pump = setInterval(() => { if (!document.getElementById('rc-box')) clearInterval(pump); else flush(); }, 40);
+    const mid = ts => { let x = 0, y = 0; ts.forEach(t => { x += t.x; y += t.y; }); return { x: x / ts.length, y: y / ts.length }; };
+    const touches = ev => { for (const t of ev.changedTouches) pt.fingers.set(t.identifier, { x: t.clientX, y: t.clientY }); };
+    pad.addEventListener('touchstart', ev => {
+      ev.preventDefault();
+      if (!pt.fingers.size) { pt.t0 = Date.now(); pt.moved = 0; pt.wasTwo = false; }
+      touches(ev); if (pt.fingers.size >= 2) pt.wasTwo = true;
+    }, { passive: false });
+    pad.addEventListener('touchmove', ev => {
+      ev.preventDefault();
+      const before = [...pt.fingers.values()].map(f => ({ x: f.x, y: f.y }));
+      const m0 = before.length ? mid(before) : null;
+      touches(ev);
+      const now = [...pt.fingers.values()];
+      if (!m0 || !now.length) return;
+      const m1 = mid(now); const dx = m1.x - m0.x, dy = m1.y - m0.y;
+      pt.moved += Math.abs(dx) + Math.abs(dy);
+      if (now.length >= 2) pt.accScroll += dy / 22;       // two fingers: the page follows the fingers
+      else { pt.accX += dx * GAIN; pt.accY += dy * GAIN; }
+    }, { passive: false });
+    const lift = ev => {
+      ev.preventDefault();
+      for (const t of ev.changedTouches) pt.fingers.delete(t.identifier);
+      if (!pt.fingers.size && !pt.wasTwo && pt.moved < 10 && Date.now() - pt.t0 < 300) {
+        // a short touch: a left click where the pointer stands (the quick second one is a double click for Windows itself)
+        flush().finally(() => send({ kind: 'tap' }));
+      }
+    };
+    pad.addEventListener('touchend', lift, { passive: false });
+    pad.addEventListener('touchcancel', ev => { for (const t of ev.changedTouches) pt.fingers.delete(t.identifier); });
     const row = () => { const d = document.createElement('div'); d.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;justify-content:center'; box.appendChild(d); return d; };
     const modes = row();
     [['click', 'Клик'], ['double', 'Двойной клик'], ['right', 'Правая кнопка']].forEach(([m, t]) => modes.appendChild(btn(t, 'rc-mode-' + m, () => { mode = m; msg.textContent = 'Режим касания: ' + t; })));
@@ -408,6 +475,7 @@ if (!token) {
         const r = await fetchT('/screen', { headers: { 'X-Token': token } });
         if (r.ok) { const j = await r.json(); img.src = 'data:image/jpeg;base64,' + j.jpeg; }
         else if (r.status === 403) { msg.textContent = 'Чтобы видеть экран, включите на компьютере «Показывать экран…» в центре разрешений.'; alive = alive; }
+        else if (r.status !== 429) { let t = ''; try { t = await r.text(); } catch (e) {} msg.textContent = 'Экран пока не виден: ' + (t || 'компьютер не отдал картинку') + '. Управление курсором работает и без картинки.'; }
       } catch (e) {}
       if (alive && document.getElementById('rc-box')) timer = setTimeout(pic, 1500);
     };

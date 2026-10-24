@@ -46,6 +46,14 @@ jobs:
         run: node tests/ui/web_results.js
         env:
           PW_MODULE: ${{ github.workspace }}/node_modules/playwright
+      - name: Touchpad of the phone (pointer, tap, two-finger scroll)
+        run: node tests/ui/touchpad.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright
+      - name: Screen of the computer on the phone (live picture, reason of a failure)
+        run: node tests/ui/remote_screen.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright
       - name: Detail card of a command
         run: node tests/ui/command_detail.js
         env:
