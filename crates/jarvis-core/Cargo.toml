@@ -59,6 +59,9 @@ opus-decoder = "0.1.1"
 ogg = "0.9.2"
 opus-rs = "0.1.37"
 
+# pictures: a frame of the web camera and of the screen are made into a JPEG (pure Rust, no C decoders), on every system so that the tests run everywhere
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
@@ -67,7 +70,6 @@ winapi = { version = "0.3", features = ["shellapi", "winuser", "sysinfoapi", "fi
 winrt-notification = { workspace = true, optional = true }
 # the web camera of this computer for «Jarvis Remote» (camera.rs): Media Foundation only, no C decoders (a motion-JPEG frame is read with the pure Rust JPEG reader)
 nokhwa = { version = "0.10", default-features = false, features = ["input-msmf"] }
-image = { version = "0.25", default-features = false, features = ["jpeg"] }
 
 [build-dependencies]
 sha2.workspace = true

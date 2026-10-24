@@ -1374,7 +1374,8 @@ fn handle_from<S: Read + Write>(stream: &mut S, via_tunnel: bool) -> std::io::Re
             } else if !crate::guard::first("remote:screen", Duration::from_millis(700)) {
                 respond(stream, "429 Too Many Requests", "text/plain", "не чаще раза в секунду");
             } else {
-                match crate::screen::capture() {
+                // (1280 px wide and a lighter JPEG: the picture is asked for again and again while the window is open)
+                match crate::screen::capture_sized(1280, 60) {
                     Ok(jpeg) => {
                         info!("Remote control: the screen was shown to a device");
                         crate::uistate::log_event("info", "Экран показан на привязанном устройстве");
