@@ -10,10 +10,10 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 
-const MAX_HITS: usize = 4;
-const MAX_LINKS: usize = 6;
-const MAX_PHOTOS: usize = 6;
-const MAX_VIDEOS: usize = 4;
+const MAX_HITS: usize = 10;
+const MAX_LINKS: usize = 10;
+const MAX_PHOTOS: usize = 24;
+const MAX_VIDEOS: usize = 8;
 const DDG: &str = "https://html.duckduckgo.com/html/";
 
 #[derive(Clone, Debug, PartialEq)]
@@ -39,6 +39,8 @@ struct Latest {
     pending: u8,
     error: Option<String>,
     errors: Vec<String>,
+    // why a kind has nothing: (kind, reason); the window says it instead of staying silent
+    notes: Vec<(String, String)>,
     photos: Vec<Item>,
     videos: Vec<Item>,
     links: Vec<Item>,
@@ -292,7 +294,7 @@ fn links_section(query: &str) -> Result<Vec<Item>, String> {
 }
 
 fn photos_section(query: &str) -> Result<Vec<Item>, String> {
-    let url = format!("https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch={}&gsrlimit={}&prop=imageinfo&iiprop=url%7Cmime&iiurlwidth=320&format=json&utf8=1", enc(query), MAX_PHOTOS + 2);
+    let url = format!("https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch={}&gsrlimit={}&prop=imageinfo&iiprop=url%7Cmime&iiurlwidth=480&format=json&utf8=1", enc(query), MAX_PHOTOS + 2);
     let v = serde_json::from_str::<Value>(&http_get(&url)?).map_err(|_| "непонятный ответ с фотографиями".to_string())?;
     Ok(parse_commons(&v))
 }
@@ -303,7 +305,7 @@ fn videos_section(query: &str) -> Result<Vec<Item>, String> {
 
 fn text_section(query: &str) -> Result<Option<Item>, String> {
     let lang = wiki_lang(query);
-    let url = format!("https://{}.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch={}&gsrlimit=1&prop=extracts&exintro=1&explaintext=1&exchars=1200&format=json&utf8=1", lang, enc(query));
+    let url = format!("https://{}.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch={}&gsrlimit=1&prop=extracts&exintro=1&explaintext=1&exchars=2500&format=json&utf8=1", lang, enc(query));
     let v = serde_json::from_str::<Value>(&http_get(&url)?).map_err(|_| "непонятный ответ Википедии".to_string())?;
     Ok(parse_extract(&v, lang))
 }
@@ -335,19 +337,35 @@ pub fn start(query: &str) -> Result<u64, String> {
     let (q1, q2, q3, q4) = (q.clone(), q.clone(), q.clone(), q);
     std::thread::spawn(move || {
         let r = photos_section(&q1);
-        done(id, Box::new(move |l| match r { Ok(v) => l.photos = v, Err(e) => l.errors.push(e) }));
+        done(id, Box::new(move |l| match r {
+            Ok(v) if v.is_empty() => l.notes.push(("photos".into(), "фотографий не нашлось".into())),
+            Ok(v) => l.photos = v,
+            Err(e) => { l.notes.push(("photos".into(), e.clone())); l.errors.push(e) }
+        }));
     });
     std::thread::spawn(move || {
         let r = videos_section(&q2);
-        done(id, Box::new(move |l| match r { Ok(v) => l.videos = v, Err(e) => l.errors.push(e) }));
+        done(id, Box::new(move |l| match r {
+            Ok(v) if v.is_empty() => l.notes.push(("videos".into(), "YouTube не вернул список видео (страница могла измениться)".into())),
+            Ok(v) => l.videos = v,
+            Err(e) => { l.notes.push(("videos".into(), e.clone())); l.errors.push(e) }
+        }));
     });
     std::thread::spawn(move || {
         let r = links_section(&q3);
-        done(id, Box::new(move |l| match r { Ok(v) => l.links = v, Err(e) => l.errors.push(e) }));
+        done(id, Box::new(move |l| match r {
+            Ok(v) if v.is_empty() => l.notes.push(("links".into(), "ссылок не нашлось".into())),
+            Ok(v) => l.links = v,
+            Err(e) => { l.notes.push(("links".into(), e.clone())); l.errors.push(e) }
+        }));
     });
     std::thread::spawn(move || {
         let r = text_section(&q4);
-        done(id, Box::new(move |l| match r { Ok(v) => l.text = v, Err(e) => l.errors.push(e) }));
+        done(id, Box::new(move |l| match r {
+            Ok(None) => l.notes.push(("text".into(), "статьи в Википедии не нашлось".into())),
+            Ok(Some(v)) => l.text = Some(v),
+            Err(e) => { l.notes.push(("text".into(), e.clone())); l.errors.push(e) }
+        }));
     });
     Ok(id)
 }
@@ -368,6 +386,7 @@ pub fn snapshot() -> Value {
         "videos": l.videos.iter().map(item_json).collect::<Vec<_>>(),
         "links": l.links.iter().map(item_json).collect::<Vec<_>>(),
         "text": l.text.as_ref().map(item_json),
+        "notes": l.notes.iter().map(|(k, why)| json!({ "kind": k, "why": why })).collect::<Vec<_>>(),
     })
 }
 
@@ -421,9 +440,9 @@ mod tests {
     }
 
     #[test]
-    fn at_most_four_results_and_no_broken_page_panics() {
-        let many: String = (0..9).map(|i| format!(r#"<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fs{}.org%2F">Сайт {}</a>"#, i, i)).collect();
-        assert_eq!(parse_ddg(&many).len(), 4);
+    fn at_most_ten_results_and_no_broken_page_panics() {
+        let many: String = (0..14).map(|i| format!(r#"<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fs{}.org%2F">Сайт {}</a>"#, i, i)).collect();
+        assert_eq!(parse_ddg(&many).len(), 10, "the most that is kept");
         for broken in ["result__a", "<a class=\"result__a\"", "<a class=\"result__a\" href=\"", "<a class=\"result__a\" href=\"//x\">без конца", "%"] {
             let _ = parse_ddg(broken);
         }
@@ -526,6 +545,7 @@ mod tests {
         let s = snapshot();
         assert_eq!(s["id"], id);
         assert!(!s["loading"].as_bool().unwrap(), "{}", s);
+        assert!(s["notes"].as_array().unwrap().len() >= 4 && s["notes"][0]["why"].is_string(), "every kind says why it is empty: {}", s);
         assert!(s["photos"].as_array().unwrap().is_empty() && s["text"].is_null() && s["error"].is_string(), "{}", s);
     }
 

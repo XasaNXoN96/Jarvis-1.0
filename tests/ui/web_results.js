@@ -79,12 +79,23 @@ const fails = []; const ok = (c, m) => { if (!c) fails.push(m); };
   await closeAll();
   await p.evaluate(r => applyWebResults(r), R({ id: 6, query: 'x', photos: photos.slice(0, 1) }));
   ok(JSON.stringify(await kindsOf()) === JSON.stringify(['photos']), 'one photo: one window');
+  // 7a. a kind that found nothing says why (one small window), a big photo window shows big pictures and all of them
+  await closeAll();
+  const many = Array.from({ length: 24 }, (_, i) => ({ title: 'Фото ' + i, host: 'commons.wikimedia.org', thumb: 'https://upload.wikimedia.org/t' + i + '.jpg', note: '' }));
+  await p.evaluate(r => applyWebResults(r), R({ id: 12, query: 'майкл джексон', photos: many, links, notes: [{ kind: 'videos', why: 'YouTube не вернул список видео' }, { kind: 'text', why: 'статьи в Википедии не нашлось' }] }));
+  ok(JSON.stringify(await kindsOf()) === JSON.stringify(['photos', 'links', 'miss']), 'only what was found, plus the note: ' + await kindsOf());
+  ok(/Видео: YouTube не вернул/.test(await p.textContent('[data-kind=miss] .fw-body')) && /Текст: статьи/.test(await p.textContent('[data-kind=miss] .fw-body')), 'the note names the kind and the reason');
+  ok(await p.$$eval('[data-kind=photos] .fw-body img', a => a.length) === 24, 'all 24 photos are there (the window scrolls)');
+  await p.click('[data-kind=photos] [data-a=big]');
+  const bigImg = await p.$eval('[data-kind=photos] .fw-body img', i => { const r = i.getBoundingClientRect(); return [r.width, r.height]; });
+  ok(bigImg[1] >= 150 && bigImg[0] >= 180, 'in the big window the pictures are big: ' + bigImg);
+  await closeAll();
   // 8. nothing found / an error is said in a window with the browser button, never an empty screen
   await closeAll();
-  await p.evaluate(r => applyWebResults(r), R({ id: 7, query: 'qwertyzzz' }));
+  await p.evaluate(r => applyWebResults(r), R({ id: 13, query: 'qwertyzzz' }));
   ok(await count() === 1 && /Ничего не нашёл/.test(await p.$eval('#fw-layer .fw .fw-body', x => x.textContent)), 'nothing found is said');
   await closeAll();
-  await p.evaluate(r => applyWebResults(r), R({ id: 8, query: 'x', error: 'нет соединения с поиском' }));
+  await p.evaluate(r => applyWebResults(r), R({ id: 14, query: 'x', error: 'нет соединения с поиском' }));
   ok(/нет соединения/.test(await p.$eval('#fw-layer .fw .fw-body', x => x.textContent)), 'an error is shown in a window');
   // 9. a restarted Jarvis counts from zero again: the page follows it and opens the next search
   await closeAll();
