@@ -200,6 +200,8 @@ fn main_loop(text_cmd_rx: &Receiver<Incoming>, rt: &tokio::runtime::Runtime) -> 
         }
 
         recorder::read_microphone(&mut frame_buffer);
+        // (the time that the program spends on this frame, without the waiting for the microphone: «Состояние микрофона» shows it)
+        let frame_started = std::time::Instant::now();
         let peak = frame_buffer.iter().map(|v| (*v as i32).unsigned_abs()).max().unwrap_or(0);
         jarvis_core::MIC_LEVEL.store(peak, std::sync::atomic::Ordering::Relaxed);
         let processed = audio_processing::process(&frame_buffer);
@@ -287,6 +289,7 @@ fn main_loop(text_cmd_rx: &Receiver<Incoming>, rt: &tokio::runtime::Runtime) -> 
                 }
             }
         }
+        jarvis_core::micload::record(frame_started.elapsed());
     }
 
     recorder::stop_recording().ok();
@@ -646,6 +649,8 @@ fn process_text_command(incoming: Incoming, rt: &tokio::runtime::Runtime) {
 static INTERNAL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 // the phrase came from the microphone (not from the keyboard)
+// a corrected phrase is being run again (it is not corrected a second time)
+static CORRECTING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static VOICE_INPUT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 // what the user actually said or typed (capitals, punctuation); `text` of execute_command is lower-cased and without
 // the wake word, which is right for matching and wrong for showing and for the AI
@@ -1130,6 +1135,23 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
         }
     } else {
         info!("No command found ({} chars)", text.chars().count());
+        // a phrase with mistakes that nothing understood: the connected AI is asked ONCE to correct the typos, and the corrected phrase goes the usual way
+        // (the same checks, the same «да / нет» questions). Not for a phrase that is already such a second try.
+        // (not for a question to the AI and not for a long talk: those would only wait twice for the provider)
+        if text.split_whitespace().count() <= 8 && !jarvis_core::route::is_open_question(text) && !CORRECTING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            let fixed = jarvis_core::features::correct_phrase(text);
+            if let Some(fixed) = fixed {
+                info!("The phrase was corrected ({} → {} chars), it is run again", text.chars().count(), fixed.chars().count());
+                let note = format!("Понял так: «{}».", fixed);
+                say(&note);
+                ipc::send(IpcEvent::Output { text: note.clone() });
+                *ORIGINAL.lock() = fixed.clone();
+                let result = execute_command(&fixed, source, rt);
+                CORRECTING.store(false, std::sync::atomic::Ordering::SeqCst);
+                return result;
+            }
+            CORRECTING.store(false, std::sync::atomic::Ordering::SeqCst);
+        }
         // not a command: with "answer phrases that are not commands" switched on, the AI answers (only then)
         let ai_ready = jarvis_core::ai::is_configured();
         let question = jarvis_core::route::is_open_question(text);

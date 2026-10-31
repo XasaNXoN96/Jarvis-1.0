@@ -3639,7 +3639,7 @@ async function smsLoad() { const r = await action('sms_get').catch(() => ({})); 
 const smsSave = async () => { const r = await action('sms_set', { privacy: $('#sms-privacy').value, lang: $('#sms-lang').value }).catch(() => ({})); lineMsg('#sms-msg', r, 'Сохранено.'); };
 $('#sms-privacy').onchange = smsSave; $('#sms-lang').onchange = smsSave;
 $('#sms-repeat').onclick = async () => { const r = await action('sms_repeat').catch(() => ({})); lineMsg('#sms-msg', { ok: true, message: r.message }); };
-async function micwLoad() { const r = await action('mic_watch').catch(() => ({})); const w = r.watch || {}; $('#micw-text').textContent = w.text || 'нет данных'; }
+async function micwLoad() { const r = await action('mic_watch').catch(() => ({})); const w = r.watch || {}; const l = r.load || {}; $('#micw-text').textContent = (w.text || 'нет данных') + (l.text ? ' ' + l.text : ''); }
 $('#micw-refresh').onclick = micwLoad;
 // a region of the screen: the screen is taken only on this click, the user marks a rectangle, only that part goes to the AI as a picture of the conversation
 let rgImg = null, rgSel = null;

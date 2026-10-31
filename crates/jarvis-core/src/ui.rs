@@ -562,7 +562,7 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             }
         }
         "sms_repeat" => { let m = crate::smsread::repeat_last(); if crate::tts::is_enabled() { crate::tts::speak(&m); } json!({ "ok": true, "message": m }) }
-        "mic_watch" => json!({ "ok": true, "watch": crate::wakewatch::status_json(), "diag": crate::voicediag::json_report() }),
+        "mic_watch" => json!({ "ok": true, "watch": crate::wakewatch::status_json(), "diag": crate::voicediag::json_report(), "load": crate::micload::status_json() }),
         "gs_summary" => json!({ "ok": true, "stats": crate::gamestats::summary_json() }),
         "gs_report" => json!({ "ok": true, "text": crate::gamestats::report_text() }),
         "gs_clear" => json!({ "ok": crate::gamestats::clear() }),
