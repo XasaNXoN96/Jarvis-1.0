@@ -58,6 +58,56 @@ pub fn levenshtein(a: &str, b: &str) -> usize {
     prev[b.len()]
 }
 
+// the number of edits between two words where a swap of two neighbouring letters is ONE edit («отрпавь» → «отправь»): the usual slips of a keyboard
+pub fn typo_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let (n, m) = (a.len(), b.len());
+    let mut d = vec![vec![0usize; m + 1]; n + 1];
+    for i in 0..=n {
+        d[i][0] = i;
+    }
+    for j in 0..=m {
+        d[0][j] = j;
+    }
+    for i in 1..=n {
+        for j in 1..=m {
+            let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
+            d[i][j] = (d[i - 1][j] + 1).min(d[i][j - 1] + 1).min(d[i - 1][j - 1] + cost);
+            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                d[i][j] = d[i][j].min(d[i - 2][j - 2] + 1);
+            }
+        }
+    }
+    d[n][m]
+}
+
+// is `word` a slip of one of the `known` words? A short word may differ in one letter, a longer one (7 and more) in two; a word of four letters or less
+// must keep its first letter. A word typed in the other keyboard layout is changed back first. Returns the word it was meant to be.
+pub fn near_word<'a>(word: &str, known: &[&'a str]) -> Option<&'a str> {
+    let w = normalize(word);
+    if w.chars().count() < 3 {
+        return known.iter().copied().find(|k| normalize(k) == w);
+    }
+    let variants = [w.clone(), normalize(&en_to_ru(&w)), normalize(&ru_to_en(&w))];
+    let mut best: Option<(&'a str, usize)> = None;
+    for k in known {
+        let kn = normalize(k);
+        let len = kn.chars().count();
+        let limit = if len >= 7 { 2 } else if len >= 4 { 1 } else { 0 };
+        for v in &variants {
+            if len <= 4 && v.chars().next() != kn.chars().next() {
+                continue;
+            }
+            let d = typo_distance(v, &kn);
+            if d <= limit && best.map(|(_, bd)| d < bd).unwrap_or(true) {
+                best = Some((k, d));
+            }
+        }
+    }
+    best.map(|(k, _)| k)
+}
+
 // 0.0 .. 1.0
 pub fn similarity(a: &str, b: &str) -> f32 {
     let (a, b) = (normalize(a), normalize(b));
@@ -156,6 +206,24 @@ pub fn detect_lang_sure(s: &str) -> (&'static str, bool) {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn slips_of_the_keyboard_are_one_or_two_edits_and_a_swap_is_one() {
+        assert_eq!(typo_distance("отрпавь", "отправь"), 1, "a swap of two neighbours");
+        assert_eq!(typo_distance("тлеграм", "телеграм"), 1);
+        assert_eq!(typo_distance("телеграмм", "телеграм"), 1);
+        assert_eq!(typo_distance("превет", "привет"), 1);
+        assert_eq!(typo_distance("открой", "закрой"), 2);
+        let verbs = ["отправь", "напиши", "скинь"];
+        assert_eq!(near_word("отрпавь", &verbs), Some("отправь"));
+        assert_eq!(near_word("напеши", &verbs), Some("напиши"));
+        assert_eq!(near_word("скин", &verbs), Some("скинь"));
+        assert_eq!(near_word("ghbdtn", &["привет"]), Some("привет"), "typed in the Latin layout");
+        assert_eq!(near_word("тправь", &verbs), Some("отправь"), "a missing first letter of a long word");
+        for no in ["открой", "включи", "громкость", "да"] {
+            assert!(near_word(no, &verbs).is_none(), "{}", no);
+        }
+    }
     use super::*;
 
     #[test]

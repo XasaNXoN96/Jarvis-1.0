@@ -62,13 +62,27 @@ pub struct Parsed {
     pub channel: Option<&'static str>,
 }
 
+const TELEGRAM_WORDS: [&str; 8] = ["телеграм", "телеграме", "телеграму", "телеграмм", "telegram", "telegramda", "telegramga", "тг"];
+const WHATSAPP_WORDS: [&str; 10] = ["ватсап", "вацап", "ватсапе", "ватсапп", "ватцап", "вотсап", "whatsapp", "whatsappda", "whatsappga", "вотсапп"];
+
 fn channel_word(w: &str) -> Option<&'static str> {
     let w = textnorm::normalize(w);
-    match w.as_str() {
-        "телеграм" | "телеграме" | "телеграму" | "telegram" | "telegramda" | "telegramga" | "тг" => Some("telegram"),
-        "ватсап" | "вацап" | "ватсапе" | "ватсапп" | "whatsapp" | "whatsappda" | "whatsappga" | "вотсап" => Some("whatsapp"),
-        _ => None,
+    if TELEGRAM_WORDS.contains(&w.as_str()) {
+        return Some("telegram");
     }
+    if WHATSAPP_WORDS.contains(&w.as_str()) {
+        return Some("whatsapp");
+    }
+    // a slip of the keyboard («тлеграм», «телеграмм», «ватцап», «telgram»), also typed in the other layout
+    if w.chars().count() >= 5 {
+        if textnorm::near_word(&w, &TELEGRAM_WORDS).is_some() {
+            return Some("telegram");
+        }
+        if textnorm::near_word(&w, &WHATSAPP_WORDS).is_some() {
+            return Some("whatsapp");
+        }
+    }
+    None
 }
 
 // RU / EN / UZ: «напиши жене: привет», «отправь маме в телеграм: еду», «send a message to wife: hi», «xotinimga yoz: salom»
@@ -151,6 +165,19 @@ const ROLES: [&str; 22] = [
     "мама", "мамочка", "папа", "отец", "жена", "муж", "брат", "сестра", "сын", "дочь", "бабушка", "дедушка", "друг", "подруга", "босс", "начальник", "коллега", "няша", "няшка", "любимая", "любимый", "mom",
 ];
 
+fn is_verb(w: &str) -> bool {
+    LOOSE_VERBS.contains(&w) || (w.chars().count() >= 5 && textnorm::near_word(w, &LOOSE_VERBS).is_some())
+}
+fn is_prep(w: &str) -> bool {
+    LOOSE_PREPS.contains(&w) || (w.chars().count() >= 4 && textnorm::near_word(w, &["через"]).is_some())
+}
+fn is_filler(w: &str) -> bool {
+    LOOSE_FILLER.contains(&w) || (w.chars().count() >= 6 && (textnorm::near_word(w, &["сообщение", "сообщения", "пожалуйста"]).is_some()))
+}
+fn is_message_word(w: &str) -> bool {
+    matches!(w, "сообщение" | "сообщения" | "смс" | "sms" | "message") || (w.chars().count() >= 7 && textnorm::near_word(w, &["сообщение", "сообщения"]).is_some())
+}
+
 enum Loose {
     Msg(Parsed),
     NoText(String),
@@ -164,7 +191,7 @@ fn loose(all: &[Contact], text: &str) -> Option<Loose> {
     if words.first().map(|w| matches!(clean(w).as_str(), "джарвис" | "jarvis" | "джарвиз")).unwrap_or(false) {
         words.remove(0);
     }
-    if words.len() < 2 || !LOOSE_VERBS.contains(&clean(words[0]).as_str()) {
+    if words.len() < 2 || !is_verb(&clean(words[0])) {
         return None;
     }
     let mut i = 1;
@@ -176,12 +203,12 @@ fn loose(all: &[Contact], text: &str) -> Option<Loose> {
             break;
         }
         let w = clean(words[i]);
-        if LOOSE_FILLER.contains(&w.as_str()) {
-            if matches!(w.as_str(), "сообщение" | "сообщения" | "смс" | "sms" | "message") {
+        if is_filler(&w) {
+            if is_message_word(&w) {
                 message_word = true;
             }
             i += 1;
-        } else if LOOSE_PREPS.contains(&w.as_str()) && i + 1 < words.len() && channel_word(&clean(words[i + 1])).is_some() {
+        } else if is_prep(&w) && i + 1 < words.len() && channel_word(&clean(words[i + 1])).is_some() {
             channel = channel_word(&clean(words[i + 1]));
             i += 2;
         } else if let Some(c) = channel_word(&w) {
@@ -199,7 +226,7 @@ fn loose(all: &[Contact], text: &str) -> Option<Loose> {
     // the longest run of words that is a contact (a full name wins over its first word)
     for k in (1..=3usize.min(words.len() - i)).rev() {
         let who_words: Vec<String> = words[i..i + k].iter().map(|w| clean(w)).collect();
-        if who_words.iter().any(|w| w.is_empty() || channel_word(w).is_some() || LOOSE_PREPS.contains(&w.as_str()) || w == "что" || w == "текст") {
+        if who_words.iter().any(|w| w.is_empty() || channel_word(w).is_some() || is_prep(w) || w == "что" || w == "текст") {
             continue;
         }
         let said: Vec<String> = who_words.iter().map(|w| textnorm::normalize(w)).collect();
@@ -209,6 +236,12 @@ fn loose(all: &[Contact], text: &str) -> Option<Loose> {
                 (nw.len() == said.len() && nw.iter().zip(&said).all(|(a, b)| same(a, b))) || (said.len() == 1 && nw.first().map(|a| same(a, &said[0])).unwrap_or(false))
             })
         });
+        // a slip in the name itself («мамэ», «няшкa»): the nearest saved name when only one is that near (the same rule as for a name with a colon)
+        let known = known || {
+            let names: Vec<String> = all.iter().flat_map(|c| names_of(c)).collect();
+            let refs: Vec<&str> = names.iter().map(|n| n.as_str()).collect();
+            !matches!(textnorm::best_match(&who_words.join(" "), &refs), textnorm::Match::None)
+        };
         if !known {
             continue;
         }
@@ -217,7 +250,7 @@ fn loose(all: &[Contact], text: &str) -> Option<Loose> {
         // the channel after the name
         if j < words.len() {
             let w = clean(words[j]);
-            if LOOSE_PREPS.contains(&w.as_str()) && j + 1 < words.len() && channel_word(&clean(words[j + 1])).is_some() {
+            if is_prep(&w) && j + 1 < words.len() && channel_word(&clean(words[j + 1])).is_some() {
                 channel = channel_word(&clean(words[j + 1]));
                 j += 2;
             } else if let Some(c) = channel_word(&w) {
@@ -658,6 +691,12 @@ mod tests {
         check("передай маме: буду поздно", "маме", None, "буду поздно");
         check("Джарвис отправь маме через телеграм текст привет", "маме", Some("telegram"), "привет");
         check("send mom on telegram I will be late", "mom", Some("telegram"), "I will be late");
+        // with mistakes (the text itself is kept as it was written)
+        check("отрпавь маме чрез тлеграм превет как дела", "маме", Some("telegram"), "превет как дела");
+        check("напеши мамэ в ватцап еду домой", "мамэ", Some("whatsapp"), "еду домой");
+        check("скинь маме в телеграмм привет", "маме", Some("telegram"), "привет");
+        check("Отпрвь сообщние маме через telgram привет, как дела?", "маме", Some("telegram"), "привет, как дела?");
+        check("отправь маме в ntktuhfv привет", "маме", Some("telegram"), "привет");
     }
 
     #[test]

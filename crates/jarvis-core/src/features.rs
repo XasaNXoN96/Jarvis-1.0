@@ -163,6 +163,52 @@ fn announce_later(text: &str) {
     }
 }
 
+// ---- a phrase with mistakes that nothing understood: the AI corrects the typos, the corrected phrase goes the usual way ----
+// Only when the connected AI is allowed (the privacy switch and the permission «ИИ-запросы»), only for a short phrase, once. The AI does not carry out the
+// phrase and does not answer it: it only returns the same phrase without the slips. A change that is too big (the model made something up) is refused, and the
+// corrected phrase passes the same checks and the same «да / нет» questions as any other.
+const CORRECT_SYSTEM: &str = "Ты исправляешь опечатки, пропущенные и перепутанные буквы и ошибки раскладки клавиатуры в короткой фразе, которую человек сказал или набрал голосовому помощнику на компьютере. \
+Верни ТОЛЬКО исправленную фразу одной строкой: без кавычек, без пояснений, без точки в конце. Не меняй смысл, порядок и число слов, ничего не добавляй и не убирай, не переводи. \
+Не отвечай на вопрос и не выполняй просьбу: только исправь написание. Если исправлять нечего или это не команда, верни фразу без изменений.";
+
+pub const CORRECT_MAX_CHARS: usize = 160;
+pub const CORRECT_MAX_WORDS: usize = 14;
+
+// `ask(system, user)` is the provider call (a test puts its own here)
+pub fn correct_with(text: &str, ask: &dyn Fn(&str, &str) -> Result<String, String>) -> Option<String> {
+    let original = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if original.chars().count() < 4 || original.chars().count() > CORRECT_MAX_CHARS || original.split_whitespace().count() > CORRECT_MAX_WORDS {
+        return None;
+    }
+    let answer = ask(CORRECT_SYSTEM, &original).ok()?;
+    // the first line only, without quotes and without the full stop at the end
+    let line = answer.lines().map(|l| l.trim()).find(|l| !l.is_empty())?;
+    let quotes = |c: char| matches!(c, '"' | '«' | '»' | '“' | '”' | '\'' | '`');
+    let fixed = line.trim().trim_end_matches('.').trim_matches(quotes).trim().trim_end_matches('.').trim().to_string();
+    if fixed.is_empty() || fixed.chars().count() > CORRECT_MAX_CHARS + 20 {
+        return None;
+    }
+    let (a, b) = (crate::textnorm::normalize(&original), crate::textnorm::normalize(&fixed));
+    if a == b {
+        return None; // nothing was corrected
+    }
+    // close to what was said: a typo changes a few letters, it does not make another sentence
+    if crate::textnorm::similarity(&a, &b) < 0.55 || (a.split_whitespace().count() as i32 - b.split_whitespace().count() as i32).abs() > 2 {
+        return None;
+    }
+    Some(fixed)
+}
+
+// the real call: the connected AI, if it is allowed and ready; None otherwise
+pub fn correct_phrase(text: &str) -> Option<String> {
+    perms::check(perms::Cap::AiNetwork).ok()?;
+    if !crate::ai::is_configured() || !crate::uistate::settings().ai_enabled {
+        return None;
+    }
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    correct_with(text, &|system, user| crate::ai::complete(system, user, &cancel).map_err(|e| e.user_text()))
+}
+
 fn do_translate(req: &translate::Request) -> String {
     if let Err(e) = perms::check(perms::Cap::AiNetwork) {
         return e;
@@ -483,6 +529,31 @@ mod tests {
         assert!(r.contains("нет открытого интерфейса") && r.contains("не буду делать вид"));
         assert!(do_bixby("найди рецепт борща").is_none());
         assert!(do_bixby("привет Bixby").is_none());
+    }
+
+    #[test]
+    fn the_ai_corrects_typos_only_when_the_change_is_small() {
+        use std::cell::Cell;
+        let calls = Cell::new(0);
+        let said = |reply: &'static str| move |_: &str, _: &str| -> Result<String, String> { Ok(reply.to_string()) };
+        // a normal correction, with quotes and a full stop around it
+        assert_eq!(correct_with("отрпавь маме чрез тлеграм превет", &said("«Отправь маме через телеграм привет».")).as_deref(), Some("Отправь маме через телеграм привет"));
+        // nothing to correct (the same phrase, any case or spaces)
+        assert!(correct_with("открой браузер", &said("Открой  браузер")).is_none());
+        // the model made another sentence: refused
+        assert!(correct_with("прлавит гугл", &said("Сегодня в Ташкенте солнечно и тепло, около десяти градусов")).is_none());
+        // the model answered the request instead of correcting it: refused (too far from the phrase)
+        assert!(correct_with("скока врмени", &said("Сейчас 23:40.")).is_none());
+        // an explanation under the line: only the first line counts
+        assert_eq!(correct_with("включи музыкю", &said("включи музыку\nЯ исправил слово «музыкю».")).as_deref(), Some("включи музыку"));
+        // an error of the provider: nothing
+        assert!(correct_with("включи музыкю", &|_: &str, _: &str| Err("нет сети".into())).is_none());
+        // too short / too long / too many words: the provider is not even asked
+        let counted = |_: &str, _: &str| -> Result<String, String> { calls.set(calls.get() + 1); Ok("x".into()) };
+        assert!(correct_with("да", &counted).is_none() && correct_with(&"а".repeat(200), &counted).is_none() && correct_with("а б в г д е ж з и к л м н о п", &counted).is_none());
+        assert_eq!(calls.get(), 0, "the provider was not asked");
+        // the phrase of the system tells the model not to carry out the request
+        assert!(CORRECT_SYSTEM.contains("Не отвечай") && CORRECT_SYSTEM.contains("только исправь"));
     }
 
     // the phrases as the owner says them (speech recognition gives them with a full stop or a comma, with «моей» before the name)
