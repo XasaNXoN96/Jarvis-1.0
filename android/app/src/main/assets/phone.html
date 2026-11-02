@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Jarvis</title>
+<style>
+  :root { --bg: #08090b; --card: #11161d; --line: #243040; --text: #e6edf3; --dim: #8b9bb0; --a: #8ff0e6; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 16px system-ui, sans-serif; }
+  body { display: flex; flex-direction: column; overflow: hidden; }
+  header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; }
+  header b { letter-spacing: .18em; color: var(--a); flex: 1; font-size: 18px; }
+  header button { background: #ffffff10; color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 7px 11px; font-size: 14px; }
+  main { flex: 1; overflow-y: auto; padding: 0 14px 12px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  #orbbox { width: min(62vw, 300px); aspect-ratio: 1; flex: none; border: 0; background: none; padding: 0; }
+  canvas { width: 100%; height: 100%; display: block; }
+  #state { color: var(--dim); font-size: 14px; min-height: 18px; }
+  #heard { color: #cfe7ff; font-style: italic; min-height: 20px; text-align: center; }
+  #answer { width: 100%; max-width: 640px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; white-space: pre-wrap; line-height: 1.45; display: none; }
+  #needbtn { display: none; width: 100%; max-width: 640px; padding: 12px; border-radius: 12px; border: 0; background: var(--a); color: #04201c; font-weight: 700; font-size: 15px; }
+  #notes { width: 100%; max-width: 640px; color: #ffd58a; font-size: 13px; display: none; }
+  #sections { width: 100%; max-width: 640px; display: flex; flex-direction: column; gap: 12px; }
+  .sec { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .sec h3 { margin: 0; padding: 9px 12px; font-size: 14px; background: #ffffff0a; border-bottom: 1px solid var(--line); }
+  .sec .body { padding: 8px; max-height: 340px; overflow-y: auto; }
+  .sec.photos .body { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .card { display: flex; gap: 10px; align-items: center; padding: 7px; border-radius: 10px; }
+  .card:active { background: #ffffff12; }
+  .card img { width: 92px; height: 52px; object-fit: cover; border-radius: 6px; background: #0006; flex: none; }
+  .card b { display: block; font-size: 14px; line-height: 1.3; }
+  .card small { display: block; color: var(--dim); font-size: 12px; word-break: break-word; }
+  .sec.photos .card { padding: 0; display: block; }
+  .sec.photos .card img { width: 100%; height: 84px; border-radius: 8px; }
+  .sec.photos .card .t { display: none; }
+  .sec.text p { margin: 6px 4px; line-height: 1.5; font-size: 14px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; width: 100%; max-width: 640px; }
+  .chips button { background: #ffffff0d; color: var(--text); border: 1px solid var(--line); border-radius: 18px; padding: 7px 12px; font-size: 13px; }
+  footer { display: flex; gap: 8px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: #0b0e13; }
+  footer input { flex: 1; min-width: 0; background: #ffffff0d; color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 12px; font-size: 16px; }
+  footer button { border: 0; border-radius: 12px; padding: 0 16px; font-size: 18px; background: var(--a); color: #04201c; }
+  footer #mic { background: #ffffff14; color: var(--text); }
+  #settings { position: fixed; inset: 0; background: #08090bf5; display: none; flex-direction: column; padding: 14px; gap: 10px; overflow-y: auto; z-index: 5; }
+  #settings h2 { margin: 0 0 4px; font-size: 18px; color: var(--a); }
+  .row { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+  .row span { flex: 1; font-size: 14px; } .row small { display: block; color: var(--dim); font-size: 12px; }
+  .row button, .row select, .row input { background: #ffffff14; color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font-size: 14px; }
+  .ok { color: #6ee7a0; } .no { color: #ffb86b; }
+</style>
+</head>
+<body>
+<header><b>JARVIS</b><button id="pc" type="button">Компьютер</button><button id="gear" type="button" aria-label="Настройки">⚙</button></header>
+<main>
+  <button id="orbbox" type="button" aria-label="Сказать команду"><canvas id="orb" width="360" height="360"></canvas></button>
+  <div id="state">Нажмите на сферу и скажите команду</div>
+  <div id="heard"></div>
+  <div id="answer"></div>
+  <button id="needbtn" type="button"></button>
+  <div id="notes"></div>
+  <div id="sections"></div>
+  <div class="chips" id="chips"></div>
+</main>
+<footer><input id="inp" type="text" placeholder="Команда: открой ютуб, поставь таймер…" autocomplete="off" enterkeyhint="send"><button id="mic" type="button" aria-label="Говорить">🎤</button><button id="send" type="button" aria-label="Отправить">➤</button></footer>
+
+<div id="settings">
+  <h2>Настройки</h2>
+  <div class="row"><span>Озвучивать ответы<small>голосом телефона</small></span><input type="checkbox" id="speak"></div>
+  <div class="row"><span>Тема<small>вид сферы</small></span><select id="theme"></select></div>
+  <div class="row"><span>Город для погоды<small>можно сказать «погода в Ташкенте»</small></span><input id="city" type="text" style="width:130px"></div>
+  <div id="perms"></div>
+  <div class="row"><span>Пульт компьютера<small>управление программой Jarvis на ПК</small></span><button id="pc2" type="button">Открыть</button></div>
+  <button id="close" type="button" class="row" style="justify-content:center">Закрыть</button>
+</div>
+
+<script src="orbkit.js"></script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const BR = window.JarvisPhone || { run() {}, listen() {}, speak() {}, status() { return '{}'; }, request() {}, openUrl() {}, openFile() {}, openPc() {}, setCity() {}, stopListening() {}, stopSpeaking() {} };
+let oState = 'idle', oYaw = 0, level = 0, animT = 0, W = 360, H = 360, glow = 'normal', speed = 'normal', theme = 'jarvis', sphere = 'dots';
+const PERF_LOW = (navigator.hardwareConcurrency || 8) <= 4;
+const ctx = $('orb').getContext('2d');
+const KINDS = { idle: ['готов', null, 0.12], listening: ['слушаю', null, 0.55], thinking: ['думаю', null, 0.4], speaking: ['говорю', null, 0.75], error: ['ошибка', [352, 75], 0.6] };
+function palette() { const k = KINDS[oState] || KINDS.idle; return k[1] || [THEMES[theme][0], THEMES[theme][1]]; }
+const orbPts = [];
+for (let i = 0, N = PERF_LOW ? 300 : 480; i < N; i++) {
+  const y = 1 - (i / (N - 1)) * 2, r = Math.sqrt(1 - y * y), th = Math.PI * (3 - Math.sqrt(5)) * i;
+  orbPts.push([Math.cos(th) * r, y, Math.sin(th) * r, Math.random() * Math.PI * 2, Math.atan2(Math.sin(th) * r, Math.cos(th) * r), Math.asin(y)]);
+}
+function drawDots(t) {
+  const [hue, sat] = palette();
+  const cx = W / 2, cy = H / 2, R = W * 0.33, tilt = 0.38, ct = Math.cos(tilt), st = Math.sin(tilt), cyaw = Math.cos(oYaw), syaw = Math.sin(oYaw);
+  haze(cx, cy, R * 1.25, hue, sat, 0.16 + level * 0.22);
+  const breath = 1 + Math.sin(t / 900) * 0.012 + (oState === 'listening' ? Math.sin(t / 160) * 0.025 * level : 0);
+  for (const [x0, y0, z0, ph, lon, lat] of orbPts) {
+    let k = breath; if (oState === 'speaking') k += 0.075 * level * Math.sin(3 * lon + t / 170) * Math.sin(2 * lat + t / 230); k += 0.012 * Math.sin(ph + t / 700);
+    const x = (x0 * cyaw + z0 * syaw) * k, z1 = (-x0 * syaw + z0 * cyaw) * k, y1 = y0 * k;
+    const y = y1 * ct - z1 * st, z = y1 * st + z1 * ct, persp = 3.2 / (3.2 - z), depth = (z + 1) / 2;
+    ctx.fillStyle = `hsla(${hue},${sat * (1 - depth * 0.8)}%,${62 + depth * 36}%,${0.10 + depth * 0.9})`;
+    const r = 2.6 + depth * 3.2; ctx.fillRect(cx + x * R * persp - r / 2, cy + y * R * persp - r / 2, r, r);
+  }
+}
+let last = 0;
+function loop(t) {
+  requestAnimationFrame(loop);
+  if (document.visibilityState !== 'visible') return;
+  if (t - last < (PERF_LOW ? 40 : 28)) return;
+  const dt = Math.min(64, t - (last || t)); last = t;
+  level += ((KINDS[oState] || KINDS.idle)[2] - level) * 0.08;
+  if (oState === 'listening' || oState === 'speaking') level = Math.max(level, 0.3 + 0.25 * Math.sin(t / 190));
+  animT += dt * SPEEDS[speed]; oYaw += (0.0022 + level * 0.009) * dt * SPEEDS[speed] / 16;
+  ctx.clearRect(0, 0, W, H); ctx.globalCompositeOperation = 'lighter';
+  (SPHERE_DRAW[sphere] || drawDots)(animT);
+  ctx.globalCompositeOperation = 'source-over';
+}
+requestAnimationFrame(loop);
+
+function setState(s, text) { oState = s; $('state').textContent = text || KINDS[s][0]; }
+
+// ---- settings kept on this phone
+const store = { get(k, d) { try { const v = localStorage.getItem('jv_' + k); return v === null ? d : v; } catch (e) { return d; } }, set(k, v) { try { localStorage.setItem('jv_' + k, v); } catch (e) {} } };
+let speakOn = store.get('speak', '1') === '1';
+theme = THEMES[store.get('theme', 'jarvis')] ? store.get('theme', 'jarvis') : 'jarvis';
+sphere = THEMES[theme][3] === 'dots' ? 'dots' : THEMES[theme][3];
+Object.keys(THEMES).forEach(k => { const o = document.createElement('option'); o.value = k; o.textContent = THEMES[k][4]; $('theme').appendChild(o); });
+$('theme').value = theme; $('speak').checked = speakOn;
+$('theme').onchange = () => { theme = $('theme').value; sphere = THEMES[theme][3]; store.set('theme', theme); };
+$('speak').onchange = () => { speakOn = $('speak').checked; store.set('speak', speakOn ? '1' : '0'); if (!speakOn) BR.stopSpeaking(); };
+$('gear').onclick = () => { $('settings').style.display = 'flex'; perms(); };
+$('close').onclick = () => { $('settings').style.display = 'none'; };
+$('pc').onclick = $('pc2').onclick = () => BR.openPc();
+$('city').value = store.get('city', '');
+$('city').onchange = () => { store.set('city', $('city').value); BR.setCity($('city').value); };
+
+// ---- permissions: what is switched on and a button for what is not
+function perms() {
+  let st = {}; try { st = JSON.parse(BR.status()); } catch (e) {}
+  const items = [
+    ['mic', 'Микрофон', 'голосовые команды', st.mic],
+    ['contacts', 'Контакты', 'звонки и сообщения по имени', st.contacts],
+    ['call', 'Звонки', 'звонить сразу, без нажатия трубки', st.call],
+    ['files', 'Фото, видео, музыка', 'поиск файлов', st.media],
+    ['folder', 'Папка с документами', 'поиск документов в выбранной папке', st.tree],
+    ['access', 'Доступность Jarvis', 'блокировка, скриншот, «назад», кнопка «Отправить» в Telegram и WhatsApp', st.access]
+  ];
+  const box = $('perms'); box.textContent = '';
+  for (const [key, name, why, on] of items) {
+    const row = document.createElement('div'); row.className = 'row';
+    const span = document.createElement('span'); span.textContent = name; const small = document.createElement('small'); small.textContent = why; span.appendChild(small);
+    const state = document.createElement('b'); state.className = on ? 'ok' : 'no'; state.textContent = on ? 'включено' : 'выключено';
+    row.append(span, state);
+    if (!on || key === 'folder') { const b = document.createElement('button'); b.type = 'button'; b.textContent = key === 'access' ? 'Включить' : key === 'folder' ? 'Выбрать' : 'Разрешить'; b.onclick = () => BR.request(key); row.appendChild(b); }
+    box.appendChild(row);
+  }
+}
+window.jarvisPermsChanged = () => { if ($('settings').style.display === 'flex') perms(); };
+
+// ---- talking
+let busy = false;
+function send(text) {
+  text = (text || '').trim(); if (!text || busy) return;
+  busy = true; $('heard').textContent = '«' + text + '»'; $('inp').value = '';
+  $('sections').textContent = ''; $('notes').style.display = 'none'; $('needbtn').style.display = 'none';
+  setState('thinking'); BR.run(text);
+}
+$('send').onclick = () => send($('inp').value);
+$('inp').onkeydown = e => { if (e.key === 'Enter') send($('inp').value); };
+let listening = false;
+$('orbbox').onclick = $('mic').onclick = () => { if (listening) { BR.stopListening(); return; } BR.stopSpeaking(); $('heard').textContent = ''; BR.listen(); };
+window.jarvisListening = on => { listening = on; if (on) setState('listening'); else if (oState === 'listening') setState('idle'); };
+window.jarvisHeard = (text, final) => { $('heard').textContent = '«' + text + '»'; if (final) { setState('thinking'); busy = false; send(text); } };
+window.jarvisSpeechError = msg => { listening = false; busy = false; setState('error', msg); setTimeout(() => { if (oState === 'error') setState('idle', 'Нажмите на сферу и скажите команду'); }, 5000); };
+
+const NEED = { contacts: 'Разрешить контакты', call: 'Разрешить звонки', files: 'Разрешить доступ к файлам или выбрать папку', access: 'Включить «Доступность Jarvis»', mic: 'Разрешить микрофон' };
+window.jarvisReply = r => {
+  busy = false;
+  setState('idle', 'Готов');
+  const a = $('answer'); a.textContent = r.text || ''; a.style.display = r.text ? 'block' : 'none';
+  if (r.need) { const b = $('needbtn'); b.textContent = NEED[r.need] || 'Разрешить'; b.style.display = 'block'; b.onclick = () => BR.request(r.need === 'files' ? 'files' : r.need); }
+  const n = $('notes'); n.textContent = ''; if (r.notes && r.notes.length) { n.style.display = 'block'; r.notes.forEach(t => { const d = document.createElement('div'); d.textContent = t; n.appendChild(d); }); }
+  const box = $('sections'); box.textContent = '';
+  for (const s of (r.sections || [])) box.appendChild(section(s));
+  if (r.action === 'pc') BR.openPc();
+  if (speakOn && r.speak) { setState('speaking'); BR.speak(r.speak); setTimeout(() => { if (oState === 'speaking') setState('idle', 'Готов'); }, Math.min(15000, 1500 + r.speak.length * 70)); }
+};
+function section(s) {
+  const d = document.createElement('div'); d.className = 'sec ' + s.kind;
+  const h = document.createElement('h3'); h.textContent = s.title; d.appendChild(h);
+  const body = document.createElement('div'); body.className = 'body'; d.appendChild(body);
+  for (const it of s.items) {
+    if (s.kind === 'text') { const p = document.createElement('p'); p.textContent = it.note; body.appendChild(p); const a = document.createElement('a'); a.href = '#'; a.style.color = 'var(--a)'; a.textContent = 'Читать полностью (' + it.host + ')'; a.onclick = e => { e.preventDefault(); BR.openUrl(it.url); }; body.appendChild(a); continue; }
+    const c = document.createElement('div'); c.className = 'card'; c.setAttribute('role', 'link');
+    if (it.thumb && /^(https:|content:)/.test(it.thumb)) { const im = document.createElement('img'); im.loading = 'lazy'; im.referrerPolicy = 'no-referrer'; im.alt = ''; im.src = it.thumb; c.appendChild(im); }
+    const t = document.createElement('div'); t.className = 't'; const b = document.createElement('b'); b.textContent = it.title; const sm = document.createElement('small'); sm.textContent = [it.host, it.note].filter(Boolean).join(' · '); t.append(b, sm); c.appendChild(t);
+    c.onclick = () => { if (it.uri) BR.openFile(it.uri, it.mime || ''); else if (it.url) BR.openUrl(it.url); };
+    body.appendChild(c);
+  }
+  return d;
+}
+
+// ---- quick commands
+[['Музыка', 'включи музыку'], ['Пауза', 'пауза'], ['Фонарик', 'включи фонарик'], ['Таймер 5 мин', 'поставь таймер на 5 минут'], ['Время', 'который час'], ['Заряд', 'сколько заряда'], ['Что умеешь', 'что ты умеешь']].forEach(([t, p]) => {
+  const b = document.createElement('button'); b.type = 'button'; b.textContent = t; b.onclick = () => send(p); $('chips').appendChild(b);
+});
+</script>
+</body>
+</html>

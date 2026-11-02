@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The accessibility service of Jarvis. It is OFF until the owner switches it on in the settings of the phone. It does three things and nothing else:
+  locks the screen / makes a screenshot / goes home or back by the voice command, and, after the owner said «да», presses «Отправить» in Telegram
+  and WhatsApp. It sees ONLY those two applications (packageNames); it never reads other windows and sends nothing anywhere.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
+    android:canRetrieveWindowContent="true"
+    android:packageNames="org.telegram.messenger,org.telegram.messenger.web,com.whatsapp,com.whatsapp.w4b"
+    android:notificationTimeout="100"
+    android:description="@string/access_description" />
