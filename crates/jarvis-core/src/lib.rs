@@ -76,6 +76,7 @@ pub mod health;
 pub mod devices;
 pub mod weather;
 pub mod micload;
+pub mod speechprep;
 pub mod websearch;
 pub mod session;
 pub mod objects;

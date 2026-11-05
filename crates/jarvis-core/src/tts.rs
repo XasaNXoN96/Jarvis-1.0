@@ -600,6 +600,7 @@ fn piper_synth(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64
         .arg(ansi_safe_new(wav))
         .arg("--length_scale")
         .arg(format!("{:.2}", length_scale()))
+        .args(["--sentence_silence", "0.25", "--noise_scale", "0.72", "--noise_w", "0.85"])
         .args(if json_input() { vec!["--json-input"] } else { Vec::new() })
         .args(if PIPER_DEBUG.load(Ordering::SeqCst) { vec!["--debug"] } else { Vec::new() })
         .stdin(Stdio::piped())
@@ -765,6 +766,7 @@ fn warm_spawn(exe: &Path, model: &Path, key: String) -> Result<WarmServer, Strin
         .arg(ansi_safe(&dir))
         .arg("--length_scale")
         .arg(format!("{:.2}", length_scale()))
+        .args(["--sentence_silence", "0.25", "--noise_scale", "0.72", "--noise_w", "0.85"])
         .arg("--json-input")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -1565,6 +1567,12 @@ pub fn is_own_echo(heard: &str) -> bool {
 fn speak_blocking(text: &str, lang: &str, generation: u64) {
     *SPEECH_STARTED.lock() = Some(std::time::Instant::now());
     note_said(text);
+    // numbers as words, no emoji/links: reads like a person (speechprep)
+    let prepared = crate::speechprep::prepare(text, lang);
+    if prepared != text {
+        note_said(&prepared);
+    }
+    let text = prepared.as_str();
     struct Ended;
     impl Drop for Ended {
         fn drop(&mut self) {
