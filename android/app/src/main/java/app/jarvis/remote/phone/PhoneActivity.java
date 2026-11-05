@@ -258,6 +258,7 @@ public class PhoneActivity extends Activity {
                     switch (what) {
                         case "mic": requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_PERMS); break;
                         case "contacts": requestPermissions(new String[]{Manifest.permission.READ_CONTACTS}, REQ_PERMS); break;
+                        case "notify": if (Build.VERSION.SDK_INT >= 33) requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, REQ_PERMS); break;
                         case "call": requestPermissions(new String[]{Manifest.permission.CALL_PHONE}, REQ_PERMS); break;
                         case "media":
                         case "files":

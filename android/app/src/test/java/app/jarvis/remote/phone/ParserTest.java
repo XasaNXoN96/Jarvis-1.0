@@ -61,6 +61,29 @@ public class ParserTest {
         is("ghbdtn", Cmd.UNKNOWN);
     }
 
+    @Test public void reminders() {
+        Cmd a = p("напомни через 10 минут позвонить маме");
+        assertEquals(Cmd.REMIND, a.kind);
+        assertEquals(600, a.n);
+        assertEquals("позвонить маме", a.a);
+        Cmd b = p("Джарвис напомни мне через два часа выключить духовку");
+        assertEquals(7200, b.n);
+        assertEquals("выключить духовку", b.a);
+        assertEquals(1800, p("напомни через полчаса про чай").n);
+        assertEquals(3600, p("напомни через час купить хлеб").n);
+        Cmd c = p("напомни в 18:30 купить хлеб");
+        assertEquals(Cmd.REMIND, c.kind);
+        assertEquals(-1, c.n);
+        assertEquals(18 * 60 + 30, c.m);
+        assertEquals("купить хлеб", c.a);
+        assertEquals(19 * 60, p("напомни в 7 вечера принять таблетку").m);
+        assertEquals(7 * 60 + 15, p("напомни в 7 15 позвонить").m);
+        assertEquals(Cmd.ASK, p("напомни купить хлеб").kind);
+        assertEquals(600, p("напомни через 10 минут").n);
+        assertEquals("Напоминание", p("напомни через 10 минут").a);
+        assertEquals(600, p("напомни чрез 10 минут позвонить маме").n);
+    }
+
     @Test public void timers_and_alarms() {
         Cmd t = p("поставь таймер на 5 минут");
         assertEquals(Cmd.TIMER, t.kind);

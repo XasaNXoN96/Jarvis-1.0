@@ -23,7 +23,7 @@ public final class Parser {
         "секунды", "секунду", "часов", "часа", "час", "сообщение", "смс", "экран", "экрана", "телефон", "телефона", "блокировку", "время", "времени", "дату",
         "число", "заряд", "батарею", "погоду", "погода", "файл", "файлы", "документ", "фото", "видео", "настройки", "вайфай", "блютуз", "ютуб", "ютубе",
         "гугл", "телеграм", "ватсап", "приложение", "сайт", "домой", "помощь", "умеешь", "помнишь", "заметки", "компьютер", "компьютера", "пульт", "утра", "вечера",
-        "снимок", "процентов", "процента", "процент", "полчаса", "который", "сколько", "какое", "какой"
+        "напомни", "напомнить", "напоминание", "напоминай", "через", "снимок", "процентов", "процента", "процент", "полчаса", "который", "сколько", "какое", "какой"
     };
 
     // the numbers said in words
@@ -114,6 +114,64 @@ public final class Parser {
         return -1;
     }
 
+    // a reminder: the time («через N минут/часов/секунд», «через полчаса», «в 18:30», «в 7 вечера») and the text of it (the rest of the words as they were written)
+    static Cmd remind(List<String> o, List<String> c, List<String> raw) {
+        boolean[] used = new boolean[o.size()];
+        for (int i = 0; i < c.size(); i++) if (c.get(i).equals("напомни") || c.get(i).equals("напомнить") || c.get(i).equals("напоминание") || c.get(i).equals("напоминай")) used[i] = true;
+        int seconds = 0, clock = -1;
+        int th = index(c, "через");
+        if (th >= 0) {
+            used[th] = true;
+            int u = -1;
+            for (int i = th + 1; i < c.size() && u < 0; i++) {
+                String w = c.get(i);
+                if (w.equals("полчаса") || w.equals("минут") || w.equals("минуты") || w.equals("минуту") || w.equals("секунд") || w.equals("секунды") || w.equals("секунду") || w.equals("часов") || w.equals("часа") || w.equals("час")) u = i;
+            }
+            if (u < 0) return Cmd.ask("Через сколько напомнить? Например: «напомни через 10 минут позвонить маме».");
+            String unit = c.get(u);
+            for (int i = th; i <= u; i++) used[i] = true;
+            if (unit.equals("полчаса")) seconds = 1800;
+            else {
+                int n = number(new ArrayList<>(o.subList(th + 1, u)), 0);
+                if (n <= 0) n = unit.equals("час") ? 1 : -1;
+                if (n <= 0) return Cmd.ask("Через сколько напомнить? Например: «напомни через 10 минут позвонить маме».");
+                seconds = unit.startsWith("секунд") ? n : unit.startsWith("час") ? n * 3600 : n * 60;
+            }
+        } else {
+            for (int k = 0; k + 1 < o.size() && clock < 0; k++) {
+                if (!o.get(k).equals("в")) continue;
+                java.util.regex.Matcher mt = java.util.regex.Pattern.compile("(\\d{1,2})(?:[:.](\\d{2}))?").matcher(raw.get(k + 1));
+                if (!mt.matches()) continue;
+                int h = Integer.parseInt(mt.group(1)), m = 0, last = k + 1;
+                if (mt.group(2) != null) m = Integer.parseInt(mt.group(2));
+                else if (k + 2 < o.size() && raw.get(k + 2).matches("\\d{2}")) {
+                    m = Integer.parseInt(raw.get(k + 2));
+                    last = k + 2;
+                }
+                if (last + 1 < o.size()) {
+                    String d = o.get(last + 1);
+                    if (d.equals("вечера") || d.equals("дня")) { if (h < 12) h += 12; last++; }
+                    else if (d.equals("утра") || d.equals("ночи")) last++;
+                }
+                if (h > 23 || m > 59) continue;
+                clock = h * 60 + m;
+                for (int i = k; i <= last; i++) used[i] = true;
+            }
+            if (clock < 0) return Cmd.ask("Когда напомнить? Например: «напомни через 10 минут позвонить маме» или «напомни в 18:30 купить хлеб».");
+        }
+        StringBuilder text = new StringBuilder();
+        for (int i = 0; i < raw.size(); i++) {
+            if (used[i]) continue;
+            String w = o.get(i);
+            if (text.length() == 0 && (w.equals("мне") || w.equals("что") || w.equals("о") || w.equals("про") || w.equals("чтобы") || w.equals("пожалуйста") || w.equals("надо") || w.equals("нужно"))) continue;
+            if (text.length() > 0) text.append(' ');
+            text.append(raw.get(i));
+        }
+        String t = text.toString().trim();
+        if (t.isEmpty()) t = "Напоминание";
+        return new Cmd(Cmd.REMIND, t, "", "", clock >= 0 ? -1 : seconds, clock >= 0 ? clock : 0, "");
+    }
+
     /** The phrase as it was said or typed -> what to do. Never null. */
     public static Cmd parse(String text, Contacts contacts) {
         List<String> o = new ArrayList<>();
@@ -143,6 +201,9 @@ public final class Parser {
         }
         // --- help
         if (has(c, "помощь") || (has(c, "умеешь") && (has(c, "что") || o.size() <= 3))) return Cmd.of(Cmd.HELP);
+
+        // --- a reminder: «напомни через 10 минут позвонить маме», «напомни в 18:30 купить хлеб» (before the call: «позвонить» is a word of the text here)
+        if (has(c, "напомни", "напомнить", "напоминание", "напоминай")) return remind(o, c, raw);
 
         // --- a call / a message
         if (has(c, "позвони", "набери") && o.size() >= 2) {

@@ -171,7 +171,7 @@ window.jarvisListening = on => { listening = on; if (on) setState('listening'); 
 window.jarvisHeard = (text, final) => { $('heard').textContent = '«' + text + '»'; if (final) { setState('thinking'); busy = false; send(text); } };
 window.jarvisSpeechError = msg => { listening = false; busy = false; setState('error', msg); setTimeout(() => { if (oState === 'error') setState('idle', 'Нажмите на сферу и скажите команду'); }, 5000); };
 
-const NEED = { contacts: 'Разрешить контакты', call: 'Разрешить звонки', files: 'Разрешить доступ к файлам или выбрать папку', access: 'Включить «Доступность Jarvis»', mic: 'Разрешить микрофон' };
+const NEED = { contacts: 'Разрешить контакты', call: 'Разрешить звонки', files: 'Разрешить доступ к файлам или выбрать папку', access: 'Включить «Доступность Jarvis»', mic: 'Разрешить микрофон', notify: 'Разрешить уведомления' };
 window.jarvisReply = r => {
   busy = false;
   setState('idle', 'Готов');

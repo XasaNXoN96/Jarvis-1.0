@@ -200,6 +200,7 @@ public class PhoneBrain {
             case Cmd.UNMUTE: volume(AudioManager.ADJUST_UNMUTE); return say("Звук включён.");
             case Cmd.VOL_SET: return volumeSet(c.n);
             case Cmd.TIMER: return timer(c.n);
+            case Cmd.REMIND: return remind(c);
             case Cmd.ALARM: return alarm(c.n, c.m);
             case Cmd.TORCH_ON: return torch(true);
             case Cmd.TORCH_OFF: return torch(false);
@@ -416,6 +417,36 @@ public class PhoneBrain {
         if (err != null) return say("Не получилось поставить таймер: " + err);
         String how = seconds % 3600 == 0 ? (seconds / 3600) + " ч" : seconds % 60 == 0 ? (seconds / 60) + " мин" : seconds + " с";
         return say("Таймер на " + how + " поставлен.");
+    }
+
+    // a reminder: a notification of the phone at the time (AlarmManager, no foreground service); it is lost when the phone is switched off
+    private String remind(Cmd c) {
+        if (Build.VERSION.SDK_INT >= 33 && !has("android.permission.POST_NOTIFICATIONS")) {
+            return need("Чтобы напоминание появилось, разрешите приложению показывать уведомления.", "notify");
+        }
+        long at;
+        if (c.n >= 0) at = System.currentTimeMillis() + c.n * 1000L;
+        else {
+            java.util.Calendar cal = java.util.Calendar.getInstance();
+            cal.set(java.util.Calendar.HOUR_OF_DAY, c.m / 60);
+            cal.set(java.util.Calendar.MINUTE, c.m % 60);
+            cal.set(java.util.Calendar.SECOND, 0);
+            cal.set(java.util.Calendar.MILLISECOND, 0);
+            if (cal.getTimeInMillis() <= System.currentTimeMillis() + 5000) cal.add(java.util.Calendar.DAY_OF_YEAR, 1);
+            at = cal.getTimeInMillis();
+        }
+        try {
+            int id = (int) (at / 1000L) ^ c.a.hashCode();
+            Intent i = new Intent(ctx, ReminderReceiver.class).putExtra("text", c.a).putExtra("id", id);
+            android.app.PendingIntent pi = android.app.PendingIntent.getBroadcast(ctx, id, i, android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_IMMUTABLE);
+            android.app.AlarmManager am = (android.app.AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
+            if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) am.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, at, pi);
+            else am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, at, pi);
+        } catch (Exception e) {
+            return say("Не получилось поставить напоминание: " + e.getMessage());
+        }
+        String when = new SimpleDateFormat("HH:mm", new Locale("ru")).format(new Date(at));
+        return say("Напомню в " + when + ": " + c.a + ".");
     }
 
     private String alarm(int h, int m) {

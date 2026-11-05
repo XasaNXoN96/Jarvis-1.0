@@ -15,6 +15,8 @@
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <!-- reminders («напомни через …»): a notification; asked on demand on Android 13+ -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- the speech recognizer of the phone (Google) is asked through an intent service -->
     <queries>
@@ -62,6 +64,8 @@
             android:exported="false"
             android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize" />
+
+        <receiver android:name=".phone.ReminderReceiver" android:exported="false" />
 
         <!-- off until the owner switches it on in the settings of the phone; sees only Telegram and WhatsApp (res/xml/jarvis_access.xml) -->
         <service
