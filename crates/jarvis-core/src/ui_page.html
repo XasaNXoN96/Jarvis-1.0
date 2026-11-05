@@ -4230,7 +4230,7 @@ gpSetView(GP.view, true); gpSetSort(GP.sort, true); gpMenus();
 
 // ---- the card of the aim assist: the model (install / own file / check), the settings, the report ----
 const AIM = { loaded: false, busy: false, st: null };
-const AIM_STATES = { not_installed: 'Модель не установлена', downloading: 'Скачиваю модель…', verifying: 'Проверяю целостность (SHA-256)…', checking: 'Проверяю совместимость модели…', installing: 'Устанавливаю модель…', install_error: 'Ошибка установки', compat_error: 'Модель несовместима', unchecked: 'Модель найдена, проверяю…', ready: 'Модель готова, помощь прицела выключена', on: 'Помощь прицела включена' };
+const AIM_STATES = { not_installed: 'Модель не установлена — нажмите «Установить модель автоматически» (нужен интернет, один раз) или выберите свой файл', downloading: 'Скачиваю модель…', verifying: 'Проверяю целостность (SHA-256)…', checking: 'Проверяю совместимость модели…', installing: 'Устанавливаю модель…', install_error: 'Ошибка установки', compat_error: 'Модель несовместима', unchecked: 'Модель найдена, проверяю…', ready: 'Модель готова, помощь прицела выключена', on: 'Помощь прицела включена' };
 async function aimRefresh() {
   let a; try { a = await (await fetch('/aim')).json(); } catch (e) { return; }
   AIM.st = a; const run = a.run || {}; const st = a.state;
@@ -4350,7 +4350,7 @@ $('#vi-btn').onclick = async () => {
   h.textContent = 'Голос Джарвиса установлен'; b.disabled = false;
   voicesLoaded = false; await saveSettings({ voice_name: 'piper' }); setTimeout(loadSettings, 600);
 };
-$('#rv-select').onchange = e => saveSettings({ reaction_voice: e.target.value });
+$('#rv-select').onchange = e => { saveSettings({ reaction_voice: e.target.value }); setTimeout(() => action('reaction_preview'), 500); };
 $('#rv-test').onclick = async () => { await new Promise(r => setTimeout(r, 350)); await action('reaction_preview'); };
 // a Piper voice that is not on the disk yet is loaded when it is chosen (a few dozens of MB); it speaks as soon as it is here
 // the cloud voice: the key is saved like the AI keys (encrypted, never shown), then the list of voices is loaded again
