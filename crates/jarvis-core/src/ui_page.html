@@ -113,6 +113,7 @@
     padding: 10px 12px; border-radius: 11px; font: inherit; font-size: 15px; cursor: pointer; white-space: nowrap; transition: background .15s, color .15s;
   }
   nav button:hover { background: #ffffff0a; color: var(--text); }
+  nav button.nav-rare { display: none; padding-left: 22px; } body.nav-more nav button.nav-rare, nav button.nav-rare.active { display: flex; }
   nav button.active { background: #ffffff10; border-color: var(--line); color: #fff; }
   nav .nb { margin-left: auto; color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; } nav .nb:empty { display: none; }
   nav .grow { flex: 1; }
@@ -847,12 +848,13 @@ body.live-on { padding-top: 44px; }
     <button data-page="tasks" title="Задачи"><span class="ei" data-ico="check"></span><span>Задачи</span><small class="nb" id="nav-tasks"></small></button>
     <button data-page="messages" title="Сообщения"><span class="ei" data-ico="inbox"></span><span>Сообщения</span><small class="nb" id="nav-msgs"></small></button>
     <button data-page="commands" title="Команды"><span class="ei" data-ico="list"></span><span>Команды</span></button>
-    <button data-page="builder" title="Конструктор"><span class="ei" data-ico="flow"></span><span>Конструктор</span></button>
     <button data-page="apps" title="Программы"><span class="ei" data-ico="apps"></span><span>Программы</span></button>
     <button data-page="games" title="Игры"><span class="ei">🎮</span><span>Игры</span></button>
     <button data-page="devices" title="Мои устройства"><span class="ei" data-ico="phone"></span><span>Устройства</span></button>
-    <button data-page="system" title="Система"><span class="ei" data-ico="cpu"></span><span>Система</span></button>
-    <button data-page="diag" title="Диагностика"><span class="ei" data-ico="pulse"></span><span>Диагностика</span></button>
+    <button type="button" id="nav-more" title="Редкие разделы: Конструктор, Система, Диагностика" aria-expanded="false"><span class="ei">⋯</span><span>Ещё</span></button>
+    <button class="nav-rare" data-page="builder" title="Конструктор"><span class="ei" data-ico="flow"></span><span>Конструктор</span></button>
+    <button class="nav-rare" data-page="system" title="Система"><span class="ei" data-ico="cpu"></span><span>Система</span></button>
+    <button class="nav-rare" data-page="diag" title="Диагностика"><span class="ei" data-ico="pulse"></span><span>Диагностика</span></button>
 <!--ADMIN-BEGIN-->    <button data-page="licmgr" title="Лицензии (администратор)"><span class="ei" data-ico="shield"></span><span>Лицензии</span></button>
 <!--ADMIN-END-->    <button data-page="settings" title="Настройки"><span class="ei" data-ico="gear"></span><span>Настройки</span></button>
     <div class="grow"></div>
@@ -1908,6 +1910,7 @@ function show(name) {
   document.body.classList.toggle('on-home', name === 'home');
   $('#page-title').textContent = TITLES[name][0]; $('#page-sub').textContent = TITLES[name][1];
   document.querySelectorAll('nav button[data-page]').forEach(b => b.classList.toggle('active', b.dataset.page === name));
+  const nm = $('#nav-more'); if (nm) nm.classList.toggle('active', !!document.querySelector('nav button.nav-rare.active'));
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + name));
   if (name === 'commands') { loadCommands(); renderTimers(); if (lastState) commandActions(lastState.actions); }
   /*ADMIN-BEGIN*/ if (name === 'licmgr') { lmLoad(); lmAudit(); } else { clearInterval(akTimer); } /*ADMIN-END*/
@@ -3173,6 +3176,8 @@ $('#ak-go').onclick = akLoad; $('#ak-filter').onchange = akLoad; $('#ak-q').addE
 /*ADMIN-END*/
 
 // ---------- the menu folds to icons; full screen: only the page, without the menu and the frame of the window ----------
+try { if (localStorage.getItem('jarvis-navmore') === '1') document.body.classList.add('nav-more'); } catch (e) {}
+$('#nav-more').onclick = () => { const on = document.body.classList.toggle('nav-more'); $('#nav-more').setAttribute('aria-expanded', on ? 'true' : 'false'); try { localStorage.setItem('jarvis-navmore', on ? '1' : '0'); } catch (e) {} };
 try { if (localStorage.getItem('jarvis-nav') === 'folded') document.body.classList.add('nav-folded'); } catch (e) {}
 $('#nav-fold').onclick = () => {
   const on = document.body.classList.toggle('nav-folded');
