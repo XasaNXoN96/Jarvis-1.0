@@ -45,6 +45,18 @@ public class PhoneActivity extends Activity {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        JarvisListen.paused = true;
+    }
+
+    @Override
+    protected void onPause() {
+        JarvisListen.paused = false;
+        super.onPause();
+    }
+
+    @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         brain = new PhoneBrain(this);
@@ -274,6 +286,9 @@ public class PhoneActivity extends Activity {
                             } catch (ActivityNotFoundException ignored) {
                             }
                             break;
+                        case "notif":
+                            startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"));
+                            break;
                         case "access":
                             startActivity(new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS));
                             break;
@@ -319,6 +334,16 @@ public class PhoneActivity extends Activity {
         @JavascriptInterface
         public void setCity(String city) {
             brain.setCity(city == null ? "" : city.trim());
+        }
+
+        @JavascriptInterface
+        public String setWake(boolean on) {
+            return brain.setWake(on);
+        }
+
+        @JavascriptInterface
+        public void setReadNotif(boolean on) {
+            brain.setReadNotif(on);
         }
 
         @JavascriptInterface

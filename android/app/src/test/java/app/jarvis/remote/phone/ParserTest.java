@@ -70,6 +70,16 @@ public class ParserTest {
         assertEquals(Cmd.TIMER, p("поставь таймер на 5 минут").kind);
     }
 
+    @Test public void only_the_name_wakes_it() {
+        assertTrue(Parser.isWake("Джарвис открой ютуб"));
+        assertTrue(Parser.isWake("джарвес который час"));
+        assertTrue(Parser.isWake("Jarvis"));
+        assertTrue(!Parser.isWake("открой ютуб"));
+        assertTrue(!Parser.isWake("мы смотрим телевизор"));
+        assertTrue(!Parser.isWake(""));
+        assertTrue(!Parser.isWake(null));
+    }
+
     @Test public void reminders() {
         Cmd a = p("напомни через 10 минут позвонить маме");
         assertEquals(Cmd.REMIND, a.kind);

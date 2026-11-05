@@ -174,6 +174,15 @@ public final class Parser {
         return new Cmd(Cmd.REMIND, t, "", "", clock >= 0 ? -1 : seconds, clock >= 0 ? clock : 0, "");
     }
 
+    /** True when the first word of the phrase is the name (or a slip of it): the background listening reacts to nothing else. */
+    public static boolean isWake(String heard) {
+        if (heard == null) return false;
+        String[] w = heard.trim().split("\\s+");
+        if (w.length == 0 || w[0].isEmpty()) return false;
+        String f = Norm.normalize(w[0]).replace(" ", "");
+        return f.equals("джарвис") || f.equals("jarvis") || (f.length() >= 6 && Norm.nearWord(f, "джарвис") != null);
+    }
+
     /** The phrase as it was said or typed -> what to do. Never null. */
     public static Cmd parse(String text, Contacts contacts) {
         List<String> o = new ArrayList<>();

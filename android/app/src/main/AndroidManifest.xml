@@ -17,6 +17,9 @@
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <!-- reminders («напомни через …»): a notification; asked on demand on Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- «Джарвис» in the background (off until the owner switches it on): a service with a permanent notification -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <!-- the speech recognizer of the phone (Google) is asked through an intent service -->
     <queries>
@@ -66,6 +69,19 @@
             android:windowSoftInputMode="adjustResize" />
 
         <receiver android:name=".phone.ReminderReceiver" android:exported="false" />
+
+        <service android:name=".phone.JarvisListen" android:exported="false" android:foregroundServiceType="microphone" />
+
+        <!-- reads new messages of Telegram, WhatsApp and SMS aloud; off until the owner gives the access to notifications AND switches it on in Jarvis -->
+        <service
+            android:name=".phone.JarvisNotify"
+            android:exported="true"
+            android:label="Jarvis"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <!-- off until the owner switches it on in the settings of the phone; sees only Telegram and WhatsApp (res/xml/jarvis_access.xml) -->
         <service

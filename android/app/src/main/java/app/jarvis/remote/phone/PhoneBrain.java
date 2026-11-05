@@ -428,6 +428,24 @@ public class PhoneBrain {
         return prefs.getString("ai_key", "");
     }
 
+    /** «Джарвис» in the background: on = start the service (the microphone and the notification must be allowed first). */
+    public String setWake(boolean on) {
+        if (on) {
+            if (!has(Manifest.permission.RECORD_AUDIO)) return "mic";
+            if (Build.VERSION.SDK_INT >= 33 && !has("android.permission.POST_NOTIFICATIONS")) return "notify";
+            prefs.edit().putBoolean("wake_on", true).apply();
+            JarvisListen.start(ctx);
+        } else {
+            prefs.edit().putBoolean("wake_on", false).apply();
+            JarvisListen.stop(ctx);
+        }
+        return "";
+    }
+
+    public void setReadNotif(boolean on) {
+        prefs.edit().putBoolean("read_notif", on).apply();
+    }
+
     public void setAiKey(String key) {
         String k = key == null ? "" : key.trim();
         prefs.edit().putString("ai_key", k.length() > 300 ? "" : k).apply();
@@ -871,6 +889,9 @@ public class PhoneBrain {
             o.put("tree", !prefs.getString("tree", "").isEmpty());
             o.put("city", prefs.getString("city", ""));
             o.put("ai", !aiKey().isEmpty());
+            o.put("wake_on", prefs.getBoolean("wake_on", false) && JarvisListen.running());
+            o.put("notif_access", JarvisNotify.granted(ctx));
+            o.put("notif_on", prefs.getBoolean("read_notif", false));
             return o.toString();
         } catch (Exception e) {
             return "{}";

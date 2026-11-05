@@ -69,6 +69,8 @@
   <div class="row"><span>Город для погоды<small>можно сказать «погода в Ташкенте»</small></span><input id="city" type="text" style="width:130px"></div>
   <div class="row"><span>Ключ OpenAI<small id="aistate">для ответов ИИ без компьютера; хранится только на этом телефоне</small></span><input id="aikey" type="password" autocomplete="off" placeholder="sk-…" style="width:130px"></div>
   <div class="row"><span>ИИ-ответы<small>«спроси …», «расскажи …» и любая непонятная фраза</small></span><button id="aisave" type="button">Сохранить</button> <button id="aidel" type="button">Удалить ключ</button></div>
+  <div class="row"><span>Читать сообщения вслух<small id="nstate">Telegram, WhatsApp и SMS; нужен доступ к уведомлениям в настройках телефона</small></span><input type="checkbox" id="notifon"> <button id="notifacc" type="button">Доступ</button></div>
+  <div class="row"><span>«Джарвис» всегда слушает<small id="wstate">фоновая служба с постоянным уведомлением; расходует батарею; Google может пищать при перезапуске</small></span><input type="checkbox" id="wakeon"></div>
   <div id="perms"></div>
   <div class="row"><span>Пульт компьютера<small>управление программой Jarvis на ПК</small></span><button id="pc2" type="button">Открыть</button></div>
   <button id="close" type="button" class="row" style="justify-content:center">Закрыть</button>
@@ -78,7 +80,7 @@
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
-const BR = window.JarvisPhone || { run() {}, listen() {}, speak() {}, status() { return '{}'; }, request() {}, openUrl() {}, openFile() {}, openPc() {}, setCity() {}, setAiKey() {}, stopListening() {}, stopSpeaking() {} };
+const BR = window.JarvisPhone || { run() {}, listen() {}, speak() {}, status() { return '{}'; }, request() {}, openUrl() {}, openFile() {}, openPc() {}, setCity() {}, setAiKey() {}, setReadNotif() {}, setWake() { return ''; }, stopListening() {}, stopSpeaking() {} };
 let oState = 'idle', oYaw = 0, level = 0, animT = 0, W = 360, H = 360, glow = 'normal', speed = 'normal', theme = 'jarvis', sphere = 'dots';
 const PERF_LOW = (navigator.hardwareConcurrency || 8) <= 4;
 const ctx = $('orb').getContext('2d');
@@ -137,6 +139,11 @@ $('city').onchange = () => { store.set('city', $('city').value); BR.setCity($('c
 $('aisave').onclick = () => { const k = $('aikey').value.trim(); if (!k) { $('aistate').textContent = 'Введите ключ в поле'; return; } BR.setAiKey(k); $('aikey').value = ''; perms(); };
 $('aidel').onclick = () => { BR.setAiKey(''); $('aikey').value = ''; perms(); };
 
+$('notifon').onchange = () => { BR.setReadNotif($('notifon').checked); perms(); };
+$('notifacc').onclick = () => BR.request('notif');
+
+$('wakeon').onchange = () => { const need = BR.setWake($('wakeon').checked); if (need) { $('wakeon').checked = false; BR.request(need); $('wstate').textContent = 'Сначала разрешите ' + (need === 'mic' ? 'микрофон' : 'уведомления') + ', потом включите снова'; return; } setTimeout(perms, 600); };
+
 // ---- permissions: what is switched on and a button for what is not
 function perms() {
   let st = {}; try { st = JSON.parse(BR.status()); } catch (e) {}
@@ -149,6 +156,9 @@ function perms() {
     ['access', 'Доступность Jarvis', 'блокировка, скриншот, «назад», кнопка «Отправить» в Telegram и WhatsApp', st.access]
   ];
   $('aistate').textContent = st.ai ? 'Ключ сохранён на этом телефоне (показать его нельзя)' : 'для ответов ИИ без компьютера; хранится только на этом телефоне';
+  $('wakeon').checked = !!st.wake_on;
+  $('notifon').checked = !!st.notif_on; $('notifacc').style.display = st.notif_access ? 'none' : '';
+  $('nstate').textContent = st.notif_access ? (st.notif_on ? 'Включено: новые сообщения читаются вслух' : 'Доступ есть; включите галочку, чтобы читать вслух') : 'Telegram, WhatsApp и SMS; нужен доступ к уведомлениям в настройках телефона (кнопка «Доступ»)';
   const box = $('perms'); box.textContent = '';
   for (const [key, name, why, on] of items) {
     const row = document.createElement('div'); row.className = 'row';
