@@ -17,6 +17,9 @@ pub struct Item {
     pub size_mb: u64,
     pub integrity: String,
     pub busy: bool,
+    // the progress of a running install: 0..100, or -1 when it is not known; and the words of the step
+    pub percent: i64,
+    pub step: String,
     pub ops: Vec<&'static str>,
 }
 
@@ -45,6 +48,8 @@ pub fn list() -> Vec<Item> {
         size_mb: 0,
         integrity: if st["voice_pinned"].as_bool().unwrap_or(false) { "SHA-256 файла голоса зафиксирован в программе и сверяется при установке".into() } else { "для этого языка контрольная сумма не зафиксирована: файл берётся с официального сервера голосов Piper".into() },
         busy: busy_voice,
+        percent: if busy_voice { st["percent"].as_i64().unwrap_or(-1) } else { -1 },
+        step: if busy_voice { st["step"].as_str().unwrap_or("").to_string() } else { String::new() },
         ops: vec!["install"],
     });
     for (id, _, _, label) in voice_install::EXTRA_RU {
@@ -57,6 +62,8 @@ pub fn list() -> Vec<Item> {
             size_mb: size_of(&files),
             integrity: "официальный сервер голосов Piper; контрольная сумма сверяется, если она зафиксирована".into(),
             busy: busy_voice,
+            percent: if busy_voice { st["percent"].as_i64().unwrap_or(-1) } else { -1 },
+            step: if busy_voice { st["step"].as_str().unwrap_or("").to_string() } else { String::new() },
             ops: vec!["install", "remove"],
         });
     }
@@ -81,6 +88,8 @@ pub fn list() -> Vec<Item> {
             size_mb: vosk_install::size_mb(p),
             integrity: "архив с официального сервера моделей Vosk принимается, только если его размер и SHA-256 совпали с зафиксированными; распаковка проверяет каждый путь".into(),
             busy: mine_busy,
+            percent: if this && mine_busy { vs["percent"].as_i64().unwrap_or(-1) } else { -1 },
+            step: if this && mine_busy { vs["step"].as_str().unwrap_or("").to_string() } else { String::new() },
             ops: vec!["install", "check", "remove"],
         });
     }
@@ -94,6 +103,8 @@ pub fn list() -> Vec<Item> {
         size_mb: m["size_mb"].as_u64().unwrap_or(0),
         integrity: "SHA-256 скачанного файла сверяется с зафиксированным, затем файл пробно загружается".into(),
         busy: m["busy"].as_bool().unwrap_or(false),
+        percent: if m["busy"].as_bool().unwrap_or(false) && m["state"].as_str() == Some("downloading") { m["percent"].as_i64().unwrap_or(-1) } else { -1 },
+        step: if m["busy"].as_bool().unwrap_or(false) { match m["state"].as_str().unwrap_or("") { "downloading" => format!("Скачиваю: {} из {} МБ", m["got_mb"], m["total_mb"]), "verifying" => "Проверяю контрольную сумму".to_string(), "checking" => "Проверяю совместимость".to_string(), "installing" => "Устанавливаю".to_string(), _ => String::new() } } else { String::new() },
         ops: vec!["install", "check", "remove"],
     });
     v

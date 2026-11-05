@@ -113,6 +113,17 @@
     padding: 10px 12px; border-radius: 11px; font: inherit; font-size: 15px; cursor: pointer; white-space: nowrap; transition: background .15s, color .15s;
   }
   nav button:hover { background: #ffffff0a; color: var(--text); }
+  .cprog { height: 6px; border-radius: 4px; background: #ffffff18; margin: 8px 0 4px; overflow: hidden; } .cprog i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent, #4cc3ff), #8be0ff); border-radius: 4px; transition: width .4s; } .cprog i.ind { animation: cind 1.2s infinite alternate; width: 40% !important; } @keyframes cind { from { margin-left: 0 } to { margin-left: 60% } } .cstep { color: var(--accent, #4cc3ff); }
+  /* games: air between the rows of the library, the statistics as cards, the aim page in blocks */
+  #gp-tabs { margin-bottom: 18px; } .gp-bar { margin-bottom: 14px; } #gp-msg { margin: 10px 0 14px; } .gp-h { margin: 14px 0 10px; }
+  .gs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin: 10px 0 16px; }
+  .gs-card { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; background: #ffffff08; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .gs-t { display: flex; flex-direction: column; gap: 2px; } .gs-t b { font-size: 15px; word-break: break-word; } .gs-t small { color: var(--dim); }
+  .gs-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(74px, 1fr)); gap: 8px; }
+  .gs-m { border-radius: 10px; background: #ffffff0a; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; min-width: 0; } .gs-m b { font-size: 17px; } .gs-m span { font-size: 11.5px; color: var(--dim); }
+  .gs-vs { color: var(--dim); font-size: 12px; line-height: 1.4; }
+  .aim-lead { margin: 0 0 10px; color: var(--dim); font-size: 13px; line-height: 1.45; } .aim-card { margin-top: 14px; } .aim-card:first-child { margin-top: 8px; }
+  .aim-card h3 small { display: block; font-weight: 400; color: var(--dim); font-size: 12.5px; margin-top: 2px; letter-spacing: 0; text-transform: none; }
   nav button.active { background: #ffffff10; border-color: var(--line); color: #fff; }
   nav .nb { margin-left: auto; color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; } nav .nb:empty { display: none; }
   nav .grow { flex: 1; }
@@ -856,9 +867,7 @@ body.live-on { padding-top: 44px; }
 <!--ADMIN-BEGIN-->    <button data-page="licmgr" title="Лицензии (администратор)"><span class="ei" data-ico="shield"></span><span>Лицензии</span></button>
 <!--ADMIN-END-->    <button data-page="settings" title="Настройки"><span class="ei" data-ico="gear"></span><span>Настройки</span></button>
     <div class="grow"></div>
-    <button type="button" id="full-btn" title="Полноэкранный режим (F11)"><span class="ei" data-ico="full"></span><span>Во весь экран</span></button>
     <button type="button" id="close-open" style="display:none" title="Свернуть в трей или полностью закрыть JARVIS"><span class="ei" data-ico="power"></span><span id="close-open-t">Закрыть JARVIS…</span></button>
-    <div class="small">Нажмите на сферу или скажите «Джарвис». Или напишите сообщение. Alt+Enter — весь экран / окно.</div>
   </nav>
 
   <div class="content">
@@ -1178,24 +1187,28 @@ body.live-on { padding-top: 44px; }
       <div class="gp-tab" data-gt="stats" hidden>
         <div class="card" style="margin-top:8px"><h3><span class="ei">📊</span>Статистика игр</h3>
           <small class="dim">Пишется само, пока игра в фокусе дольше 30 секунд: настоящие замеры нагрузки ЦП, видеокарты, памяти и температуры. FPS читается только при запуске Jarvis от администратора; чего нет, то показано как «—» и не придумывается. Содержимое экрана не сохраняется.</small>
-          <div id="gs-games" class="mem-list"></div>
+          <div id="gs-games" class="gs-grid"></div>
           <h4 style="margin:14px 0 6px">Последние сессии</h4>
-          <div id="gs-list" class="mem-list"></div>
+          <div id="gs-list" class="gs-grid"></div>
           <div class="r" style="margin-top:8px"><button class="btn" id="gs-copy" type="button">Копировать отчёт</button><button class="btn" id="gs-clear" type="button">Очистить историю</button></div>
           <div class="msgline" id="gs-msg"></div>
         </div>
       </div>
       <div class="gp-tab" data-gt="aim" hidden>
-      <div class="card" id="gp-aim-card"><h3><span class="ei">🎯</span>Помощь прицела (эксперимент, только офлайн-игры)</h3>
+      <div class="card aim-card" id="gp-aim-card"><h3><span class="ei">🎯</span>Состояние и модель<small>Эксперимент, только офлайн-игры. Сначала установите модель, потом включите.</small></h3>
         <div class="setrow"><div class="l">Состояние<small id="gp-aim-state"></small><small id="gp-aim-sub" class="dim"></small></div>
           <div class="r"><button class="btn" id="gp-aim-on" type="button" aria-pressed="false">Включить</button> <button class="btn" id="gp-aim-off" type="button" aria-pressed="false">Выключить</button></div></div>
         <div class="setrow"><div class="l">Модель<small id="gp-aim-modelinfo">Нужен детектор людей в формате ONNX. Python, командная строка и Ultralytics не нужны: Jarvis сам скачивает официальную модель, проверяет её контрольную сумму и совместимость и ставит на место. Прежняя модель при неудаче не удаляется.</small>
           <div id="gp-aim-progwrap" style="display:none;margin-top:8px"><div style="height:8px;border-radius:4px;background:rgba(127,127,127,.25);overflow:hidden"><div id="gp-aim-prog" style="height:100%;width:0;background:var(--accent,#4da3ff)"></div></div></div></div>
           <div class="r"><button class="btn primary" id="gp-aim-install" type="button">Установить модель автоматически</button> <button class="btn" id="gp-aim-model" type="button">Выбрать файл модели…</button> <button class="btn" id="gp-aim-cancel" type="button" style="display:none">Отменить</button> <button class="btn" id="gp-aim-check" type="button">Проверить модель</button></div></div>
+      </div>
+      <div class="card aim-card"><h3><span class="ei">⚙</span>Как работает<small>На чём считать и какой клавишей целиться.</small></h3>
         <div class="setrow"><div class="l">Устройство<small id="gp-aim-devnote">Авто и «Процессор» работают на процессоре — этого достаточно для модели такого размера. Видеокарта (DirectML) — только в сборке, где она подключена и проверена.</small></div>
           <div class="r"><select id="gp-aim-device"><option value="auto">Авто</option><option value="cpu">Процессор (CPU)</option><option value="directml">Видеокарта (DirectML)</option></select></div></div>
         <div class="setrow"><div class="l">Клавиша прицела<small id="gp-aim-bindnote">Хранится отдельно для каждой игры: нажмите на игру в «Библиотеке» или здесь на кнопку. Пока клавиша игры не настроена и не подтверждена, помощь прицела в ней не работает. Галочка «любая игра» разрешает помощь в любой одиночной игре на весь экран (защита от читов по-прежнему останавливает её)</small></div>
           <div class="r"><button class="btn" id="gp-aim-bindbtn" type="button">Настроить клавишу последней игры</button> <label style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="gp-aim-any"> любая игра</label></div></div>
+      </div>
+      <div class="card aim-card"><h3><span class="ei">🎚</span>Тонкая настройка<small>Размер кадра, порог уверенности, положение перекрестия и плавность. Обычно трогать не нужно.</small></h3>
         <details class="gp-more"><summary>Дополнительные настройки</summary>
         <div class="setrow"><div class="l">Размер кадра у прицела<small>Квадрат вокруг центра окна игры. Меньше — быстрее, но видно меньше вокруг прицела</small></div>
           <div class="r"><select id="gp-aim-side"><option value="320">320</option><option value="416">416</option><option value="512">512</option><option value="640">640</option><option value="800">800</option></select></div></div>
@@ -1216,6 +1229,8 @@ body.live-on { padding-top: 44px; }
         <div class="setrow"><div class="l">Копить кадры для обучения модели<small id="gp-aim-collectnote">Раз в секунду, пока зажата кнопка прицела, кадр и найденные рамки (текстовые файлы YOLO) сохраняются в папку aim\dataset рядом с настройками Jarvis (до 500 кадров). Рамки поставила общая модель: перед обучением их надо просмотреть и поправить. Инструкция — в docs/GAME-MODE.md</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="gp-aim-collect"><span></span></label></div></div>
         </details>
+      </div>
+      <div class="card aim-card"><h3><span class="ei">🔍</span>Проверка<small>Что видит помощь прицела и отчёт для диагностики.</small></h3>
         <div class="setrow"><div class="l">Что видит помощь прицела<small id="gp-aim-snaptext">Снимок последнего кадра с метками: зелёные рамки — найденные люди, жёлтая толстая — выбранная цель, красная точка — куда целимся, красная линия — путь от перекрестия, голубой плюс — перекрестие, которое использовала программа. Если прицел идёт не туда, этот снимок покажет почему</small>
           <img id="gp-aim-snap" alt="" style="display:none;max-width:100%;max-height:420px;margin-top:8px;border-radius:8px;border:1px solid var(--line)"></div>
           <div class="r"><button class="btn" id="gp-aim-snapbtn" type="button">Показать снимок последнего прицеливания</button></div></div>
@@ -3252,7 +3267,7 @@ function winFullToggle() {
   if (ownWindow) { window.ipc.postMessage('winfull:toggle'); return; }
   try { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {}); else document.exitFullscreen().catch(() => {}); } catch (e) {}
 }
-$('#full-btn').onclick = () => setFull(!isFull);
+// (the button «Во весь экран» of the menu is removed by the owner; Alt+Enter and the button of the window stay)
 $('#full-exit').onclick = () => setFull(false);
 // one key handler: Esc does ONE thing — closes the dialog, else folds the big sphere, else leaves the full screen
 document.addEventListener('keydown', async e => {
@@ -3435,7 +3450,7 @@ let compTimer = null;
 const COMP_OPS = { install: 'Установить', check: 'Проверить', remove: 'Удалить' };
 async function compLoad() {
   const r = await action('comp_list').catch(() => ({ items: [] }));
-  $('#comp-list').innerHTML = (r.items || []).map(c => '<div class="mem-item" data-id="' + gpEsc(c.id) + '"><span><b>' + gpEsc(c.name) + '</b> · ' + (c.busy ? 'идёт работа…' : c.installed ? 'установлено' + (c.size_mb ? ' (' + c.size_mb + ' МБ)' : '') : 'не установлено') + '<small>' + gpEsc(c.about) + ' · Целостность: ' + gpEsc(c.integrity) + '</small></span>' +
+  $('#comp-list').innerHTML = (r.items || []).map(c => '<div class="mem-item" data-id="' + gpEsc(c.id) + '"><span><b>' + gpEsc(c.name) + '</b> · ' + (c.busy ? 'идёт работа' + (c.percent >= 0 ? ' · ' + c.percent + '%' : '…') : c.installed ? 'установлено' + (c.size_mb ? ' (' + c.size_mb + ' МБ)' : '') : 'не установлено') + '<small>' + gpEsc(c.about) + ' · Целостность: ' + gpEsc(c.integrity) + '</small>' + (c.busy ? '<div class="cprog"><i style="width:' + (c.percent >= 0 ? c.percent : 100) + '%"' + (c.percent < 0 ? ' class="ind"' : '') + '></i></div><small class="cstep">' + gpEsc(c.step || 'Подождите…') + (c.percent >= 0 ? ' · ' + c.percent + '%' : '') + '</small>' : '') + '</span>' +
     c.ops.filter(o => !(o === 'install' && c.installed && c.id !== 'aim-model') && !((o === 'remove' || o === 'check') && !c.installed)).map(o => '<button class="btn small" data-op="' + o + '" type="button"' + (c.busy ? ' disabled' : '') + '>' + COMP_OPS[o] + '</button>').join('') + '</div>').join('');
   clearTimeout(compTimer); if ((r.items || []).some(c => c.busy) && currentPage === 'settings') compTimer = setTimeout(compLoad, 1500);
 }
@@ -3628,9 +3643,10 @@ const dash = v => v == null ? '—' : v;
 function gsDelta(label, d, unit) { return d === null || d === undefined ? '' : label + ' ' + (d > 0 ? '+' : d < 0 ? '−' : '±') + Math.abs(d) + unit + ' · '; }
 async function gsLoad() {
   const r = await action('gs_summary').catch(() => ({ stats: {} })); const st = r.stats || {};
-  $('#gs-games').innerHTML = (st.games || []).length ? st.games.map(g => '<div class="mem-item"><span><b>' + gpEsc(g.exe) + '</b><small>сессий: ' + g.sessions + ' · всего ' + gsDur(g.secs) + '</small></span></div>').join('') : '<small class="dim">Пока нет ни одной сессии.</small>';
-  $('#gs-list').innerHTML = (st.sessions || []).length ? st.sessions.map(x => '<div class="mem-item"><span><b>' + gpEsc(x.exe) + '</b> · ' + gsDur(x.secs) + ' · ' + new Date(x.start * 1000).toLocaleString('ru-RU') +
-    (x.vs_prev ? '<small class="gs-vs">К прошлой сессии этой игры: ' + gsDelta('FPS', x.vs_prev.fps_avg, '') + gsDelta('1% low', x.vs_prev.fps_low1, '') + gsDelta('ЦП', x.vs_prev.cpu_avg, '%') + gsDelta('ВК', x.vs_prev.gpu_avg, '%') + gsDelta('темп.', x.vs_prev.gpu_temp_max, ' °C') + gsDelta('время', x.vs_prev.mins, ' мин') + '</small>' : '') + '<small>FPS ' + dash(x.fps_avg) + ' (1% low ' + dash(x.fps_low1) + ') · ЦП ' + dash(x.cpu_avg) + '% · ВК ' + dash(x.gpu_avg) + '% · ОЗУ до ' + dash(x.ram_max_gb) + ' ГБ · видеопамять до ' + dash(x.vram_max_gb) + ' ГБ · темп. до ' + dash(x.gpu_temp_max) + ' °C</small></span></div>').join('') : '';
+  const stat = (label, v, unit) => '<div class="gs-m"><b>' + dash(v) + (v === null || v === undefined ? '' : unit) + '</b><span>' + label + '</span></div>';
+  $('#gs-games').innerHTML = (st.games || []).length ? st.games.map(g => '<div class="gs-card gs-game"><div class="gs-t"><b>' + gpEsc(g.exe) + '</b></div><div class="gs-row">' + stat('сессий', g.sessions, '') + stat('всего', gsDur(g.secs), '') + '</div></div>').join('') : '<small class="dim">Пока нет ни одной сессии.</small>';
+  $('#gs-list').innerHTML = (st.sessions || []).length ? st.sessions.map(x => '<div class="gs-card"><div class="gs-t"><b>' + gpEsc(x.exe) + '</b><small>' + gsDur(x.secs) + ' · ' + new Date(x.start * 1000).toLocaleString('ru-RU') + '</small></div><div class="gs-row">' + stat('FPS', x.fps_avg, '') + stat('1% low', x.fps_low1, '') + stat('ЦП', x.cpu_avg, '%') + stat('ВК', x.gpu_avg, '%') + stat('ОЗУ до', x.ram_max_gb, ' ГБ') + stat('видеопамять до', x.vram_max_gb, ' ГБ') + stat('темп. до', x.gpu_temp_max, ' °C') + '</div>' +
+    (x.vs_prev ? '<small class="gs-vs">К прошлой сессии этой игры: ' + gsDelta('FPS', x.vs_prev.fps_avg, '') + gsDelta('1% low', x.vs_prev.fps_low1, '') + gsDelta('ЦП', x.vs_prev.cpu_avg, '%') + gsDelta('ВК', x.vs_prev.gpu_avg, '%') + gsDelta('темп.', x.vs_prev.gpu_temp_max, ' °C') + gsDelta('время', x.vs_prev.mins, ' мин') + '</small>' : '') + '</div>').join('') : '';
   if (st.fps_note) { const m = $('#gs-msg'); m.className = 'msgline'; m.textContent = st.fps_note; }
 }
 $('#gs-copy').onclick = async () => { const r = await action('gs_report').catch(() => ({})); try { await navigator.clipboard.writeText(r.text || ''); lineMsg('#gs-msg', { ok: true }, 'Скопировано.'); } catch (e) { lineMsg('#gs-msg', { ok: false, message: 'Не удалось скопировать.' }); } };
