@@ -28,7 +28,7 @@ const launch = () => chromium.launch({ executablePath: process.env.CHROMIUM || (
   await p.evaluate(() => { show('apps'); appsList = [
     { name: 'Good', launch: 'C:\\Tools\\Good.exe', ok: true, category: 'user' },
     { name: 'NoIcon', launch: 'C:\\Tools\\NoIcon.exe', ok: true, category: 'user' },
-    { name: 'StoreApp', launch: 'shell:appsfolder\\Some.App!App', ok: true, category: 'other' } ]; plLib = { shortcuts: [], hidden: [], launches: {} }; appsRender(); });
+    { name: 'StoreApp', launch: 'shell:appsfolder\\Some.App!App', ok: true, category: 'other' } ]; plLib = { shortcuts: [], hidden: [], launches: {} }; apAllShown = true; appsRender(); });
   await p.waitForTimeout(800);
   const card = n => p.$$eval('#ap-list .pc-card', (cs, n) => { const c = cs.find(x => x.querySelector('b').textContent === n); return c ? { img: !!c.querySelector('img.ap-ico'), letter: c.querySelector('.pc-mono').firstChild.textContent } : null; }, n);
   const good = await card('Good'), noicon = await card('NoIcon'), store = await card('StoreApp'), calc = await card('Калькулятор');
