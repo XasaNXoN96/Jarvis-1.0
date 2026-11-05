@@ -15,6 +15,8 @@ public final class Parser {
         List<String> names();
     }
 
+    private static final String[] CHAT_WORDS = {"спроси", "расскажи", "объясни", "ответь", "придумай", "переведи", "посчитай", "подскажи", "сочини"};
+
     private static final String[] KEYWORDS = {
         "открой", "открыть", "откройте", "запустите", "включите", "запусти", "запустить", "зайди", "перейди", "покажи", "включи", "выключи", "поставь", "останови", "пауза", "продолжи", "играй",
         "следующий", "следующую", "предыдущий", "предыдущую", "дальше", "назад", "громче", "тише", "позвони", "набери", "отправь", "напиши", "пиши", "скинь", "пошли",
@@ -357,6 +359,8 @@ public final class Parser {
             if (rawName.matches("[a-z0-9.-]+\\.[a-z]{2,}(/\\S*)?")) return Cmd.of(Cmd.OPEN_SITE, "https://" + rawName);
             return Cmd.of(Cmd.OPEN_APP, name);
         }
+        // --- «спроси / расскажи / объясни …»: the question goes to the AI (when the key is set)
+        if (o.size() >= 2 && contains(CHAT_WORDS, o.get(0))) return Cmd.of(Cmd.CHAT, join(raw, 1));
         return Cmd.of(Cmd.UNKNOWN);
     }
 

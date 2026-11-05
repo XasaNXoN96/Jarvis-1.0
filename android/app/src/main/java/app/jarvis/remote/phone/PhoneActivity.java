@@ -322,6 +322,11 @@ public class PhoneActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void setAiKey(String key) {
+            brain.setAiKey(key);
+        }
+
+        @JavascriptInterface
         public String version() {
             return "phone-1";
         }

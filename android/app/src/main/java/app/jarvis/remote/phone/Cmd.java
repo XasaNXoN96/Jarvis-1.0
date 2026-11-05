@@ -5,7 +5,7 @@ public final class Cmd {
     public static final String OPEN_APP = "open_app", OPEN_SITE = "open_site", YOUTUBE = "youtube", WEB_SEARCH = "web_search", FIND_FILE = "find_file",
         MUSIC_PLAY = "music_play", MUSIC_PAUSE = "music_pause", MUSIC_NEXT = "music_next", MUSIC_PREV = "music_prev",
         VOL_UP = "vol_up", VOL_DOWN = "vol_down", MUTE = "mute", UNMUTE = "unmute", VOL_SET = "vol_set",
-        TIMER = "timer", REMIND = "remind", ALARM = "alarm", TORCH_ON = "torch_on", TORCH_OFF = "torch_off", CALL = "call", SMS = "sms", MESSAGE = "message",
+        TIMER = "timer", REMIND = "remind", CHAT = "chat", ALARM = "alarm", TORCH_ON = "torch_on", TORCH_OFF = "torch_off", CALL = "call", SMS = "sms", MESSAGE = "message",
         LOCK = "lock", SCREENSHOT = "screenshot", HOME = "home", BACK = "back", TIME = "time", DATE = "date", BATTERY = "battery", WEATHER = "weather",
         REMEMBER = "remember", RECALL = "recall", FORGET = "forget", SETTINGS = "settings", PC_MODE = "pc_mode", HELP = "help",
         ASK = "ask", UNKNOWN = "unknown";

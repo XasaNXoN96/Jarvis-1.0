@@ -201,6 +201,7 @@ public class PhoneBrain {
             case Cmd.VOL_SET: return volumeSet(c.n);
             case Cmd.TIMER: return timer(c.n);
             case Cmd.REMIND: return remind(c);
+            case Cmd.CHAT: return chat(c.a);
             case Cmd.ALARM: return alarm(c.n, c.m);
             case Cmd.TORCH_ON: return torch(true);
             case Cmd.TORCH_OFF: return torch(false);
@@ -258,6 +259,7 @@ public class PhoneBrain {
             pending = new Pending("suggest", null, best);
             return say("Не уверен, что понял. Вы имели в виду «" + best + "»? Скажите «да» или «нет».");
         }
+        if (!aiKey().isEmpty() && text.trim().length() >= 6) return chat(text);
         return say("Не понял «" + text + "». Скажите «что ты умеешь», чтобы увидеть примеры.");
     }
 
@@ -417,6 +419,32 @@ public class PhoneBrain {
         if (err != null) return say("Не получилось поставить таймер: " + err);
         String how = seconds % 3600 == 0 ? (seconds / 3600) + " ч" : seconds % 60 == 0 ? (seconds / 60) + " мин" : seconds + " с";
         return say("Таймер на " + how + " поставлен.");
+    }
+
+    // ------------------------------------------------------------------ the AI (the key of the owner is typed on this phone and stays here)
+    private final List<String[]> chatHistory = new ArrayList<>();
+
+    private String aiKey() {
+        return prefs.getString("ai_key", "");
+    }
+
+    public void setAiKey(String key) {
+        String k = key == null ? "" : key.trim();
+        prefs.edit().putString("ai_key", k.length() > 300 ? "" : k).apply();
+        chatHistory.clear();
+    }
+
+    private String chat(String question) {
+        String key = aiKey();
+        if (key.isEmpty()) return say("Чтобы я отвечал как ИИ, введите свой ключ OpenAI в настройках телефона (шестерёнка, поле «Ключ OpenAI»).");
+        try {
+            String a = AiChat.ask(key, question, chatHistory);
+            chatHistory.add(new String[]{question, a});
+            while (chatHistory.size() > 6) chatHistory.remove(0);
+            return say(a);
+        } catch (IllegalStateException e) {
+            return say("ИИ не ответил: " + e.getMessage() + ".");
+        }
     }
 
     // a reminder: a notification of the phone at the time (AlarmManager, no foreground service); it is lost when the phone is switched off
@@ -842,6 +870,7 @@ public class PhoneBrain {
             o.put("access", JarvisAccess.enabled());
             o.put("tree", !prefs.getString("tree", "").isEmpty());
             o.put("city", prefs.getString("city", ""));
+            o.put("ai", !aiKey().isEmpty());
             return o.toString();
         } catch (Exception e) {
             return "{}";

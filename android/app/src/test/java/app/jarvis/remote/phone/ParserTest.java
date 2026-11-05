@@ -61,6 +61,15 @@ public class ParserTest {
         is("ghbdtn", Cmd.UNKNOWN);
     }
 
+    @Test public void questions_for_the_ai() {
+        Cmd a = p("спроси сколько лететь до луны");
+        assertEquals(Cmd.CHAT, a.kind);
+        assertEquals("сколько лететь до луны", a.a);
+        assertEquals(Cmd.CHAT, p("Джарвис расскажи про Наполеона").kind);
+        assertEquals(Cmd.WEATHER, p("расскажи погоду").kind);
+        assertEquals(Cmd.TIMER, p("поставь таймер на 5 минут").kind);
+    }
+
     @Test public void reminders() {
         Cmd a = p("напомни через 10 минут позвонить маме");
         assertEquals(Cmd.REMIND, a.kind);
