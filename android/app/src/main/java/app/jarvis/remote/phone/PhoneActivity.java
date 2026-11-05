@@ -45,12 +45,6 @@ public class PhoneActivity extends Activity {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
 
     @Override
-    protected void onResume() {
-        super.onResume();
-        JarvisListen.paused = true;
-    }
-
-    @Override
     protected void onPause() {
         JarvisListen.paused = false;
         super.onPause();
@@ -185,6 +179,7 @@ public class PhoneActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        JarvisListen.paused = true;
         js("jarvisPermsChanged()");
     }
 
