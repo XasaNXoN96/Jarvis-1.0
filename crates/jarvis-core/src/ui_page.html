@@ -324,7 +324,7 @@
   .ct-form input, .ct-form select, #mem-new, #mem-q { padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: #ffffff06; color: var(--text); font: inherit; min-width: 0; }
   /* floating result windows: panels inside the Jarvis window (not windows of Windows); several at once, moved by the title, resized by the corner */
   #fw-layer { position: fixed; inset: 0; z-index: 400; pointer-events: none; }
-  .fw { position: absolute; pointer-events: auto; width: 380px; height: 260px; min-width: 240px; min-height: 120px; max-width: 94vw; max-height: 86vh; resize: both; overflow: hidden; display: flex; flex-direction: column; background: var(--panel2); border: 1px solid var(--line2); border-radius: 12px; box-shadow: 0 10px 40px #000a; }
+  .fw { position: absolute; pointer-events: auto; width: 380px; height: 260px; min-width: 170px; min-height: 120px; max-width: 94vw; max-height: 86vh; resize: both; overflow: hidden; display: flex; flex-direction: column; background: var(--panel2); border: 1px solid var(--line2); border-radius: 12px; box-shadow: 0 10px 40px #000a; }
   .fw.min { height: auto !important; min-height: 0; resize: none; } .fw.min .fw-body { display: none; }
   .fw.big { left: 3vw !important; top: 3vh !important; width: 94vw !important; height: 90vh !important; max-width: 94vw; max-height: 90vh; resize: none; }
   .fw.big .fw-body { font-size: 16px; }
@@ -1145,7 +1145,7 @@ body.live-on { padding-top: 44px; }
         <div id="pc-list" class="mem-list"></div>
         <h4 style="margin:14px 0 6px">История установок</h4><div id="pc-hist" class="mem-list"></div>
       </div>
-      <div class="ap-tools" id="ap-tools2"><select id="ap-sort" title="Порядок"><option value="name">По названию</option><option value="recent">Недавние</option></select><div class="seg" id="ap-view"><button type="button" data-v="cards">Карточки</button><button type="button" data-v="list">Список</button></div><button class="btn" id="ap-addsc" type="button">Добавить программу</button><button class="btn" id="ap-unhide" type="button" hidden>Показать скрытые</button></div>
+      <div class="ap-tools" id="ap-tools2"><select id="ap-sort" title="Порядок"><option value="name">По названию</option><option value="recent">Недавние</option></select><div class="seg" id="ap-view"><button type="button" data-v="cards">Карточки</button><button type="button" data-v="list">Список</button></div><button class="btn" id="ap-addsc" type="button">Добавить программу</button><button class="btn" id="ap-unhide" type="button" hidden>Показать скрытые</button><button class="btn" id="ap-allprog" type="button" aria-pressed="false">Все программы</button></div>
       <div class="ap-tools"><input type="text" id="ap-search" placeholder="Поиск программы, например: commander"><button class="btn" id="ap-rescan" type="button">Обновить список</button></div>
       <div class="msgline" id="ap-status"></div>
       <div class="ap-tabs" id="ap-tabs" role="tablist"></div>
@@ -2195,7 +2195,7 @@ function apMarkNew(list) {
   apKnown = names;
 }
 function apRememberKnown() { try { if (apKnown) localStorage.setItem('jv_apps_known', JSON.stringify(apKnown)); } catch (e) {} }
-let plLib = { shortcuts: [], hidden: [], launches: {} }, apView = 'cards', apSort = 'name';
+let plLib = { shortcuts: [], hidden: [], launches: {} }, apView = 'cards', apSort = 'name', apAllShown = false;
 try { apView = localStorage.getItem('jv_ap_view') || 'cards'; apSort = localStorage.getItem('jv_ap_sort') || 'name'; } catch (e) {}
 async function plLoad() { const r = await action('pl_get').catch(() => null); if (r && r.lib) { plLib = r.lib; appsRender(); } }
 // the real icon of the program file (made by Jarvis from the file, once); without one the letter stays. A program is asked for by a key, never by a path.
@@ -2212,7 +2212,9 @@ function appsRender() {
   const hidden = new Set((plLib.hidden || []).map(x => x.toLowerCase()));
   // the programs of Windows itself are not listed: only what was installed by the user (and the shortcuts added by hand)
   const apJunk = /(uninstall|удалить|удаление|readme|read me|help|справка|documentation|документация|website|веб-сайт|license|лицензи|release notes|redistributable|updater|обновлени|setup|install|настройка параметров|\bsdk\b|\bdocs?\b|\bmanual\b)/i;
-  const all = appsList.filter(a => (a.category === 'user' || (a.category === 'other' && /^shell:appsfolder/i.test(a.launch || ''))) && !apJunk.test(a.name) && !hidden.has(a.name.toLowerCase())).concat((plLib.shortcuts || []).map(sc => ({ name: sc.name, launch: 'sc:' + sc.id, ok: true, category: 'user', sc: sc.id })));
+  // only the main ones by default: the programs the user installed (start menu, desktop, Program Files) and a few well-known apps of the store; «Все программы» shows the rest
+  const apMain = a => a.category === 'user' || (apAllShown ? a.category === 'other' && /^shell:appsfolder/i.test(a.launch || '') : /^shell:appsfolder/i.test(a.launch || '') && /spotify|telegram|whatsapp|discord|netflix|youtube|instagram|tiktok|vlc|zoom|skype|viber|yandex|яндекс|chrome|firefox|opera|brave|edge|steam|epic|office|word|excel|powerpoint|outlook|calculator|калькулятор|notepad|блокнот|paint|photos|фото|camera|камера|clock|часы|calendar|календарь|mail|почта/i.test(a.name || ''));
+  const all = appsList.filter(a => apMain(a) && !apJunk.test(a.name) && !hidden.has(a.name.toLowerCase())).concat((plLib.shortcuts || []).map(sc => ({ name: sc.name, launch: 'sc:' + sc.id, ok: true, category: 'user', sc: sc.id })));
   // the few tools of Windows that people really use come first; no other system program is listed
   AP_ESS.slice().reverse().forEach(e => all.unshift({ name: e[1], ess: e[0], essKind: e[2], launch: 'ess:' + e[0], ok: true, category: 'user' }));
   all.forEach(a => { a.kind = apKind(a); });
@@ -2252,6 +2254,7 @@ function appsRender() {
 $('#ap-sort').onchange = e => { apSort = e.target.value; try { localStorage.setItem('jv_ap_sort', apSort); } catch (x) {} appsRender(); };
 document.querySelectorAll('#ap-view button').forEach(b => b.onclick = () => { apView = b.dataset.v; try { localStorage.setItem('jv_ap_view', apView); } catch (x) {} appsRender(); });
 $('#ap-unhide').onclick = async () => { await action('pl_unhide'); plLoad(); };
+$('#ap-allprog').onclick = () => { apAllShown = !apAllShown; $('#ap-allprog').setAttribute('aria-pressed', apAllShown ? 'true' : 'false'); $('#ap-allprog').textContent = apAllShown ? 'Только основные' : 'Все программы'; appsRender(); };
 $('#ap-addsc').onclick = async () => {
   const pk = await action('pl_pick').catch(() => ({}));
   if (pk.cancelled) return;
@@ -3574,10 +3577,20 @@ function fwAutoFromChat(chat) {
 // the browser by its number: the page never sends an address, Jarvis keeps it.
 let wrSeen = null;
 function fwTile(w, i, n) {
-  const W = w.offsetWidth || 380, H = w.offsetHeight || 260, cols = n > 1 ? 2 : 1;
-  const left0 = Math.max(8, (innerWidth - cols * W - (cols - 1) * 12) / 2), top0 = Math.max(8, Math.min(70, (innerHeight - Math.ceil(n / cols) * H) / 2));
-  w.style.left = Math.max(8, Math.min(innerWidth - W - 8, left0 + (i % cols) * (W + 12))) + 'px';
-  w.style.top = Math.max(8, Math.min(innerHeight - H - 8, top0 + Math.floor(i / cols) * (H + 12))) + 'px';
+  // every window of the search gets its own cell of a grid that fits the screen, small windows included: 1-2 windows side by side, 3-4 as 2 x 2,
+  // more as 3 columns; a cell is made smaller (never below 170 x 120) when the screen is small, so nothing is cut off and nothing hides behind another
+  const G = 10, M = 8, TOP = 6;
+  const availW = Math.max(200, innerWidth - 2 * M), availH = Math.max(150, innerHeight - 2 * M - TOP);
+  let cols = n <= 1 ? 1 : n <= 4 ? 2 : 3;
+  if (availW < 2 * 200 + G) cols = 1;
+  const rows = Math.ceil(n / cols);
+  const cellW = Math.max(170, Math.min(380, Math.floor((availW - (cols - 1) * G) / cols)));
+  const cellH = Math.max(120, Math.min(260, Math.floor((availH - (rows - 1) * G) / rows)));
+  w.style.width = cellW + 'px'; w.style.height = cellH + 'px';
+  const gridW = cols * cellW + (cols - 1) * G, gridH = rows * cellH + (rows - 1) * G;
+  const left0 = Math.max(M, Math.floor((innerWidth - gridW) / 2)), top0 = Math.max(M, Math.min(70, Math.floor((innerHeight - gridH) / 2)));
+  w.style.left = Math.max(M, Math.min(innerWidth - cellW - M, left0 + (i % cols) * (cellW + G))) + 'px';
+  w.style.top = Math.max(M, Math.min(innerHeight - cellH - M, top0 + Math.floor(i / cols) * (cellH + G))) + 'px';
 }
 function wrOpenHit(id, kind, n) { action('web_open_hit', { hit_id: id, hit_kind: kind, hit_n: n }).then(r => { if (!r.ok) showToast(r.message || 'Не удалось открыть браузер'); }).catch(() => showToast('Нет связи с Джарвисом')); }
 function wrThumb(src) { const im = document.createElement('img'); im.loading = 'lazy'; im.referrerPolicy = 'no-referrer'; im.alt = ''; if (/^https:\/\//.test(src)) im.src = src; return im; }
