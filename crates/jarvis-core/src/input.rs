@@ -435,6 +435,19 @@ pub fn remote_tap(times: u32) -> Result<(), String> {
     }
 }
 
+// a right click where the pointer stands (the touchpad: a short touch of two fingers)
+pub fn remote_right_tap() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    unsafe {
+        win::click(true, 1);
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err(NO_INPUT_HERE.into())
+    }
+}
+
 // a shortcut or a key ("enter", "ctrl+c"); the rules of policy.rs apply as they do for every command
 pub fn remote_keys(combo: &str) -> Result<(), String> {
     let codes = parse_combo(combo).ok_or_else(|| format!("неизвестная клавиша «{}»", combo))?;

@@ -43,6 +43,8 @@ pub enum Act {
     Move { dx: i32, dy: i32 },
     // a left click where the pointer stands, once or twice
     Tap { times: u32 },
+    // a right click where the pointer stands
+    RightTap,
     // lines of the wheel: positive = up
     Scroll(i32),
     Key(String),
@@ -54,6 +56,7 @@ pub trait Hands: Send + Sync {
     fn click(&self, x: f64, y: f64, right: bool, times: u32) -> Result<(), String>;
     fn move_by(&self, dx: i32, dy: i32) -> Result<(), String>;
     fn tap(&self, times: u32) -> Result<(), String>;
+    fn right_tap(&self) -> Result<(), String>;
     fn scroll(&self, lines: i32) -> Result<(), String>;
     fn key(&self, combo: &str) -> Result<(), String>;
     fn text(&self, text: &str) -> Result<(), String>;
@@ -69,6 +72,9 @@ impl Hands for SystemHands {
     }
     fn tap(&self, times: u32) -> Result<(), String> {
         crate::input::remote_tap(times)
+    }
+    fn right_tap(&self) -> Result<(), String> {
+        crate::input::remote_right_tap()
     }
     fn scroll(&self, lines: i32) -> Result<(), String> {
         crate::input::remote_scroll(lines)
@@ -114,6 +120,7 @@ pub fn parse(body: &Value) -> Result<Act, String> {
             }
             Ok(Act::Move { dx: dx as i32, dy: dy as i32 })
         }
+        "right_tap" => Ok(Act::RightTap),
         "tap" | "double_tap" => Ok(Act::Tap { times: if kind == "double_tap" { 2 } else { 1 } }),
         "scroll" => {
             let lines = num("lines").ok_or("нужно число строк")?;
@@ -216,6 +223,7 @@ pub fn act(a: &Act) -> Result<(), String> {
         Act::Click { x, y, right, times } => h.click(*x, *y, *right, *times),
         Act::Move { dx, dy } => h.move_by(*dx, *dy),
         Act::Tap { times } => h.tap(*times),
+        Act::RightTap => h.right_tap(),
         Act::Scroll(n) => h.scroll(*n),
         Act::Key(k) => h.key(k),
         Act::Text(t) => h.text(t),
@@ -248,6 +256,9 @@ impl Hands for NoHands {
         Ok(())
     }
     fn tap(&self, _: u32) -> Result<(), String> {
+        Ok(())
+    }
+    fn right_tap(&self) -> Result<(), String> {
         Ok(())
     }
     fn scroll(&self, _: i32) -> Result<(), String> {
@@ -289,6 +300,10 @@ mod tests {
         }
         fn tap(&self, times: u32) -> Result<(), String> {
             self.0.lock().push(format!("tap {}", times));
+            Ok(())
+        }
+        fn right_tap(&self) -> Result<(), String> {
+            self.0.lock().push("right_tap".to_string());
             Ok(())
         }
         fn scroll(&self, lines: i32) -> Result<(), String> {
@@ -345,6 +360,7 @@ mod tests {
     #[test]
     fn the_touchpad_of_the_phone_moves_taps_and_scrolls_within_limits() {
         assert_eq!(parse(&json!({ "kind": "move", "dx": 12, "dy": -7 })), Ok(Act::Move { dx: 12, dy: -7 }));
+        assert_eq!(parse(&json!({ "kind": "right_tap" })), Ok(Act::RightTap));
         assert_eq!(parse(&json!({ "kind": "tap" })), Ok(Act::Tap { times: 1 }));
         assert_eq!(parse(&json!({ "kind": "double_tap" })), Ok(Act::Tap { times: 2 }));
         for bad in [json!({ "kind": "move", "dx": 0, "dy": 0 }), json!({ "kind": "move", "dx": 301, "dy": 0 }), json!({ "kind": "move", "dx": 1.5, "dy": 0 }), json!({ "kind": "move", "dx": "5", "dy": 0 }), json!({ "kind": "move", "dx": f64::NAN, "dy": 1 })] {
@@ -456,6 +472,7 @@ mod tests {
             fn click(&self, _: f64, _: f64, _: bool, _: u32) -> Result<(), String> { Err("Windows не принял ввод".into()) }
             fn move_by(&self, _: i32, _: i32) -> Result<(), String> { Err("Windows не принял ввод".into()) }
             fn tap(&self, _: u32) -> Result<(), String> { Err("Windows не принял ввод".into()) }
+            fn right_tap(&self) -> Result<(), String> { Err("Windows не принял ввод".into()) }
             fn scroll(&self, _: i32) -> Result<(), String> { Err("Windows не принял ввод".into()) }
             fn key(&self, _: &str) -> Result<(), String> { Err("Windows не принял ввод".into()) }
             fn text(&self, _: &str) -> Result<(), String> { Err("Windows не принял ввод".into()) }

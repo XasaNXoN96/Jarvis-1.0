@@ -64,6 +64,11 @@ const fails = []; const ok = (c, m) => { if (!c) fails.push(m); };
   await p.waitForTimeout(400);
   sc = sum('scroll');
   ok(sc[2] <= -5 && sc[2] >= -9, 'two fingers up: the other way: ' + sc);
+  // 4b. a short touch of two fingers without moving: one right click, nothing else
+  sent.length = 0;
+  await touch('touchStart', [[cx - 40, cy], [cx + 40, cy]]); await p.waitForTimeout(80); await touch('touchEnd', []);
+  await p.waitForTimeout(300);
+  ok(sent.filter(s => s.kind === 'right_tap').length === 1 && sent.length === 1, 'two fingers touch = one right click: ' + JSON.stringify(sent));
   // 5. the pad does not scroll the page under it and the old buttons are still there
   ok(await p.$('#rc-mode-click') && await p.$('#rc-up') && await p.$('#rc-key-enter') && await p.$('#rc-text'), 'the buttons stay as a second way');
   await b.close();

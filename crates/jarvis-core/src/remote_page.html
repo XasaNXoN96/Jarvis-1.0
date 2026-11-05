@@ -410,7 +410,7 @@ if (!token) {
     // is a left click (two quick touches make a double click by themselves), two fingers moving up or down turn the wheel.
     const pad = document.createElement('div'); pad.id = 'rc-pad';
     pad.style.cssText = 'width:min(96vw,640px);min-height:30vh;border:1px dashed #5d7a99;border-radius:12px;display:flex;align-items:center;justify-content:center;text-align:center;color:#8fa7c0;font-size:14px;padding:10px;touch-action:none;user-select:none;-webkit-user-select:none';
-    pad.textContent = 'Тачпад: двигайте пальцем: курсор на компьютере двигается. Коснулись: клик. Два касания подряд: двойной клик. Два пальца вверх и вниз: прокрутка.';
+    pad.textContent = 'Тачпад: двигайте пальцем: курсор на компьютере двигается. Коснулись: клик. Два касания подряд: двойной клик. Два пальца вверх и вниз: прокрутка. Коснулись двумя пальцами: правый клик.';
     box.appendChild(pad);
     const GAIN = 1.6;                       // the normal speed of the pointer: a pixel of the finger is a bit more than a pixel of the screen
     const pt = { fingers: new Map(), t0: 0, moved: 0, wasTwo: false, accX: 0, accY: 0, accScroll: 0, busy: false, last: 0 };
@@ -453,7 +453,9 @@ if (!token) {
       for (const t of ev.changedTouches) pt.fingers.delete(t.identifier);
       if (!pt.fingers.size && !pt.wasTwo && pt.moved < 10 && Date.now() - pt.t0 < 300) {
         // a short touch: a left click where the pointer stands (the quick second one is a double click for Windows itself)
-        flush().finally(() => send({ kind: 'tap' }));
+        flush().finally(() => send({ kind: 'tap' }));      } else if (!pt.fingers.size && pt.wasTwo && pt.moved < 10 && Date.now() - pt.t0 < 350) {
+        // a short touch of two fingers: a right click (as on the pad of a laptop)
+        flush().finally(() => send({ kind: 'right_tap' }));
       }
     };
     pad.addEventListener('touchend', lift, { passive: false });
