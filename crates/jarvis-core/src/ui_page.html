@@ -1501,12 +1501,12 @@ body.live-on { padding-top: 44px; }
       </div>
 
       <div class="card" data-cat="voice" data-ord="1" id="voice-card" data-tab="Голос"><h3><span class="ei">🔊</span>Голос</h3>
-        <div class="setrow"><div class="l">Голос реплик Джарвиса<small>записанные фразы («Да, сэр», «Слушаю»): Jarvis OG, Remaster, Howdy, Luna 2.0</small></div>
-          <div class="r"><select id="rv-select"></select> <button class="btn" id="rv-test">Послушать</button></div></div>
         <div class="setrow" id="vi-row"><div class="l">Голос Джарвиса<small id="vi-hint">Свой женский голос Джарвиса (≈80 МБ), чтобы не говорил голос Windows</small></div>
           <div class="r"><button class="btn" id="vi-btn">Установить голос Джарвиса</button></div></div>
         <div class="setrow"><div class="l">Голос<small id="voice-hint">Джарвис (Piper) — нейросетевой голос, работает без интернета</small></div>
-          <div class="r"><select id="voice-select"><option value="">Автоматически</option></select></div></div>
+          <div class="r"><select id="voice-select"><option value="">Автоматически</option></select> <button class="btn" id="voice-listen" type="button">Послушать</button></div></div>
+        <div class="setrow" id="vt-row" hidden><div class="l">Остальной текст читает<small>Записанный голос знает только свои фразы («Слушаю», «Открываю ютуб»…). Всё остальное: время, погода, ответы ИИ — читает этот голос.</small></div>
+          <div class="r"><select id="voice-text-select"></select></div></div>
         <div class="setrow"><div class="l">Скорость речи</div>
           <div class="r"><div class="seg" id="rate-seg"><button data-rate="0.8">Медленно</button><button data-rate="1">Норм</button><button data-rate="1.25">Быстро</button><button data-rate="1.5">Очень быстро</button></div><input type="range" id="rate" min="0.6" max="1.6" step="0.05" value="1"><b id="rate-v" style="min-width:42px;text-align:right">1.0×</b></div></div>
         <div class="setrow"><div class="l">Громкость озвучки<small>громкость голоса Джарвиса; громкость Windows не меняется</small></div>
@@ -4371,20 +4371,18 @@ async function loadSettings() {
     arLoad(); applyPrivacy(s); applyGeneral(s); $('#ai-screen').checked = !!s.ai_screen;
     $('#cloud-key').placeholder = s.cloud_tts_key_saved ? 'ключ сохранён (оставьте пустым, чтобы не менять)' : 'ключ Яндекса';
     $('#voice-hint').textContent = s.piper ? 'Джарвис (Piper) — нейросетевой голос, работает без интернета' : 'Piper не установлен: говорит голос Windows (в большом установщике есть Piper)';
-    if (!$('#rv-select').options.length) {
-      try { (await (await fetch('/reaction-voices')).json()).forEach(v => $('#rv-select').add(new Option(v.name, v.id))); } catch (e) {}
-    }
-    $('#rv-select').value = s.reaction_voice || '';
     if (!voicesLoaded) {
       voicesLoaded = true;
       const vs = await (await fetch('/voices')).json();
-      const vsel = $('#voice-select'); vsel.textContent = '';
-      for (const v of vs) vsel.add(new Option(v.name, v.id));
-      // the recorded packs are in the same list: the pack plays on reactions and commands, the text is still read by the last real voice
+      const vsel = $('#voice-select'), tsel = $('#voice-text-select'); vsel.textContent = ''; tsel.textContent = '';
+      // ONE list: the recorded voices of Jarvis (they play on the reactions and commands) first, then the voices that read any text
       try {
         const packs = await (await fetch('/reaction-voices')).json();
-        if (packs.length) { const g = document.createElement('optgroup'); g.label = 'Записанные голоса (реплики и команды; остальной текст читает голос выше)'; packs.forEach(v => g.appendChild(new Option(v.name + ' — записанные фразы', 'pack:' + v.id))); vsel.appendChild(g); }
+        if (packs.length) { const g = document.createElement('optgroup'); g.label = 'Записанные голоса Джарвиса'; packs.forEach(v => g.appendChild(new Option(v.name, 'pack:' + v.id))); vsel.appendChild(g); }
       } catch (e) {}
+      const g2 = document.createElement('optgroup'); g2.label = 'Голоса для чтения любого текста';
+      for (const v of vs) { g2.appendChild(new Option(v.name, v.id)); tsel.add(new Option(v.name, v.id)); }
+      vsel.appendChild(g2);
       setVoiceSelect(s.voice_name || '', s);
     } else { setVoiceSelect(s.voice_name || '', s); }
   } catch (e) {}
@@ -4392,15 +4390,19 @@ async function loadSettings() {
 // the list shows the voice that is REALLY saved: a saved voice that is not in the list (another program's voice that is not found
 // now, a voice that was chosen on the phone) is added to it under its own name instead of the list showing «Автоматически»
 function setVoiceSelect(v, s) {
-  const sel = $('#voice-select');
-  if (s && s.voice_mode === 'pack' && s.reaction_voice) {
+  const sel = $('#voice-select'), tsel = $('#voice-text-select'), pack = !!(s && s.voice_mode === 'pack' && s.reaction_voice);
+  // the voice that reads the text: the saved one, even when it is not in the list now
+  tsel.value = v;
+  if (v && tsel.value !== v) { tsel.add(new Option('Сохранён голос: ' + v + ' (его нет в списке)', v)); tsel.value = v; }
+  if (pack) {
     sel.value = 'pack:' + s.reaction_voice;
     if (sel.value === 'pack:' + s.reaction_voice) {
-      const real = [...sel.options].find(o => o.value === v && !o.value.startsWith('pack:'));
-      $('#voice-hint').textContent = 'Записанные фразы «' + sel.selectedOptions[0].textContent.replace(' — записанные фразы', '') + '» играют на реакциях и командах. Остальной текст читает: ' + (real ? real.textContent : (v ? v : 'голос по умолчанию')) + '. Другой голос для текста выберите в списке выше.';
+      $('#vt-row').hidden = false;
+      $('#voice-hint').textContent = '«' + sel.selectedOptions[0].textContent + '» говорит свои записанные фразы на реакциях и командах. Выбор сохраняется, пока вы его не смените.';
       return;
     }
   }
+  $('#vt-row').hidden = true;
   sel.value = v;
   if (v && sel.value !== v) { sel.add(new Option('Сохранён голос: ' + v + ' (его нет в списке)', v)); sel.value = v; }
 }
@@ -4418,8 +4420,8 @@ $('#vi-btn').onclick = async () => {
   h.textContent = 'Голос Джарвиса установлен'; b.disabled = false;
   voicesLoaded = false; await saveSettings({ voice_name: 'piper' }); setTimeout(loadSettings, 600);
 };
-$('#rv-select').onchange = e => { saveSettings({ reaction_voice: e.target.value }); setTimeout(() => action('reaction_preview'), 500); setTimeout(loadSettings, 900); };
-$('#rv-test').onclick = async () => { await new Promise(r => setTimeout(r, 350)); await action('reaction_preview'); };
+$('#voice-listen').onclick = async () => { if (!$('#vt-row').hidden) { await action('reaction_preview'); } else { $('#tts-test').click(); } };
+$('#voice-text-select').onchange = e => { saveSettings({ voice_name: e.target.value }); };
 // a Piper voice that is not on the disk yet is loaded when it is chosen (a few dozens of MB); it speaks as soon as it is here
 // the cloud voice: the key is saved like the AI keys (encrypted, never shown), then the list of voices is loaded again
 $('#cloud-save').onclick = async () => {
@@ -4431,7 +4433,7 @@ $('#cloud-forget').onclick = async () => { await action('cloud_tts_key_forget');
 $('#voice-select').onchange = async e => {
   const v = e.target.value, opt = e.target.selectedOptions[0];
   // a recorded pack: it becomes the voice of the reactions and commands (and is heard at once); the voice that reads the text is not changed
-  if (v.startsWith('pack:')) { saveSettings({ reaction_voice: v.slice(5), voice_mode: 'pack' }); $('#rv-select').value = v.slice(5); setTimeout(() => action('reaction_preview'), 500); setTimeout(loadSettings, 900); return; }
+  if (v.startsWith('pack:')) { saveSettings({ reaction_voice: v.slice(5), voice_mode: 'pack' }); setTimeout(() => action('reaction_preview'), 500); setTimeout(loadSettings, 900); return; }
   if (!(v.startsWith('piper:') && opt && opt.textContent.includes('будет загружен'))) { saveSettings({ voice_name: v, voice_mode: '' }); setTimeout(loadSettings, 600); return; }
   const h = $('#vi-hint'); e.target.disabled = true; h.textContent = 'Загружаю голос…';
   try { await action('voice_install', { voice: v.slice(6) }); } catch (er) {}
