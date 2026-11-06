@@ -58,6 +58,10 @@ jobs:
         run: node tests/ui/message_open.js
         env:
           PW_MODULE: ${{ github.workspace }}/node_modules/playwright
+      - name: Recorded packs in the list of voices (the text voice is not changed)
+        run: node tests/ui/voice_packs.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright
       - name: Touchpad of the phone (pointer, tap, two-finger scroll)
         run: node tests/ui/touchpad.js
         env:

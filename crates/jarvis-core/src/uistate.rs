@@ -72,7 +72,8 @@ pub fn recent_actions() -> Vec<LogEntry> {
 #[serde(default)]
 pub struct UiSettings {
     pub voice_rate: f32,     // 0.6 .. 1.6, 1.0 = normal
-    pub reaction_voice: String, // recorded reaction pack (jarvis-og / jarvis-remaster / jarvis-howdy), "" = app default
+    pub reaction_voice: String, // recorded reaction pack (jarvis-og / jarvis-remaster / jarvis-howdy / luna-2), "" = app default
+    pub voice_mode: String,     // "pack" = the list of voices shows the recorded pack as the chosen voice (the text is still read by voice_name); "" = a real voice is chosen
     pub assistant_name: String, // the name the assistant answers to ("" = «Джарвис»), lower case, one word
     pub assistant_named: bool,  // the first-start question about the name was answered (or skipped)
     pub city: String,        // the city of the weather block ("" = not chosen: nothing is guessed)
@@ -171,7 +172,7 @@ pub fn browser_exe(key: &str) -> Option<&'static str> {
 impl Default for UiSettings {
     fn default() -> Self {
         Self {
-            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: true, city: String::new(), reaction_voice: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_mode: String::new(), ai_talk: String::new(), window_fullscreen: true, ai_key: String::new(), ai_search_key: String::new(), cloud_tts_key: String::new(), ai_search_auto: true, ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
+            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: true, city: String::new(), reaction_voice: String::new(), voice_mode: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_mode: String::new(), ai_talk: String::new(), window_fullscreen: true, ai_key: String::new(), ai_search_key: String::new(), cloud_tts_key: String::new(), ai_search_auto: true, ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
             ai_enabled: true, mic_off: false,
             notify_show: true, notify_speak: true, notify_sound: true, dnd: false,
             ext_enabled: false, ext_show: true, ext_speak: false, ext_strict: true, ext_allowed: Vec::new(), ext_blocked: Vec::new(), ext_seen: Vec::new(),
@@ -467,6 +468,9 @@ pub fn update_settings(patch: &Value) {
         s.reaction_voice = v.chars().take(60).collect();
         if crate::voices::get_voice(&s.reaction_voice).is_some() { crate::voices::set_current_voice(&s.reaction_voice); }
     }
+    if let Some(v) = patch.get("voice_mode").and_then(|v| v.as_str()) {
+        s.voice_mode = if v == "pack" { "pack".to_string() } else { String::new() };
+    }
     if let Some(v) = patch.get("city").and_then(|v| v.as_str()) {
         let city: String = v.trim().chars().take(80).collect();
         if city != s.city {
@@ -587,6 +591,8 @@ pub fn settings_json() -> Value {
         "tts_enabled": crate::tts::is_enabled(),
         "piper": crate::tts::piper_available(),
     });
+    // (set apart from the big literal above: json! has a limit on its size)
+    out["voice_mode"] = json!(s.voice_mode);
     // (kept out of the macro above: it is at the limit of the recursion of json!)
     out["ai_talk"] = json!(s.ai_talk);
     out["hotkey"] = json!(s.hotkey);
@@ -1086,6 +1092,18 @@ mod settings_tests {
         std::fs::write(&p, r#"{"ext_enabled":true,"ext_social":["telegram"],"ext_social_speak":[],"ext_social_init":true}"#).unwrap();
         let s = load_from(&p);
         assert_eq!((s.ext_social, s.ext_social_speak.len()), (vec!["telegram".to_string()], 0));
+    }
+
+    #[test]
+    fn the_voice_mode_is_pack_or_nothing() {
+        let _g = TEST_LOCK.lock();
+        update_settings(&json!({ "voice_mode": "pack", "reaction_voice": "luna-2" }));
+        assert_eq!(settings_json()["voice_mode"], "pack");
+        update_settings(&json!({ "voice_mode": "anything else" }));
+        assert_eq!(settings_json()["voice_mode"], "");
+        update_settings(&json!({ "voice_mode": "pack" }));
+        update_settings(&json!({ "voice_mode": "" }));
+        assert_eq!(settings_json()["voice_mode"], "");
     }
 
     #[test]
