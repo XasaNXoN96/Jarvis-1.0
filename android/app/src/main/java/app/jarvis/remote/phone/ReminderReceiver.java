@@ -17,6 +17,7 @@ public class ReminderReceiver extends BroadcastReceiver {
         String text = intent.getStringExtra("text");
         if (text == null || text.isEmpty()) text = "Напоминание";
         int id = intent.getIntExtra("id", 1);
+        Reminders.remove(ctx, id);   // it has fired: it is not set again after a restart
         NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
         Notification.Builder b;

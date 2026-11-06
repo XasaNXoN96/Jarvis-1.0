@@ -465,7 +465,7 @@ public class PhoneBrain {
         }
     }
 
-    // a reminder: a notification of the phone at the time (AlarmManager, no foreground service); it is lost when the phone is switched off
+    // a reminder: a notification of the phone at the time (AlarmManager, no foreground service); the list is kept, so a restart of the phone does not lose it (BootReceiver)
     private String remind(Cmd c) {
         if (Build.VERSION.SDK_INT >= 33 && !has("android.permission.POST_NOTIFICATIONS")) {
             return need("Чтобы напоминание появилось, разрешите приложению показывать уведомления.", "notify");
@@ -483,11 +483,8 @@ public class PhoneBrain {
         }
         try {
             int id = (int) (at / 1000L) ^ c.a.hashCode();
-            Intent i = new Intent(ctx, ReminderReceiver.class).putExtra("text", c.a).putExtra("id", id);
-            android.app.PendingIntent pi = android.app.PendingIntent.getBroadcast(ctx, id, i, android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_IMMUTABLE);
-            android.app.AlarmManager am = (android.app.AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
-            if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) am.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, at, pi);
-            else am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, at, pi);
+            Reminders.schedule(ctx, id, at, c.a);
+            Reminders.add(ctx, id, at, c.a);
         } catch (Exception e) {
             return say("Не получилось поставить напоминание: " + e.getMessage());
         }

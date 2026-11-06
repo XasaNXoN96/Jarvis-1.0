@@ -17,6 +17,8 @@
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <!-- reminders («напомни через …»): a notification; asked on demand on Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- the reminders are set again when the phone is switched on (BootReceiver); a normal permission, nothing is asked -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- «Джарвис» in the background (off until the owner switches it on): a service with a permanent notification -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
@@ -69,6 +71,11 @@
             android:windowSoftInputMode="adjustResize" />
 
         <receiver android:name=".phone.ReminderReceiver" android:exported="false" />
+        <receiver android:name=".phone.BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
         <service android:name=".phone.JarvisListen" android:exported="false" android:foregroundServiceType="microphone" />
 
