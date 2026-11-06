@@ -28,7 +28,7 @@ thanks = ["thanks"]
 error = []
 
 # goodbye
-goodbye = []
+goodbye = ["goodbye1", "goodbye2"]
 
 
 
