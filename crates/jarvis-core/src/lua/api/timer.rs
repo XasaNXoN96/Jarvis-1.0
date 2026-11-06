@@ -72,7 +72,18 @@ fn fire(entry: &TimerEntry, late: bool) {
     #[cfg(feature = "jarvis_app")]
     crate::ipc::send(crate::ipc::IpcEvent::Output { text: format!("{}: {}", entry.title, message) });
     // one notification: the window of Jarvis, the voice (said once) or a short sound, "do not disturb" respected
-    crate::notify::push(crate::notify::timer_kind(&entry.title), &entry.title, &message, false);
+    let kind = crate::notify::timer_kind(&entry.title);
+    // the pack of the voice may have a recorded signal for «time is up» (Luna 2.0, Jarvis New): it is the voice then, so the notification stays silent (never two voices)
+    let said = !late && timer_clip(kind).map(|c| crate::voices::play_clip(c)).unwrap_or(false);
+    crate::notify::push(kind, &entry.title, &message, said);
+}
+
+// the recorded signal of the pack for a timer and for a reminder (an alarm and the rest keep their own way)
+fn timer_clip(kind: &str) -> Option<&'static str> {
+    match kind {
+        "timer" | "reminder" => Some("timer_done"),
+        _ => None,
+    }
 }
 
 // run the timer in the background; the entry disappears if it is cancelled meanwhile
@@ -268,4 +279,17 @@ pub fn register(lua: &Lua, jarvis: &Table) -> mlua::Result<()> {
 
     jarvis.set("timer", timer)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod clip_tests {
+    use super::*;
+
+    #[test]
+    fn only_a_timer_and_a_reminder_use_the_recorded_signal() {
+        assert_eq!(timer_clip("timer"), Some("timer_done"));
+        assert_eq!(timer_clip("reminder"), Some("timer_done"));
+        assert_eq!(timer_clip("alarm"), None);
+        assert_eq!(timer_clip("command"), None);
+    }
 }

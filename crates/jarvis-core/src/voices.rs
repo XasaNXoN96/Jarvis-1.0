@@ -242,6 +242,22 @@ pub fn play_command_clip(command_id: &str, said: &str) -> bool {
     }
 }
 
+/// A clip of the current pack by its name («timer_done»). True = it was played (the call returns when the sound ends).
+pub fn play_clip(name: &str) -> bool {
+    let voice = match get_current_voice() {
+        Some(v) => v,
+        None => return false,
+    };
+    match find_sound_file(&voice.path, &get_current_language(), name) {
+        Some(path) => {
+            debug!("Playing the clip {}: {:?}", name, path);
+            audio::play_sound(&path);
+            true
+        }
+        None => false,
+    }
+}
+
 pub fn play_random_from(sounds: &[String]) {
     let voice = match get_current_voice() {
         Some(v) => v,
