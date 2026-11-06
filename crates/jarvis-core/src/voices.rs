@@ -242,6 +242,77 @@ pub fn play_command_clip(command_id: &str, said: &str) -> bool {
     }
 }
 
+/// One clip of a pack for the list on the page: its name, what the pack plays it on (a reaction), and the commands that use it.
+#[derive(Debug, Clone, serde::Serialize, PartialEq)]
+pub struct ClipInfo {
+    pub name: String,
+    pub reaction: String,
+    pub commands: Vec<String>,
+}
+
+fn reaction_label(r: &structs::VoiceReactions, name: &str) -> String {
+    let has = |l: &Vec<String>| l.iter().any(|n| n == name);
+    let table: [(&Vec<String>, &str); 10] = [
+        (&r.greet, "запуск программы"), (&r.greet_morning, "запуск утром"), (&r.greet_day, "запуск днём"), (&r.greet_evening, "запуск вечером"), (&r.greet_night, "запуск ночью"),
+        (&r.reply, "слово-активатор («Слушаю»)"), (&r.ok, "общее «выполнено»"), (&r.thanks, "«спасибо»"), (&r.goodbye, "прощание"), (&r.not_found, "«не понял»"),
+    ];
+    let mut out: Vec<&str> = table.iter().filter(|(l, _)| has(l)).map(|(_, t)| *t).collect();
+    if has(&r.error) {
+        out.push("ошибка");
+    }
+    out.join(", ")
+}
+
+/// The clips of a pack in the language of the program (the names are the files of the folder; nothing else is ever played from the page).
+pub fn clips_of(voice_id: &str) -> Vec<ClipInfo> {
+    let voice = match get_voice(voice_id) {
+        Some(v) => v,
+        None => return Vec::new(),
+    };
+    let lang = get_current_language();
+    let dir = voice.path.join(&lang);
+    let react = voice.reactions.get(&lang);
+    let mut names: Vec<String> = fs::read_dir(&dir)
+        .map(|rd| {
+            rd.flatten()
+                .filter_map(|e| {
+                    let p = e.path();
+                    let ext = p.extension()?.to_string_lossy().to_lowercase();
+                    (["mp3", "wav", "ogg"].contains(&ext.as_str())).then(|| p.file_stem().map(|s| s.to_string_lossy().to_string())).flatten()
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort();
+    names.dedup();
+    names
+        .into_iter()
+        .map(|name| ClipInfo {
+            reaction: react.map(|r| reaction_label(r, &name)).unwrap_or_default(),
+            commands: crate::cmdclips::users_of(&name),
+            name,
+        })
+        .collect()
+}
+
+/// Plays one clip of a pack for the list on the page. Only a name from the list of that pack is played (no path comes from the page).
+pub fn play_clip_of(voice_id: &str, name: &str) -> bool {
+    if !clips_of(voice_id).iter().any(|c| c.name == name) {
+        return false;
+    }
+    let voice = match get_voice(voice_id) {
+        Some(v) => v,
+        None => return false,
+    };
+    let path = match find_sound_file(&voice.path, &get_current_language(), name) {
+        Some(p) => p,
+        None => return false,
+    };
+    // the sound is played to its end: not in the thread of the request
+    std::thread::spawn(move || audio::play_sound(&path));
+    true
+}
+
 /// A clip of the current pack by its name («timer_done»). True = it was played (the call returns when the sound ends).
 pub fn play_clip(name: &str) -> bool {
     let voice = match get_current_voice() {
@@ -318,3 +389,26 @@ pub fn play_not_found() { play(structs::Reaction::NotFound); }
 pub fn play_thanks() { play(structs::Reaction::Thanks); }
 pub fn play_error() { play(structs::Reaction::Error); }
 pub fn play_goodbye() { play(structs::Reaction::Goodbye); }
+
+#[cfg(test)]
+mod clip_list_tests {
+    use super::*;
+
+    #[test]
+    fn a_clip_says_what_it_is_played_on() {
+        let r = structs::VoiceReactions { reply: vec!["reply1".into(), "reply2".into()], ok: vec!["ok1".into()], goodbye: vec!["bye".into()], ..Default::default() };
+        assert_eq!(reaction_label(&r, "reply2"), "слово-активатор («Слушаю»)");
+        assert_eq!(reaction_label(&r, "ok1"), "общее «выполнено»");
+        assert_eq!(reaction_label(&r, "bye"), "прощание");
+        // a clip that no reaction names (a clip of a command, a joke) has no reaction
+        assert_eq!(reaction_label(&r, "cmd_open_youtube"), "");
+    }
+
+    #[test]
+    fn an_unknown_pack_or_clip_plays_nothing() {
+        assert!(clips_of("no-such-pack").is_empty());
+        assert!(!play_clip_of("no-such-pack", "ok1"));
+        // a path is never a clip
+        assert!(!play_clip_of("jarvis-og", "../../secret"));
+    }
+}

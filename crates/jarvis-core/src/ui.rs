@@ -283,6 +283,15 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             }
             json!({ "ok": paused, "message": reply })
         }
+        // the card «Фразы пакета»: the clips of a recorded pack, what they are played on, and one of them to listen to
+        "voice_clips" => {
+            let id = body.get("voice").and_then(|v| v.as_str()).unwrap_or("");
+            json!({ "ok": true, "clips": crate::voices::clips_of(id) })
+        }
+        "clip_play" => {
+            let ok = crate::voices::play_clip_of(body.get("voice").and_then(|v| v.as_str()).unwrap_or(""), body.get("clip").and_then(|v| v.as_str()).unwrap_or(""));
+            json!({ "ok": ok, "message": if ok { "" } else { "Такой фразы в пакете нет" } })
+        }
         "reaction_preview" => {
             let id = crate::uistate::settings_json()["reaction_voice"].as_str().unwrap_or("").to_string();
             crate::voices::play_preview(&id);

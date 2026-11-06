@@ -112,6 +112,17 @@ const WORDS: &[(&str, &str)] = &[
     (" новости", "cmd_open_news"), (" переводчик", "cmd_open_translate"),
 ];
 
+/// Who plays a clip: the commands of the table that use it (by id), and the phrases of «открой …» that choose it. For the list of the clips of a pack on the page.
+pub fn users_of(clip: &str) -> Vec<String> {
+    let mut v: Vec<String> = FIXED.iter().filter(|(_, c)| c.contains(&clip)).map(|(id, _)| id.to_string()).collect();
+    for (w, c) in WORDS {
+        if *c == clip {
+            v.push(format!("«открой{}»", w.trim_end()));
+        }
+    }
+    v
+}
+
 // the phrase as one lower-case line with single spaces, with a space before and after (so that « вк » and the beginnings of words can be told)
 fn normalize(said: &str) -> String {
     let mut s = String::from(" ");
@@ -223,5 +234,13 @@ mod tests {
         assert_eq!(clips_for("assistant_sys_cpu", "загрузка процессора"), None);
         // a word inside another word is not a name («вкус» is not «вк»)
         assert_eq!(clips_for("assistant_program_open", "открой вкусную еду"), None);
+    }
+
+    #[test]
+    fn the_users_of_a_clip_are_listed() {
+        assert_eq!(users_of("cmd_volume_up"), vec!["assistant_volume_up".to_string()]);
+        let u = users_of("cmd_open_telegram");
+        assert!(u.iter().any(|x| x.contains("телеграм")) && u.iter().any(|x| x.contains("telegram")), "{:?}", u);
+        assert!(users_of("ok1").is_empty());
     }
 }

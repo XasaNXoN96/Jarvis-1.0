@@ -62,6 +62,10 @@ jobs:
         run: node tests/ui/voice_packs.js
         env:
           PW_MODULE: ${{ github.workspace }}/node_modules/playwright
+      - name: Phrases of a voice pack (what they are played on, listen, search)
+        run: node tests/ui/voice_clips.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright
       - name: Touchpad of the phone (pointer, tap, two-finger scroll)
         run: node tests/ui/touchpad.js
         env:
