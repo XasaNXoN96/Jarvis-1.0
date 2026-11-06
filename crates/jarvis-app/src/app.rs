@@ -1103,7 +1103,10 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
                 // the short reaction sound only when the command did not answer aloud itself: never two voices at once
                 // (the spoken answer "Сейчас 10 часов" is not covered by a recorded "Есть, сэр")
                 if !jarvis_core::tts::is_speaking() {
-                    voices::play_random_from(cmd_config.get_sounds(&i18n::get_language()).as_slice());
+                    // the phrase recorded for exactly this command («Открываю ютуб», «Громче») when the pack has it; else the general reaction of the command
+                    if !voices::play_command_clip(&cmd_config.id, text) {
+                        voices::play_random_from(cmd_config.get_sounds(&i18n::get_language()).as_slice());
+                    }
                 }
                 ipc::send(IpcEvent::CommandExecuted {
                     id: cmd_config.id.clone(),

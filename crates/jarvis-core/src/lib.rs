@@ -46,6 +46,7 @@ pub mod audio_processing;
 pub mod ipc;
 
 pub mod voices;
+pub mod cmdclips;
 
 pub mod audio_buffer;
 

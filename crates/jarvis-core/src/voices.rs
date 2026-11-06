@@ -155,7 +155,12 @@ fn play_random_from_list(voice_path: &Path, lang: &str, sounds: &[String]) {
         return;
     }
     
-    let sound_name = sounds.choose(&mut rand::thread_rng()).unwrap();
+    // a pack may lack some of the names of a list (the jokes of a command are recorded for some packs only): only the ones that exist are drawn
+    let existing: Vec<&String> = sounds.iter().filter(|n| find_sound_file(voice_path, lang, n).is_some()).collect();
+    let sound_name = match existing.choose(&mut rand::thread_rng()) {
+        Some(n) => *n,
+        None => sounds.choose(&mut rand::thread_rng()).unwrap(),
+    };
     
     match find_sound_file(voice_path, lang, sound_name) {
         Some(path) => {
@@ -212,6 +217,29 @@ pub fn play(reaction: structs::Reaction) {
     };
     
     play_random_from_list(&voice.path, &lang, sounds);
+}
+
+/// The recorded phrase of the current pack for this command (see cmdclips). True = a clip was played; false = the pack has none for it
+/// (the caller then plays the general reaction).
+pub fn play_command_clip(command_id: &str, said: &str) -> bool {
+    let clips = match crate::cmdclips::clips_for(command_id, said) {
+        Some(c) => c,
+        None => return false,
+    };
+    let voice = match get_current_voice() {
+        Some(v) => v,
+        None => return false,
+    };
+    let lang = get_current_language();
+    let found: Vec<PathBuf> = clips.iter().filter_map(|n| find_sound_file(&voice.path, &lang, n)).collect();
+    match found.choose(&mut rand::thread_rng()) {
+        Some(path) => {
+            debug!("Playing the clip of the command {}: {:?}", command_id, path);
+            audio::play_sound(path);
+            true
+        }
+        None => false,
+    }
 }
 
 pub fn play_random_from(sounds: &[String]) {
