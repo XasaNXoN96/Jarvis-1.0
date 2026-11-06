@@ -50,6 +50,10 @@ jobs:
         run: node tests/ui/web_windows_fit.js
         env:
           PW_MODULE: ${{ github.workspace }}/node_modules/playwright
+      - name: Sign of the voice (reason on a click, Diagnostics on an error)
+        run: node tests/ui/voice_chip.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright
       - name: Touchpad of the phone (pointer, tap, two-finger scroll)
         run: node tests/ui/touchpad.js
         env:
