@@ -5307,7 +5307,10 @@ function msgsRender() {
     r.querySelector('.soc-av').textContent = socInitial(m.app); r.querySelector('b').textContent = m.title;
     const d = new Date(m.at * 1000); r.querySelector('time').textContent = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }); r.querySelector('time').title = d.toLocaleString('ru-RU');
     r.querySelector('.x').textContent = m.text;
-    r.querySelector('button').onclick = async () => { const x = await api('/messages', { op: 'speak', id: m.id }); if (!x.ok) showToast(x.message || 'Не удалось озвучить'); };
+    r.querySelector('button').onclick = async e => { e.stopPropagation(); const x = await api('/messages', { op: 'speak', id: m.id }); if (!x.ok) showToast(x.message || 'Не удалось озвучить'); };
+    // a click on the message opens the program it came from
+    r.style.cursor = 'pointer'; r.title = 'Открыть приложение, из которого пришло сообщение';
+    r.onclick = async () => { const x = await api('/messages', { op: 'open', id: m.id }).catch(() => ({ ok: false, message: 'Нет связи с Джарвисом' })); showToast(x.message || (x.ok ? 'Открываю…' : 'Не удалось открыть')); };
     box.appendChild(r);
   }
 }

@@ -54,6 +54,10 @@ jobs:
         run: node tests/ui/voice_chip.js
         env:
           PW_MODULE: ${{ github.workspace }}/node_modules/playwright
+      - name: Message click (opens the program of the message, the speaker button only reads)
+        run: node tests/ui/message_open.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright
       - name: Touchpad of the phone (pointer, tap, two-finger scroll)
         run: node tests/ui/touchpad.js
         env:

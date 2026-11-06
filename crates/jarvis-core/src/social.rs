@@ -146,6 +146,62 @@ pub fn json() -> Value {
     })
 }
 
+// ---------------------------------------------------------------------------------------------
+// A click on a message opens the program it came from (the page names only the number of the message; Jarvis keeps the rest).
+// ---------------------------------------------------------------------------------------------
+
+/// What to open for a message: a program of the list of programs, or (for a message of a browser notification about a network) the site of the network.
+#[derive(Debug, PartialEq)]
+pub enum OpenTarget {
+    Program(String),
+    Site(String),
+}
+
+fn words_of(t: &str) -> String {
+    t.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).map(|w| w.to_lowercase()).collect::<Vec<_>>().join(" ")
+}
+
+/// The best program of the list for a name that Windows reported («Telegram» -> «Telegram Desktop»): the same name first, then a name that begins with it,
+/// then a name that has it as whole words; of several the shortest name wins. `programs` are (name, launch) of the programs that can be started.
+pub fn pick_program(app: &str, programs: &[(String, String)]) -> Option<String> {
+    let want = words_of(app);
+    if want.is_empty() {
+        return None;
+    }
+    let mut best: Option<(u8, usize, &String)> = None;
+    for (name, launch) in programs {
+        let n = words_of(name);
+        let rank = if n == want {
+            0
+        } else if n.starts_with(&format!("{} ", want)) {
+            1
+        } else if format!(" {} ", n).contains(&format!(" {} ", want)) {
+            2
+        } else {
+            continue;
+        };
+        let cand = (rank, n.len(), launch);
+        if best.map(|b| (cand.0, cand.1) < (b.0, b.1)).unwrap_or(true) {
+            best = Some(cand);
+        }
+    }
+    best.map(|b| b.2.clone())
+}
+
+/// What a message opens. A browser notification about a network opens the site of the network; any other message opens its program.
+pub fn open_target(m: &Message, programs: &[(String, String)]) -> Result<OpenTarget, String> {
+    if is_browser(&m.app, "") {
+        if let Some(site) = network(&m.net).and_then(|n| n.sites.first()) {
+            return Ok(OpenTarget::Site(format!("https://{}", site)));
+        }
+        return Err("это сообщение пришло из браузера: откройте его вкладку сами".into());
+    }
+    match pick_program(&m.app, programs) {
+        Some(launch) => Ok(OpenTarget::Program(launch)),
+        None => Err(format!("«{}» нет в списке программ: обновите список на странице «Программы»", m.app)),
+    }
+}
+
 #[cfg(test)]
 pub fn clear_for_tests() {
     LIST.lock().clear();
@@ -211,5 +267,31 @@ mod tests {
         assert_eq!(get(id).unwrap().title, "Иван 204");
         assert_eq!(clear(), KEEP);
         assert_eq!(last_id(), 0);
+    }
+
+    #[test]
+    fn a_message_opens_the_program_it_came_from() {
+        let progs = vec![
+            ("Telegram Desktop".to_string(), "C:\\tg.lnk".to_string()),
+            ("Telegram".to_string(), "C:\\tg2.lnk".to_string()),
+            ("WhatsApp".to_string(), "shell:AppsFolder\\WA".to_string()),
+            ("Discord Canary".to_string(), "C:\\dc.lnk".to_string()),
+            ("Notepad".to_string(), "C:\\np.lnk".to_string()),
+        ];
+        // the same name wins over a longer one
+        assert_eq!(pick_program("Telegram", &progs), Some("C:\\tg2.lnk".to_string()));
+        assert_eq!(pick_program("telegram desktop", &progs), Some("C:\\tg.lnk".to_string()));
+        assert_eq!(pick_program("WhatsApp", &progs), Some("shell:AppsFolder\\WA".to_string()));
+        assert_eq!(pick_program("Discord", &progs), Some("C:\\dc.lnk".to_string()));
+        // a part of a word is not a name; an empty or unknown name opens nothing
+        assert_eq!(pick_program("Tele", &progs), None);
+        assert_eq!(pick_program("", &progs), None);
+        assert_eq!(pick_program("Unknown app", &progs), None);
+        let msg = |app: &str, net: &str| Message { id: 1, at: 0, net: net.into(), app: app.into(), title: "t".into(), text: "x".into() };
+        assert_eq!(open_target(&msg("Telegram", "telegram"), &progs), Ok(OpenTarget::Program("C:\\tg2.lnk".to_string())));
+        // a browser notification opens the site of the network, never an address that came with the message
+        assert_eq!(open_target(&msg("Google Chrome", "whatsapp"), &progs), Ok(OpenTarget::Site("https://web.whatsapp.com".to_string())));
+        assert!(open_target(&msg("Google Chrome", ""), &progs).is_err());
+        assert!(open_target(&msg("Signal", "signal"), &progs).unwrap_err().contains("нет в списке"));
     }
 }

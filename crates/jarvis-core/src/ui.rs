@@ -1333,6 +1333,34 @@ fn messages_action(body: &serde_json::Value) -> serde_json::Value {
                 Err(e) => json!({ "ok": false, "message": format!("Не могу озвучить: {}", e) }),
             },
         },
+        // a click on a message: the program it came from (a program of the list, or the site of the network for a browser notification)
+        "open" => match crate::social::get(body["id"].as_u64().unwrap_or(0)) {
+            None => json!({ "ok": false, "message": "Сообщения уже нет в списке" }),
+            Some(m) => {
+                let apps = crate::appindex::apps();
+                let programs: Vec<(String, String)> = apps.iter().filter(|a| crate::appindex::launchable(a)).map(|a| (a.name.clone(), a.launch.clone())).collect();
+                match crate::social::open_target(&m, &programs) {
+                    Err(e) => json!({ "ok": false, "message": e }),
+                    Ok(crate::social::OpenTarget::Program(launch)) => match apps.into_iter().find(|a| a.launch == launch) {
+                        Some(a) => match crate::appindex::launch(&a) {
+                            Ok(()) => {
+                                crate::proglib::note_launch(&a.name, crate::store::now());
+                                json!({ "ok": true, "message": format!("Открываю {}", a.name) })
+                            }
+                            Err(e) => json!({ "ok": false, "message": e }),
+                        },
+                        None => json!({ "ok": false, "message": "Программа уже не в списке: обновите список программ" }),
+                    },
+                    #[cfg(all(feature = "lua", target_os = "windows"))]
+                    Ok(crate::social::OpenTarget::Site(url)) => match crate::lua::shell_open(&url) {
+                        Ok(()) => json!({ "ok": true, "message": "Открываю сайт в браузере" }),
+                        Err(e) => json!({ "ok": false, "message": e }),
+                    },
+                    #[cfg(not(all(feature = "lua", target_os = "windows")))]
+                    Ok(crate::social::OpenTarget::Site(url)) => json!({ "ok": false, "message": format!("Открытие браузера доступно только в Windows. Адрес: {}", url) }),
+                }
+            }
+        },
         _ => json!({ "ok": false, "message": "unknown op" }),
     }
 }
@@ -2239,7 +2267,7 @@ fn phone_act_inner(body: &serde_json::Value) -> serde_json::Value {
             _ => bad,
         },
         "message" => match body.get("op").and_then(|v| v.as_str()).unwrap_or("") {
-            "speak" => messages_action(body),
+            "speak" | "open" => messages_action(body),
             _ => bad,
         },
         // only a run of a SAVED scenario by its id (a scenario that came inside the request is never taken) and the switch on/off
