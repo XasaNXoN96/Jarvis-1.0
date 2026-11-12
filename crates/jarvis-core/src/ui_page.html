@@ -1762,7 +1762,9 @@ body.live-on { padding-top: 44px; }
         <div class="setrow"><div class="l">Тема<small>Тема меняет всё сразу: цвета и фон, шрифт, эффекты фона, искры и сферу в центре</small></div>
           <div class="r"><div class="seg" id="theme-seg"><button data-theme-pick="jarvis" type="button">Jarvis</button><button data-theme-pick="cyberpunk" type="button">Cyberpunk</button><button data-theme-pick="avengers" type="button">Avengers: Эра Альтрона</button><button data-theme-pick="matrix" type="button">Matrix</button><button data-theme-pick="ice" type="button">Ice</button><button data-theme-pick="sunset" type="button">Sunset</button></div></div></div>
         <div class="setrow"><div class="l">Вид сферы<small>у каждой темы своя сфера по умолчанию; здесь можно выбрать любую</small></div>
-          <div class="r"><div class="seg"><button data-sphere-pick="dots" type="button">Частицы</button><button data-sphere-pick="holo" type="button">Голограмма</button><button data-sphere-pick="neon" type="button">Неон</button><button data-sphere-pick="core" type="button">Реактор</button><button data-sphere-pick="wave" type="button">Волна</button><button data-sphere-pick="orbit" type="button">Орбиты</button></div></div></div>
+          <div class="r"><div class="seg"><button data-sphere-pick="dots" type="button">Частицы</button><button data-sphere-pick="holo" type="button">Голограмма</button><button data-sphere-pick="neon" type="button">Неон</button><button data-sphere-pick="core" type="button">Реактор</button><button data-sphere-pick="wave" type="button">Волна</button><button data-sphere-pick="orbit" type="button">Орбиты</button><button data-sphere-pick="phoenix" type="button">Феникс</button></div></div></div>
+        <div class="setrow"><div class="l">Реакции феникса<small>Феникс радуется, смеётся, злится, грустит и не понимает: по тому, что вы сказали и что ответил Джарвис. Выключите, чтобы он только слушал, думал и говорил</small></div>
+          <div class="r"><div class="seg"><button data-mood-react="1" type="button">Вкл</button><button data-mood-react="0" type="button">Выкл</button></div></div></div>
         <div class="setrow"><div class="l">Скорость анимации сферы</div>
           <div class="r"><div class="seg"><button data-speed-pick="slow" type="button">Медленно</button><button data-speed-pick="normal" type="button">Обычно</button><button data-speed-pick="fast" type="button">Быстро</button><button data-speed-pick="hyper" type="button">Очень быстро</button></div></div></div>
         <div class="setrow"><div class="l">Свечение</div>
@@ -1976,6 +1978,22 @@ function setState(name, ms) {
   $('#state').textContent = label[name] || name;
 }
 
+// ---------- the mood of the phoenix: the reactions to the words and to the answers (the drawing is in orbkit.js) ----------
+let moodReact = true;
+try { moodReact = localStorage.getItem('jarvis-mood-react') !== '0'; } catch (e) {}
+function moodHear(text) { if (!moodReact) return; const [m, ms] = moodOfWords(text); if (m) setMood(m, ms); }
+function moodSay(text, tagMood) {
+  if (!moodReact) return;
+  if (tagMood) { setMood(tagMood, 4000); return; }
+  const [m, ms] = moodOfAnswer(text); if (m) setMood(m, ms);
+}
+function setMoodReact(on, fromServer) {
+  moodReact = !!on; if (!moodReact) clearMood();
+  try { localStorage.setItem('jarvis-mood-react', on ? '1' : '0'); } catch (e) {}
+  if (!fromServer) saveSettings({ ui: { 'jarvis-mood-react': on ? '1' : '0' } });
+  document.querySelectorAll('[data-mood-react]').forEach(b => b.classList.toggle('active', (b.dataset.moodReact === '1') === moodReact));
+}
+
 // ---------- connection ----------
 function connect() {
   try { ws = new WebSocket(WS_URL + '/?jt=' + JTOKEN); } catch (e) { setTimeout(connect, 2000); return; }
@@ -1990,11 +2008,11 @@ function connect() {
   ws.onmessage = ev => {
     let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
     switch (m.event) {
-      case 'wake_word_detected': setState('wake', 1500); setStatus('Слушаю…'); homeSig = ''; autoBig(); break;
-      case 'listening': setState('listening'); setStatus('Слушаю…'); homeSig = ''; autoBig(); break;
-      case 'speech_recognized': add('me', m.text); $('#h-heard').textContent = '«' + m.text + '»'; setStatus('…'); homeSig = ''; setState('busy', 2500); break;
-      case 'command_executed': if (!m.success) add('err', 'Не получилось выполнить: ' + m.id); pollNow(); setTimeout(pollNow, 400); break;
-      case 'output': add('bot', m.text); setStatus(m.text); setState('speaking', 2500); pollNow(); break;
+      case 'wake_word_detected': clearMood(); setState('wake', 1500); setStatus('Слушаю…'); homeSig = ''; autoBig(); break;
+      case 'listening': clearMood(); setState('listening'); setStatus('Слушаю…'); homeSig = ''; autoBig(); break;
+      case 'speech_recognized': moodHear(m.text); add('me', m.text); $('#h-heard').textContent = '«' + m.text + '»'; setStatus('…'); homeSig = ''; setState('busy', 2500); break;
+      case 'command_executed': if (!m.success) add('err', 'Не получилось выполнить: ' + m.id); if (moodReact) setMood(m.success ? 'happy' : 'angry', m.success ? 1800 : 3000, !!m.success); pollNow(); setTimeout(pollNow, 400); break;
+      case 'output': { const [shown, tagMood] = moodSplit(m.text); m.text = shown; moodSay(shown, tagMood); } add('bot', m.text); setStatus(m.text); setState('speaking', 2500); pollNow(); break;
       case 'speaking': setState('speaking', 3500); break;
       case 'error': add('err', m.message); setStatus(m.message); setState('error', 2500); break;
       case 'idle': if (state !== 'speaking') setState('idle'); scheduleAutoSmall(); homeSig = ''; if (currentPage === 'home') homeText(chatCache); break;
@@ -4746,6 +4764,7 @@ function applyPrivacy(s) {
   renderSocial(s);
   if (s.ui && s.ui['jarvis-mode'] && s.ui['jarvis-mode'] !== mode) setMode(s.ui['jarvis-mode'], true);
   if (s.ui && s.ui['jarvis-perf']) setPerf(s.ui['jarvis-perf'] === 'low', true);
+  if (s.ui && s.ui['jarvis-mood-react']) setMoodReact(s.ui['jarvis-mood-react'] !== '0', true);
   for (const k of ['theme', 'sphere', 'motion']) if (s.ui && s.ui['jarvis-' + k]) setLook(k, s.ui['jarvis-' + k], true);
   if (s.ui && typeof gpHydrate === 'function') gpHydrate(s.ui);
 }
@@ -5499,6 +5518,8 @@ function setPerf(low, fromServer) {
 }
 document.querySelectorAll('[data-perf]').forEach(b => b.onclick = () => setPerf(b.dataset.perf === 'low'));
 setPerf(PERF_LOW, true);
+document.querySelectorAll('[data-mood-react]').forEach(b => b.onclick = () => setMoodReact(b.dataset.moodReact === '1'));
+setMoodReact(moodReact, true);
 let mode = 'wire';
 try { mode = localStorage.getItem('jarvis-mode') || 'wire'; if (mode === 'orb' || mode === 'plasma') mode = 'wire'; } catch (e) {}
 function setMode(m, fromServer) {
@@ -5739,7 +5760,7 @@ function frame(t) {
   const dt = Math.min(64, t - (lastDraw || t)); lastDraw = t;
   const kind = orbKind(), target = state === 'wake' ? 0.8 : ORB_KINDS[kind][2];
   level += (target - level) * 0.06;
-  canvas.title = 'Джарвис: ' + ORB_KINDS[kind][0] + '. Нажмите, чтобы он начал слушать'; canvas.dataset.kind = kind;
+  canvas.title = 'Джарвис: ' + ORB_KINDS[kind][0] + '. Нажмите, чтобы он начал слушать'; canvas.dataset.kind = kind; canvas.dataset.mood = sphere === 'phoenix' ? moodName() : '';
   // reduced motion: the sphere turns very slowly and does not ripple or glitch
   const spd = reduced ? 0.15 : SPEEDS[speed];
   animT += dt * spd;

@@ -183,7 +183,28 @@ fn numbers(text: &str) -> String {
 }
 
 /// The text as it should be spoken. `lang` is the language of the voice («ru»): the other languages are only cleaned of signs.
+/// The words in square brackets that tell the face of the phoenix how to look ([злость], [смех]...) are never read aloud.
+pub fn strip_mood_tags(text: &str) -> String {
+    const TAGS: [&str; 8] = ["злость", "радость", "смех", "грусть", "удивление", "смущение", "непонимание", "спокойствие"];
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(i) = rest.find('[') {
+        out.push_str(&rest[..i]);
+        let after = &rest[i + 1..];
+        match after.find(']') {
+            Some(j) if TAGS.contains(&after[..j].to_lowercase().as_str()) => rest = &after[j + 1..],
+            _ => {
+                out.push('[');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 pub fn prepare(text: &str, lang: &str) -> String {
+    let text = &strip_mood_tags(text);
     // links
     let mut t = String::new();
     for word in text.split_whitespace() {
@@ -268,5 +289,13 @@ mod tests {
         assert_eq!(prepare("", "ru"), "");
         assert_eq!(prepare("   ", "ru"), "");
         assert_eq!(prepare("Да, сэр.", "ru"), "Да, сэр.");
+    }
+
+    #[test]
+    fn mood_tags_are_not_read_aloud() {
+        assert_eq!(strip_mood_tags("[злость] Сам такой!"), " Сам такой!");
+        assert_eq!(strip_mood_tags("Хорошо [Смех]"), "Хорошо ");
+        assert_eq!(strip_mood_tags("массив [0] и [злость"), "массив [0] и [злость");
+        assert_eq!(prepare("[радость] Готово!", "ru"), "Готово!");
     }
 }

@@ -9,7 +9,7 @@ const THEMES = {
   sunset: [18, 90, 340, 'orbit', 'Sunset']
 };
 const LEGACY_THEME = { day: 'jarvis', graphite: 'jarvis', ocean: 'ice', amber: 'avengers', ruby: 'sunset', violet: 'cyberpunk', lime: 'matrix' };
-const SPHERES = { dots: 'Частицы', core: 'Реактор', holo: 'Голограмма', neon: 'Неон', wave: 'Волна', orbit: 'Орбиты' };
+const SPHERES = { dots: 'Частицы', core: 'Реактор', holo: 'Голограмма', neon: 'Неон', wave: 'Волна', orbit: 'Орбиты', phoenix: 'Феникс' };
 const SPEEDS = { slow: 0.45, normal: 1, fast: 1.8, hyper: 3 }, GLOWS = { soft: 0.6, normal: 1, strong: 1.5 };
 // ---- the spheres. Every one draws from the same few things: the colour of the theme and of the state (palette), `level` (how loud/active),
 // `t` (the animation clock that already has the chosen speed in it) and the glow multiplier of the setting ----
@@ -124,4 +124,130 @@ function drawOrbit(t) {
   const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, 46 + level * 30); g.addColorStop(0, '#fff'); g.addColorStop(0.35, `hsla(${hue},${sat}%,72%,.95)`); g.addColorStop(1, `hsla(${hue},${sat}%,50%,0)`);
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 46 + level * 30, 0, TAU); ctx.fill();
 }
-const SPHERE_DRAW = { holo: drawHolo, neon: drawNeon, wave: drawWave, core: drawCore, orbit: drawOrbit };
+// «Феникс»: a living face. A round fire-bird with a crest of flames, eyes, brows and a beak. It has MOODS (calm, listening, thinking,
+// happy, laughing, surprised, angry, sad, confused, shy, asleep) and moves smoothly from one to another. The mood comes from the state of the
+// program (orbKind or oState) and from short reactions that the page sets with setMood(name, ms) (a joke, an insult, a thanks, a failure).
+const MOODS = {
+  calm:      { label: 'спокоен',    hue: 28,  flame: 0.85, eye: 1,    shape: 0,   brow: 0,    asym: 0, beak: 0.08, blush: 0,    droop: 0,   shake: 0,    bounce: 0.3, tilt: 0,     gx: 0,    gy: 0,    tear: 0 },
+  listening: { label: 'слушает',    hue: 34,  flame: 1.05, eye: 1.18, shape: 0,  brow: -0.15, asym: 0, beak: 0.06, blush: 0,    droop: 0,   shake: 0,    bounce: 0.2, tilt: 0.06,  gx: 0,    gy: 0,    tear: 0 },
+  thinking:  { label: 'думает',     hue: 30,  flame: 0.7,  eye: 0.8,  shape: 0,  brow: 0.12, asym: 0, beak: 0,    blush: 0,    droop: 0,   shake: 0,    bounce: 0.1, tilt: -0.07, gx: 0.7,  gy: -0.7, tear: 0 },
+  speaking:  { label: 'говорит',    hue: 28,  flame: 1,    eye: 1,    shape: 0,  brow: 0,    asym: 0, beak: 0.1,  blush: 0,    droop: 0,   shake: 0,    bounce: 0.5, tilt: 0,     gx: 0,    gy: 0,    tear: 0 },
+  happy:     { label: 'радуется',   hue: 42,  flame: 1.25, eye: 1,    shape: 1,  brow: 0,    asym: 0, beak: 0.35, blush: 0.45, droop: 0,   shake: 0,    bounce: 1,   tilt: 0.05,  gx: 0,    gy: 0,    tear: 0 },
+  laugh:     { label: 'смеётся',    hue: 44,  flame: 1.35, eye: 1,    shape: 1,  brow: 0,    asym: 0, beak: 0.9,  blush: 0.5,  droop: 0,   shake: 0.5,  bounce: 1.3, tilt: 0,     gx: 0,    gy: 0,    tear: 0 },
+  surprised: { label: 'удивлён',    hue: 36,  flame: 1.5,  eye: 1.45, shape: 0,  brow: -0.35, asym: 0, beak: 0.5,  blush: 0,    droop: 0,   shake: 0,    bounce: 0.2, tilt: 0,     gx: 0,    gy: 0,    tear: 0 },
+  angry:     { label: 'злится',     hue: 4,   flame: 1.75, eye: 0.62, shape: 0,  brow: 0.75, asym: 0, beak: 0.2,  blush: 0,    droop: 0,   shake: 0.35, bounce: 0.2, tilt: 0,     gx: 0,    gy: 0,    tear: 0 },
+  sad:       { label: 'грустит',    hue: 212, flame: 0.3,  eye: 0.85, shape: 0,  brow: -0.6, asym: 0, beak: 0,    blush: 0,    droop: 1,   shake: 0,    bounce: 0,   tilt: 0,     gx: 0,    gy: 0.4,  tear: 1 },
+  confused:  { label: 'не понял',   hue: 28,  flame: 0.8,  eye: 1,    shape: 0,  brow: 0.35, asym: 1, beak: 0.05, blush: 0,    droop: 0,   shake: 0,    bounce: 0.1, tilt: 0.14,  gx: 0.4,  gy: -0.3, tear: 0 },
+  shy:       { label: 'смущён',     hue: 8,   flame: 0.9,  eye: 0.9,  shape: 0.5, brow: -0.2, asym: 0, beak: 0.05, blush: 1,    droop: 0.2, shake: 0,    bounce: 0.2, tilt: -0.06, gx: -0.6, gy: 0.4,  tear: 0 },
+  sleep:     { label: 'спит',       hue: 220, flame: 0.12, eye: 0.05, shape: -1, brow: 0,    asym: 0, beak: 0,    blush: 0,    droop: 0.6, shake: 0,    bounce: 0,   tilt: 0.05,  gx: 0,    gy: 0,    tear: 0 }
+};
+const MOOD_TAGS = { 'злость': 'angry', 'радость': 'happy', 'смех': 'laugh', 'грусть': 'sad', 'удивление': 'surprised', 'смущение': 'shy', 'непонимание': 'confused', 'спокойствие': 'calm' };
+const PX = { cur: Object.assign({}, MOODS.calm), name: 'calm', set: '', until: 0 };
+// a short reaction; `weak` ones (a command went well) never push away a stronger one that is still on
+function setMood(name, ms, weak) {
+  if (!MOODS[name]) return;
+  const now = performance.now();
+  if (weak && PX.set && now < PX.until) return;
+  PX.set = name; PX.until = now + (ms || 2500);
+}
+function clearMood() { PX.set = ''; PX.until = 0; }
+// [злость] at the start or the end of an answer is a mood and is not shown or read: returns [clean text, mood or '']
+function moodSplit(text) {
+  let mood = '';
+  const clean = String(text == null ? '' : text).replace(/\s*\[([а-яё]+)\]\s*/gi, (all, w) => { const m = MOOD_TAGS[w.toLowerCase()]; if (m) { mood = m; return ' '; } return all; }).trim();
+  return [clean, mood];
+}
+// what an answer sounds like (when it has no tag): [mood, how long]
+function moodOfAnswer(text) {
+  const s = String(text || '').toLowerCase();
+  if (/ха-?ха|хах|хех|смешн|рассмеш/.test(s)) return ['laugh', 3200];
+  if (/не понял|не поня|не расслыш|повтори|не удалось|не получилось|не нашёл|не нашел|не знаю/.test(s)) return ['confused', 3500];
+  if (/извин|прост(и|ите)\b|к сожалению|жаль/.test(s)) return ['sad', 3500];
+  if (/ого\b|вау|неужели|ничего себе/.test(s)) return ['surprised', 2800];
+  if (/отличн|ура\b|с радостью|поздравля|рад вас|рад тебя|пожалуйста|привет|здравствуй/.test(s)) return ['happy', 3000];
+  return ['', 0];
+}
+// what the owner said: an insult makes it angry, a thanks makes it glad (only when the setting of the reactions is on)
+function moodOfWords(text) {
+  const s = String(text || '').toLowerCase();
+  if (/дурак|тупо[йе]|тупиц|идиот|дебил|чебурек|тормоз|бесишь|ненавижу|заткнись|урод|глуп|ужасн|отстой|бесполезн/.test(s)) return ['angry', 7000];
+  if (/молодец|умниц|красавч|спасибо|супер|класс|круто|лучший|люблю тебя|обожаю/.test(s)) return ['happy', 4000];
+  return ['', 0];
+}
+function moodBase() {
+  const k = typeof orbKind === 'function' ? orbKind() : (typeof oState !== 'undefined' ? oState : 'idle');
+  if (k === 'error') return 'angry';
+  if (k === 'off' || k === 'muted' || k === 'locked') return 'sleep';
+  if (k === 'listening') return 'listening';
+  if (k === 'speaking') return 'speaking';
+  if (k === 'thinking' || k === 'recognizing' || k === 'searching' || k === 'executing' || k === 'busy') return 'thinking';
+  return 'calm';
+}
+function moodName() { return PX.set && performance.now() < PX.until ? PX.set : moodBase(); }
+function drawPhoenix(t) {
+  const name = moodName(), tgt = MOODS[name] || MOODS.calm, c = PX.cur;
+  for (const k in tgt) if (k !== 'label') c[k] += (tgt[k] - c[k]) * 0.1;
+  PX.name = name;
+  const calm = typeof reducedMotion === 'function' && reducedMotion(), m = calm ? 0.2 : 1;
+  const kind = typeof orbKind === 'function' ? orbKind() : (typeof oState !== 'undefined' ? oState : 'idle'), speaking = kind === 'speaking';
+  const hue = c.hue, s = W / 900, cx = W / 2, cy = H / 2;
+  haze(cx, cy, W * 0.5, hue, 95, 0.12 + level * 0.18 + c.flame * 0.04);
+  ctx.save(); ctx.globalCompositeOperation = 'source-over';
+  ctx.translate(cx + Math.sin(t / 23) * c.shake * 5 * s * m, cy + (c.droop * 16 + Math.sin(t / 520) * 7 * c.bounce * m) * s);
+  ctx.rotate(c.tilt + Math.sin(t / 1400) * 0.012 * m); ctx.scale(s, s);
+  const col = (dh, l, a) => `hsla(${hue + dh},96%,${l}%,${a == null ? 1 : a})`;
+  const tongue = (x, y, w, h, sw, fill) => { ctx.fillStyle = fill; ctx.beginPath(); ctx.moveTo(x - w, y); ctx.bezierCurveTo(x - w, y - h * 0.45, x + sw * 0.4 - w * 0.2, y - h * 0.7, x + sw, y - h); ctx.bezierCurveTo(x + w * 0.15 + sw * 0.5, y - h * 0.62, x + w, y - h * 0.4, x + w, y); ctx.closePath(); ctx.fill(); };
+  const layers = [[-6, 52, 1], [16, 60, 0.7], [34, 72, 0.42]];
+  const fl = c.flame, sway = (i, a) => Math.sin(t / (250 + i * 37) + i * 1.7) * a * (0.5 + fl * 0.5) * m;
+  // wings of fire at the sides and a tail below, then the crest
+  for (const side of [-1, 1]) for (const [dh, l, sc] of layers) {
+    ctx.save(); ctx.translate(side * 168, 10); ctx.rotate(side * (1.05 + Math.sin(t / 380 + side) * 0.08 * m - c.droop * 0.5)); tongue(0, 0, 44 * sc, 120 * fl * sc, sway(side + 3, 16), col(dh, l)); ctx.restore();
+  }
+  for (let i = -1; i <= 1; i++) for (const [dh, l, sc] of layers) { ctx.save(); ctx.translate(i * 52, 150); ctx.rotate(Math.PI + i * 0.25); tongue(0, 0, 30 * sc, (70 + (i === 0 ? 30 : 0)) * fl * sc, sway(i + 9, 12), col(dh, l)); ctx.restore(); }
+  const hs = [0.5, 0.82, 1, 0.82, 0.5];
+  for (const [dh, l, sc] of layers) for (let i = 0; i < 5; i++) { const x = (i - 2) * 62; tongue(x, -135 + Math.abs(x) * 0.18, 40 * sc + 6, 165 * hs[i] * fl * sc, sway(i, 24), col(dh, l)); }
+  // the body: a warm light face with a bright outline
+  const body = ctx.createRadialGradient(0, -30, 20, 0, 0, 200); body.addColorStop(0, `hsl(${hue},100%,98%)`); body.addColorStop(1, `hsl(${hue},85%,86%)`);
+  ctx.fillStyle = body; ctx.strokeStyle = col(0, 52); ctx.lineWidth = 15;
+  if (!PERF_LOW) { ctx.shadowColor = col(0, 55, 0.9 * Math.min(1.4, glowK())); ctx.shadowBlur = 26 * glowK() * s; }
+  ctx.beginPath(); ctx.ellipse(0, 0, 190, 165, 0, 0, TAU); ctx.fill(); ctx.stroke(); ctx.shadowBlur = 0;
+  // cheeks
+  if (c.blush > 0.03) for (const side of [-1, 1]) { ctx.fillStyle = `hsla(350,90%,62%,${c.blush * 0.5})`; ctx.beginPath(); ctx.ellipse(side * 118, 44, 34, 20, 0, 0, TAU); ctx.fill(); }
+  // eyes: round ones, glad arcs and sleeping lines are mixed by `shape`
+  const ink = '#2a1812', blink = !calm && (t % 3900) < 130 ? 0.1 : 1;
+  for (const side of [-1, 1]) {
+    const ex = side * 68, ey = -18, ry = 34 * c.eye * (c.shape > 0.5 ? 1 : blink);
+    const round = 1 - Math.abs(c.shape);
+    if (round > 0.02) {
+      ctx.globalAlpha = round; ctx.fillStyle = ink; ctx.beginPath(); ctx.ellipse(ex + c.gx * 9, ey + c.gy * 7, 24, Math.max(3, ry), 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex + c.gx * 9 - 7, ey + c.gy * 7 - Math.min(12, ry * 0.35), 6, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
+    }
+    ctx.strokeStyle = ink; ctx.lineWidth = 12; ctx.lineCap = 'round';
+    if (c.shape > 0.02) { ctx.globalAlpha = c.shape; ctx.beginPath(); ctx.arc(ex, ey + 12, 25, Math.PI * 1.12, Math.PI * 1.88); ctx.stroke(); ctx.globalAlpha = 1; }
+    if (c.shape < -0.02) { ctx.globalAlpha = -c.shape; ctx.beginPath(); ctx.arc(ex, ey - 8, 24, Math.PI * 0.12, Math.PI * 0.88); ctx.stroke(); ctx.globalAlpha = 1; }
+    // brows: slanted down inside = anger, up inside = worry; `asym` turns the right one the other way
+    const a = c.brow * (side > 0 ? 1 - 2 * c.asym : 1);
+    if (Math.abs(a) > 0.06) {
+      const inner = -side, y0 = ey - 50 * Math.max(0.6, c.eye) - 6;
+      ctx.globalAlpha = Math.min(1, Math.abs(a) * 2.5); ctx.beginPath();
+      ctx.moveTo(ex - inner * 38, y0 - a * 8); ctx.lineTo(ex + inner * 38, y0 + a * 26); ctx.stroke(); ctx.globalAlpha = 1;
+    }
+  }
+  // a tear
+  if (c.tear > 0.1) { const ph = (t / 14) % 70; ctx.fillStyle = `hsla(205,90%,70%,${c.tear * (1 - ph / 80)})`; ctx.beginPath(); ctx.ellipse(-92, 26 + ph, 7, 11, 0, 0, TAU); ctx.fill(); }
+  // the beak: opens by the mood and moves with the voice while it speaks
+  const talk = speaking ? level * 1.3 * (0.5 + 0.5 * Math.sin(t / 85)) : 0, o = Math.max(0, Math.min(1, c.beak + talk)), my = 46;
+  if (o > 0.06) { ctx.fillStyle = '#5a1a10'; ctx.beginPath(); ctx.ellipse(0, my + 10 + o * 14, 24 + o * 8, 4 + o * 30, 0, 0, TAU); ctx.fill(); }
+  ctx.fillStyle = col(14, 47); ctx.beginPath(); ctx.moveTo(-22, my + 4 + o * 30); ctx.lineTo(22, my + 4 + o * 30); ctx.lineTo(0, my + 24 + o * 46); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = col(8, 56); ctx.beginPath(); ctx.moveTo(-28, my - 8); ctx.quadraticCurveTo(0, my - 22, 28, my - 8); ctx.lineTo(0, my + 26); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // sparks that rise from the crest; the stronger the flame the more of them
+  if (!calm) {
+    const n = Math.round((PERF_LOW ? 5 : 11) * Math.min(1.5, c.flame)), top = cy + (-150 * s);
+    for (let i = 0; i < n; i++) {
+      const ph = (t / (1100 + i * 90) + i * 0.37) % 1, x = cx + Math.sin(i * 12.9 + t / 900) * 150 * s, y = top - ph * 230 * s * Math.min(1.3, c.flame);
+      ctx.fillStyle = col(30, 68, (1 - ph) * 0.9); const r = (2 + (i % 3)) * s * 1.3; ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+  }
+}
+const SPHERE_DRAW = { holo: drawHolo, neon: drawNeon, wave: drawWave, core: drawCore, orbit: drawOrbit, phoenix: drawPhoenix };
