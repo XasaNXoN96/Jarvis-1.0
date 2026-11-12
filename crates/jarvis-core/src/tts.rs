@@ -589,6 +589,18 @@ pub fn synth_to_wav(text: &str) -> Result<Vec<u8>, String> {
     r
 }
 
+// the folder of the voice data (espeak-ng-data) is ALWAYS given to Piper by its plain-ASCII form, also when the program
+// runs through the alias of a folder with Cyrillic letters: left to itself Piper finds the data from the real path of its exe, and
+// where that path is Cyrillic it loads no data and fails with «"aɪ" is not a single codepoint» (the CI of Windows showed it)
+fn espeak_data_arg(piper_dir: &Path) -> Option<PathBuf> {
+    let data = piper_dir.join("espeak-ng-data");
+    if data.is_dir() {
+        Some(ansi_safe(&data))
+    } else {
+        None
+    }
+}
+
 fn piper_synth(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64) -> Synth {
     let err_file = wav.with_extension("err");
     let _ = std::fs::remove_file(wav);
@@ -610,9 +622,8 @@ fn piper_synth(exe: &Path, model: &Path, text: &str, wav: &Path, generation: u64
     // because piper builds the default from its own path, which breaks in a folder with non-Latin letters
     if let Some(dir) = exe.parent() {
         command.current_dir(dir);
-        let data = dir.join("espeak-ng-data");
-        if data.is_dir() && !is_ascii(&data) {
-            command.arg("--espeak_data").arg(ansi_safe(&data));
+        if let Some(data) = espeak_data_arg(dir) {
+            command.arg("--espeak_data").arg(data);
         }
     }
     hide_window(&mut command);
@@ -773,9 +784,8 @@ fn warm_spawn(exe: &Path, model: &Path, key: String) -> Result<WarmServer, Strin
         .stderr(std::fs::File::create(dir.join("piper.err")).map(Stdio::from).unwrap_or_else(|_| Stdio::null()));
     if let Some(parent) = exe.parent() {
         command.current_dir(parent);
-        let data = parent.join("espeak-ng-data");
-        if data.is_dir() && !is_ascii(&data) {
-            command.arg("--espeak_data").arg(ansi_safe(&data));
+        if let Some(data) = espeak_data_arg(parent) {
+            command.arg("--espeak_data").arg(data);
         }
     }
     hide_window(&mut command);
@@ -1679,6 +1689,14 @@ pub fn list_voices() -> Vec<(String, String)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_voice_data_folder_is_given_to_piper_whenever_it_exists() {
+        let d = tempfile::tempdir().unwrap();
+        assert_eq!(espeak_data_arg(d.path()), None, "no data folder: nothing is given");
+        std::fs::create_dir_all(d.path().join("espeak-ng-data")).unwrap();
+        assert_eq!(espeak_data_arg(d.path()), Some(d.path().join("espeak-ng-data")), "also in a plain ASCII folder");
+    }
+
     #[test]
     fn the_own_words_of_jarvis_are_recognised_and_the_words_of_the_user_are_not() {
         let said = vec![plain_words("Я не понял команду. Скажите, например: иди вперёд, стой, смени оружие.")];
