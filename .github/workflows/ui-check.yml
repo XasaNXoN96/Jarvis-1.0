@@ -66,7 +66,7 @@ jobs:
         run: node tests/ui/voice_clips.js
         env:
           PW_MODULE: ${{ github.workspace }}/node_modules/playwright
-      - name: Phoenix (a sphere with moods: state, words, answers, switch off)
+      - name: Phoenix (a sphere with moods - state, words, answers, switch off)
         run: node tests/ui/phoenix.js
         env:
           PW_MODULE: ${{ github.workspace }}/node_modules/playwright
