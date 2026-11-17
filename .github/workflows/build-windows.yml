@@ -76,15 +76,16 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DSrcDir=build\Jarvis /DOutName=Jarvis-Setup-Lite installer\jarvis.iss
 
-      # Full installer: adds the Piper neural voice (offline). Change the voice names to switch voices:
+      # Full installer: adds the Piper neural voice (offline). A calm male voice for the butler (ru: dmitri, en: British alan);
+      # to switch voices change the names (female ru: irina, en: amy):
       # list and samples: https://rhasspy.github.io/piper-samples/
       - name: Add Piper neural voices
         id: piper
         continue-on-error: true
         shell: pwsh
         env:
-          PIPER_RU_VOICE: ru_RU-irina-medium
-          PIPER_EN_VOICE: en_US-amy-medium
+          PIPER_RU_VOICE: ru_RU-dmitri-medium
+          PIPER_EN_VOICE: en_GB-alan-medium
         run: |
           $ErrorActionPreference = "Stop"
           Copy-Item build\Jarvis build\JarvisFull -Recurse

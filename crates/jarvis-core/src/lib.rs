@@ -59,6 +59,7 @@ pub mod session;
 pub mod secret;
 pub mod voice_install;
 pub mod ai;
+pub mod persona;
 pub mod filesearch;
 pub mod guard;
 

@@ -57,11 +57,19 @@ More:
 | «какая погода в Ташкенте», «установи город Самарканд» | weather (needs internet) |
 | «привет», «как дела», «кто ты», «что ты умеешь» | small talk and the list of commands |
 
-Jarvis answers aloud (female voice) and now and then adds a dry remark. Timers and reminders are saved to disk and survive a restart. A scheduled shutdown is handled by Windows itself.
+Jarvis answers aloud (a calm male voice) and now and then adds a dry remark. Timers and reminders are saved to disk and survive a restart. A scheduled shutdown is handled by Windows itself.
+
+## Character, memory and actions (AI mode)
+
+When an AI provider is connected (Settings -> AI; the cheap default for Anthropic is `claude-haiku-5-5`), the answers come from the **Jarvis butler**: calm, polite, dry British humour, short answers meant to be spoken, an occasional piece of advice (late at night, a tired user). The character lives in `crates/jarvis-core/src/persona.rs`; it is a plain prompt, change it there.
+
+- **Actions.** The model can run your commands by ending its answer with a hidden mark `[[do: открой блокнот]]`; the phrase goes through the usual command pipeline, as if you had typed it. Marks are never shown or spoken. At most 3 per answer; shutdown, restart, emptying the recycle bin, deleting and remote control are never started by the model (you have to say them yourself).
+- **Memory.** Facts you tell Jarvis ("меня зовут ...", "я живу в ...", "запомни ...") are stored by `[[remember: ...]]` in `memory.json` in the config folder (at most 40 short facts) and go into every request; "забудь ..." removes them. Delete the file to wipe the memory. Nothing is stored unless the AI is connected.
+- **Context.** The model knows the current date and time and the city from Settings.
 
 ### Voice
 
-Jarvis speaks with the Piper neural voice if `piper\` is installed next to the program (full installer), otherwise with the best female Windows voice of the current language (install a Russian one in Windows: Settings -> Time & language -> Speech). Voices are chosen in `.github/workflows/build-windows.yml` (`PIPER_RU_VOICE`, `PIPER_EN_VOICE`); samples: https://rhasspy.github.io/piper-samples/
+Jarvis speaks with the Piper neural voice if `piper\` is installed next to the program (full installer), otherwise with the best Windows voice of the current language (install a Russian one in Windows: Settings -> Time & language -> Speech). Voices are chosen in `.github/workflows/build-windows.yml` (`PIPER_RU_VOICE`, `PIPER_EN_VOICE`); samples: https://rhasspy.github.io/piper-samples/
 
 ### Phone remote
 

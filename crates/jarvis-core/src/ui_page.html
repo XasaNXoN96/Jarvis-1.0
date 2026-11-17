@@ -429,7 +429,7 @@
             <option value="gemini">Google Gemini (через OpenAI-совместимый адрес)</option><option value="anthropic">Anthropic (Claude)</option>
             <option value="ollama">Ollama (на этом компьютере)</option><option value="custom">Другой сервер (совместимый с OpenAI)</option></select></div></div>
         <div class="setrow" id="ai-url-row"><div class="l">Адрес сервера<small id="ai-url-hint">для Ollama и других серверов</small></div><div class="r"><input type="text" id="ai-url" placeholder="http://127.0.0.1:11434"></div></div>
-        <div class="setrow"><div class="l">Модель</div><div class="r"><input type="text" id="ai-model" placeholder="например: claude-sonnet-5-5"></div></div>
+        <div class="setrow"><div class="l">Модель</div><div class="r"><input type="text" id="ai-model" placeholder="например: claude-haiku-5-5"></div></div>
         <div class="setrow" id="ai-key-row"><div class="l">Ключ API<small id="ai-key-hint">хранится только на этом компьютере</small></div><div class="r"><input type="password" id="ai-key" placeholder="вставьте ключ" autocomplete="off"></div></div>
         <div class="setrow"><div class="l"><span class="msgline" id="ai-msg"></span></div>
           <div class="r"><button class="btn" id="ai-save">Сохранить</button><button class="btn primary" id="ai-test">Проверить соединение</button></div></div>
@@ -1089,7 +1089,7 @@ function updateAiRows() {
   const p = $('#ai-provider').value;
   $('#ai-url-row').style.display = (p === 'ollama' || p === 'custom' || p === 'anthropic') ? '' : 'none';
   $('#ai-key-row').style.display = (p === 'none' || p === 'ollama') ? 'none' : '';
-  const ph = { anthropic: 'claude-sonnet-5-5', openai: 'gpt-4o-mini', openrouter: 'openai/gpt-4o-mini', gemini: 'gemini-flash-latest', ollama: 'llama3.1', custom: 'название модели' };
+  const ph = { anthropic: 'claude-haiku-5-5', openai: 'gpt-4o-mini', openrouter: 'openai/gpt-4o-mini', gemini: 'gemini-flash-latest', ollama: 'llama3.1', custom: 'название модели' };
   $('#ai-url-hint').textContent = p === 'anthropic' ? 'необязательно (по умолчанию api.anthropic.com)' : p === 'custom' ? 'адрес API, например https://host/v1' : 'для Ollama: адрес сервера';
   $('#ai-model').placeholder = ph[p] ? 'например: ' + ph[p] : '';
   const mv = $('#ai-model').value.trim();
