@@ -775,3 +775,18 @@ fn anthropic_default_is_the_cheap_model_and_effort_is_only_for_new_models() {
     let old = ProviderConf { model: "claude-haiku-4-5".into(), ..c };
     assert!(build_body_opts(&old, &[], "sys", false).get("output_config").is_none());
 }
+
+#[test]
+fn the_same_action_asked_again_and_again_is_stopped_by_the_loop_guard() {
+    let phrase = "проверочная команда для защиты от зацикливания";
+    for _ in 0..3 {
+        let v = guard_action(phrase);
+        assert!(!v.blocked && !v.warned, "{:?}", v);
+    }
+    let v = guard_action(phrase);
+    assert!(v.warned && !v.blocked, "the first cycle is only a warning: {:?}", v);
+    let v = guard_action(phrase);
+    assert!(v.blocked, "the second is stopped: {:?}", v);
+    // a different command is not affected
+    assert!(!guard_action("совсем другая проверочная фраза").blocked);
+}

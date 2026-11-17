@@ -60,6 +60,9 @@ pub mod secret;
 pub mod voice_install;
 pub mod ai;
 pub mod persona;
+pub mod loopguard;
+pub mod digest;
+pub mod digest_run;
 pub mod filesearch;
 pub mod guard;
 

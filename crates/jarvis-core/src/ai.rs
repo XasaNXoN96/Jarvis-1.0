@@ -405,6 +405,25 @@ fn memory_path() -> Option<PathBuf> {
     APP_CONFIG_DIR.get().map(|d| d.join("memory.json"))
 }
 
+// Protection against loops (the algorithm of OpenJarvis' LoopGuard, see loopguard.rs): the same command asked again and again,
+// one kind of command over its budget, a repeating pattern. It forgets everything after a quiet period.
+static ACTION_GUARD: Lazy<Mutex<(crate::loopguard::LoopGuard, std::time::Instant)>> = Lazy::new(|| {
+    let cfg = crate::loopguard::LoopGuardConfig { poll_tool_budget: 8, ..Default::default() };
+    Mutex::new((crate::loopguard::LoopGuard::new(cfg), std::time::Instant::now()))
+});
+const ACTION_GUARD_QUIET: Duration = Duration::from_secs(120);
+
+fn guard_action(phrase: &str) -> crate::loopguard::Verdict {
+    let mut g = ACTION_GUARD.lock();
+    if g.1.elapsed() > ACTION_GUARD_QUIET {
+        g.0.reset();
+    }
+    g.1 = std::time::Instant::now();
+    let norm = crate::guard::norm(phrase);
+    let kind = norm.split_whitespace().next().unwrap_or("").to_string();
+    g.0.check_call(&kind, &norm)
+}
+
 // what the model asked for with its hidden marks: commands go through the usual pipeline (as if the user typed them),
 // facts go to the memory. Only what persona::runnable allows gets here.
 fn run_actions(actions: &[crate::persona::Action]) {
@@ -412,6 +431,15 @@ fn run_actions(actions: &[crate::persona::Action]) {
     for a in actions {
         match a {
             Action::Do(phrase) => {
+                let verdict = guard_action(phrase);
+                if verdict.blocked {
+                    warn!("AI action stopped by the loop guard: {} ({})", phrase, verdict.reason);
+                    crate::uistate::log_event("ai", &format!("Действие остановлено защитой от зацикливания: {}", phrase));
+                    continue;
+                }
+                if verdict.warned {
+                    warn!("AI action repeats: {} ({})", phrase, verdict.reason);
+                }
                 info!("AI action: {}", phrase);
                 crate::uistate::log_event("ai", &format!("Действие по просьбе: {}", phrase));
                 crate::remote::push_internal(phrase);
@@ -1276,6 +1304,13 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
 // a question from the command line / voice: the answer is shown in the chat and read aloud; `on_error` runs on failure
 pub fn send_question(text: &str, on_error: ErrorHook) -> Result<String, AiError> {
     send_with_hook(store(), conf_from_settings(), None, text, true, Some(on_error)).map(|o| o.chat_id)
+}
+
+// One question outside any conversation, with its own system prompt (the morning briefing): the whole answer at once.
+pub fn complete_once(system: &str, user: &str) -> Result<String, AiError> {
+    let conf = conf_from_settings()?;
+    let history = vec![ChatMsg { role: "user".into(), content: user.to_string(), src: "ai".into(), ..Default::default() }];
+    request_answer(&conf, &history, system)
 }
 
 pub fn send(chat_id: Option<&str>, text: &str, speak: bool) -> Result<String, AiError> {
