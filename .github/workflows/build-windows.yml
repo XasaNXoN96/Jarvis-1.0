@@ -39,9 +39,8 @@ jobs:
         run: |
           $env:LIB = "$PWD\lib\windows\amd64;$env:LIB"
           $prof = "debug"
-          # ort-sys 2.0.0-rc.11 copies DirectML.dll into <target>\<profile>\build, ...\build\examples and ...\build\deps when a newer
-          # Cargo lays the build folders out in a new way (the first one is the "build" folder itself); the other two do not exist then and the
-          # build script panics with "NotFound". They are created here.
+          # with a newer Cargo (another layout of the build folders) ort-sys 2.0.0-rc.11 panics with "NotFound" because these two folders
+          # do not exist; the Rust version is pinned below, the folders are created anyway to be safe
           foreach ($d in "build\examples", "build\deps") { New-Item -ItemType Directory -Force "target\$prof\$d" | Out-Null }
           $ok = $false
           foreach ($i in 1..4) {
@@ -51,13 +50,6 @@ jobs:
             Start-Sleep -Seconds 20
           }
           if (-not $ok) { exit 1 }
-          # the programs and the tests look for DirectML.dll next to themselves: put the downloaded copy there
-          $dlls = Get-ChildItem "$env:LOCALAPPDATA\ort.pyke.io" -Recurse -Filter *.dll -ErrorAction SilentlyContinue
-          foreach ($dir in "target\$prof", "target\$prof\deps", "target\$prof\examples") {
-            New-Item -ItemType Directory -Force $dir | Out-Null
-            foreach ($f in $dlls) { Copy-Item $f.FullName $dir -Force }
-          }
-          Write-Output "ONNX Runtime DLLs copied: $(@($dlls).Count)"
 
       - name: Run tests (jarvis-core)
         shell: pwsh
@@ -66,18 +58,12 @@ jobs:
           $env:PATH = "$PWD\lib\windows\amd64;$env:PATH"
           # one test at a time: several tests start local servers and change the environment; at the same time this can crash the whole run
           # on Windows (STATUS_ACCESS_VIOLATION), and a crash hides which test it was. Sequentially the log names the test.
-          # a newer Cargo puts the test program into target\debug\build\...\out, not next to the other files: the DLLs of ONNX Runtime
-          # (DirectML.dll) have to be next to the program itself, otherwise another version may be found and the program crashes
+          # information for a failure: which ONNX Runtime DLLs are there and which DirectML.dll the system has
           $dlls = Get-ChildItem "$env:LOCALAPPDATA\ort.pyke.io" -Recurse -Filter *.dll -ErrorAction SilentlyContinue
           Write-Output "=== ONNX Runtime DLLs in the cache: $(@($dlls).Count) ==="
           $dlls | ForEach-Object { Write-Output ("  {0} {1}" -f $_.FullName, $_.VersionInfo.FileVersion) }
           $sys = "$env:SystemRoot\System32\DirectML.dll"
           Write-Output ("system DirectML.dll: " + $(if (Test-Path $sys) { (Get-Item $sys).VersionInfo.FileVersion } else { "none" }))
-          $exes = cargo test -p jarvis-core --lib --no-run --message-format=json 2>$null | ForEach-Object { try { $_ | ConvertFrom-Json } catch { $null } } | Where-Object { $_ -and $_.executable } | ForEach-Object { $_.executable }
-          foreach ($exe in $exes) {
-            Write-Output "test program: $exe"
-            foreach ($f in $dlls) { Copy-Item $f.FullName (Split-Path $exe) -Force }
-          }
           cargo test -p jarvis-core --no-fail-fast -- --test-threads=1 2>&1 | Tee-Object -FilePath test.log
           $code = $LASTEXITCODE
           if ($code -ne 0) {
@@ -130,9 +116,8 @@ jobs:
         run: |
           $env:LIB = "$PWD\lib\windows\amd64;$env:LIB"
           $prof = "release"
-          # ort-sys 2.0.0-rc.11 copies DirectML.dll into <target>\<profile>\build, ...\build\examples and ...\build\deps when a newer
-          # Cargo lays the build folders out in a new way (the first one is the "build" folder itself); the other two do not exist then and the
-          # build script panics with "NotFound". They are created here.
+          # with a newer Cargo (another layout of the build folders) ort-sys 2.0.0-rc.11 panics with "NotFound" because these two folders
+          # do not exist; the Rust version is pinned below, the folders are created anyway to be safe
           foreach ($d in "build\examples", "build\deps") { New-Item -ItemType Directory -Force "target\$prof\$d" | Out-Null }
           $ok = $false
           foreach ($i in 1..4) {
@@ -142,13 +127,6 @@ jobs:
             Start-Sleep -Seconds 20
           }
           if (-not $ok) { exit 1 }
-          # the programs and the tests look for DirectML.dll next to themselves: put the downloaded copy there
-          $dlls = Get-ChildItem "$env:LOCALAPPDATA\ort.pyke.io" -Recurse -Filter *.dll -ErrorAction SilentlyContinue
-          foreach ($dir in "target\$prof", "target\$prof\deps", "target\$prof\examples") {
-            New-Item -ItemType Directory -Force $dir | Out-Null
-            foreach ($f in $dlls) { Copy-Item $f.FullName $dir -Force }
-          }
-          Write-Output "ONNX Runtime DLLs copied: $(@($dlls).Count)"
 
       - name: Build jarvis-app (release)
         shell: pwsh
