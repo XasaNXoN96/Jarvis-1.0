@@ -34,6 +34,11 @@ jobs:
         shell: pwsh
         run: |
           $env:LIB = "$PWD\lib\windows\amd64;$env:LIB"
+          $prof = "debug"
+          # ort-sys 2.0.0-rc.11 copies DirectML.dll into <target>\<profile>\build, ...\build\examples and ...\build\deps when a newer
+          # Cargo lays the build folders out in a new way (the first one is the "build" folder itself); the other two do not exist then and the
+          # build script panics with "NotFound". They are created here.
+          foreach ($d in "build\examples", "build\deps") { New-Item -ItemType Directory -Force "target\$prof\$d" | Out-Null }
           $ok = $false
           foreach ($i in 1..4) {
             cargo build -p ort-sys
@@ -42,6 +47,13 @@ jobs:
             Start-Sleep -Seconds 20
           }
           if (-not $ok) { exit 1 }
+          # the programs and the tests look for DirectML.dll next to themselves: put the downloaded copy there
+          $dlls = Get-ChildItem "$env:LOCALAPPDATA\ort.pyke.io" -Recurse -Filter *.dll -ErrorAction SilentlyContinue
+          foreach ($dir in "target\$prof", "target\$prof\deps", "target\$prof\examples") {
+            New-Item -ItemType Directory -Force $dir | Out-Null
+            foreach ($f in $dlls) { Copy-Item $f.FullName $dir -Force }
+          }
+          Write-Output "ONNX Runtime DLLs copied: $(@($dlls).Count)"
 
       - name: Run tests (jarvis-core)
         shell: pwsh
@@ -81,6 +93,11 @@ jobs:
         shell: pwsh
         run: |
           $env:LIB = "$PWD\lib\windows\amd64;$env:LIB"
+          $prof = "release"
+          # ort-sys 2.0.0-rc.11 copies DirectML.dll into <target>\<profile>\build, ...\build\examples and ...\build\deps when a newer
+          # Cargo lays the build folders out in a new way (the first one is the "build" folder itself); the other two do not exist then and the
+          # build script panics with "NotFound". They are created here.
+          foreach ($d in "build\examples", "build\deps") { New-Item -ItemType Directory -Force "target\$prof\$d" | Out-Null }
           $ok = $false
           foreach ($i in 1..4) {
             cargo build -p ort-sys --release
@@ -89,6 +106,13 @@ jobs:
             Start-Sleep -Seconds 20
           }
           if (-not $ok) { exit 1 }
+          # the programs and the tests look for DirectML.dll next to themselves: put the downloaded copy there
+          $dlls = Get-ChildItem "$env:LOCALAPPDATA\ort.pyke.io" -Recurse -Filter *.dll -ErrorAction SilentlyContinue
+          foreach ($dir in "target\$prof", "target\$prof\deps", "target\$prof\examples") {
+            New-Item -ItemType Directory -Force $dir | Out-Null
+            foreach ($f in $dlls) { Copy-Item $f.FullName $dir -Force }
+          }
+          Write-Output "ONNX Runtime DLLs copied: $(@($dlls).Count)"
 
       - name: Build jarvis-app (release)
         shell: pwsh
