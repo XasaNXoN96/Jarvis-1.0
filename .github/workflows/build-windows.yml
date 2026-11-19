@@ -71,6 +71,20 @@ jobs:
             if ($text.Length -gt 30000) { $text = $text.Substring(0, 30000) }
             $text = $text.Replace('%', '%25').Replace("`r", '').Replace("`n", '%0A')
             Write-Output "::error title=cargo test::$text"
+            # which tests fail? every test alone in its own process: a crash (access violation) then names the test
+            Write-Output "=== diagnosis: every test alone ==="
+            $names = cargo test -p jarvis-core --lib -- --list 2>$null | Select-String ': test$' | ForEach-Object { $_.Line -replace ': test$', '' }
+            $bad = @()
+            foreach ($n in $names) {
+              cargo test -p jarvis-core --lib -- --exact $n --test-threads=1 *> $null
+              if ($LASTEXITCODE -ne 0) { $bad += "$n (exit $LASTEXITCODE)" }
+            }
+            Write-Output "failing alone: $($bad.Count) of $(@($names).Count)"
+            $bad | ForEach-Object { Write-Output "  $_" }
+            if ($bad.Count -gt 0) {
+              $list = ($bad | Select-Object -First 60) -join "`n"
+              Write-Output "::error title=tests failing when run alone ($($bad.Count) of $(@($names).Count))::$($list.Replace("`n", '%0A'))"
+            }
             exit $code
           }
 
