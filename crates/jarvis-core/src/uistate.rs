@@ -230,8 +230,8 @@ pub fn load_from(path: &std::path::Path) -> UiSettings {
     // the assistant is always «Джарвис»: a name saved by an earlier version is dropped
     s.assistant_name.clear();
     s.assistant_named = true;
-    // the male voices were removed: a saved choice of one of them becomes the automatic (female) voice
-    if ["piper:denis", "piper:dmitri", "piper:ruslan", "silero:aidar", "silero:eugene", "yandex:filipp", "yandex:ermil", "yandex:zahar"].contains(&s.voice_name.as_str()) {
+    // the voices the owner did not like were removed (Dmitri stays): a saved choice of one of them becomes the automatic voice
+    if ["piper:denis", "piper:ruslan", "silero:aidar", "silero:eugene", "yandex:filipp", "yandex:ermil", "yandex:zahar"].contains(&s.voice_name.as_str()) {
         s.voice_name.clear();
     }
     if !s.ext_social_init {

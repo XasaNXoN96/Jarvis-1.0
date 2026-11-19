@@ -153,8 +153,9 @@ fn set(step: &str, percent: u8) {
 
 // More Russian voices of Piper (the same files server, chosen by the user in Settings → Voice): (id, folder, file name, label).
 // They lie next to the main voice as «ru-<id>.onnx»; only these ids are ever taken (the id becomes a part of a file name).
-// Only female voices are offered; Piper has exactly one Russian female voice (Irina = the main voice), so the list is empty.
-pub const EXTRA_RU: [(&str, &str, &str, &str); 0] = [];
+// Besides the main female voice (Irina) only the voices the owner kept are offered: Dmitri. (Denis and Ruslan were removed on his word:
+// he did not like them; other male voices are not offered.)
+pub const EXTRA_RU: [(&str, &str, &str, &str); 1] = [("dmitri", "ru/ru_RU/dmitri/medium", "ru_RU-dmitri-medium", "Дмитрий (мужской, Piper)")];
 pub const EXTRA_PREFIX: &str = "piper:";
 
 // "piper:denis" -> "denis" (only the known voices)
@@ -337,7 +338,8 @@ mod tests {
 
     #[test]
     fn only_known_extra_voices_are_taken_and_their_files_are_named_by_the_table() {
-        assert_eq!(extra_id("piper:denis"), None, "the male voices are gone");
+        assert_eq!(extra_id("piper:dmitri"), Some("dmitri"), "Dmitri stays: the owner likes him");
+        assert_eq!(extra_id("piper:denis"), None, "the voices the owner did not like are gone");
         assert_eq!(extra_id("piper:ruslan"), None);
         assert_eq!(extra_id("piper"), None);
         assert_eq!(extra_id("piper:../../x"), None);
