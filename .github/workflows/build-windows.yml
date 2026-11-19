@@ -18,7 +18,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      # the Rust version is pinned: 1.99.0 is the one the tests and the installers were green with (build of 2026-10-11).
+      # A newer "stable" lays the build folders out differently, which broke ort-sys and made the test program crash at start.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.0
 
       - uses: Swatinem/rust-cache@v2
 
@@ -105,7 +109,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      # the Rust version is pinned: 1.99.0 is the one the tests and the installers were green with (build of 2026-10-11).
+      # A newer "stable" lays the build folders out differently, which broke ort-sys and made the test program crash at start.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.0
 
       - uses: Swatinem/rust-cache@v2
 
