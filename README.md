@@ -77,7 +77,9 @@ Say «утренняя сводка» (or «доложи обстановку»,
 | «включи утреннюю сводку в 7:30» (also «в 8 вечера», «в семь тридцать») | every day at that time, from then up to 3 hours later (a computer switched on at noon does not read the morning briefing) |
 | «выключи утреннюю сводку», «когда утренняя сводка» | off / the current setting |
 
-The schedule is stored in `digest.json` in the config folder; it is off until you switch it on.
+The schedule is stored in `digest.json` in the config folder; it is off until you switch it on. The phrases are also listed in the "Команды" tab (pack `resources/commands/digest`).
+
+Spoken phrases that are not commands go to the AI only when "answer phrases that are not commands" is switched on in Settings (off by default, so a misheard word does not leave the computer); with it on, a spoken sentence is matched against commands as strictly as a typed one.
 
 ### Protection against loops
 

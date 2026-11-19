@@ -35,3 +35,32 @@ fn without_a_connected_ai_the_briefing_is_composed_locally() {
     assert!(!by_ai);
     assert!(text.starts_with("Доброе утро, сэр. Сегодня вторник, 17 ноября.") && text.contains("купить молоко"), "{}", text);
 }
+
+// the "Команды" tab: the pack file parses, its script exists, and every listed phrase is really recognised by the program
+#[test]
+fn the_commands_tab_entries_match_what_the_program_recognises() {
+    use crate::commands::JCommandsList;
+    use crate::digest::{parse_command, Cmd};
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../resources/commands/digest");
+    let list: JCommandsList = toml::from_str(&std::fs::read_to_string(dir.join("command.toml")).expect("pack file")).expect("valid toml");
+    assert_eq!(list.commands.len(), 3);
+    for c in &list.commands {
+        assert!(dir.join(&c.script).exists(), "{}", c.script);
+        assert!(c.triggers.is_empty(), "no keyword triggers: the program handles the phrases first");
+        for phrase in c.phrases.get("ru").expect("ru phrases") {
+            let cmd = parse_command(phrase).unwrap_or_else(|| panic!("not recognised: {}", phrase));
+            let ok = match c.id.as_str() {
+                "digest_now" => cmd == Cmd::Now,
+                "digest_on" => matches!(cmd, Cmd::Enable(_)),
+                "digest_off" => matches!(cmd, Cmd::Disable | Cmd::Status),
+                other => panic!("unexpected id {}", other),
+            };
+            assert!(ok, "{} -> {:?}", phrase, cmd);
+        }
+    }
+    // the canonical phrases of the script are recognised (so the script cannot loop)
+    assert_eq!(parse_command("утренняя сводка"), Some(Cmd::Now));
+    assert_eq!(parse_command("включи утреннюю сводку"), Some(Cmd::Enable(None)));
+    assert_eq!(parse_command("выключи утреннюю сводку"), Some(Cmd::Disable));
+    assert_eq!(crate::uistate::group_key("digest", "digest_now"), "info");
+}

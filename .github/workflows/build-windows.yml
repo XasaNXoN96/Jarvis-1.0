@@ -22,6 +22,27 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # ONNX Runtime is downloaded by the build script of ort-sys from cdn.pyke.io; the server sometimes drops the connection
+      # ("Peer disconnected"). The download is cached between runs and retried here, so one bad moment does not fail the build.
+      - name: Cache ONNX Runtime download
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/ort.pyke.io
+          key: ort-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Prepare ONNX Runtime (with retries)
+        shell: pwsh
+        run: |
+          $env:LIB = "$PWD\lib\windows\amd64;$env:LIB"
+          $ok = $false
+          foreach ($i in 1..4) {
+            cargo build -p ort-sys
+            if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+            Write-Output "Attempt $i to prepare ONNX Runtime failed, trying again in 20 seconds"
+            Start-Sleep -Seconds 20
+          }
+          if (-not $ok) { exit 1 }
+
       - name: Run tests (jarvis-core)
         shell: pwsh
         run: |
@@ -47,6 +68,27 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+
+      # ONNX Runtime is downloaded by the build script of ort-sys from cdn.pyke.io; the server sometimes drops the connection
+      # ("Peer disconnected"). The download is cached between runs and retried here, so one bad moment does not fail the build.
+      - name: Cache ONNX Runtime download
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/ort.pyke.io
+          key: ort-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Prepare ONNX Runtime (with retries)
+        shell: pwsh
+        run: |
+          $env:LIB = "$PWD\lib\windows\amd64;$env:LIB"
+          $ok = $false
+          foreach ($i in 1..4) {
+            cargo build -p ort-sys --release
+            if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+            Write-Output "Attempt $i to prepare ONNX Runtime failed, trying again in 20 seconds"
+            Start-Sleep -Seconds 20
+          }
+          if (-not $ok) { exit 1 }
 
       - name: Build jarvis-app (release)
         shell: pwsh

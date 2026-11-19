@@ -200,7 +200,7 @@ pub fn group_key(pack: &str, id: &str) -> &'static str {
     if starts("note") || starts("office") || starts("object") || id == "session" { return "text"; }
     if starts("tts") || starts("read_") || starts("mic_") { return "voice"; }
     if starts("power") || id == "unlock" || pack == "windows" { return "system"; }
-    if starts("info") || starts("sys_") { return "info"; }
+    if starts("info") || starts("sys_") || starts("digest") { return "info"; }
     if id == "wiki" || id == "translate" || id == "maps" || id == "music_search" || pack == "weather" { return "web"; }
     if starts("game") || pack == "steam" { return "games"; }
     if starts("remote") { return "remote"; }

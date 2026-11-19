@@ -602,7 +602,9 @@ fn execute_command(text: &str, rt: &tokio::runtime::Runtime) -> bool {
     } else {
         info!("Intent not recognized, trying levenshtein fallback...");
         let sentence = text.split_whitespace().count() >= 3;
-        if sentence && jarvis_core::ai::is_configured() && !VOICE_INPUT.load(std::sync::atomic::Ordering::SeqCst) {
+        // a spoken sentence is treated like a typed one when the user switched on "answer phrases that are not commands"
+        let to_ai_if_no_command = !VOICE_INPUT.load(std::sync::atomic::Ordering::SeqCst) || jarvis_core::uistate::settings().ai_fallback;
+        if sentence && jarvis_core::ai::is_configured() && to_ai_if_no_command {
             // a typed sentence that matches no command by words: only a near-exact command phrase beats the AI,
             // a merely similar-looking command is not guessed
             commands::fetch_command_min(text, commands_list, config::CMD_RATIO_THRESHOLD.max(88.0))
