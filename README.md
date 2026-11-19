@@ -57,11 +57,41 @@ More:
 | «какая погода в Ташкенте», «установи город Самарканд» | weather (needs internet) |
 | «привет», «как дела», «кто ты», «что ты умеешь» | small talk and the list of commands |
 
-Jarvis answers aloud (female voice) and now and then adds a dry remark. Timers and reminders are saved to disk and survive a restart. A scheduled shutdown is handled by Windows itself.
+Jarvis answers aloud (a calm male voice) and now and then adds a dry remark. Timers and reminders are saved to disk and survive a restart. A scheduled shutdown is handled by Windows itself.
+
+## Character, memory and actions (AI mode)
+
+When an AI provider is connected (Settings -> AI; the cheap default for Anthropic is `claude-haiku-5-5`), the answers come from the **Jarvis butler**: calm, polite, dry British humour, short answers meant to be spoken, an occasional piece of advice (late at night, a tired user). The character lives in `crates/jarvis-core/src/persona.rs`; it is a plain prompt, change it there.
+
+- **Actions.** The model can run your commands by ending its answer with a hidden mark `[[do: открой блокнот]]`; the phrase goes through the usual command pipeline, as if you had typed it. Marks are never shown or spoken. At most 3 per answer; shutdown, restart, emptying the recycle bin, deleting and remote control are never started by the model (you have to say them yourself).
+- **Memory.** Facts you tell Jarvis ("меня зовут ...", "я живу в ...", "запомни ...") are stored by `[[remember: ...]]` in `memory.json` in the config folder (at most 40 short facts) and go into every request; "забудь ..." removes them. Delete the file to wipe the memory. Nothing is stored unless the AI is connected.
+- **Context.** The model knows the current date and time and the city from Settings.
+
+### Morning briefing
+
+Say «утренняя сводка» (or «доложи обстановку», «что у нас на сегодня») and Jarvis reads: the date, the weather of your city (Settings -> city), the reminders and timers of the next 24 hours, your last notes. With an AI connected the model only retells the collected data (it may not invent anything, no Markdown, at most 120 words); without an AI the same data is read from a plain local template, so it works offline too.
+
+| Say | What happens |
+|---|---|
+| «утренняя сводка» | the briefing now |
+| «включи утреннюю сводку в 7:30» (also «в 8 вечера», «в семь тридцать») | every day at that time, from then up to 3 hours later (a computer switched on at noon does not read the morning briefing) |
+| «выключи утреннюю сводку», «когда утренняя сводка» | off / the current setting |
+
+The schedule is stored in `digest.json` in the config folder; it is off until you switch it on. The phrases are also listed in the "Команды" tab (pack `resources/commands/digest`).
+
+Spoken phrases that are not commands go to the AI only when "answer phrases that are not commands" is switched on in Settings (off by default, so a misheard word does not leave the computer); with it on, a spoken sentence is matched against commands as strictly as a typed one.
+
+### Protection against loops
+
+Actions started by the AI go through a loop guard: the same command more than 3 times, one kind of command more than 8 times, or a repeating pattern within two minutes is warned about first and stopped the second time.
+
+### Ideas taken from OpenJarvis
+
+The briefing scheme (collect the data first, the model only retells it, strict rules against inventing) and the loop guard follow `morning_digest.py` and `loop_guard.py` of [OpenJarvis](https://github.com/open-jarvis/OpenJarvis) (Apache-2.0, Stanford Scaling Intelligence Lab / Hazy Research). The code here is a new implementation in Rust; no source files were copied.
 
 ### Voice
 
-Jarvis speaks with the Piper neural voice if `piper\` is installed next to the program (full installer), otherwise with the best female Windows voice of the current language (install a Russian one in Windows: Settings -> Time & language -> Speech). Voices are chosen in `.github/workflows/build-windows.yml` (`PIPER_RU_VOICE`, `PIPER_EN_VOICE`); samples: https://rhasspy.github.io/piper-samples/
+Jarvis speaks with the Piper neural voice if `piper\` is installed next to the program (full installer), otherwise with the best Windows voice of the current language (install a Russian one in Windows: Settings -> Time & language -> Speech). Voices are chosen in `.github/workflows/build-windows.yml` (`PIPER_RU_VOICE`, `PIPER_EN_VOICE`); samples: https://rhasspy.github.io/piper-samples/
 
 ### Phone remote
 

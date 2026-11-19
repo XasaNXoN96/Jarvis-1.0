@@ -1,0 +1,30 @@
+# The morning briefing. The phrases are handled by the program itself (crates/jarvis-core/src/digest.rs, before the command
+# search); these entries make them visible in the "Команды" tab and let the intent model find close variants.
+# There are no keyword triggers on purpose: the program recognises the phrases first, and a trigger here would only steal words.
+
+[[commands]]
+id = "digest_now"
+type = "lua"
+script = "digest.lua"
+sandbox = "standard"
+timeout = 5000
+phrases.ru = ["утренняя сводка", "доложи обстановку", "что у нас на сегодня"]
+phrases.en = ["morning briefing"]
+
+[[commands]]
+id = "digest_on"
+type = "lua"
+script = "digest.lua"
+sandbox = "standard"
+timeout = 5000
+phrases.ru = ["включи утреннюю сводку в 7:30", "включи утреннюю сводку"]
+phrases.en = ["turn on the morning briefing"]
+
+[[commands]]
+id = "digest_off"
+type = "lua"
+script = "digest.lua"
+sandbox = "standard"
+timeout = 5000
+phrases.ru = ["выключи утреннюю сводку", "когда утренняя сводка"]
+phrases.en = ["turn off the morning briefing"]

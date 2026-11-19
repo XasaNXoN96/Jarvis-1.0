@@ -18,16 +18,53 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      # the Rust version is pinned: 1.99.0 is the one the tests and the installers were green with (build of 2026-10-11).
+      # A newer "stable" lays the build folders out differently, which broke ort-sys and made the test program crash at start.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.0
 
       - uses: Swatinem/rust-cache@v2
+
+      # ONNX Runtime is downloaded by the build script of ort-sys from cdn.pyke.io; the server sometimes drops the connection
+      # ("Peer disconnected"). The download is cached between runs and retried here, so one bad moment does not fail the build.
+      - name: Cache ONNX Runtime download
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/ort.pyke.io
+          key: ort-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Prepare ONNX Runtime (with retries)
+        shell: pwsh
+        run: |
+          $env:LIB = "$PWD\lib\windows\amd64;$env:LIB"
+          $prof = "debug"
+          # with a newer Cargo (another layout of the build folders) ort-sys 2.0.0-rc.11 panics with "NotFound" because these two folders
+          # do not exist; the Rust version is pinned below, the folders are created anyway to be safe
+          foreach ($d in "build\examples", "build\deps") { New-Item -ItemType Directory -Force "target\$prof\$d" | Out-Null }
+          $ok = $false
+          foreach ($i in 1..4) {
+            cargo build -p ort-sys
+            if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+            Write-Output "Attempt $i to prepare ONNX Runtime failed, trying again in 20 seconds"
+            Start-Sleep -Seconds 20
+          }
+          if (-not $ok) { exit 1 }
 
       - name: Run tests (jarvis-core)
         shell: pwsh
         run: |
           $env:LIB = "$PWD\lib\windows\amd64;$env:LIB"
           $env:PATH = "$PWD\lib\windows\amd64;$env:PATH"
-          cargo test -p jarvis-core --no-fail-fast 2>&1 | Tee-Object -FilePath test.log
+          # one test at a time: several tests start local servers and change the environment; at the same time this can crash the whole run
+          # on Windows (STATUS_ACCESS_VIOLATION), and a crash hides which test it was. Sequentially the log names the test.
+          # information for a failure: which ONNX Runtime DLLs are there and which DirectML.dll the system has
+          $dlls = Get-ChildItem "$env:LOCALAPPDATA\ort.pyke.io" -Recurse -Filter *.dll -ErrorAction SilentlyContinue
+          Write-Output "=== ONNX Runtime DLLs in the cache: $(@($dlls).Count) ==="
+          $dlls | ForEach-Object { Write-Output ("  {0} {1}" -f $_.FullName, $_.VersionInfo.FileVersion) }
+          $sys = "$env:SystemRoot\System32\DirectML.dll"
+          Write-Output ("system DirectML.dll: " + $(if (Test-Path $sys) { (Get-Item $sys).VersionInfo.FileVersion } else { "none" }))
+          cargo test -p jarvis-core --no-fail-fast -- --test-threads=1 2>&1 | Tee-Object -FilePath test.log
           $code = $LASTEXITCODE
           if ($code -ne 0) {
             # the reason goes into an annotation: it is visible on the run page and through the API without signing in
@@ -36,6 +73,20 @@ jobs:
             if ($text.Length -gt 30000) { $text = $text.Substring(0, 30000) }
             $text = $text.Replace('%', '%25').Replace("`r", '').Replace("`n", '%0A')
             Write-Output "::error title=cargo test::$text"
+            # which tests fail? every test alone in its own process: a crash (access violation) then names the test
+            Write-Output "=== diagnosis: every test alone ==="
+            $names = cargo test -p jarvis-core --lib -- --list 2>$null | Select-String ': test$' | ForEach-Object { $_.Line -replace ': test$', '' }
+            $bad = @()
+            foreach ($n in $names) {
+              cargo test -p jarvis-core --lib -- --exact $n --test-threads=1 *> $null
+              if ($LASTEXITCODE -ne 0) { $bad += "$n (exit $LASTEXITCODE)" }
+            }
+            Write-Output "failing alone: $($bad.Count) of $(@($names).Count)"
+            $bad | ForEach-Object { Write-Output "  $_" }
+            if ($bad.Count -gt 0) {
+              $list = ($bad | Select-Object -First 60) -join "`n"
+              Write-Output "::error title=tests failing when run alone ($($bad.Count) of $(@($names).Count))::$($list.Replace("`n", '%0A'))"
+            }
             exit $code
           }
 
@@ -44,9 +95,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      # the Rust version is pinned: 1.99.0 is the one the tests and the installers were green with (build of 2026-10-11).
+      # A newer "stable" lays the build folders out differently, which broke ort-sys and made the test program crash at start.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.0
 
       - uses: Swatinem/rust-cache@v2
+
+      # ONNX Runtime is downloaded by the build script of ort-sys from cdn.pyke.io; the server sometimes drops the connection
+      # ("Peer disconnected"). The download is cached between runs and retried here, so one bad moment does not fail the build.
+      - name: Cache ONNX Runtime download
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/ort.pyke.io
+          key: ort-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Prepare ONNX Runtime (with retries)
+        shell: pwsh
+        run: |
+          $env:LIB = "$PWD\lib\windows\amd64;$env:LIB"
+          $prof = "release"
+          # with a newer Cargo (another layout of the build folders) ort-sys 2.0.0-rc.11 panics with "NotFound" because these two folders
+          # do not exist; the Rust version is pinned below, the folders are created anyway to be safe
+          foreach ($d in "build\examples", "build\deps") { New-Item -ItemType Directory -Force "target\$prof\$d" | Out-Null }
+          $ok = $false
+          foreach ($i in 1..4) {
+            cargo build -p ort-sys --release
+            if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+            Write-Output "Attempt $i to prepare ONNX Runtime failed, trying again in 20 seconds"
+            Start-Sleep -Seconds 20
+          }
+          if (-not $ok) { exit 1 }
 
       - name: Build jarvis-app (release)
         shell: pwsh
@@ -76,15 +156,16 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DSrcDir=build\Jarvis /DOutName=Jarvis-Setup-Lite installer\jarvis.iss
 
-      # Full installer: adds the Piper neural voice (offline). Change the voice names to switch voices:
+      # Full installer: adds the Piper neural voice (offline). A calm male voice for the butler (ru: dmitri, en: British alan);
+      # to switch voices change the names (female ru: irina, en: amy):
       # list and samples: https://rhasspy.github.io/piper-samples/
       - name: Add Piper neural voices
         id: piper
         continue-on-error: true
         shell: pwsh
         env:
-          PIPER_RU_VOICE: ru_RU-irina-medium
-          PIPER_EN_VOICE: en_US-amy-medium
+          PIPER_RU_VOICE: ru_RU-dmitri-medium
+          PIPER_EN_VOICE: en_GB-alan-medium
         run: |
           $ErrorActionPreference = "Stop"
           Copy-Item build\Jarvis build\JarvisFull -Recurse

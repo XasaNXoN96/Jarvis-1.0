@@ -12,8 +12,7 @@ struct Mock {
 
 // answers the connections one by one with the given (status, body, delay in ms)
 fn mock(responses: Vec<(u16, String, u64)>) -> Mock {
-    std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
-    std::env::set_var("no_proxy", "127.0.0.1,localhost");
+    crate::no_proxy_for_tests();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let requests = Arc::new(Mutex::new(Vec::new()));
@@ -377,8 +376,7 @@ fn sse_chunk(text: &str) -> String {
 
 // a server that streams: (delay before the part in ms, the part); the connection closes after the last one
 fn sse_mock(parts: Vec<(u64, String)>) -> Mock {
-    std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
-    std::env::set_var("no_proxy", "127.0.0.1,localhost");
+    crate::no_proxy_for_tests();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let requests = Arc::new(Mutex::new(Vec::new()));
@@ -608,7 +606,7 @@ fn the_connection_is_reused_between_questions() {
     let store = leaked_store();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
-    std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+    crate::no_proxy_for_tests();
     let accepted = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let acc = accepted.clone();
     std::thread::spawn(move || {
@@ -661,7 +659,7 @@ fn commands_and_their_replies_are_not_sent_to_the_model() {
 #[test]
 fn a_silent_stream_is_asked_again_without_a_stream_and_remembered() {
     FIRST_FRAGMENT_MS.store(500, Ordering::SeqCst);
-    std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+    crate::no_proxy_for_tests();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let seen = Arc::new(Mutex::new(Vec::<String>::new()));
@@ -713,4 +711,80 @@ fn gemini_is_asked_to_think_little_and_a_provider_that_refuses_the_parameter_is_
     // other providers never get it
     let o = ProviderConf { kind: Kind::OpenAiCompatible, name: "OpenAI".into(), base: "http://x".into(), model: "m".into(), key: "k".into() };
     assert!(build_body_opts(&o, &[], "s", true).get("reasoning_effort").is_none());
+}
+
+// =============================================================================================
+// character: hidden action marks and memory
+// =============================================================================================
+#[test]
+fn action_marks_are_hidden_in_a_stream_and_the_memory_is_written() {
+    let dir = std::env::temp_dir().join(format!("jarvis-persona-ai-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = crate::APP_CONFIG_DIR.set(dir);
+    let mem = memory_path().expect("config dir is set");
+    let _ = std::fs::remove_file(&mem);
+
+    let store = leaked_store();
+    let parts: Vec<(u64, String)> = vec![
+        (20, sse_chunk("Сию минуту, сэр. [")),
+        (20, sse_chunk("[do: открой бло")),
+        (20, sse_chunk("кнот]] Готово. [[remember: любит")),
+        (20, sse_chunk(" крепкий чай]]")),
+        (20, "data: [DONE]\n\n".to_string()),
+    ];
+    let m = sse_mock(parts);
+    let out = send_with(store, conf(&m.base), None, "Открой блокнот и запомни, что я люблю чай", false).unwrap();
+    let id = out.chat_id.clone();
+    out.handle.join().unwrap();
+    let msgs = messages(store, &id);
+    assert_eq!(msgs.len(), 2);
+    let answer = &msgs[1].content;
+    assert!(!answer.contains("[[") && !answer.contains("]]") && !answer.contains("открой блокнот"), "marks must not reach the chat: {}", answer);
+    assert_eq!(answer.split_whitespace().collect::<Vec<_>>().join(" "), "Сию минуту, сэр. Готово.");
+    assert!(crate::persona::load_facts(&mem).iter().any(|f| f.contains("любит крепкий чай")), "the fact is remembered");
+    // the request carries the character and the remembered fact next time
+    let prompt = system_prompt();
+    assert!(prompt.contains("ДЖАРВИС") || prompt.contains("JARVIS"));
+    let _ = std::fs::remove_file(&mem);
+}
+
+#[test]
+fn an_answer_that_is_only_a_mark_gets_a_short_word_instead_of_an_empty_bubble() {
+    let store = leaked_store();
+    let m = mock(vec![(200, ok_body("[[do: громче]]"), 0)]);
+    let id = run(store, conf(&m.base), None, "сделай погромче").unwrap();
+    let msgs = messages(store, &id);
+    assert!(msgs[1].content == "Сию минуту, сэр." || msgs[1].content == "Right away, sir.", "{}", msgs[1].content);
+}
+
+#[test]
+fn anthropic_default_is_the_cheap_model_and_effort_is_only_for_new_models() {
+    let c = conf_from("anthropic", "", "sk-ant-test", "").unwrap();
+    assert_eq!(c.model, "claude-haiku-5-5");
+    for m in ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5", "claude-fable-5-2"] {
+        assert!(supports_effort(m), "{}", m);
+    }
+    for m in ["claude-haiku-4-5", "claude-opus-4-8", "claude-3-haiku", "gpt-4o-mini", ""] {
+        assert!(!supports_effort(m), "{}", m);
+    }
+    let body = build_body_opts(&c, &[ChatMsg { role: "user".into(), content: "привет".into(), ..Default::default() }], "sys", false);
+    assert_eq!(body["output_config"]["effort"], "low");
+    assert!(body.get("temperature").is_none());
+    let old = ProviderConf { model: "claude-haiku-4-5".into(), ..c };
+    assert!(build_body_opts(&old, &[], "sys", false).get("output_config").is_none());
+}
+
+#[test]
+fn the_same_action_asked_again_and_again_is_stopped_by_the_loop_guard() {
+    let phrase = "проверочная команда для защиты от зацикливания";
+    for _ in 0..3 {
+        let v = guard_action(phrase);
+        assert!(!v.blocked && !v.warned, "{:?}", v);
+    }
+    let v = guard_action(phrase);
+    assert!(v.warned && !v.blocked, "the first cycle is only a warning: {:?}", v);
+    let v = guard_action(phrase);
+    assert!(v.blocked, "the second is stopped: {:?}", v);
+    // a different command is not affected
+    assert!(!guard_action("совсем другая проверочная фраза").blocked);
 }

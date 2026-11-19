@@ -1,7 +1,7 @@
 mod engine;
 mod sandbox;
 mod error;
-mod api;
+pub(crate) mod api;
 
 mod structs;
 pub use structs::*;

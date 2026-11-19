@@ -164,7 +164,7 @@ pub fn conf_from(provider: &str, model: &str, key: &str, url: &str) -> Result<Pr
             "gemini" => "gemini-flash-latest",
             "openai" => "gpt-4o-mini",
             "openrouter" => "openai/gpt-4o-mini",
-            "anthropic" => "claude-sonnet-5-5",
+            "anthropic" => "claude-haiku-5-5",
             _ => return Err(AiError::NoModel),
         }
     } else {
@@ -386,10 +386,80 @@ pub fn store() -> &'static Store {
 // request / response
 // ---------------------------------------------------------------------------------------------
 pub fn system_prompt() -> String {
-    if crate::i18n::get_language() == "en" {
-        "You are Jarvis, a voice assistant on the user's computer. Answer in the user's language, briefly and to the point. Put code in Markdown code blocks.".to_string()
+    use chrono::{Datelike, Timelike};
+    let lang = crate::i18n::get_language();
+    let now = chrono::Local::now();
+    let wd = now.weekday().num_days_from_monday();
+    let stamp = if lang == "en" {
+        format!("{}, {:02}.{:02}.{}, {:02}:{:02}", crate::persona::weekday_en(wd), now.day(), now.month(), now.year(), now.hour(), now.minute())
     } else {
-        "Ты — Jarvis, голосовой ассистент на компьютере пользователя. Отвечай на языке пользователя, кратко и по делу. Код оформляй в блоках Markdown.".to_string()
+        format!("{}, {:02}.{:02}.{}, {:02}:{:02}", crate::persona::weekday_ru(wd), now.day(), now.month(), now.year(), now.hour(), now.minute())
+    };
+    let city = crate::uistate::settings().city;
+    let facts = memory_path().map(|p| crate::persona::load_facts(&p)).unwrap_or_default();
+    crate::persona::build_prompt(&lang, &stamp, &city, &facts)
+}
+
+// the file with the facts Jarvis remembers about the user
+fn memory_path() -> Option<PathBuf> {
+    APP_CONFIG_DIR.get().map(|d| d.join("memory.json"))
+}
+
+// Protection against loops (the algorithm of OpenJarvis' LoopGuard, see loopguard.rs): the same command asked again and again,
+// one kind of command over its budget, a repeating pattern. It forgets everything after a quiet period.
+static ACTION_GUARD: Lazy<Mutex<(crate::loopguard::LoopGuard, std::time::Instant)>> = Lazy::new(|| {
+    let cfg = crate::loopguard::LoopGuardConfig { poll_tool_budget: 8, ..Default::default() };
+    Mutex::new((crate::loopguard::LoopGuard::new(cfg), std::time::Instant::now()))
+});
+const ACTION_GUARD_QUIET: Duration = Duration::from_secs(120);
+
+fn guard_action(phrase: &str) -> crate::loopguard::Verdict {
+    let mut g = ACTION_GUARD.lock();
+    if g.1.elapsed() > ACTION_GUARD_QUIET {
+        g.0.reset();
+    }
+    g.1 = std::time::Instant::now();
+    let norm = crate::guard::norm(phrase);
+    let kind = norm.split_whitespace().next().unwrap_or("").to_string();
+    g.0.check_call(&kind, &norm)
+}
+
+// what the model asked for with its hidden marks: commands go through the usual pipeline (as if the user typed them),
+// facts go to the memory. Only what persona::runnable allows gets here.
+fn run_actions(actions: &[crate::persona::Action]) {
+    use crate::persona::Action;
+    for a in actions {
+        match a {
+            Action::Do(phrase) => {
+                let verdict = guard_action(phrase);
+                if verdict.blocked {
+                    warn!("AI action stopped by the loop guard: {} ({})", phrase, verdict.reason);
+                    crate::uistate::log_event("ai", &format!("Действие остановлено защитой от зацикливания: {}", phrase));
+                    continue;
+                }
+                if verdict.warned {
+                    warn!("AI action repeats: {} ({})", phrase, verdict.reason);
+                }
+                info!("AI action: {}", phrase);
+                crate::uistate::log_event("ai", &format!("Действие по просьбе: {}", phrase));
+                crate::remote::push_internal(phrase);
+            }
+            Action::Remember(fact) => {
+                if let Some(path) = memory_path() {
+                    if crate::persona::add_fact(&path, fact) {
+                        crate::uistate::log_event("ai", &format!("Запомнил: {}", fact));
+                    }
+                }
+            }
+            Action::Forget(query) => {
+                if let Some(path) = memory_path() {
+                    let n = crate::persona::forget_fact(&path, query);
+                    if n > 0 {
+                        crate::uistate::log_event("ai", &format!("Забыл ({}): {}", n, query));
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -436,6 +506,13 @@ pub fn build_body(conf: &ProviderConf, history: &[ChatMsg], system: &str) -> Val
     build_body_opts(conf, history, system, false)
 }
 
+// models of the 5th generation and later (claude-haiku-5-5, claude-sonnet-5-5, claude-opus-5, claude-fable-5-2 ...)
+// know the "effort" setting; older ones (claude-haiku-4-5 ...) reject it
+pub fn supports_effort(model: &str) -> bool {
+    let mut parts = model.trim().split('-');
+    parts.next() == Some("claude") && parts.next().is_some() && parts.next().and_then(|v| v.parse::<u32>().ok()).map(|v| v >= 5).unwrap_or(false)
+}
+
 // `stream`: the answer arrives in fragments (server-sent events) instead of one piece at the end
 pub fn build_body_opts(conf: &ProviderConf, history: &[ChatMsg], system: &str, stream: bool) -> Value {
     match conf.kind {
@@ -453,6 +530,10 @@ pub fn build_body_opts(conf: &ProviderConf, history: &[ChatMsg], system: &str, s
         Kind::Anthropic => {
             let msgs: Vec<Value> = alternate(history).iter().map(|m| json!({ "role": m.role, "content": m.content })).collect();
             let mut body = json!({ "model": conf.model, "max_tokens": 2048, "system": system, "messages": msgs });
+            // a talk with an assistant does not need long hidden thinking: it only costs time and money
+            if supports_effort(&conf.model) {
+                body["output_config"] = json!({ "effort": "low" });
+            }
             if stream {
                 body["stream"] = json!(true);
             }
@@ -1086,6 +1167,7 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
         start_request(generation, stream_allowed(&conf), stream_cancel.clone());
 
         let mut speaker = SentenceSpeaker::new();
+        let mut marks = crate::persona::MarkerFilter::new();
         let say_aloud = speak;
         let (mut shown, mut chunks) = (String::new(), 0usize);
         let (mut first_chunk, mut first_queued, mut first_started) = (None::<u64>, None::<u64>, None::<u64>);
@@ -1132,10 +1214,14 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
                     if first_chunk.is_none() {
                         first_chunk = Some(t0.elapsed().as_millis() as u64);
                     }
-                    shown.push_str(&d);
-                    live_set(&job_id, &rid, &shown);
-                    let parts = speaker.push(&d);
-                    speak_now(parts, &mut first_queued);
+                    // the hidden action marks ([[do: ...]]) are neither shown nor spoken
+                    let visible = marks.push(&d);
+                    if !visible.is_empty() {
+                        shown.push_str(&visible);
+                        live_set(&job_id, &rid, &shown);
+                        let parts = speaker.push(&visible);
+                        speak_now(parts, &mut first_queued);
+                    }
                 }
                 Ok(Msg::Done(_, r, p)) => {
                     probe_out = p;
@@ -1149,11 +1235,24 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
         live_clear(&job_id);
         match &result {
             Ok(answer) => {
-                store.append_with(&job_id, "assistant", answer, &rid, "ai");
+                let (mut clean, actions) = crate::persona::extract(answer);
+                let tail = marks.finish();
+                if !tail.is_empty() {
+                    shown.push_str(&tail);
+                    let parts = speaker.push(&tail);
+                    speak_now(parts, &mut first_queued);
+                }
+                if clean.is_empty() && !actions.is_empty() {
+                    // an answer that is only a mark: a short word of the butler is better than an empty bubble
+                    clean = if crate::i18n::get_language() == "en" { "Right away, sir.".to_string() } else { "Сию минуту, сэр.".to_string() };
+                    speak_now(vec![clean.clone()], &mut first_queued);
+                }
+                store.append_with(&job_id, "assistant", &clean, &rid, "ai");
                 // the part that was not complete as a sentence
                 let parts = speaker.finish();
                 speak_now(parts, &mut first_queued);
                 status_set(Conn::Connected, "");
+                run_actions(&crate::persona::runnable(&actions));
             }
             Err(AiError::Cancelled) => {
                 // what arrived before "Stop" is kept; the voice stops with it
@@ -1205,6 +1304,13 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
 // a question from the command line / voice: the answer is shown in the chat and read aloud; `on_error` runs on failure
 pub fn send_question(text: &str, on_error: ErrorHook) -> Result<String, AiError> {
     send_with_hook(store(), conf_from_settings(), None, text, true, Some(on_error)).map(|o| o.chat_id)
+}
+
+// One question outside any conversation, with its own system prompt (the morning briefing): the whole answer at once.
+pub fn complete_once(system: &str, user: &str) -> Result<String, AiError> {
+    let conf = conf_from_settings()?;
+    let history = vec![ChatMsg { role: "user".into(), content: user.to_string(), src: "ai".into(), ..Default::default() }];
+    request_answer(&conf, &history, system)
 }
 
 pub fn send(chat_id: Option<&str>, text: &str, speak: bool) -> Result<String, AiError> {
