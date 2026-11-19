@@ -106,3 +106,13 @@ pub use db::structs::Settings;
 pub use db::SettingsManager;
 
 // use crate::commands::{JComandsList, JCommand};
+// Tests that start a local server need "no proxy for 127.0.0.1". The variable is written ONCE per process: writing the
+// environment from several test threads at the same time is a data race (on Windows it can crash the whole test run).
+#[cfg(test)]
+pub(crate) fn no_proxy_for_tests() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+    });
+}

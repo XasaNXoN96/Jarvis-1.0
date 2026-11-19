@@ -12,8 +12,7 @@ struct Mock {
 
 // answers the connections one by one with the given (status, body, delay in ms)
 fn mock(responses: Vec<(u16, String, u64)>) -> Mock {
-    std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
-    std::env::set_var("no_proxy", "127.0.0.1,localhost");
+    crate::no_proxy_for_tests();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let requests = Arc::new(Mutex::new(Vec::new()));
@@ -377,8 +376,7 @@ fn sse_chunk(text: &str) -> String {
 
 // a server that streams: (delay before the part in ms, the part); the connection closes after the last one
 fn sse_mock(parts: Vec<(u64, String)>) -> Mock {
-    std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
-    std::env::set_var("no_proxy", "127.0.0.1,localhost");
+    crate::no_proxy_for_tests();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let requests = Arc::new(Mutex::new(Vec::new()));
@@ -608,7 +606,7 @@ fn the_connection_is_reused_between_questions() {
     let store = leaked_store();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
-    std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+    crate::no_proxy_for_tests();
     let accepted = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let acc = accepted.clone();
     std::thread::spawn(move || {
@@ -661,7 +659,7 @@ fn commands_and_their_replies_are_not_sent_to_the_model() {
 #[test]
 fn a_silent_stream_is_asked_again_without_a_stream_and_remembered() {
     FIRST_FRAGMENT_MS.store(500, Ordering::SeqCst);
-    std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+    crate::no_proxy_for_tests();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let seen = Arc::new(Mutex::new(Vec::<String>::new()));

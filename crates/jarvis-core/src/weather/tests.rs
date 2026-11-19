@@ -26,7 +26,7 @@ fn geocoding_and_forecast_answers_are_parsed() {
 
 // a tiny local server that answers the two requests like open-meteo does
 fn mock(geo_ok: bool) -> (String, String) {
-    std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+    crate::no_proxy_for_tests();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     std::thread::spawn(move || {
@@ -62,7 +62,7 @@ fn no_internet_is_an_error_with_a_reason() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     drop(listener);
-    std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+    crate::no_proxy_for_tests();
     let e = fetch_from("Москва", &format!("http://127.0.0.1:{}/geo", port), &format!("http://127.0.0.1:{}/api", port)).unwrap_err();
     assert!(e.contains("нет соединения"), "{}", e);
 }

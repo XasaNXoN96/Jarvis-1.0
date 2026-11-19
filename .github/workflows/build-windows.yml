@@ -60,7 +60,9 @@ jobs:
         run: |
           $env:LIB = "$PWD\lib\windows\amd64;$env:LIB"
           $env:PATH = "$PWD\lib\windows\amd64;$env:PATH"
-          cargo test -p jarvis-core --no-fail-fast 2>&1 | Tee-Object -FilePath test.log
+          # one test at a time: several tests start local servers and change the environment; at the same time this can crash the whole run
+          # on Windows (STATUS_ACCESS_VIOLATION), and a crash hides which test it was. Sequentially the log names the test.
+          cargo test -p jarvis-core --no-fail-fast -- --test-threads=1 2>&1 | Tee-Object -FilePath test.log
           $code = $LASTEXITCODE
           if ($code -ne 0) {
             # the reason goes into an annotation: it is visible on the run page and through the API without signing in
