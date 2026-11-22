@@ -338,11 +338,22 @@ fn submit_incoming(incoming: Incoming) -> bool {
         SUBMITTED.lock().push(incoming);
         return true;
     }
+    // the phone and the Telegram bot: a burst of 20 phrases, then 120 a minute. A broken page or a flooding client does not start a
+    // hundred commands a second (the keyboard, the voice and the window of this computer are not limited here)
+    if incoming.source.is_remote() {
+        let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+        if let Err(wait) = DOOR_LIMIT.lock().allow(incoming.source.as_str(), now_ms) {
+            crate::audit::record_rate_limited("remote-flood", 60, "remote", incoming.source.as_str(), "refused", &format!("слишком много фраз подряд, следующая через {} мс", wait));
+            return false;
+        }
+    }
     match TX.get() {
         Some(tx) => tx.lock().send(incoming).is_ok(),
         None => false,
     }
 }
+
+static DOOR_LIMIT: Lazy<Mutex<crate::ratelimit::Limiter>> = Lazy::new(|| Mutex::new(crate::ratelimit::Limiter::new(20, 120)));
 
 // tests: phrases are caught here instead of going to the (not running) main loop. A test catches the phrases of its own
 // thread; the Telegram bot works on a thread of its own, so a test of it catches the phrases of that door from any thread
