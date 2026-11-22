@@ -1544,3 +1544,31 @@ fn the_talkativeness_has_three_levels_and_an_unknown_one_is_the_usual() {
     assert!(talk_prompt("detailed").unwrap().contains("развёрнуто"));
     assert!(talk_prompt("").is_none());
 }
+
+
+#[test]
+fn what_was_said_earlier_is_told_in_a_few_words_and_nothing_is_added_to_a_short_talk() {
+    let mut msgs = Vec::new();
+    for i in 0..30 {
+        msgs.push(ChatMsg { role: if i % 2 == 0 { "user" } else { "assistant" }.into(), content: format!("реплика номер {} про погоду в Ташкенте и всякое другое длинное описание, которое не поместится целиком в краткую справку", i), ts: 0, ..Default::default() });
+    }
+    msgs.push(ChatMsg { role: "user".into(), content: "а завтра?".into(), ts: 0, ..Default::default() });
+    let kept = context_for_model(&msgs);
+    let note = earlier_note(&msgs, &kept).expect("a long talk has an earlier part");
+    assert!(note.starts_with("Раньше в этом разговоре (кратко): … "), "{}", note);
+    assert!(note.chars().count() <= EARLIER_NOTE_CHARS && !note.contains('\n'));
+    assert!(note.contains("вы: «") && note.contains("я: «") && note.contains('…'));
+    let with = with_earlier_note(&msgs, kept.clone());
+    assert_eq!(with.len(), kept.len(), "no message is added: the roles still alternate");
+    assert_eq!(with[0].role, "user");
+    assert!(with[0].content.starts_with("[Раньше в этом разговоре") && with[0].content.ends_with(&kept[0].content));
+    assert_eq!(with[1..], kept[1..]);
+    // a short talk: nothing was dropped, nothing is added
+    let short = vec![ChatMsg { role: "user".into(), content: "привет".into(), ts: 0, ..Default::default() }];
+    let k = context_for_model(&short);
+    assert_eq!(earlier_note(&short, &k), None);
+    assert_eq!(with_earlier_note(&short, k.clone()), k);
+    // commands and errors are not part of the talk
+    let mixed = vec![ChatMsg { role: "user".into(), content: "открой ворд".into(), src: "cmd".into(), ..Default::default() }, ChatMsg { role: "user".into(), content: "привет".into(), ..Default::default() }];
+    assert_eq!(earlier_note(&mixed, &context_for_model(&mixed)), None);
+}

@@ -871,6 +871,42 @@ fn shortened_note() -> &'static str {
     }
 }
 
+// What was said BEFORE the messages that fit the budget, in a few words (no AI call: the last dropped messages, cut short). The
+// model then knows what the talk was about, not only the last ten messages. Idea: the session compression of OpenJarvis
+// (src/openjarvis/sessions/compression.py, Apache-2.0); own code. None when nothing was dropped.
+pub const EARLIER_NOTE_CHARS: usize = 480;
+const EARLIER_MESSAGES: usize = 4;
+const EARLIER_EACH_CHARS: usize = 90;
+
+pub fn earlier_note(all: &[ChatMsg], kept: &[ChatMsg]) -> Option<String> {
+    let usable: Vec<&ChatMsg> = all.iter().filter(|m| (m.role == "user" || m.role == "assistant") && !m.content.trim().is_empty() && (m.src.is_empty() || m.src == "ai")).collect();
+    let dropped = usable.len().checked_sub(kept.len())?;
+    if dropped == 0 {
+        return None;
+    }
+    let from = dropped.saturating_sub(EARLIER_MESSAGES);
+    let parts: Vec<String> = usable[from..dropped]
+        .iter()
+        .map(|m| {
+            let one_line = m.content.split_whitespace().collect::<Vec<_>>().join(" ");
+            let short: String = one_line.chars().take(EARLIER_EACH_CHARS).collect();
+            let dots = if one_line.chars().count() > EARLIER_EACH_CHARS { "…" } else { "" };
+            format!("{}: «{}{}»", if m.role == "user" { "вы" } else { "я" }, short, dots)
+        })
+        .collect();
+    let more = if from > 0 { "… " } else { "" };
+    let note: String = format!("Раньше в этом разговоре (кратко): {}{}", more, parts.join("; ")).chars().take(EARLIER_NOTE_CHARS).collect();
+    Some(note)
+}
+
+// the note goes in front of the first message of the context (a user message: the roles still alternate)
+pub fn with_earlier_note(all: &[ChatMsg], mut kept: Vec<ChatMsg>) -> Vec<ChatMsg> {
+    if let (Some(note), Some(first)) = (earlier_note(all, &kept), kept.first_mut()) {
+        first.content = format!("[{}]\n\n{}", note, first.content);
+    }
+    kept
+}
+
 // the last messages that fit the budget, starting with a user message, only user / assistant roles
 pub fn context_for_model(messages: &[ChatMsg]) -> Vec<ChatMsg> {
     // computer commands and their replies ("открой ворд" - "Открываю Word") are not a talk with the model
@@ -1676,7 +1712,7 @@ pub fn send_with_hook(store: &'static Store, conf: Result<ProviderConf, AiError>
         // the question is part of the context; it is stored below together with its request id
         let mut msgs = chat.messages.clone();
         msgs.push(ChatMsg { role: "user".into(), content: rid_text, src: "ai".into(), ..Default::default() });
-        context_for_model(&msgs)
+        with_earlier_note(&msgs, context_for_model(&msgs))
     };
     // a short question asked to be answered aloud: a short answer (the words and the cap); everything else as before
     // (with the voice switched off nobody reads the answer aloud: it is a text answer then)
