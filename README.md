@@ -75,6 +75,13 @@ Tick "Start Jarvis with Windows" in the installer: it starts in the background (
 
 `resources/commands/<name>/command.toml`. Besides `phrases` (matched by the intent model) a command can have `triggers`: keyword stems, e.g. `triggers.ru = ["таймер"]`, `["выключ комп"]` (all stems must begin some word of the phrase; the longest match wins; checked before the intent model). Lua scripts get `jarvis.parse.number(text)` / `jarvis.parse.duration(text)`, `jarvis.timer.after(...)`, `jarvis.system.run(...)`, see `resources/commands/assistant/*.lua`.
 
+## Morning briefing, news and the shield
+
+- **Morning briefing.** Say «утренняя сводка» (or «доложи обстановку», «что у нас на сегодня»): Jarvis reads the date, the weather of your city (Settings → city), the reminders and timers of the next 24 hours and the last notes. With an AI connected the model only retells this data (it may not invent anything); without it the text is composed locally. «включи утреннюю сводку в 7:30» starts it every day at that time (off until you switch it on), «выключи утреннюю сводку» stops it, «когда утренняя сводка» says the setting. The setting is in `digest.json` in the config folder.
+- **News in the briefing.** «включи новости в утренней сводке» adds three headlines from an RSS feed (default: BBC Russian service; own feeds, at most three, can be written in `digest.json` under `feeds`); «выключи новости в сводке» removes them. Headlines are foreign text: one that holds an order to the model is dropped, the rest goes to the model as data only.
+- **The shield** (`shield.rs`). Keys and passwords are cut out of a text before it goes to the AI provider and out of the logs; addresses that lead to this computer or to a home network are refused (also written as a strange number); a scanner finds «ignore the previous instructions»-style text (English and Russian); a list of files with secrets is never read out. The phone and the Telegram bot are limited to a burst of 20 phrases and 120 a minute.
+- The ideas follow [OpenJarvis](https://github.com/open-jarvis/OpenJarvis) (Apache-2.0): the briefing scheme, the loop guard, the security layer and the rate limiter. The code is our own; see `docs/OPENJARVIS_STUDY.md`.
+
 ## Run
 
 ```

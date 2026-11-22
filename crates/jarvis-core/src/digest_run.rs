@@ -118,6 +118,59 @@ fn notes() -> Vec<String> {
     std::fs::read_to_string(PathBuf::from(home).join("Documents").join("Jarvis-notes.txt")).map(|t| notes_from_text(&t)).unwrap_or_default()
 }
 
+// the headlines of the feeds (only when the owner switched the news on); a feed that does not answer is skipped
+fn news() -> Vec<String> {
+    let Some(path) = settings_path() else { return Vec::new() };
+    let s = digest::load_settings(&path);
+    if !s.news {
+        return Vec::new();
+    }
+    let mut all: Vec<String> = Vec::new();
+    for feed in digest::feeds_of(&s) {
+        match fetch_feed(&feed) {
+            Ok(xml) => all.extend(digest::parse_rss_titles(&xml, 2)),
+            Err(e) => {
+                warn!("Digest: the feed {} was not read: {}", feed, e);
+                uistate::log_event("digest", "Ленту новостей прочитать не удалось");
+            }
+        }
+    }
+    digest::safe_headlines(all)
+}
+
+// One feed: the address is checked (no local addresses, also after a redirect), the answer is cut at one megabyte.
+#[cfg(feature = "lua")]
+fn fetch_feed(url: &str) -> Result<String, String> {
+    use std::io::Read;
+    crate::shield::check_url_resolving(url)?;
+    let client = reqwest::blocking::Client::builder()
+        .connect_timeout(Duration::from_secs(8))
+        .timeout(Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 3 {
+                attempt.error("слишком много перенаправлений")
+            } else if crate::shield::check_url(attempt.url().as_str()).is_err() {
+                attempt.error("перенаправление на недопустимый адрес")
+            } else {
+                attempt.follow()
+            }
+        }))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client.get(url).header("User-Agent", "Jarvis-digest").send().map_err(|_| "нет связи с сервером ленты".to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("сервер ответил {}", resp.status()));
+    }
+    let mut body = Vec::new();
+    resp.take(1_000_000).read_to_end(&mut body).map_err(|_| "ответ оборвался".to_string())?;
+    Ok(String::from_utf8_lossy(&body).to_string())
+}
+
+#[cfg(not(feature = "lua"))]
+fn fetch_feed(_url: &str) -> Result<String, String> {
+    Err("в этой сборке нет сетевого модуля".into())
+}
+
 pub fn collect() -> Data {
     let now = Local::now();
     Data {
@@ -128,6 +181,7 @@ pub fn collect() -> Data {
         weather: weather_info(),
         reminders: reminders(now.timestamp()),
         notes: notes(),
+        news: news(),
     }
 }
 
@@ -207,7 +261,16 @@ pub fn handle(cmd: Cmd) {
             digest::save_settings(&path, &s);
             say(&digest::describe(&s));
         }
-        Cmd::Status => say(&digest::describe(&s)),
+        Cmd::Status => say(&format!("{} {}", digest::describe(&s), digest::describe_news(&s))),
+        Cmd::News(on) => {
+            s.news = on;
+            if digest::save_settings(&path, &s) {
+                let more = if on { " Читаю заголовки с сайта BBC Русская служба; другие ленты можно указать в файле digest.json." } else { "" };
+                say(&format!("{}{}", digest::describe_news(&s), more));
+            } else {
+                say("Не удалось сохранить настройку сводки.");
+            }
+        }
     }
 }
 
