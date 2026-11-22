@@ -95,6 +95,7 @@ pub mod updater;
 pub mod ai;
 pub mod digest;
 pub mod digest_run;
+pub mod loopguard;
 pub mod filesearch;
 pub mod guard;
 pub mod instance;
