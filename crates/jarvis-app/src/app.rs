@@ -915,6 +915,17 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
         return false;
     }
 
+    // the morning briefing: "утренняя сводка", "включи утреннюю сводку в 7:30", "выключи утреннюю сводку"
+    if let Some(cmd) = jarvis_core::digest::parse_command(text) {
+        info!("Digest command: {:?}", cmd);
+        open_request(text, "command");
+        jarvis_core::uistate::log_action(text, "утренняя сводка", true);
+        jarvis_core::digest_run::handle(cmd);
+        jarvis_core::dialog::end(true);
+        ipc::send(IpcEvent::Idle);
+        return false;
+    }
+
     // a program by its spoken name ("открой ворт", "запусти тотал командер"): before the word triggers,
     // because the recognizer rarely writes the name the way the trigger list has it
     // then a website by name ("открой YouTube" is YouTube, never a search)

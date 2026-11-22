@@ -366,6 +366,8 @@ fn main() -> Result<(), String> {
     let console_tx = text_cmd_tx.clone();
     // phone / remote control feeds commands through the same channel (off until enabled)
     jarvis_core::remote::set_sender(text_cmd_tx.clone());
+    // the daily morning briefing (off until the user says "включи утреннюю сводку")
+    jarvis_core::digest_run::start_scheduler();
     // the Telegram bot of the user feeds the same queue (only when the user switched it on and paired a phone)
     jarvis_core::telegram::start();
 

@@ -694,7 +694,7 @@ pub fn group_key(pack: &str, id: &str) -> &'static str {
     if starts("note") || starts("task") || starts("office") || starts("object") || id == "session" { return "text"; }
     if starts("tts") || starts("read_") || starts("mic_") || starts("chat") || id == "screen" { return "voice"; }
     if pack == "windows" { return "system"; }
-    if starts("info") || starts("sys_") || pack == "weather" { return "info"; }
+    if starts("info") || starts("sys_") || pack == "weather" || pack == "digest" { return "info"; }
     if starts("game") || pack == "steam" { return "games"; }
     if starts("remote") || starts("phone_") { return "remote"; }
     if pack == "stop" || pack == "terminate" { return "control"; }

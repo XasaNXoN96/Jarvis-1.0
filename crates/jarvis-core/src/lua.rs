@@ -1,7 +1,7 @@
 mod engine;
 mod sandbox;
 mod error;
-mod api;
+pub(crate) mod api;
 pub use api::system::process_running;
 
 mod structs;

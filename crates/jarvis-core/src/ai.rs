@@ -1163,6 +1163,13 @@ fn net_error(conf: &ProviderConf, e: reqwest::Error) -> AiError {
 
 // one blocking request; the caller handles cancellation
 #[cfg(feature = "lua")]
+// One question outside any conversation, with its own system prompt (the morning briefing): the whole answer at once.
+pub fn complete_once(system: &str, user: &str) -> Result<String, AiError> {
+    let conf = conf_from_settings()?;
+    let history = vec![ChatMsg { role: "user".into(), content: user.to_string(), src: "ai".into(), ..Default::default() }];
+    request_answer(&conf, &history, system)
+}
+
 pub fn request_answer(conf: &ProviderConf, history: &[ChatMsg], system: &str) -> Result<String, AiError> {
     request_answer_limited(conf, history, system, None).map(|(answer, _)| answer)
 }
