@@ -923,6 +923,14 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             Some(d) => json!({ "ok": false, "message": format!("Папка логов: {}", d.display()) }),
             None => json!({ "ok": false, "message": "Папка логов не определена" }),
         },
+        "google_connect" => match crate::google::connect_start() {
+            Ok(url) => json!({ "ok": true, "url": url }),
+            Err(e) => json!({ "ok": false, "message": e }),
+        },
+        "google_disconnect" => {
+            crate::google::disconnect();
+            json!({ "ok": true })
+        }
         "openai_key_forget" => {
             crate::uistate::forget_openai_key();
             json!({ "ok": true })

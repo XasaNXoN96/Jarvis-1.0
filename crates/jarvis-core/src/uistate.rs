@@ -94,6 +94,10 @@ pub struct UiSettings {
     pub cloud_tts_key: String,
     // the key of the OPTIONAL cloud of OpenAI for the voice (speech and recognition): kept like the AI keys; empty: the key of the AI is used when the provider is OpenAI
     pub openai_key: String,
+    // Google for the briefing (calendar and mail, read only): the OAuth client of the owner and the refresh token; kept encrypted, never shown
+    pub google_client_id: String,
+    pub google_client_secret: String,
+    pub google_refresh: String,
     // voice messages of the phone and Telegram are recognised by the cloud of OpenAI (off by default: the sound leaves the computer)
     pub stt_cloud: bool,
     // false = the search key is kept but not used
@@ -177,7 +181,7 @@ pub fn browser_exe(key: &str) -> Option<&'static str> {
 impl Default for UiSettings {
     fn default() -> Self {
         Self {
-            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: true, city: String::new(), reaction_voice: String::new(), voice_mode: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_mode: String::new(), ai_talk: String::new(), window_fullscreen: true, ai_key: String::new(), ai_search_key: String::new(), cloud_tts_key: String::new(), openai_key: String::new(), stt_cloud: false, ai_search_auto: true, ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
+            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: true, city: String::new(), reaction_voice: String::new(), voice_mode: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_mode: String::new(), ai_talk: String::new(), window_fullscreen: true, ai_key: String::new(), ai_search_key: String::new(), cloud_tts_key: String::new(), openai_key: String::new(), stt_cloud: false, google_client_id: String::new(), google_client_secret: String::new(), google_refresh: String::new(), ai_search_auto: true, ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
             ai_enabled: true, mic_off: false,
             notify_show: true, notify_speak: true, notify_sound: true, dnd: false,
             ext_enabled: false, ext_show: true, ext_speak: false, ext_strict: true, ext_allowed: Vec::new(), ext_blocked: Vec::new(), ext_seen: Vec::new(),
@@ -255,6 +259,8 @@ pub fn load_from(path: &std::path::Path) -> UiSettings {
     s.ai_search_key = crate::secret::open(&s.ai_search_key);
     s.cloud_tts_key = crate::secret::open(&s.cloud_tts_key);
     s.openai_key = crate::secret::open(&s.openai_key);
+    s.google_client_secret = crate::secret::open(&s.google_client_secret);
+    s.google_refresh = crate::secret::open(&s.google_refresh);
     if plain_on_disk && cfg!(target_os = "windows") {
         write_settings(&s);
     }
@@ -297,6 +303,8 @@ pub fn write_to(p: &std::path::Path, s: &UiSettings) {
     v["ai_search_key"] = Value::String(crate::secret::seal(&s.ai_search_key));
     v["cloud_tts_key"] = Value::String(crate::secret::seal(&s.cloud_tts_key));
     v["openai_key"] = Value::String(crate::secret::seal(&s.openai_key));
+    v["google_client_secret"] = Value::String(crate::secret::seal(&s.google_client_secret));
+    v["google_refresh"] = Value::String(crate::secret::seal(&s.google_refresh));
     if let Ok(json) = serde_json::to_string_pretty(&v) {
         // (atomic, never through a link planted under the temporary name: lib.rs write_atomic)
         let _ = crate::write_atomic(p, json);
@@ -372,7 +380,8 @@ pub fn reset_settings() {
     let search_key = std::mem::take(&mut s.ai_search_key);
     let cloud_key = std::mem::take(&mut s.cloud_tts_key);
     let openai_key = std::mem::take(&mut s.openai_key);
-    *s = UiSettings { ai_key: key, ai_search_key: search_key, cloud_tts_key: cloud_key, openai_key, ..UiSettings::default() };
+    let (g_id, g_secret, g_refresh) = (std::mem::take(&mut s.google_client_id), std::mem::take(&mut s.google_client_secret), std::mem::take(&mut s.google_refresh));
+    *s = UiSettings { ai_key: key, ai_search_key: search_key, cloud_tts_key: cloud_key, openai_key, google_client_id: g_id, google_client_secret: g_secret, google_refresh: g_refresh, ..UiSettings::default() };
     write_settings(&s);
     drop(s);
     crate::MIC_MUTED.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -396,6 +405,21 @@ pub fn openai_voice_key() -> String {
     } else {
         String::new()
     }
+}
+
+pub fn google_client() -> (String, String) {
+    let s = SETTINGS.lock();
+    (s.google_client_id.clone(), s.google_client_secret.clone())
+}
+
+pub fn google_refresh() -> String {
+    SETTINGS.lock().google_refresh.clone()
+}
+
+pub fn set_google_refresh(token: &str) {
+    let mut s = SETTINGS.lock();
+    s.google_refresh = token.trim().chars().take(600).collect();
+    write_settings(&s);
 }
 
 pub fn forget_openai_key() {
@@ -535,6 +559,8 @@ pub fn update_settings(patch: &Value) {
     if let Some(v) = patch.get("cloud_tts_key").and_then(|v| v.as_str()) { s.cloud_tts_key = v.trim().chars().take(300).collect(); }
     if let Some(v) = patch.get("openai_key").and_then(|v| v.as_str()) { s.openai_key = v.trim().chars().take(300).collect(); }
     if let Some(v) = patch.get("stt_cloud").and_then(|v| v.as_bool()) { s.stt_cloud = v; }
+    if let Some(v) = patch.get("google_client_id").and_then(|v| v.as_str()) { s.google_client_id = v.trim().chars().take(200).collect(); }
+    if let Some(v) = patch.get("google_client_secret").and_then(|v| v.as_str()) { s.google_client_secret = v.trim().chars().take(200).collect(); }
     if let Some(v) = patch.get("ai_search_auto").and_then(|v| v.as_bool()) { s.ai_search_auto = v; }
     if let Some(v) = patch.get("ai_fallback").and_then(|v| v.as_bool()) { s.ai_fallback = v; }
     if let Some(v) = patch.get("ai_enabled").and_then(|v| v.as_bool()) {
@@ -637,6 +663,10 @@ pub fn settings_json() -> Value {
     out["openai_key_saved"] = json!(!s.openai_key.is_empty());
     out["openai_key_from_ai"] = json!(s.openai_key.is_empty() && s.ai_provider == "openai" && !s.ai_key.is_empty());
     out["stt_cloud"] = json!(s.stt_cloud);
+    out["google_client_id"] = json!(s.google_client_id);
+    out["google_client_saved"] = json!(!s.google_client_id.is_empty() && !s.google_client_secret.is_empty());
+    out["google_connected"] = json!(!s.google_refresh.is_empty());
+    out["google_status"] = json!(crate::google::status_text());
     out["ai_search_auto"] = json!(s.ai_search_auto);
     out
 }

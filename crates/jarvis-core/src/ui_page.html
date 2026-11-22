@@ -1651,6 +1651,13 @@ body.live-on { padding-top: 44px; }
         <div class="setrow"><div class="l">Найти<small>по словам записи</small></div><div class="r"><input type="text" id="mem-q" placeholder="поиск"><button class="btn" id="mem-export" type="button">Копировать всё</button></div></div>
         <div id="mem-list" class="mem-list"></div><div class="msgline" id="mem-msg"></div>
       </div>
+      <div class="card" data-cat="connect" id="google-card" data-tab="Google"><h3><span class="ei">📅</span>Google: календарь и почта</h3>
+        <div class="setrow"><div class="l">Календарь и почта в утренней сводке<small>Только чтение (календарь и входящие). Нужен свой «клиент OAuth» типа «Приложение для компьютера» в консоли Google Cloud (включите Calendar API и Gmail API). Идентификатор и секрет хранятся зашифрованно. <b>Названия событий и темы писем попадут в сводку и, если подключён ИИ, уйдут ему</b>; письма и события никогда не изменяются.</small></div>
+          <div class="r"><input type="text" id="google-id" placeholder="идентификатор клиента" autocomplete="off"><input type="password" id="google-secret" placeholder="секрет клиента" autocomplete="off"><button type="button" class="btn small" id="google-save">Сохранить</button></div></div>
+        <div class="setrow"><div class="l">Подключение<small id="google-status">не подключён</small></div>
+          <div class="r"><button type="button" class="btn small primary" id="google-connect">Подключить Google</button><button type="button" class="btn small" id="google-disconnect">Отключить</button></div></div>
+      </div>
+
       <div class="card" data-cat="connect" id="ct-card" data-tab="Мои контакты"><h3><span class="ei">👥</span>Мои контакты</h3>
         <div class="setrow"><div class="l">Кому писать голосом<small>«напиши жене: буду поздно». В «Именах» перечислите слова, которыми вы называете человека (жена, любимая). Сообщение всегда ждёт вашего «да». WhatsApp и Telegram открываются с готовым текстом — «Отправить» нажимаете вы.</small></div></div>
         <div class="ct-form">
@@ -4394,6 +4401,10 @@ async function loadSettings() {
     $('#cloud-key').placeholder = s.cloud_tts_key_saved ? 'ключ сохранён (оставьте пустым, чтобы не менять)' : 'ключ Яндекса';
     $('#oai-key').placeholder = s.openai_key_saved ? 'ключ сохранён (оставьте пустым, чтобы не менять)' : s.openai_key_from_ai ? 'используется ключ из раздела «ИИ»' : 'ключ OpenAI';
     $('#stt-cloud').checked = !!s.stt_cloud;
+    if (document.activeElement !== $('#google-id')) $('#google-id').value = s.google_client_id || '';
+    $('#google-secret').placeholder = s.google_client_saved ? 'секрет сохранён (оставьте пустым, чтобы не менять)' : 'секрет клиента';
+    $('#google-status').textContent = s.google_connected ? 'Google подключён: календарь и почта попадут в утреннюю сводку' : (s.google_status || 'не подключён');
+    $('#google-connect').disabled = !!s.google_connected; $('#google-disconnect').disabled = !s.google_connected;
     $('#voice-hint').textContent = s.piper ? 'Джарвис (Piper) — нейросетевой голос, работает без интернета' : 'Piper не установлен: говорит голос Windows (в большом установщике есть Piper)';
     if (!voicesLoaded) {
       voicesLoaded = true;
@@ -4462,6 +4473,20 @@ $('#oai-save').onclick = async () => {
 };
 $('#oai-forget').onclick = async () => { await action('openai_key_forget'); $('#oai-key').placeholder = 'ключ OpenAI'; voicesLoaded = false; setTimeout(loadSettings, 300); };
 $('#stt-cloud').onchange = async e => { await api('/settings', { stt_cloud: e.target.checked }); };
+// Google: the client is saved (the secret is never shown again), the sign-in opens in the browser, the page waits for the answer
+$('#google-save').onclick = async () => {
+  const id = $('#google-id').value.trim(), sec = $('#google-secret').value.trim(); if (!id && !sec) return;
+  const patch = {}; if (id) patch.google_client_id = id; if (sec) patch.google_client_secret = sec;
+  await api('/settings', patch); $('#google-secret').value = ''; setTimeout(loadSettings, 300);
+};
+$('#google-connect').onclick = async () => {
+  const r = await action('google_connect');
+  if (!r || !r.ok) { $('#google-status').textContent = (r && r.message) || 'не удалось начать'; return; }
+  window.open(r.url, '_blank');
+  $('#google-status').textContent = 'Жду вашего согласия в браузере…';
+  for (let i = 0; i < 90; i++) { await new Promise(x => setTimeout(x, 2000)); await loadSettings(); if ($('#google-disconnect') && !$('#google-disconnect').disabled) break; }
+};
+$('#google-disconnect').onclick = async () => { await action('google_disconnect'); setTimeout(loadSettings, 300); };
 $('#voice-select').onchange = async e => {
   const v = e.target.value, opt = e.target.selectedOptions[0];
   // a recorded pack: it becomes the voice of the reactions and commands (and is heard at once); the voice that reads the text is not changed

@@ -118,6 +118,31 @@ fn notes() -> Vec<String> {
     std::fs::read_to_string(PathBuf::from(home).join("Documents").join("Jarvis-notes.txt")).map(|t| notes_from_text(&t)).unwrap_or_default()
 }
 
+// Google (only when the owner connected it): the calendar of the next 24 hours and the unread mail. A part that does not answer is skipped.
+// The lines come from other people (an invitation, a mail): the ones with an order to the model are dropped.
+fn google_part() -> (Vec<String>, Option<u64>, Vec<String>) {
+    if !crate::google::connected() {
+        return (Vec::new(), None, Vec::new());
+    }
+    let calendar = match crate::google::calendar_next_day() {
+        Ok(v) => digest::safe_items(v, 6),
+        Err(e) => {
+            warn!("Digest: the calendar was not read: {}", e);
+            uistate::log_event("digest", "Календарь Google прочитать не удалось");
+            Vec::new()
+        }
+    };
+    let (mail_unread, mail) = match crate::google::mail_summary() {
+        Ok((n, lines)) => (Some(n), digest::safe_items(lines, 3)),
+        Err(e) => {
+            warn!("Digest: the mail was not read: {}", e);
+            uistate::log_event("digest", "Почту Google прочитать не удалось");
+            (None, Vec::new())
+        }
+    };
+    (calendar, mail_unread, mail)
+}
+
 // the headlines of the feeds (only when the owner switched the news on); a feed that does not answer is skipped
 fn news() -> Vec<String> {
     let Some(path) = settings_path() else { return Vec::new() };
@@ -173,6 +198,7 @@ fn fetch_feed(_url: &str) -> Result<String, String> {
 
 pub fn collect() -> Data {
     let now = Local::now();
+    let (calendar, mail_unread, mail) = google_part();
     Data {
         weekday: weekday_ru(now.weekday().num_days_from_monday()).to_string(),
         day: now.day(),
@@ -182,6 +208,9 @@ pub fn collect() -> Data {
         reminders: reminders(now.timestamp()),
         notes: notes(),
         news: news(),
+        calendar,
+        mail_unread,
+        mail,
     }
 }
 
