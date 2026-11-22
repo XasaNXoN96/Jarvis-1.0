@@ -66,6 +66,10 @@ jobs:
         run: node tests/ui/voice_clips.js
         env:
           PW_MODULE: ${{ github.workspace }}/node_modules/playwright
+      - name: Cloud of OpenAI in the voice settings (key, switch, no key shown)
+        run: node tests/ui/openai_voice.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright
       - name: Phoenix (a sphere with moods - state, words, answers, switch off)
         run: node tests/ui/phoenix.js
         env:

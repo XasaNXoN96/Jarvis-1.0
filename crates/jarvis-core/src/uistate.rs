@@ -92,6 +92,10 @@ pub struct UiSettings {
     pub ai_search_key: String,
     // the key of the OPTIONAL cloud voice (Yandex SpeechKit): kept like the AI keys, encrypted, never shown
     pub cloud_tts_key: String,
+    // the key of the OPTIONAL cloud of OpenAI for the voice (speech and recognition): kept like the AI keys; empty: the key of the AI is used when the provider is OpenAI
+    pub openai_key: String,
+    // voice messages of the phone and Telegram are recognised by the cloud of OpenAI (off by default: the sound leaves the computer)
+    pub stt_cloud: bool,
     // false = the search key is kept but not used
     pub ai_search_auto: bool,
     pub ai_url: String,
@@ -173,7 +177,7 @@ pub fn browser_exe(key: &str) -> Option<&'static str> {
 impl Default for UiSettings {
     fn default() -> Self {
         Self {
-            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: true, city: String::new(), reaction_voice: String::new(), voice_mode: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_mode: String::new(), ai_talk: String::new(), window_fullscreen: true, ai_key: String::new(), ai_search_key: String::new(), cloud_tts_key: String::new(), ai_search_auto: true, ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
+            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: true, city: String::new(), reaction_voice: String::new(), voice_mode: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_mode: String::new(), ai_talk: String::new(), window_fullscreen: true, ai_key: String::new(), ai_search_key: String::new(), cloud_tts_key: String::new(), openai_key: String::new(), stt_cloud: false, ai_search_auto: true, ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
             ai_enabled: true, mic_off: false,
             notify_show: true, notify_speak: true, notify_sound: true, dnd: false,
             ext_enabled: false, ext_show: true, ext_speak: false, ext_strict: true, ext_allowed: Vec::new(), ext_blocked: Vec::new(), ext_seen: Vec::new(),
@@ -250,6 +254,7 @@ pub fn load_from(path: &std::path::Path) -> UiSettings {
     s.ai_key = crate::secret::open(&s.ai_key);
     s.ai_search_key = crate::secret::open(&s.ai_search_key);
     s.cloud_tts_key = crate::secret::open(&s.cloud_tts_key);
+    s.openai_key = crate::secret::open(&s.openai_key);
     if plain_on_disk && cfg!(target_os = "windows") {
         write_settings(&s);
     }
@@ -291,6 +296,7 @@ pub fn write_to(p: &std::path::Path, s: &UiSettings) {
     v["ai_key"] = Value::String(crate::secret::seal(&s.ai_key));
     v["ai_search_key"] = Value::String(crate::secret::seal(&s.ai_search_key));
     v["cloud_tts_key"] = Value::String(crate::secret::seal(&s.cloud_tts_key));
+    v["openai_key"] = Value::String(crate::secret::seal(&s.openai_key));
     if let Ok(json) = serde_json::to_string_pretty(&v) {
         // (atomic, never through a link planted under the temporary name: lib.rs write_atomic)
         let _ = crate::write_atomic(p, json);
@@ -365,7 +371,8 @@ pub fn reset_settings() {
     let key = std::mem::take(&mut s.ai_key);
     let search_key = std::mem::take(&mut s.ai_search_key);
     let cloud_key = std::mem::take(&mut s.cloud_tts_key);
-    *s = UiSettings { ai_key: key, ai_search_key: search_key, cloud_tts_key: cloud_key, ..UiSettings::default() };
+    let openai_key = std::mem::take(&mut s.openai_key);
+    *s = UiSettings { ai_key: key, ai_search_key: search_key, cloud_tts_key: cloud_key, openai_key, ..UiSettings::default() };
     write_settings(&s);
     drop(s);
     crate::MIC_MUTED.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -377,6 +384,28 @@ pub fn reset_settings() {
 
 pub fn cloud_tts_key() -> String {
     SETTINGS.lock().cloud_tts_key.clone()
+}
+
+// the key of the OpenAI cloud for the voice: the own one, else the key of the AI when its provider is OpenAI
+pub fn openai_voice_key() -> String {
+    let s = SETTINGS.lock();
+    if !s.openai_key.is_empty() {
+        s.openai_key.clone()
+    } else if s.ai_provider == "openai" {
+        s.ai_key.clone()
+    } else {
+        String::new()
+    }
+}
+
+pub fn forget_openai_key() {
+    let mut s = SETTINGS.lock();
+    s.openai_key.clear();
+    s.stt_cloud = false;
+    if crate::openai_voice::voice_of(&s.voice_name).is_some() && !(s.ai_provider == "openai" && !s.ai_key.is_empty()) {
+        s.voice_name.clear();
+    }
+    write_settings(&s);
 }
 
 pub fn forget_cloud_tts_key() {
@@ -504,6 +533,8 @@ pub fn update_settings(patch: &Value) {
     if let Some(v) = patch.get("window_fullscreen").and_then(|v| v.as_bool()) { s.window_fullscreen = v; }
     if let Some(v) = patch.get("ai_search_key").and_then(|v| v.as_str()) { s.ai_search_key = v.trim().chars().take(300).collect(); }
     if let Some(v) = patch.get("cloud_tts_key").and_then(|v| v.as_str()) { s.cloud_tts_key = v.trim().chars().take(300).collect(); }
+    if let Some(v) = patch.get("openai_key").and_then(|v| v.as_str()) { s.openai_key = v.trim().chars().take(300).collect(); }
+    if let Some(v) = patch.get("stt_cloud").and_then(|v| v.as_bool()) { s.stt_cloud = v; }
     if let Some(v) = patch.get("ai_search_auto").and_then(|v| v.as_bool()) { s.ai_search_auto = v; }
     if let Some(v) = patch.get("ai_fallback").and_then(|v| v.as_bool()) { s.ai_fallback = v; }
     if let Some(v) = patch.get("ai_enabled").and_then(|v| v.as_bool()) {
@@ -603,6 +634,9 @@ pub fn settings_json() -> Value {
     // (apart from the macro above: it is too big for one more key)
     out["ai_search_key_saved"] = json!(!s.ai_search_key.is_empty());
     out["cloud_tts_key_saved"] = json!(!s.cloud_tts_key.is_empty());
+    out["openai_key_saved"] = json!(!s.openai_key.is_empty());
+    out["openai_key_from_ai"] = json!(s.openai_key.is_empty() && s.ai_provider == "openai" && !s.ai_key.is_empty());
+    out["stt_cloud"] = json!(s.stt_cloud);
     out["ai_search_auto"] = json!(s.ai_search_auto);
     out
 }

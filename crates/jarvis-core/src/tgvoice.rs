@@ -16,6 +16,16 @@ fn le_u16(b: &[u8], at: usize) -> Option<u16> {
 
 // the offline recognizer of Jarvis (Vosk): only in the build that has the microphone part and a model
 pub fn recognize(samples: &[i16]) -> Result<String, String> {
+    // the cloud of OpenAI first, when the owner switched it on (the sound leaves the computer); on any failure the offline one takes over
+    if crate::uistate::settings().stt_cloud {
+        let key = crate::uistate::openai_voice_key();
+        if !key.is_empty() {
+            match crate::openai_voice::transcribe(&key, samples, &crate::i18n::get_language()) {
+                Ok(text) => return Ok(text),
+                Err(why) => warn!("The cloud recognition did not work ({}): the offline one takes over", why),
+            }
+        }
+    }
     #[cfg(feature = "jarvis_app")]
     {
         crate::stt::transcribe(samples)
@@ -29,7 +39,7 @@ pub fn recognize(samples: &[i16]) -> Result<String, String> {
 
 // whether a recognition model is installed (the Lite version has none)
 pub fn recognition_available() -> bool {
-    cfg!(feature = "jarvis_app") && !crate::vosk_models::scan_vosk_models().is_empty()
+    (crate::uistate::settings().stt_cloud && !crate::uistate::openai_voice_key().is_empty()) || (cfg!(feature = "jarvis_app") && !crate::vosk_models::scan_vosk_models().is_empty())
 }
 
 // Ogg/Opus -> 16 kHz mono i16

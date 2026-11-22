@@ -98,6 +98,7 @@ pub mod digest_run;
 pub mod loopguard;
 pub mod shield;
 pub mod ratelimit;
+pub mod openai_voice;
 pub mod filesearch;
 pub mod guard;
 pub mod instance;

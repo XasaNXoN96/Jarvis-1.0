@@ -1102,6 +1102,53 @@ fn speak_piper(exe: &Path, model: &Path, text: &str, generation: u64) -> bool {
     true
 }
 
+// the cloud voice of OpenAI (onyx, ash ...): piece by piece like the Yandex one; false when nothing came at all (then Piper takes over)
+fn speak_openai(voice: &str, text: &str, generation: u64) -> bool {
+    let chunks = split_chunks(text);
+    if chunks.is_empty() {
+        return true;
+    }
+    let key = crate::uistate::openai_voice_key();
+    let seq = WAV_SEQ.fetch_add(1, Ordering::SeqCst);
+    let wav_of = |i: usize| std::env::temp_dir().join(format!("jarvis_openai_{}_{}_{}_{}.wav", std::process::id(), generation, seq, i));
+    let cancelled = move || GENERATION.load(Ordering::SeqCst) != generation;
+    if let Err(why) = crate::openai_voice::synth(&key, &chunks[0], voice, &wav_of(0)) {
+        note_play(Err(format!("облачный голос OpenAI не создал звук: {}", why)));
+        tell_once(&format!("Облачный голос OpenAI не сработал ({}), отвечает Jarvis (Piper). Проверьте Настройки → Голос.", why));
+        return false;
+    }
+    for i in 0..chunks.len() {
+        let next = if i + 1 < chunks.len() {
+            let (text, wav, key, voice) = (chunks[i + 1].clone(), wav_of(i + 1), key.clone(), voice.to_string());
+            Some(std::thread::spawn(move || crate::openai_voice::synth(&key, &text, &voice, &wav)))
+        } else {
+            None
+        };
+        if !cancelled() {
+            play_wav(&wav_of(i), generation);
+        }
+        let _ = std::fs::remove_file(wav_of(i));
+        if cancelled() {
+            if let Some(h) = next {
+                let _ = h.join();
+                let _ = std::fs::remove_file(wav_of(i + 1));
+            }
+            return true;
+        }
+        if let Some(h) = next {
+            match h.join() {
+                Ok(Ok(())) => {}
+                Ok(Err(why)) => {
+                    tell_once(&format!("Облачный голос OpenAI остановился посреди ответа: {}", why));
+                    return true;
+                }
+                Err(_) => return true,
+            }
+        }
+    }
+    true
+}
+
 // the cloud voice (Yandex SpeechKit): piece by piece, the next piece is made while this one is played; false when nothing came
 // at all (then Piper takes over)
 fn speak_yandex(voice: &str, text: &str, generation: u64) -> bool {
@@ -1599,6 +1646,11 @@ fn speak_blocking(text: &str, lang: &str, generation: u64) {
         speak_sapi(&text, &lang, generation);
         return;
     }
+    if let Some(voice) = crate::openai_voice::voice_of(&choice) {
+        if !crate::uistate::openai_voice_key().is_empty() && speak_openai(voice, &text, generation) {
+            return;
+        }
+    }
     if let Some(voice) = crate::yandex::voice_of(&choice) {
         // the cloud voice of the user's own key; when it cannot speak, Jarvis's own Piper takes over (never the Windows voice)
         if speak_yandex(voice, &text, generation) {
@@ -1629,6 +1681,8 @@ pub fn voice_label(choice: &str) -> String {
         "авто (голос Jarvis, Piper)".to_string()
     } else if choice.starts_with("win:") {
         "Windows".to_string()
+    } else if let Some(v) = crate::openai_voice::voice_of(choice) {
+        format!("OpenAI (облако): {}", v)
     } else if let Some(v) = crate::yandex::voice_of(choice) {
         format!("Яндекс (облако): {}", v)
     } else if let Some(sp) = crate::silero::speaker_of(choice) {
@@ -1655,6 +1709,12 @@ pub fn list_voices() -> Vec<(String, String)> {
         for (id, _, _, label) in crate::voice_install::EXTRA_RU {
             let text = if crate::voice_install::extra_installed(id) { label.to_string() } else { format!("{} — будет загружен при выборе", label) };
             list.push((format!("{}{}", crate::voice_install::EXTRA_PREFIX, id), text));
+        }
+    }
+    // the cloud voices of OpenAI: only when there is a key (the text of an answer goes to OpenAI); they speak Russian
+    if !crate::uistate::openai_voice_key().is_empty() {
+        for (id, label) in crate::openai_voice::VOICES {
+            list.push((format!("{}{}", crate::openai_voice::PREFIX, id), label.to_string()));
         }
     }
     // the cloud voices of Yandex: only when the user saved his own key (the text of an answer goes to Yandex)

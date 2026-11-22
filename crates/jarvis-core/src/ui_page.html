@@ -1522,6 +1522,10 @@ body.live-on { padding-top: 44px; }
       <div class="card" data-cat="voice" id="voice-extra-card" data-tab="Облачный голос и память"><h3><span class="ei">☁</span>Облачный голос и память</h3>
         <div class="setrow" id="cloud-row"><div class="l">Облачный голос (Яндекс SpeechKit)<small id="cloud-hint">Необязательно. Нужен ваш ключ от Yandex Cloud (сервисный аккаунт с ролью ai.speechkit-tts.user). <b>Текст ответов уходит в Яндекс</b> и услуга платная по тарифу Яндекса. После сохранения ключа голоса Яндекса появятся в списке «Голос». Если облако не отвечает, говорит голос Джарвиса.</small></div>
           <div class="r"><input type="password" id="cloud-key" placeholder="ключ Яндекса" autocomplete="off"><button type="button" class="btn small" id="cloud-save">Сохранить ключ</button><button type="button" class="btn small" id="cloud-forget">Удалить ключ</button></div></div>
+        <div class="setrow" id="oai-row"><div class="l">Облако OpenAI: голоса и распознавание<small id="oai-hint">Необязательно. Ваш ключ OpenAI (если в «ИИ» выбран OpenAI, подойдёт тот же ключ). Голоса onyx, ash, echo, ballad (мужские) и nova, shimmer появятся в списке «Голос». <b>Текст ответов уходит в OpenAI</b>, услуга платная по тарифу OpenAI. Если облако не отвечает, говорит голос Джарвиса.</small></div>
+          <div class="r"><input type="password" id="oai-key" placeholder="ключ OpenAI" autocomplete="off"><button type="button" class="btn small" id="oai-save">Сохранить ключ</button><button type="button" class="btn small" id="oai-forget">Удалить ключ</button></div></div>
+        <div class="setrow" id="stt-cloud-row"><div class="l">Распознавать голосовые сообщения в облаке OpenAI<small>Голосовые с телефона и из Telegram распознаются моделью Whisper OpenAI, точнее, чем офлайн-распознавание. <b>Звук уходит в OpenAI.</b> Выключено: распознаёт программа на этом компьютере. Если облако не ответит, сработает офлайн-распознавание.</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="stt-cloud"><span></span></label></div></div>
         <div class="setrow"><div class="l">Держать голос в памяти<small>голос Джарвиса (Piper) загружается один раз, речь начинается быстрее; занимает около 100 МБ памяти. Выключите, если памяти мало</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="tts-warm"><span></span></label></div></div>
       </div>
@@ -4388,6 +4392,8 @@ async function loadSettings() {
     updateAiRows();
     arLoad(); applyPrivacy(s); applyGeneral(s); $('#ai-screen').checked = !!s.ai_screen;
     $('#cloud-key').placeholder = s.cloud_tts_key_saved ? 'ключ сохранён (оставьте пустым, чтобы не менять)' : 'ключ Яндекса';
+    $('#oai-key').placeholder = s.openai_key_saved ? 'ключ сохранён (оставьте пустым, чтобы не менять)' : s.openai_key_from_ai ? 'используется ключ из раздела «ИИ»' : 'ключ OpenAI';
+    $('#stt-cloud').checked = !!s.stt_cloud;
     $('#voice-hint').textContent = s.piper ? 'Джарвис (Piper) — нейросетевой голос, работает без интернета' : 'Piper не установлен: говорит голос Windows (в большом установщике есть Piper)';
     if (!voicesLoaded) {
       voicesLoaded = true;
@@ -4448,6 +4454,14 @@ $('#cloud-save').onclick = async () => {
   voicesLoaded = false; setTimeout(loadSettings, 300);
 };
 $('#cloud-forget').onclick = async () => { await action('cloud_tts_key_forget'); $('#cloud-key').placeholder = 'ключ Яндекса'; voicesLoaded = false; setTimeout(loadSettings, 300); };
+// the cloud of OpenAI: the key is saved like the others; the recognition in the cloud is a separate switch
+$('#oai-save').onclick = async () => {
+  const k = $('#oai-key').value.trim(); if (!k) return;
+  await api('/settings', { openai_key: k }); $('#oai-key').value = ''; $('#oai-key').placeholder = 'ключ сохранён (оставьте пустым, чтобы не менять)';
+  voicesLoaded = false; setTimeout(loadSettings, 300);
+};
+$('#oai-forget').onclick = async () => { await action('openai_key_forget'); $('#oai-key').placeholder = 'ключ OpenAI'; voicesLoaded = false; setTimeout(loadSettings, 300); };
+$('#stt-cloud').onchange = async e => { await api('/settings', { stt_cloud: e.target.checked }); };
 $('#voice-select').onchange = async e => {
   const v = e.target.value, opt = e.target.selectedOptions[0];
   // a recorded pack: it becomes the voice of the reactions and commands (and is heard at once); the voice that reads the text is not changed
