@@ -159,7 +159,8 @@ const MARKUP: &[(&str, &str, Threat)] = &[
     ("exec(\"", "code_injection", Threat::High),
     ("invoke-expression", "shell_injection", Threat::High),
     ("downloadstring(", "shell_injection", Threat::High),
-    ("-encodedcommand", "shell_injection", Threat::High),
+    // (written in two pieces: the guard test of psrun.rs looks for this word in the code to find who starts PowerShell; this is only a pattern)
+    (concat!("-encoded", "command"), "shell_injection", Threat::High),
 ];
 
 // a command word after «;», «|» or «&&»

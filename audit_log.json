@@ -1,0 +1,57 @@
+[
+  {
+    "at": 1795365673,
+    "door": "system",
+    "kind": "policy",
+    "subject": "x",
+    "risk": "medium",
+    "decision": "refused",
+    "confirmed": false,
+    "reason": "риск операции выше риска команды",
+    "op": 0
+  },
+  {
+    "at": 1795365673,
+    "door": "system",
+    "kind": "permission",
+    "subject": "remote_microphone",
+    "risk": "medium",
+    "decision": "allowed",
+    "confirmed": true,
+    "reason": "разрешение выключено",
+    "op": 0
+  },
+  {
+    "at": 1795365673,
+    "door": "system",
+    "kind": "policy",
+    "subject": "x",
+    "risk": "medium",
+    "decision": "refused",
+    "confirmed": false,
+    "reason": "риск операции выше риска команды",
+    "op": 0
+  },
+  {
+    "at": 1795365673,
+    "door": "system",
+    "kind": "permission",
+    "subject": "remote_microphone",
+    "risk": "medium",
+    "decision": "allowed",
+    "confirmed": true,
+    "reason": "разрешение включено",
+    "op": 0
+  },
+  {
+    "at": 1795365673,
+    "door": "system",
+    "kind": "policy",
+    "subject": "x",
+    "risk": "medium",
+    "decision": "refused",
+    "confirmed": false,
+    "reason": "риск операции выше риска команды",
+    "op": 0
+  }
+]
