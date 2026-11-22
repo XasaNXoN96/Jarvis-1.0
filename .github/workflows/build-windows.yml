@@ -29,7 +29,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      # the Rust version is pinned: 1.99.0 is the one the tests and the installers were green with. A newer "stable" lays the
+      # build folders out differently, which broke the build script of ort-sys (NotFound) and the test program
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.0
 
       - uses: Swatinem/rust-cache@v2
 
@@ -59,7 +63,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      # the Rust version is pinned: 1.99.0 is the one the tests and the installers were green with. A newer "stable" lays the
+      # build folders out differently, which broke the build script of ort-sys (NotFound) and the test program
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.0
 
       - uses: Swatinem/rust-cache@v2
 
@@ -918,7 +926,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # the Rust version is pinned: 1.99.0 is the one the tests and the installers were green with. A newer "stable" lays the
+      # build folders out differently, which broke the build script of ort-sys (NotFound) and the test program
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.0
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: license
@@ -943,7 +955,11 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # the Rust version is pinned: 1.99.0 is the one the tests and the installers were green with. A newer "stable" lays the
+      # build folders out differently, which broke the build script of ort-sys (NotFound) and the test program
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.0
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: user
@@ -1064,7 +1080,11 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # the Rust version is pinned: 1.99.0 is the one the tests and the installers were green with. A newer "stable" lays the
+      # build folders out differently, which broke the build script of ort-sys (NotFound) and the test program
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.0
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: directml
@@ -1113,7 +1133,11 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # the Rust version is pinned: 1.99.0 is the one the tests and the installers were green with. A newer "stable" lays the
+      # build folders out differently, which broke the build script of ort-sys (NotFound) and the test program
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.0
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: license-server-windows
@@ -1143,7 +1167,11 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # the Rust version is pinned: 1.99.0 is the one the tests and the installers were green with. A newer "stable" lays the
+      # build folders out differently, which broke the build script of ort-sys (NotFound) and the test program
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.0
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: gui-check
