@@ -98,6 +98,18 @@ fn settings_to_provider() {
 }
 
 #[test]
+fn a_secret_in_a_message_is_cut_out_before_it_goes_to_the_provider() {
+    let leaked = "sk-abcdefghijklmnopqrstuvwxyz123456";
+    let msgs = vec![ChatMsg { role: "user".into(), content: format!("объясни этот конфиг: api_key = {} и password=hunter2hunter2", leaked), ts: 0, ..Default::default() }];
+    let c = conf("http://x").unwrap();
+    for kind in [Kind::OpenAiCompatible, Kind::Anthropic] {
+        let body = build_body(&ProviderConf { kind, ..c.clone() }, &msgs, "SYS").to_string();
+        assert!(!body.contains(leaked) && !body.contains("hunter2hunter2"), "a secret went out: {}", body);
+        assert!(body.contains("REDACTED") && body.contains("объясни этот конфиг"), "the rest of the text must stay: {}", body);
+    }
+}
+
+#[test]
 fn request_bodies_have_no_key_and_right_shape() {
     let msgs = vec![
         ChatMsg { role: "user".into(), content: "привет".into(), ts: 0, ..Default::default() },

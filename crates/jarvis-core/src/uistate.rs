@@ -31,7 +31,8 @@ fn now() -> u64 {
 
 pub fn log_action(text: &str, command: &str, ok: bool) {
     let mut log = LOG.lock();
-    log.push_front(LogEntry { time: now(), text: text.chars().take(120).collect(), command: command.to_string(), ok });
+    // a spoken or typed phrase may hold a password or a key: it never stays in the list in clear
+    log.push_front(LogEntry { time: now(), text: crate::shield::redact_secrets(text).text.chars().take(120).collect(), command: command.to_string(), ok });
     log.truncate(60);
 }
 
@@ -53,7 +54,7 @@ static EVENT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::ne
 
 pub fn log_event(kind: &str, text: &str) {
     let mut ev = EVENTS.lock();
-    ev.push_front(Event { id: EVENT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst), time: now(), kind: kind.to_string(), text: text.chars().take(200).collect(), op: crate::origin::op() });
+    ev.push_front(Event { id: EVENT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst), time: now(), kind: kind.to_string(), text: crate::shield::redact_secrets(text).text.chars().take(200).collect(), op: crate::origin::op() });
     ev.truncate(80);
 }
 

@@ -897,6 +897,16 @@ pub fn context_for_model(messages: &[ChatMsg]) -> Vec<ChatMsg> {
 }
 
 // Anthropic wants the roles to alternate
+// A text leaves for the provider: a key or a password that stands in it (pasted code, a copied config) is cut out first.
+// The text of the owner is otherwise sent as it is.
+fn outgoing(text: &str) -> String {
+    let r = crate::shield::redact_secrets(text);
+    if !r.kinds.is_empty() {
+        warn!("A secret was cut out of a text before it went to the AI ({})", r.kinds.join(", "));
+    }
+    r.text
+}
+
 fn alternate(messages: &[ChatMsg]) -> Vec<ChatMsg> {
     let mut out: Vec<ChatMsg> = Vec::new();
     for m in messages {
@@ -926,7 +936,7 @@ pub fn build_body_limit(conf: &ProviderConf, history: &[ChatMsg], system: &str, 
         Kind::OpenAiCompatible => {
             let mut msgs = vec![json!({ "role": "system", "content": system })];
             for m in history {
-                msgs.push(json!({ "role": m.role, "content": m.content }));
+                msgs.push(json!({ "role": m.role, "content": outgoing(&m.content) }));
             }
             let mut body = json!({ "model": conf.model, "messages": msgs, "stream": stream });
             // a model that thinks answers much sooner with a short thinking: Gemini, and the reasoning models of OpenAI itself
@@ -945,7 +955,7 @@ pub fn build_body_limit(conf: &ProviderConf, history: &[ChatMsg], system: &str, 
             body
         }
         Kind::Anthropic => {
-            let msgs: Vec<Value> = alternate(history).iter().map(|m| json!({ "role": m.role, "content": m.content })).collect();
+            let msgs: Vec<Value> = alternate(history).iter().map(|m| json!({ "role": m.role, "content": outgoing(&m.content) })).collect();
             let mut body = json!({ "model": conf.model, "max_tokens": limit.map(|c| c.tokens).unwrap_or(2048), "system": system, "messages": msgs });
             if stream {
                 body["stream"] = json!(true);

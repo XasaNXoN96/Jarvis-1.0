@@ -10,16 +10,8 @@ use std::time::Duration;
 // and every address of it is checked; a redirect is checked at every step. (A name that changes its address between the check and the
 // request - «DNS rebinding» - is not stopped by this: the packs of commands are checked by hash before they run, see integrity.rs.)
 fn blocked_ip(ip: std::net::IpAddr) -> bool {
-    use std::net::IpAddr;
-    match ip {
-        IpAddr::V4(v) => v.is_loopback() || v.is_private() || v.is_link_local() || v.is_unspecified() || v.is_broadcast() || v.is_multicast() || v.octets()[0] == 0 || (v.octets()[0] == 100 && (64..128).contains(&v.octets()[1])),
-        IpAddr::V6(v) => {
-            if let Some(m) = v.to_ipv4_mapped() {
-                return blocked_ip(IpAddr::V4(m));
-            }
-            v.is_loopback() || v.is_unspecified() || v.is_multicast() || (v.segments()[0] & 0xfe00) == 0xfc00 || (v.segments()[0] & 0xffc0) == 0xfe80
-        }
-    }
+    // one list for the whole program (shield.rs): also the shared address space (100.64.0.0/10), the reserved and the benchmark ranges
+    crate::shield::is_blocked_ip(ip)
 }
 
 pub(crate) fn check_url(url: &str) -> Result<(), String> {
