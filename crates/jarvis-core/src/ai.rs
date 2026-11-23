@@ -1207,7 +1207,6 @@ fn net_error(conf: &ProviderConf, e: reqwest::Error) -> AiError {
     }
 }
 
-// one blocking request; the caller handles cancellation
 #[cfg(feature = "lua")]
 // One question outside any conversation, with its own system prompt (the morning briefing): the whole answer at once.
 pub fn complete_once(system: &str, user: &str) -> Result<String, AiError> {
@@ -1216,6 +1215,14 @@ pub fn complete_once(system: &str, user: &str) -> Result<String, AiError> {
     request_answer(&conf, &history, system)
 }
 
+// (without the network module there is no AI to ask)
+#[cfg(not(feature = "lua"))]
+pub fn complete_once(_system: &str, _user: &str) -> Result<String, AiError> {
+    Err(AiError::NoModel)
+}
+
+// one blocking request; the caller handles cancellation
+#[cfg(feature = "lua")]
 pub fn request_answer(conf: &ProviderConf, history: &[ChatMsg], system: &str) -> Result<String, AiError> {
     request_answer_limited(conf, history, system, None).map(|(answer, _)| answer)
 }

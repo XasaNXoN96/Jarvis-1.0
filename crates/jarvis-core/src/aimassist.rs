@@ -626,24 +626,26 @@ pub fn front_any_game(cfg: &AimConfig) -> Option<String> {
     if !cfg.any_game {
         return None;
     }
-    #[cfg(target_os = "windows")]
+    // (the module `run` exists only with the ONNX runtime: a build without it - the window crate - has no aim assist to ask)
+    #[cfg(all(target_os = "windows", feature = "ort"))]
     {
         let exe = crate::gamemode::front_exe_any()?;
         (!is_not_a_game(&exe) && run::front_fullscreen()).then_some(exe)
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(all(target_os = "windows", feature = "ort")))]
     None
 }
 
 // programs that are never a game (the browser, the desktop, a player, a messenger): the full screen of these is not the full screen of a game
 // the exe of the game in front, whether or not the aim assist is on for it (the statistics of the sessions use it)
 pub fn front_game_any() -> Option<String> {
-    #[cfg(target_os = "windows")]
+    // (the module `run` exists only with the ONNX runtime: a build without it - the window crate - has no aim assist to ask)
+    #[cfg(all(target_os = "windows", feature = "ort"))]
     {
         let exe = crate::gamemode::front_exe_any()?;
         (!is_not_a_game(&exe) && run::front_fullscreen()).then_some(exe)
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(all(target_os = "windows", feature = "ort")))]
     None
 }
 

@@ -62,10 +62,12 @@ pub fn explain(status: u16) -> String {
     }
 }
 
+#[cfg(feature = "lua")]
 fn client() -> Result<reqwest::blocking::Client, String> {
     reqwest::blocking::Client::builder().connect_timeout(std::time::Duration::from_secs(8)).timeout(std::time::Duration::from_secs(45)).build().map_err(|e| e.to_string())
 }
 
+#[cfg(any(feature = "lua", test))]
 fn check_endpoint(endpoint: &str) -> Result<(), String> {
     if endpoint.starts_with("https://") || endpoint.starts_with("http://127.0.0.1") {
         Ok(())
