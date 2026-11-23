@@ -379,6 +379,16 @@ jobs:
           if (-not $piper) { throw "the diagnostics did not finish" }
           Write-Host "PIPER synthesis in '$dir': [$($piper.status)] $($piper.detail)"
           if ($piper.detail -notlike "*синтезирована*") {
+            # the ASCII alias of the folder (a junction under %ProgramData%\JarvisAlias) is what Piper is started through: is it there, where does it lead
+            Write-Host "=== alias folder"
+            $alias = Join-Path $env:ProgramData "JarvisAlias"
+            Write-Host "exists: $(Test-Path $alias)"
+            if (Test-Path $alias) { cmd /c "dir /AL `"$alias`"" 2>&1 | ForEach-Object { "  $_" } }
+            $probe = Join-Path $alias "probe-ci"
+            cmd /c "mklink /J `"$probe`" `"$dir\piper`"" 2>&1 | ForEach-Object { "  mklink: $_" }
+            "Проверка голоса." | & "$probe\piper.exe" --model "$probe\voices\ru.onnx" --output_file (Join-Path $env:TEMP "direct3.wav") 2>&1 | Select-Object -First 8 | ForEach-Object { "  via junction: $_" }
+            Write-Host "via junction exit code $LASTEXITCODE; wav exists: $(Test-Path (Join-Path $env:TEMP 'direct3.wav'))"
+            cmd /c "rmdir `"$probe`"" 2>&1 | Out-Null
             # what exactly is wrong: the installed piper.exe run by hand, in the install folder and in a plain ASCII copy
             Write-Host "=== piper by hand in the install folder"
             $w1 = Join-Path $env:TEMP "direct1.wav"
