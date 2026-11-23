@@ -1501,6 +1501,32 @@ fn chats_json() -> serde_json::Value {
     })
 }
 
+static MCP_LIMIT: once_cell::sync::Lazy<parking_lot::Mutex<crate::ratelimit::Limiter>> = once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(crate::ratelimit::Limiter::new(10, 30)));
+
+fn mcp_command(text: &str) -> serde_json::Value {
+    let text = text.trim();
+    if !crate::uistate::settings().mcp_enabled {
+        return json!({ "ok": false, "message": "внешним программам управление выключено: включите его в настройках Jarvis (раздел «Подключения»)" });
+    }
+    if text.is_empty() || text.chars().count() > crate::mcp::MAX_COMMAND_CHARS {
+        return json!({ "ok": false, "message": "нужна команда до 200 знаков" });
+    }
+    if !crate::approvals::is_allowed_phrase(text) {
+        crate::audit::record_rate_limited("mcp-refused", 60, "mcp", "command", "refused", "фраза из запрещённого списка");
+        return json!({ "ok": false, "message": "такую команду внешним программам давать нельзя (выключение, удаление, установка, пароли, ссылки, удалённое управление)" });
+    }
+    let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+    if let Err(wait) = MCP_LIMIT.lock().allow("mcp", now_ms) {
+        return json!({ "ok": false, "message": format!("слишком часто, повторите через {} с", wait / 1000 + 1) });
+    }
+    crate::uistate::log_event("info", &format!("Команда от внешней программы (MCP): {}", text));
+    if crate::remote::submit(crate::origin::Source::Ipc, text) {
+        json!({ "ok": true })
+    } else {
+        json!({ "ok": false, "message": "Jarvis сейчас не принимает команды" })
+    }
+}
+
 fn chat_action(body: &serde_json::Value) -> serde_json::Value {
     let store = crate::ai::store();
     let op = body.get("op").and_then(|v| v.as_str()).unwrap_or("");
@@ -1973,6 +1999,16 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
             }
             let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap_or(json!({}));
             respond(&mut stream, "200 OK", "application/json", &scenario_action(&body).to_string());
+        }
+        // a command from another local program through the MCP bridge (mcp.rs): OFF until the owner switched it on, only the phrases of the
+        // hard list (approvals::is_allowed_phrase), at most 30 a minute; the phrase goes through the usual pipeline as the door «Ipc»
+        ("POST", "/mcp-command") => {
+            if !req.custom_header {
+                respond(&mut stream, "403 Forbidden", "text/plain", "forbidden");
+                return Ok(());
+            }
+            let body: serde_json::Value = serde_json::from_slice(&req.body).unwrap_or(json!({}));
+            respond(&mut stream, "200 OK", "application/json", &mcp_command(body.get("text").and_then(|t| t.as_str()).unwrap_or("")).to_string());
         }
         ("POST", "/chat") => {
             if !req.custom_header {

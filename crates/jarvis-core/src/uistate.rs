@@ -100,6 +100,8 @@ pub struct UiSettings {
     pub google_refresh: String,
     // voice messages of the phone and Telegram are recognised by the cloud of OpenAI (off by default: the sound leaves the computer)
     pub stt_cloud: bool,
+    // other local programs (through the MCP bridge) may give Jarvis commands: off by default
+    pub mcp_enabled: bool,
     // false = the search key is kept but not used
     pub ai_search_auto: bool,
     pub ai_url: String,
@@ -181,7 +183,7 @@ pub fn browser_exe(key: &str) -> Option<&'static str> {
 impl Default for UiSettings {
     fn default() -> Self {
         Self {
-            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: true, city: String::new(), reaction_voice: String::new(), voice_mode: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_mode: String::new(), ai_talk: String::new(), window_fullscreen: true, ai_key: String::new(), ai_search_key: String::new(), cloud_tts_key: String::new(), openai_key: String::new(), stt_cloud: false, google_client_id: String::new(), google_client_secret: String::new(), google_refresh: String::new(), ai_search_auto: true, ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
+            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: true, city: String::new(), reaction_voice: String::new(), voice_mode: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_mode: String::new(), ai_talk: String::new(), window_fullscreen: true, ai_key: String::new(), ai_search_key: String::new(), cloud_tts_key: String::new(), openai_key: String::new(), stt_cloud: false, mcp_enabled: false, google_client_id: String::new(), google_client_secret: String::new(), google_refresh: String::new(), ai_search_auto: true, ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
             ai_enabled: true, mic_off: false,
             notify_show: true, notify_speak: true, notify_sound: true, dnd: false,
             ext_enabled: false, ext_show: true, ext_speak: false, ext_strict: true, ext_allowed: Vec::new(), ext_blocked: Vec::new(), ext_seen: Vec::new(),
@@ -559,6 +561,7 @@ pub fn update_settings(patch: &Value) {
     if let Some(v) = patch.get("cloud_tts_key").and_then(|v| v.as_str()) { s.cloud_tts_key = v.trim().chars().take(300).collect(); }
     if let Some(v) = patch.get("openai_key").and_then(|v| v.as_str()) { s.openai_key = v.trim().chars().take(300).collect(); }
     if let Some(v) = patch.get("stt_cloud").and_then(|v| v.as_bool()) { s.stt_cloud = v; }
+    if let Some(v) = patch.get("mcp_enabled").and_then(|v| v.as_bool()) { s.mcp_enabled = v; }
     if let Some(v) = patch.get("google_client_id").and_then(|v| v.as_str()) { s.google_client_id = v.trim().chars().take(200).collect(); }
     if let Some(v) = patch.get("google_client_secret").and_then(|v| v.as_str()) { s.google_client_secret = v.trim().chars().take(200).collect(); }
     if let Some(v) = patch.get("ai_search_auto").and_then(|v| v.as_bool()) { s.ai_search_auto = v; }
@@ -663,6 +666,7 @@ pub fn settings_json() -> Value {
     out["openai_key_saved"] = json!(!s.openai_key.is_empty());
     out["openai_key_from_ai"] = json!(s.openai_key.is_empty() && s.ai_provider == "openai" && !s.ai_key.is_empty());
     out["stt_cloud"] = json!(s.stt_cloud);
+    out["mcp_enabled"] = json!(s.mcp_enabled);
     out["google_client_id"] = json!(s.google_client_id);
     out["google_client_saved"] = json!(!s.google_client_id.is_empty() && !s.google_client_secret.is_empty());
     out["google_connected"] = json!(!s.google_refresh.is_empty());

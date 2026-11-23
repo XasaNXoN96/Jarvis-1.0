@@ -120,8 +120,9 @@ pub fn system_prompt(honorific: &str, stamp: &str) -> String {
     )
 }
 
-pub fn user_message(d: &Data) -> String {
-    let mut out = String::from("Эти данные — единственный источник фактов для сводки:\n\n<данные>\n");
+// the collected data in a frame: the same block is given to the model for the briefing and for the proposals of the proactive helper
+pub fn data_block(d: &Data) -> String {
+    let mut out = String::from("<данные>\n");
     out.push_str(&format!("ДАТА: {}, {} {}\n", d.weekday, d.day, month_ru_gen(d.month)));
     if let Some(w) = &d.weather {
         out.push_str(&format!("ПОГОДА: {}: {}, {}", w.place, degrees_ru(w.temperature), w.text));
@@ -165,7 +166,14 @@ pub fn user_message(d: &Data) -> String {
             out.push_str(&format!("- {}\n", n));
         }
     }
-    out.push_str("</данные>\n\n");
+    out.push_str("</данные>");
+    out
+}
+
+pub fn user_message(d: &Data) -> String {
+    let mut out = String::from("Эти данные — единственный источник фактов для сводки:\n\n");
+    out.push_str(&data_block(d));
+    out.push_str("\n\n");
     if d.is_empty() {
         out.push_str("Кроме даты, данных нет: поприветствуй, назови дату и закончи.");
     } else {

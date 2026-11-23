@@ -1658,6 +1658,11 @@ body.live-on { padding-top: 44px; }
           <div class="r"><button type="button" class="btn small primary" id="google-connect">Подключить Google</button><button type="button" class="btn small" id="google-disconnect">Отключить</button></div></div>
       </div>
 
+      <div class="card" data-cat="connect" id="mcp-card" data-tab="Внешние программы (MCP)"><h3><span class="ei">🔌</span>Внешние программы (MCP)</h3>
+        <div class="setrow"><div class="l">Разрешить внешним программам управлять Джарвисом<small>Другая программа (например, Claude Desktop) сможет спросить, чем занят Джарвис, и дать ему команду. Запуск моста: <code>jarvis-app.exe --mcp</code> (путь из папки установки), его указывают в настройках той программы как MCP-сервер. <b>Выключено по умолчанию.</b> Команды проходят те же проверки прав, нельзя выключение, удаление, установку, пароли, ссылки и удалённое управление; не чаще 30 в минуту; все команды видны в журнале событий. Включайте, только если доверяете программе и тому, что она читает.</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="mcp-on"><span></span></label></div></div>
+      </div>
+
       <div class="card" data-cat="connect" id="ct-card" data-tab="Мои контакты"><h3><span class="ei">👥</span>Мои контакты</h3>
         <div class="setrow"><div class="l">Кому писать голосом<small>«напиши жене: буду поздно». В «Именах» перечислите слова, которыми вы называете человека (жена, любимая). Сообщение всегда ждёт вашего «да». WhatsApp и Telegram открываются с готовым текстом — «Отправить» нажимаете вы.</small></div></div>
         <div class="ct-form">
@@ -4401,6 +4406,7 @@ async function loadSettings() {
     $('#cloud-key').placeholder = s.cloud_tts_key_saved ? 'ключ сохранён (оставьте пустым, чтобы не менять)' : 'ключ Яндекса';
     $('#oai-key').placeholder = s.openai_key_saved ? 'ключ сохранён (оставьте пустым, чтобы не менять)' : s.openai_key_from_ai ? 'используется ключ из раздела «ИИ»' : 'ключ OpenAI';
     $('#stt-cloud').checked = !!s.stt_cloud;
+    $('#mcp-on').checked = !!s.mcp_enabled;
     if (document.activeElement !== $('#google-id')) $('#google-id').value = s.google_client_id || '';
     $('#google-secret').placeholder = s.google_client_saved ? 'секрет сохранён (оставьте пустым, чтобы не менять)' : 'секрет клиента';
     $('#google-status').textContent = s.google_connected ? 'Google подключён: календарь и почта попадут в утреннюю сводку' : (s.google_status || 'не подключён');
@@ -4473,6 +4479,7 @@ $('#oai-save').onclick = async () => {
 };
 $('#oai-forget').onclick = async () => { await action('openai_key_forget'); $('#oai-key').placeholder = 'ключ OpenAI'; voicesLoaded = false; setTimeout(loadSettings, 300); };
 $('#stt-cloud').onchange = async e => { await api('/settings', { stt_cloud: e.target.checked }); };
+$('#mcp-on').onchange = async e => { await api('/settings', { mcp_enabled: e.target.checked }); };
 // Google: the client is saved (the secret is never shown again), the sign-in opens in the browser, the page waits for the answer
 $('#google-save').onclick = async () => {
   const id = $('#google-id').value.trim(), sec = $('#google-secret').value.trim(); if (!id && !sec) return;

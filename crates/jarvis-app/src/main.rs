@@ -196,6 +196,12 @@ fn main() -> Result<(), String> {
     // initialize directories
     config::init_dirs()?;
 
+    // `--mcp`: the bridge for other programs (Claude Desktop and the like): JSON-RPC on stdin and stdout, forwarded to the Jarvis that is
+    // running (mcp.rs). Nothing else is started and nothing but the protocol is written to stdout.
+    if std::env::args().any(|a| a == "--mcp") {
+        return jarvis_core::mcp::run_stdio();
+    }
+
     // `--selftest-speech <file>`: the real engines of the voice of the Telegram bot end to end, no network and no
     // window: Piper makes a phrase, it is packed as a voice message (Opus), unpacked and recognized by Vosk. The result
     // is written to the file; nothing is installed or changed. Used by the CI of the full installer.
@@ -368,6 +374,8 @@ fn main() -> Result<(), String> {
     jarvis_core::remote::set_sender(text_cmd_tx.clone());
     // the daily morning briefing (off until the user says "включи утреннюю сводку")
     jarvis_core::digest_run::start_scheduler();
+    // the proactive helper: proposals once a day, only after the owner switched it on and only what he approves runs
+    jarvis_core::proactive::start_scheduler();
     // the Telegram bot of the user feeds the same queue (only when the user switched it on and paired a phone)
     jarvis_core::telegram::start();
 

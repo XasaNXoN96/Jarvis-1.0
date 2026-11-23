@@ -74,6 +74,10 @@ jobs:
         run: node tests/ui/google_card.js
         env:
           PW_MODULE: ${{ github.workspace }}/node_modules/playwright
+      - name: MCP switch in the connections (off by default, says what is limited)
+        run: node tests/ui/mcp_card.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright
       - name: Phoenix (a sphere with moods - state, words, answers, switch off)
         run: node tests/ui/phoenix.js
         env:

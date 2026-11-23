@@ -915,6 +915,28 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
         return false;
     }
 
+    // an answer to a proposal of Jarvis that waits for it ("да 3f2a", "нет 3f2a", "всегда да 3f2a", "да всё"): only for an id that waits
+    if let Some(reply) = jarvis_core::proactive::handle_reply(text) {
+        info!("Answer to a proposal");
+        open_request(text, "command");
+        jarvis_core::uistate::log_action(text, "ответ на предложение", true);
+        say(&reply);
+        jarvis_core::dialog::end(true);
+        ipc::send(IpcEvent::Idle);
+        return false;
+    }
+
+    // the proactive helper: "включи проактивного помощника в 7:00", "предложи дела на сегодня", "что ты предлагаешь"
+    if let Some(cmd) = jarvis_core::proactive::parse_command(text) {
+        info!("Proactive command: {:?}", cmd);
+        open_request(text, "command");
+        jarvis_core::uistate::log_action(text, "проактивный помощник", true);
+        jarvis_core::proactive::handle(cmd);
+        jarvis_core::dialog::end(true);
+        ipc::send(IpcEvent::Idle);
+        return false;
+    }
+
     // the morning briefing: "утренняя сводка", "включи утреннюю сводку в 7:30", "выключи утреннюю сводку"
     if let Some(cmd) = jarvis_core::digest::parse_command(text) {
         info!("Digest command: {:?}", cmd);
