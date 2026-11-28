@@ -1645,6 +1645,8 @@ body.live-on { padding-top: 44px; }
       <div class="card acc" data-cat="off" id="mem-card" data-tab="Память"><h3><span class="ei">🧠</span>Память Jarvis</h3>
         <div class="setrow"><div class="l">Что я помню<small>Скажите «запомни, что …», «что ты помнишь про …», «забудь …». Пароли, ключи, токены и номера карт не запоминаются. Файл лежит только на этом компьютере.</small></div>
           <div class="r"><label class="sw" title="ИИ сам предлагает запомнить важное (пока только хранит выбор)"><input type="checkbox" id="mem-auto"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Запоминать с помощью ИИ<small>Когда вы рассказываете о себе («я живу в…», «у меня аллергия на…»), подключённый ИИ выбирает из фразы долгие факты и записывает их сюда (до 3 за фразу, до 40 запросов в день). <b>Такая фраза уходит ИИ.</b> Пароли, ключи, вопросы и команды не отправляются. Каждую запись можно отменить словами «верни как было» или удалить ниже. Выключено по умолчанию.</small></div>
+          <div class="r"><label class="sw"><input type="checkbox" id="mem-ai"><span></span></label></div></div>
         <div class="setrow"><div class="l">Подсказывать ИИ<small>последние факты (до 15) добавляются к запросам: ИИ-провайдер видит их, когда вы с ним говорите</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="mem-useai"><span></span></label></div></div>
         <div class="setrow"><div class="l">Добавить запись</div><div class="r"><input type="text" id="mem-new" maxlength="500" placeholder="например: мой день рождения 5 мая"><button class="btn" id="mem-add" type="button">Запомнить</button></div></div>
@@ -4416,6 +4418,7 @@ async function loadSettings() {
     $('#cloud-key').placeholder = s.cloud_tts_key_saved ? 'ключ сохранён (оставьте пустым, чтобы не менять)' : 'ключ Яндекса';
     $('#oai-key').placeholder = s.openai_key_saved ? 'ключ сохранён (оставьте пустым, чтобы не менять)' : s.openai_key_from_ai ? 'используется ключ из раздела «ИИ»' : 'ключ OpenAI';
     $('#stt-cloud').checked = !!s.stt_cloud;
+    $('#mem-ai').checked = !!s.mem_ai;
     $('#mcp-on').checked = !!s.mcp_enabled;
     $('#net-mode').value = s.net_mode || 'auto';
     netWay();
@@ -4491,6 +4494,7 @@ $('#oai-save').onclick = async () => {
   voicesLoaded = false; setTimeout(loadSettings, 300);
 };
 $('#oai-forget').onclick = async () => { await action('openai_key_forget'); $('#oai-key').placeholder = 'ключ OpenAI'; voicesLoaded = false; setTimeout(loadSettings, 300); };
+$('#mem-ai').onchange = async e => { await api('/settings', { mem_ai: e.target.checked }); };
 $('#stt-cloud').onchange = async e => { await api('/settings', { stt_cloud: e.target.checked }); };
 // network without VPN: the way out, the proxy of the owner, a search for proxies on this computer, a check of the key hosts
 $('#net-mode').onchange = async e => { await api('/settings', { net_mode: e.target.value }); netWay(); };

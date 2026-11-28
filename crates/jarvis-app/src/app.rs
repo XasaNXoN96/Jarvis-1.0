@@ -915,6 +915,9 @@ fn execute_command(text: &str, source: Source, rt: &tokio::runtime::Runtime) -> 
         return false;
     }
 
+    // the AI may pick long-term facts about the owner out of the phrase (off by default; in the background)
+    jarvis_core::factminer::observe(text);
+
     // an answer to a proposal of Jarvis that waits for it ("да 3f2a", "нет 3f2a", "всегда да 3f2a", "да всё"): only for an id that waits
     if let Some(reply) = jarvis_core::proactive::handle_reply(text) {
         info!("Answer to a proposal");

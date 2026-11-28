@@ -52,6 +52,12 @@ const fails = []; const ok = (c, m) => { if (!c) fails.push(m); };
   ok(res.includes('❌ Telegram напрямую') && res.includes('✅ через прокси') && res.includes('✅ Погода напрямую'), 'the check shows direct and proxy results: ' + res);
   await p.click('#net-clear'); await p.waitForTimeout(500);
   ok(patches.some(x => x.net_proxy === ''), 'the proxy can be removed');
+  // the switch «Запоминать с помощью ИИ» (memory card): off by default, says that the phrase goes to the AI, saves
+  await p.evaluate(() => { setCat = 'off'; setSub['off'] = 'mem-card'; setView(); loadSettings(); }); await p.waitForTimeout(600);
+  ok(!(await p.$eval('#mem-ai', e => e.checked)), 'memory by AI is off by default');
+  ok((await p.$eval('#mem-ai', e => e.closest('.setrow').textContent)).includes('уходит ИИ'), 'it says the phrase goes to the AI');
+  await p.evaluate(() => { document.querySelector('#mem-ai').click(); }); await p.waitForTimeout(500);
+  ok(patches.some(x => x.mem_ai === true), 'the switch is saved');
   await b.close();
   console.log(fails.length ? 'FAILED:\n' + fails.join('\n') : 'NET CARD: all checks passed');
   process.exit(fails.length ? 1 : 0);
