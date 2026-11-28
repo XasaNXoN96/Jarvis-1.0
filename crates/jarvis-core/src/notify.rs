@@ -431,7 +431,7 @@ pub fn on_external(id: &str, app: &str, aumid: &str, texts: &[String], initial: 
     // the page "Сообщения" (memory only)
     crate::social::push(net.filter(|n| social_on(n)).map(|n| n.key).unwrap_or(""), &shown, &title, &text);
     let say: String = if net.filter(|n| social_on(n)).is_some() {
-        // "Вам пришло сообщение в Telegram от Ивана: привет, как дела?"
+        // "Иван пишет в Телеграм: привет, как дела?"
         social_say(&shown, &texts)
     } else {
         format!("Уведомление от {}. {}", shown, text)

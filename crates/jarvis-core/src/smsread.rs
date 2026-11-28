@@ -93,6 +93,27 @@ fn pick_lang(setting: &str, program: &str) -> &'static str {
     }
 }
 
+// how a messenger is pronounced in Russian (the voice reads «Telegram» with English letters badly)
+pub fn say_network(network: &str) -> String {
+    let n = network.trim();
+    let spoken = match n.to_lowercase().as_str() {
+        "telegram" => "Телеграм",
+        "whatsapp" => "Ватсап",
+        "discord" => "Дискорд",
+        "viber" => "Вайбер",
+        "instagram" => "Инстаграм",
+        "skype" => "Скайп",
+        "messenger" | "facebook messenger" => "Мессенджер",
+        "signal" => "Сигнал",
+        "slack" => "Слэк",
+        "vk" | "вк" | "vkontakte" => "ВКонтакте",
+        "teams" | "microsoft teams" => "Тимс",
+        "sms" => "эс-эм-эс",
+        _ => return n.to_string(),
+    };
+    spoken.to_string()
+}
+
 pub fn phrase(network: &str, sender: &str, text: &str, c: &Conf, program_lang: &str) -> String {
     let lang = pick_lang(&c.lang, program_lang);
     let who = clean_sender(sender);
@@ -100,7 +121,7 @@ pub fn phrase(network: &str, sender: &str, text: &str, c: &Conf, program_lang: &
     match (lang, c.privacy) {
         ("en", Privacy::Silent) => format!("You have a new message on {}", network),
         ("uz", Privacy::Silent) => format!("{}da yangi xabar bor", network),
-        (_, Privacy::Silent) => format!("Вам пришло сообщение в {}", network),
+        (_, Privacy::Silent) => format!("Новое сообщение в {}", say_network(network)),
         ("en", _) => match (who.is_empty(), c.privacy == Privacy::Sender || body.is_empty()) {
             (true, true) => format!("You have a message on {}", network),
             (false, true) => format!("You have a message on {} from {}", network, who),
@@ -113,12 +134,16 @@ pub fn phrase(network: &str, sender: &str, text: &str, c: &Conf, program_lang: &
             (true, false) => format!("{}da xabar keldi: {}", network, body),
             (false, false) => format!("{}da {}dan xabar keldi: {}", network, who, body),
         },
-        _ => match (who.is_empty(), c.privacy == Privacy::Sender || body.is_empty()) {
-            (true, true) => format!("Вам пришло сообщение в {}", network),
-            (false, true) => format!("Вам пришло сообщение в {} от {}", network, who),
-            (true, false) => format!("Вам пришло сообщение в {}: {}", network, body),
-            (false, false) => format!("Вам пришло сообщение в {} от {}: {}", network, who, body),
-        },
+        // (a name cannot be put into the right case, so the sender is the subject: «Иван пишет в Телеграм: …»)
+        _ => {
+            let net = say_network(network);
+            match (who.is_empty(), c.privacy == Privacy::Sender || body.is_empty()) {
+                (true, true) => format!("Новое сообщение в {}", net),
+                (false, true) => format!("{} пишет вам в {}", who, net),
+                (true, false) => format!("Новое сообщение в {}: {}", net, body),
+                (false, false) => format!("{} пишет в {}: {}", who, net, body),
+            }
+        }
     }
 }
 
@@ -231,16 +256,16 @@ mod tests {
 
     #[test]
     fn the_russian_phrase_keeps_its_old_shape() {
-        assert_eq!(phrase("Telegram", "Иван", "привет, как дела?", &c(Privacy::Full, "ru"), "ru"), "Вам пришло сообщение в Telegram от Иван: привет, как дела?");
-        assert_eq!(phrase("Telegram", "", "привет", &c(Privacy::Full, "ru"), "ru"), "Вам пришло сообщение в Telegram: привет");
-        assert_eq!(phrase("Telegram", "", "", &c(Privacy::Full, "ru"), "ru"), "Вам пришло сообщение в Telegram");
+        assert_eq!(phrase("Telegram", "Иван", "привет, как дела?", &c(Privacy::Full, "ru"), "ru"), "Иван пишет в Телеграм: привет, как дела?");
+        assert_eq!(phrase("Telegram", "", "привет", &c(Privacy::Full, "ru"), "ru"), "Новое сообщение в Телеграм: привет");
+        assert_eq!(phrase("Telegram", "", "", &c(Privacy::Full, "ru"), "ru"), "Новое сообщение в Телеграм");
     }
 
     #[test]
     fn three_languages_and_three_privacy_levels() {
         assert_eq!(phrase("Telegram", "Ivan", "hi there", &c(Privacy::Full, "en"), "ru"), "You have a message on Telegram from Ivan: hi there");
         assert_eq!(phrase("Telegram", "Ivan", "salom", &c(Privacy::Full, "uz"), "ru"), "Telegramda Ivandan xabar keldi: salom");
-        assert_eq!(phrase("Telegram", "Иван", "секрет", &c(Privacy::Sender, "ru"), "ru"), "Вам пришло сообщение в Telegram от Иван");
+        assert_eq!(phrase("Telegram", "Иван", "секрет", &c(Privacy::Sender, "ru"), "ru"), "Иван пишет вам в Телеграм");
         assert_eq!(phrase("Telegram", "Иван", "секрет", &c(Privacy::Silent, "en"), "ru"), "You have a new message on Telegram");
         // «auto» follows the language of the program
         assert_eq!(phrase("Telegram", "Ivan", "hi", &c(Privacy::Full, "auto"), "en"), "You have a message on Telegram from Ivan: hi");
@@ -271,9 +296,9 @@ mod tests {
             assert_eq!(unread_requested("что пришло"), Some(true));
             assert_eq!(unread_requested("открой браузер"), None);
             let one = read_unread(false);
-            assert!(one.contains("Иван: первое") && one.contains("Ещё непрочитанных: 2"), "{}", one);
+            assert!(one.contains("Иван пишет в Телеграм: первое") && one.contains("Ещё непрочитанных: 2"), "{}", one);
             let rest = read_unread(true);
-            assert!(rest.contains("Анна: второе") && rest.contains("Олег: третье") && !rest.contains("первое"), "{}", rest);
+            assert!(rest.contains("Анна пишет в Ватсап: второе") && rest.contains("Олег пишет в Телеграм: третье") && !rest.contains("первое"), "{}", rest);
             assert_eq!(read_unread(true), "Непрочитанных сообщений нет.");
             // only the last ten are kept
             for i in 0..15 {
@@ -290,8 +315,8 @@ mod tests {
         store::with_temp(|| {
             set(Privacy::Silent, "ru").unwrap();
             let said = say("Telegram", &["Иван".to_string(), "встреча в 5".to_string()]);
-            assert_eq!(said, "Вам пришло сообщение в Telegram", "silent level: no text read aloud");
-            assert_eq!(repeat_last(), "Вам пришло сообщение в Telegram от Иван: встреча в 5");
+            assert_eq!(said, "Новое сообщение в Телеграм", "silent level: no text read aloud");
+            assert_eq!(repeat_last(), "Иван пишет в Телеграм: встреча в 5");
             assert!(set(Privacy::Full, "de").is_err());
             assert!(repeat_requested("Повтори сообщение") && !repeat_requested("открой браузер"));
         });
