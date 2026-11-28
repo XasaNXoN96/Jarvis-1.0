@@ -8,6 +8,11 @@ ignore = [
     "RUSTSEC-2026-0367",
     "RUSTSEC-2026-0368",
     "RUSTSEC-2026-0369",
+    # the same zip 1.1.4 and the same reason (looked at on 28.11.2026): 0548 (ZipStreamReader), 0429 (extract on a symlink entry), 0545 (AES entries):
+    # none of these functions is called in Jarvis or in the path through rustpotter/candle; the fix is zip >= 9.
+    "RUSTSEC-2026-0548",
+    "RUSTSEC-2026-0429",
+    "RUSTSEC-2026-0545",
     # quick-xml 0.38.4 comes only through plist <- tauri (jarvis-gui, the old desktop shell, which is not the shipped program). It parses plist
     # files of macOS bundles at build time. The fix is quick-xml >= 0.41: it needs a newer tauri.
     "RUSTSEC-2026-0194",
