@@ -1169,19 +1169,24 @@ pub fn map_status(conf: &ProviderConf, status: u16, body: &str) -> AiError {
 // TCP + TLS handshake (a new client per request was one of the delays). TLS is checked as usual.
 #[cfg(feature = "lua")]
 fn client() -> Result<reqwest::blocking::Client, AiError> {
-    static CLIENT: Lazy<Result<reqwest::blocking::Client, String>> = Lazy::new(|| {
-        reqwest::blocking::Client::builder()
-            .connect_timeout(Duration::from_secs(8))
-            .timeout(Duration::from_secs(120))
-            .pool_idle_timeout(Duration::from_secs(120))
-            .tcp_keepalive(Duration::from_secs(30))
-            .build()
-            .map_err(|e| e.to_string())
-    });
-    match &*CLIENT {
-        Ok(c) => Ok(c.clone()),
-        Err(e) => Err(AiError::Other(e.clone())),
+    // (rebuilt when the way out changes: another proxy, or none)
+    static CLIENT: Lazy<parking_lot::Mutex<Option<(String, reqwest::blocking::Client)>>> = Lazy::new(|| parking_lot::Mutex::new(None));
+    let key = crate::net::route_key();
+    let mut slot = CLIENT.lock();
+    if let Some((k, c)) = slot.as_ref() {
+        if *k == key {
+            return Ok(c.clone());
+        }
     }
+    let c = crate::net::builder()
+        .connect_timeout(Duration::from_secs(8))
+        .timeout(Duration::from_secs(120))
+        .pool_idle_timeout(Duration::from_secs(120))
+        .tcp_keepalive(Duration::from_secs(30))
+        .build()
+        .map_err(|e| AiError::Other(e.to_string()))?;
+    *slot = Some((key, c.clone()));
+    Ok(c)
 }
 
 #[cfg(feature = "lua")]

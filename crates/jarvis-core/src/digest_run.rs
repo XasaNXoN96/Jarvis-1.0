@@ -168,7 +168,7 @@ fn news() -> Vec<String> {
 fn fetch_feed(url: &str) -> Result<String, String> {
     use std::io::Read;
     crate::shield::check_url_resolving(url)?;
-    let client = reqwest::blocking::Client::builder()
+    let client = crate::net::builder()
         .connect_timeout(Duration::from_secs(8))
         .timeout(Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::custom(|attempt| {

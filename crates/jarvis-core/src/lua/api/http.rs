@@ -40,7 +40,7 @@ pub(crate) fn check_url(url: &str) -> Result<(), String> {
 }
 
 fn safe_client() -> Result<reqwest::blocking::Client, String> {
-    reqwest::blocking::Client::builder()
+    crate::net::builder()
         .timeout(Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
             if attempt.previous().len() >= 5 {

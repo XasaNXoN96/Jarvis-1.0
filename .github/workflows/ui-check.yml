@@ -78,6 +78,10 @@ jobs:
         run: node tests/ui/mcp_card.js
         env:
           PW_MODULE: ${{ github.workspace }}/node_modules/playwright
+      - name: Network without VPN (mode, proxy, search on the computer, check)
+        run: node tests/ui/net_card.js
+        env:
+          PW_MODULE: ${{ github.workspace }}/node_modules/playwright
       - name: Phoenix (a sphere with moods - state, words, answers, switch off)
         run: node tests/ui/phoenix.js
         env:

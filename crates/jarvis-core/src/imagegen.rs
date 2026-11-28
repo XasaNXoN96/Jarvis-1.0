@@ -149,7 +149,7 @@ pub fn generate_with(base: &str, key: &str, model: &str, prompt: &str, dir: &Pat
     if model.is_empty() {
         return Err("Не выбрана модель картинок: укажите её в Настройках → ИИ.".into());
     }
-    let client = reqwest::blocking::Client::builder().connect_timeout(std::time::Duration::from_secs(8)).timeout(std::time::Duration::from_secs(180)).build().map_err(|e| e.to_string())?;
+    let client = crate::net::builder().connect_timeout(std::time::Duration::from_secs(8)).timeout(std::time::Duration::from_secs(180)).build().map_err(|e| e.to_string())?;
     let mut req = client.post(format!("{}/images/generations", base.trim_end_matches('/'))).json(&request_body(model, prompt, size_for(model, &size_choice())));
     if !key.is_empty() {
         req = req.bearer_auth(key);

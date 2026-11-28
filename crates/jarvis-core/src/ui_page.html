@@ -1658,6 +1658,16 @@ body.live-on { padding-top: 44px; }
           <div class="r"><button type="button" class="btn small primary" id="google-connect">Подключить Google</button><button type="button" class="btn small" id="google-disconnect">Отключить</button></div></div>
       </div>
 
+      <div class="card" data-cat="connect" id="net-card" data-tab="Сеть без VPN"><h3><span class="ei">🌐</span>Сеть и обход блокировок</h3>
+        <div class="setrow"><div class="l">Как Джарвис выходит в интернет<small><b>Авто</b> (по умолчанию): как в системе, а если нужные сайты (ИИ, Telegram, голоса, обновления) напрямую не открываются, сам включает прокси (ваш или найденный на этом компьютере) и сам возвращается, когда блокировка снята. <b>Через прокси</b>: всегда через ваш адрес. <b>Напрямую</b>: игнорировать системные прокси. Домашняя сеть и этот компьютер никогда не идут через прокси. Прокси помогает, только если он ведёт за пределы блокировки: нужен сервер вне вашей сети (свой или в программе, которая уже у вас запущена). Адрес хранится зашифрованно.</small></div>
+          <div class="r"><select id="net-mode"><option value="auto">Авто</option><option value="proxy">Через прокси</option><option value="direct">Напрямую</option></select></div></div>
+        <div class="setrow"><div class="l">Адрес прокси<small id="net-saved">не задан. Примеры: <code>127.0.0.1:10808</code>, <code>socks5://хост:1080</code>, <code>http://логин:пароль@хост:3128</code></small></div>
+          <div class="r"><input type="text" id="net-proxy" placeholder="127.0.0.1:10808" autocomplete="off"><button type="button" class="btn small" id="net-save">Сохранить</button><button type="button" class="btn small" id="net-clear">Убрать</button></div></div>
+        <div class="setrow"><div class="l">Проверка<small id="net-way">…</small></div>
+          <div class="r"><button type="button" class="btn small" id="net-detect">Найти прокси на этом компьютере</button><button type="button" class="btn small primary" id="net-check">Проверить сеть</button></div></div>
+        <div id="net-result" class="msgline"></div>
+      </div>
+
       <div class="card" data-cat="connect" id="mcp-card" data-tab="Внешние программы (MCP)"><h3><span class="ei">🔌</span>Внешние программы (MCP)</h3>
         <div class="setrow"><div class="l">Разрешить внешним программам управлять Джарвисом<small>Другая программа (например, Claude Desktop) сможет спросить, чем занят Джарвис, и дать ему команду. Запуск моста: <code>jarvis-app.exe --mcp</code> (путь из папки установки), его указывают в настройках той программы как MCP-сервер. <b>Выключено по умолчанию.</b> Команды проходят те же проверки прав, нельзя выключение, удаление, установку, пароли, ссылки и удалённое управление; не чаще 30 в минуту; все команды видны в журнале событий. Включайте, только если доверяете программе и тому, что она читает.</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="mcp-on"><span></span></label></div></div>
@@ -4407,6 +4417,9 @@ async function loadSettings() {
     $('#oai-key').placeholder = s.openai_key_saved ? 'ключ сохранён (оставьте пустым, чтобы не менять)' : s.openai_key_from_ai ? 'используется ключ из раздела «ИИ»' : 'ключ OpenAI';
     $('#stt-cloud').checked = !!s.stt_cloud;
     $('#mcp-on').checked = !!s.mcp_enabled;
+    $('#net-mode').value = s.net_mode || 'auto';
+    netWay();
+    $('#net-saved').textContent = s.net_proxy_saved ? 'сохранён: ' + (s.net_proxy_masked || '') : 'не задан. Примеры: 127.0.0.1:10808, socks5://хост:1080, http://логин:пароль@хост:3128';
     if (document.activeElement !== $('#google-id')) $('#google-id').value = s.google_client_id || '';
     $('#google-secret').placeholder = s.google_client_saved ? 'секрет сохранён (оставьте пустым, чтобы не менять)' : 'секрет клиента';
     $('#google-status').textContent = s.google_connected ? 'Google подключён: календарь и почта попадут в утреннюю сводку' : (s.google_status || 'не подключён');
@@ -4479,6 +4492,32 @@ $('#oai-save').onclick = async () => {
 };
 $('#oai-forget').onclick = async () => { await action('openai_key_forget'); $('#oai-key').placeholder = 'ключ OpenAI'; voicesLoaded = false; setTimeout(loadSettings, 300); };
 $('#stt-cloud').onchange = async e => { await api('/settings', { stt_cloud: e.target.checked }); };
+// network without VPN: the way out, the proxy of the owner, a search for proxies on this computer, a check of the key hosts
+$('#net-mode').onchange = async e => { await api('/settings', { net_mode: e.target.value }); netWay(); };
+$('#net-save').onclick = async () => {
+  const v = $('#net-proxy').value.trim(); if (!v) return;
+  await api('/settings', { net_proxy: v }); $('#net-proxy').value = ''; setTimeout(loadSettings, 300);
+};
+$('#net-clear').onclick = async () => { await api('/settings', { net_proxy: '' }); setTimeout(loadSettings, 300); };
+async function netWay() { const r = await action('net_status'); if (r && r.way) $('#net-way').textContent = 'Сейчас: ' + r.way; }
+$('#net-detect').onclick = async () => {
+  const out = $('#net-result'); out.textContent = 'Ищу…';
+  const r = await action('net_detect'); out.textContent = '';
+  if (!r || !r.found || !r.found.length) { out.textContent = 'На этом компьютере прокси не найдены. Запустите программу обхода (например, v2rayN, Clash, Hiddify) и повторите, либо введите адрес вручную.'; return; }
+  for (const f of r.found) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'btn small'; b.textContent = 'Использовать ' + f.url + ' — ' + f.who;
+    b.onclick = async () => { await api('/settings', { net_proxy: f.url }); out.textContent = 'Сохранено: ' + f.url; setTimeout(loadSettings, 300); };
+    out.appendChild(b); out.appendChild(document.createElement('br'));
+  }
+};
+$('#net-check').onclick = async () => {
+  const out = $('#net-result'); out.textContent = 'Проверяю (до 15 секунд)…';
+  const r = await action('net_check');
+  if (!r || !r.ok) { out.textContent = (r && r.message) || 'не удалось проверить'; return; }
+  $('#net-way').textContent = 'Сейчас: ' + r.way;
+  out.textContent = r.rows.map(x => (x.direct ? '✅' : '❌') + ' ' + x.name + ' напрямую' + (x.proxy === null || x.proxy === undefined ? '' : '; ' + (x.proxy ? '✅' : '❌') + ' через прокси')).join('\n');
+  out.style.whiteSpace = 'pre-line';
+};
 $('#mcp-on').onchange = async e => { await api('/settings', { mcp_enabled: e.target.checked }); };
 // Google: the client is saved (the secret is never shown again), the sign-in opens in the browser, the page waits for the answer
 $('#google-save').onclick = async () => {

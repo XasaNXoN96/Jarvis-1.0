@@ -181,7 +181,7 @@ fn wiki_lang(q: &str) -> &'static str {
 
 #[cfg(all(feature = "lua", not(test)))]
 fn http_get(url: &str) -> Result<String, String> {
-    let client = reqwest::blocking::Client::builder()
+    let client = crate::net::builder()
         .connect_timeout(Duration::from_secs(8))
         .timeout(Duration::from_secs(15))
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Jarvis")

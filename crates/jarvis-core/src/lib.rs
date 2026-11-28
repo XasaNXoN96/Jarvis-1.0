@@ -100,6 +100,7 @@ pub mod shield;
 pub mod ratelimit;
 pub mod openai_voice;
 pub mod google;
+pub mod net;
 pub mod approvals;
 pub mod proactive;
 pub mod mcp;

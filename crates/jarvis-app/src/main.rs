@@ -374,6 +374,7 @@ fn main() -> Result<(), String> {
     jarvis_core::remote::set_sender(text_cmd_tx.clone());
     // the daily morning briefing (off until the user says "включи утреннюю сводку")
     jarvis_core::digest_run::start_scheduler();
+    jarvis_core::net::start_watcher();
     // the proactive helper: proposals once a day, only after the owner switched it on and only what he approves runs
     jarvis_core::proactive::start_scheduler();
     // the Telegram bot of the user feeds the same queue (only when the user switched it on and paired a phone)

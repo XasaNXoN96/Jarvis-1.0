@@ -100,6 +100,9 @@ pub struct UiSettings {
     pub google_refresh: String,
     // voice messages of the phone and Telegram are recognised by the cloud of OpenAI (off by default: the sound leaves the computer)
     pub stt_cloud: bool,
+    // the way to the internet (net.rs): "auto" | "proxy" | "direct"; the proxy of the owner is kept encrypted (it can hold a password)
+    pub net_mode: String,
+    pub net_proxy: String,
     // other local programs (through the MCP bridge) may give Jarvis commands: off by default
     pub mcp_enabled: bool,
     // false = the search key is kept but not used
@@ -183,7 +186,7 @@ pub fn browser_exe(key: &str) -> Option<&'static str> {
 impl Default for UiSettings {
     fn default() -> Self {
         Self {
-            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: true, city: String::new(), reaction_voice: String::new(), voice_mode: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_mode: String::new(), ai_talk: String::new(), window_fullscreen: true, ai_key: String::new(), ai_search_key: String::new(), cloud_tts_key: String::new(), openai_key: String::new(), stt_cloud: false, mcp_enabled: false, google_client_id: String::new(), google_client_secret: String::new(), google_refresh: String::new(), ai_search_auto: true, ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
+            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: true, city: String::new(), reaction_voice: String::new(), voice_mode: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_mode: String::new(), ai_talk: String::new(), window_fullscreen: true, ai_key: String::new(), ai_search_key: String::new(), cloud_tts_key: String::new(), openai_key: String::new(), stt_cloud: false, net_mode: "auto".into(), net_proxy: String::new(), mcp_enabled: false, google_client_id: String::new(), google_client_secret: String::new(), google_refresh: String::new(), ai_search_auto: true, ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
             ai_enabled: true, mic_off: false,
             notify_show: true, notify_speak: true, notify_sound: true, dnd: false,
             ext_enabled: false, ext_show: true, ext_speak: false, ext_strict: true, ext_allowed: Vec::new(), ext_blocked: Vec::new(), ext_seen: Vec::new(),
@@ -261,6 +264,7 @@ pub fn load_from(path: &std::path::Path) -> UiSettings {
     s.ai_search_key = crate::secret::open(&s.ai_search_key);
     s.cloud_tts_key = crate::secret::open(&s.cloud_tts_key);
     s.openai_key = crate::secret::open(&s.openai_key);
+    s.net_proxy = crate::secret::open(&s.net_proxy);
     s.google_client_secret = crate::secret::open(&s.google_client_secret);
     s.google_refresh = crate::secret::open(&s.google_refresh);
     if plain_on_disk && cfg!(target_os = "windows") {
@@ -305,6 +309,7 @@ pub fn write_to(p: &std::path::Path, s: &UiSettings) {
     v["ai_search_key"] = Value::String(crate::secret::seal(&s.ai_search_key));
     v["cloud_tts_key"] = Value::String(crate::secret::seal(&s.cloud_tts_key));
     v["openai_key"] = Value::String(crate::secret::seal(&s.openai_key));
+    v["net_proxy"] = Value::String(crate::secret::seal(&s.net_proxy));
     v["google_client_secret"] = Value::String(crate::secret::seal(&s.google_client_secret));
     v["google_refresh"] = Value::String(crate::secret::seal(&s.google_refresh));
     if let Ok(json) = serde_json::to_string_pretty(&v) {
@@ -382,8 +387,9 @@ pub fn reset_settings() {
     let search_key = std::mem::take(&mut s.ai_search_key);
     let cloud_key = std::mem::take(&mut s.cloud_tts_key);
     let openai_key = std::mem::take(&mut s.openai_key);
+    let (net_mode, net_proxy) = (std::mem::take(&mut s.net_mode), std::mem::take(&mut s.net_proxy)); // a reset must not cut the only way out
     let (g_id, g_secret, g_refresh) = (std::mem::take(&mut s.google_client_id), std::mem::take(&mut s.google_client_secret), std::mem::take(&mut s.google_refresh));
-    *s = UiSettings { ai_key: key, ai_search_key: search_key, cloud_tts_key: cloud_key, openai_key, google_client_id: g_id, google_client_secret: g_secret, google_refresh: g_refresh, ..UiSettings::default() };
+    *s = UiSettings { ai_key: key, ai_search_key: search_key, cloud_tts_key: cloud_key, openai_key, net_mode, net_proxy, google_client_id: g_id, google_client_secret: g_secret, google_refresh: g_refresh, ..UiSettings::default() };
     write_settings(&s);
     drop(s);
     crate::MIC_MUTED.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -422,6 +428,13 @@ pub fn set_google_refresh(token: &str) {
     let mut s = SETTINGS.lock();
     s.google_refresh = token.trim().chars().take(600).collect();
     write_settings(&s);
+}
+
+/// (mode, proxy) for net.rs; an old settings file without the field means "auto".
+pub fn net_config() -> (String, String) {
+    let s = SETTINGS.lock();
+    let mode = if matches!(s.net_mode.as_str(), "proxy" | "direct") { s.net_mode.clone() } else { "auto".to_string() };
+    (mode, s.net_proxy.clone())
 }
 
 pub fn forget_openai_key() {
@@ -560,6 +573,11 @@ pub fn update_settings(patch: &Value) {
     if let Some(v) = patch.get("ai_search_key").and_then(|v| v.as_str()) { s.ai_search_key = v.trim().chars().take(300).collect(); }
     if let Some(v) = patch.get("cloud_tts_key").and_then(|v| v.as_str()) { s.cloud_tts_key = v.trim().chars().take(300).collect(); }
     if let Some(v) = patch.get("openai_key").and_then(|v| v.as_str()) { s.openai_key = v.trim().chars().take(300).collect(); }
+    if let Some(v) = patch.get("net_mode").and_then(|v| v.as_str()) { if matches!(v, "auto" | "proxy" | "direct") { s.net_mode = v.to_string(); } }
+    if let Some(v) = patch.get("net_proxy").and_then(|v| v.as_str()) {
+        // empty clears; a text that is not a proxy address is ignored (the old one stays)
+        if v.trim().is_empty() { s.net_proxy.clear(); } else if let Some(p) = crate::net::normalize_proxy(v) { s.net_proxy = p; }
+    }
     if let Some(v) = patch.get("stt_cloud").and_then(|v| v.as_bool()) { s.stt_cloud = v; }
     if let Some(v) = patch.get("mcp_enabled").and_then(|v| v.as_bool()) { s.mcp_enabled = v; }
     if let Some(v) = patch.get("google_client_id").and_then(|v| v.as_str()) { s.google_client_id = v.trim().chars().take(200).collect(); }
@@ -666,6 +684,9 @@ pub fn settings_json() -> Value {
     out["openai_key_saved"] = json!(!s.openai_key.is_empty());
     out["openai_key_from_ai"] = json!(s.openai_key.is_empty() && s.ai_provider == "openai" && !s.ai_key.is_empty());
     out["stt_cloud"] = json!(s.stt_cloud);
+    out["net_mode"] = json!(s.net_mode);
+    out["net_proxy_saved"] = json!(!s.net_proxy.is_empty());
+    out["net_proxy_masked"] = json!(crate::net::mask(&s.net_proxy));
     out["mcp_enabled"] = json!(s.mcp_enabled);
     out["google_client_id"] = json!(s.google_client_id);
     out["google_client_saved"] = json!(!s.google_client_id.is_empty() && !s.google_client_secret.is_empty());

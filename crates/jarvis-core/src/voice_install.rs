@@ -188,7 +188,7 @@ fn download(url: &str, dest: &Path, label: &str, from: u8, to: u8, verify: &dyn 
 #[cfg(feature = "lua")]
 pub(crate) fn download_with(url: &str, dest: &Path, label: &str, from: u8, to: u8, verify: &dyn Fn(&Path) -> Result<(), String>, set: &dyn Fn(&str, u8)) -> Result<(), String> {
     use std::io::{Read, Write};
-    let client = reqwest::blocking::Client::builder()
+    let client = crate::net::builder()
         .connect_timeout(std::time::Duration::from_secs(20))
         .timeout(std::time::Duration::from_secs(60 * 40))
         .build()

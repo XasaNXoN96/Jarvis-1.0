@@ -277,7 +277,7 @@ fn http(method: &str, path: &str, body: Option<&Value>) -> Reply {
     if !base.starts_with("https://") && !base.starts_with("http://127.0.0.1") && !base.starts_with("http://localhost") {
         return Err("Адрес сервера лицензий должен начинаться с https://".into());
     }
-    let client = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(15)).build().map_err(|e| e.to_string())?;
+    let client = crate::net::builder().timeout(std::time::Duration::from_secs(15)).build().map_err(|e| e.to_string())?;
     let url = format!("{}{}", base.trim_end_matches('/'), path);
     let req = if method == "GET" { client.get(&url) } else { client.post(&url).json(body.unwrap_or(&Value::Null)) };
     let resp = req.send().map_err(|_| "Нет связи с сервером лицензий. Проверьте интернет.".to_string())?;

@@ -104,7 +104,7 @@ fn download_url() -> String {
 // downloads the pinned release into `part` (the percent goes to the state); the caller checks the hash
 #[cfg(feature = "lua")]
 fn download(part: &std::path::Path, gen: u64) -> Result<(), String> {
-    let client = reqwest::blocking::Client::builder().connect_timeout(Duration::from_secs(15)).timeout(Duration::from_secs(600)).build().map_err(|e| e.to_string())?;
+    let client = crate::net::builder().connect_timeout(Duration::from_secs(15)).timeout(Duration::from_secs(600)).build().map_err(|e| e.to_string())?;
     let mut resp = client.get(download_url()).send().map_err(|_| "нет связи с github.com (загрузка cloudflared)".to_string())?;
     if !resp.status().is_success() {
         return Err(format!("github.com ответил ошибкой {} при загрузке cloudflared", resp.status().as_u16()));

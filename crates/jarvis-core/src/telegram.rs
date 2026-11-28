@@ -481,7 +481,7 @@ mod net {
     use super::*;
 
     pub(super) fn client() -> Option<reqwest::blocking::Client> {
-        reqwest::blocking::Client::builder().connect_timeout(Duration::from_secs(10)).timeout(Duration::from_secs(40)).build().ok()
+        crate::net::builder().connect_timeout(Duration::from_secs(10)).timeout(Duration::from_secs(40)).build().ok()
     }
 
     pub(super) fn call(c: &reqwest::blocking::Client, token: &str, method: &str, body: &Value) -> Result<Value, String> {

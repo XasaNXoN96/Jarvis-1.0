@@ -62,7 +62,7 @@ pub fn call(method: &str, path: &str, body: Option<&Value>) -> Result<(u16, Valu
     if url.is_empty() || token.is_empty() {
         return Err("Сначала укажите адрес сервера лицензий и токен администратора.".into());
     }
-    let client = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(20)).build().map_err(|e| e.to_string())?;
+    let client = crate::net::builder().timeout(std::time::Duration::from_secs(20)).build().map_err(|e| e.to_string())?;
     let full = format!("{}{}", url, path);
     let b = match method {
         "GET" => client.get(&full),

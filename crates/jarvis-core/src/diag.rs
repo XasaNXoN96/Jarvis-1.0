@@ -634,7 +634,7 @@ fn open_public_page() -> Option<Result<(), String>> {
     };
     // a tunnel that was just made needs a few seconds before its address answers: three tries
     with_timeout(30_000, move || -> Result<(), String> {
-        let c = reqwest::blocking::Client::builder().timeout(Duration::from_secs(6)).build().map_err(|_| "нет сети".to_string())?;
+        let c = crate::net::builder().timeout(Duration::from_secs(6)).build().map_err(|_| "нет сети".to_string())?;
         let mut last = String::from("нет ответа");
         for k in 0..3 {
             if k > 0 {

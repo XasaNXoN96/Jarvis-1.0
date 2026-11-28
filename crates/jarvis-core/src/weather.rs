@@ -87,7 +87,7 @@ fn enc(s: &str) -> String {
 
 #[cfg(feature = "lua")]
 fn get_json(url: &str, query: &[(&str, String)]) -> Result<Value, String> {
-    let client = reqwest::blocking::Client::builder().connect_timeout(Duration::from_secs(8)).timeout(Duration::from_secs(15)).build().map_err(|e| e.to_string())?;
+    let client = crate::net::builder().connect_timeout(Duration::from_secs(8)).timeout(Duration::from_secs(15)).build().map_err(|e| e.to_string())?;
     let qs: Vec<String> = query.iter().map(|(k, v)| format!("{}={}", k, enc(v))).collect();
     let resp = client.get(format!("{}?{}", url, qs.join("&"))).send().map_err(|e| if e.is_timeout() { "сервер погоды не отвечает".to_string() } else { "нет соединения с сервером погоды".to_string() })?;
     if !resp.status().is_success() {

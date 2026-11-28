@@ -199,8 +199,27 @@ fn settings_page_json() -> serde_json::Value {
     v
 }
 
+#[cfg(feature = "lua")]
+fn net_check_action() -> serde_json::Value {
+    let rows: Vec<_> = crate::net::check()
+        .into_iter()
+        .map(|(name, direct, proxy)| json!({ "name": name, "direct": direct, "proxy": proxy }))
+        .collect();
+    let (mode, way) = crate::net::status();
+    json!({ "ok": true, "rows": rows, "mode": mode, "way": way })
+}
+
+#[cfg(not(feature = "lua"))]
+fn net_check_action() -> serde_json::Value {
+    json!({ "ok": false, "message": "Проверка сети недоступна в этой сборке" })
+}
+
 fn apply_settings(patch: &serde_json::Value) -> serde_json::Value {
+    let way = crate::net::route_key();
     crate::uistate::update_settings(patch);
+    if (patch.get("net_mode").is_some() || patch.get("net_proxy").is_some()) && way != crate::net::route_key() {
+        crate::net::changed();
+    }
     if let Some(idx) = patch.get("mic_device").and_then(|v| v.as_i64()) {
         if let Some(db) = crate::DB.get() {
             db.write().microphone = idx as i32;
@@ -927,6 +946,16 @@ fn run_action(body: &serde_json::Value) -> serde_json::Value {
             Ok(url) => json!({ "ok": true, "url": url }),
             Err(e) => json!({ "ok": false, "message": e }),
         },
+        // network: look for proxies of the owner's programs on this computer / check the key hosts
+        "net_detect" => {
+            let list: Vec<_> = crate::net::detect_local().into_iter().map(|(url, who)| json!({ "url": url, "who": who })).collect();
+            json!({ "ok": true, "found": list })
+        }
+        "net_status" => {
+            let (mode, way) = crate::net::status();
+            json!({ "ok": true, "mode": mode, "way": way })
+        }
+        "net_check" => net_check_action(),
         "google_disconnect" => {
             crate::google::disconnect();
             json!({ "ok": true })

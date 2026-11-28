@@ -125,7 +125,7 @@ impl Source for Https {
                 a.error("перенаправление за пределы GitHub: отказ")
             }
         });
-        let client = reqwest::blocking::Client::builder().connect_timeout(std::time::Duration::from_secs(20)).timeout(std::time::Duration::from_secs(60 * 30)).redirect(policy).build().map_err(|e| e.to_string())?;
+        let client = crate::net::builder().connect_timeout(std::time::Duration::from_secs(20)).timeout(std::time::Duration::from_secs(60 * 30)).redirect(policy).build().map_err(|e| e.to_string())?;
         let resp = client.get(self.0).send().map_err(|e| if e.is_connect() || e.is_timeout() { "нет связи с сервером загрузки".to_string() } else { format!("загрузка не началась: {}", e) })?;
         if !resp.status().is_success() {
             return Err(format!("сервер ответил {}", resp.status()));

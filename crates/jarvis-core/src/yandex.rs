@@ -88,7 +88,7 @@ pub fn synth_at(endpoint: &str, key: &str, text: &str, voice: &str, speed: f32, 
     if !endpoint.starts_with("https://") && !endpoint.starts_with("http://127.0.0.1") {
         return Err("адрес облачного голоса должен начинаться с https://".into());
     }
-    let client = reqwest::blocking::Client::builder().connect_timeout(std::time::Duration::from_secs(8)).timeout(std::time::Duration::from_secs(40)).build().map_err(|e| e.to_string())?;
+    let client = crate::net::builder().connect_timeout(std::time::Duration::from_secs(8)).timeout(std::time::Duration::from_secs(40)).build().map_err(|e| e.to_string())?;
     let resp = client
         .post(endpoint)
         .header("Authorization", format!("Api-Key {}", key.trim()))

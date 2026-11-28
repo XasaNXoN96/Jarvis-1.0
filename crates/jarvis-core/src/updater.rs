@@ -96,7 +96,7 @@ fn fetch_list(url: &str) -> Result<String, String> {
     if !url.starts_with("https://") {
         return Err("адрес обновлений должен начинаться с https://".into());
     }
-    let client = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(20)).build().map_err(|e| e.to_string())?;
+    let client = crate::net::builder().timeout(std::time::Duration::from_secs(20)).build().map_err(|e| e.to_string())?;
     let resp = client.get(url).send().map_err(|_| "нет связи с сервером обновлений".to_string())?;
     if !resp.status().is_success() {
         return Err(format!("сервер обновлений ответил {}", resp.status()));
@@ -148,7 +148,7 @@ fn download_to(update: &Update, dest: &std::path::Path) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("не удалось создать папку обновления: {}", e))?;
     let part = dest.with_extension("part");
     let _ = std::fs::remove_file(&part);
-    let client = reqwest::blocking::Client::builder().connect_timeout(std::time::Duration::from_secs(20)).timeout(std::time::Duration::from_secs(60 * 40)).build().map_err(|e| e.to_string())?;
+    let client = crate::net::builder().connect_timeout(std::time::Duration::from_secs(20)).timeout(std::time::Duration::from_secs(60 * 40)).build().map_err(|e| e.to_string())?;
     let mut resp = client.get(&update.url).send().map_err(|_| "нет связи с сервером обновлений".to_string())?;
     if !resp.status().is_success() {
         return Err(format!("сервер ответил {}", resp.status()));
