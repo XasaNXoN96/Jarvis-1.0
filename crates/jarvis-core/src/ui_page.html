@@ -1645,6 +1645,8 @@ body.live-on { padding-top: 44px; }
       <div class="card acc" data-cat="off" id="mem-card" data-tab="Память"><h3><span class="ei">🧠</span>Память Jarvis</h3>
         <div class="setrow"><div class="l">Что я помню<small>Скажите «запомни, что …», «что ты помнишь про …», «забудь …». Пароли, ключи, токены и номера карт не запоминаются. Файл лежит только на этом компьютере.</small></div>
           <div class="r"><label class="sw" title="ИИ сам предлагает запомнить важное (пока только хранит выбор)"><input type="checkbox" id="mem-auto"><span></span></label></div></div>
+        <div class="setrow"><div class="l">Папка заметок (Obsidian)<small>Названия заметок, изменённых за 3 дня, попадут в утреннюю сводку. Читаются только имя файла и первая строка-заголовок; скрытые папки и файлы с паролями пропускаются, ничего не меняется. Пусто: не использовать.</small></div>
+          <div class="r"><input type="text" id="notes-dir" placeholder="C:\\Users\\Я\\Documents\\Obsidian" autocomplete="off"><button type="button" class="btn small" id="notes-dir-save">Сохранить</button></div></div>
         <div class="setrow"><div class="l">Запоминать с помощью ИИ<small>Когда вы рассказываете о себе («я живу в…», «у меня аллергия на…»), подключённый ИИ выбирает из фразы долгие факты и записывает их сюда (до 3 за фразу, до 40 запросов в день). <b>Такая фраза уходит ИИ.</b> Пароли, ключи, вопросы и команды не отправляются. Каждую запись можно отменить словами «верни как было» или удалить ниже. Выключено по умолчанию.</small></div>
           <div class="r"><label class="sw"><input type="checkbox" id="mem-ai"><span></span></label></div></div>
         <div class="setrow"><div class="l">Подсказывать ИИ<small>последние факты (до 15) добавляются к запросам: ИИ-провайдер видит их, когда вы с ним говорите</small></div>
@@ -1667,6 +1669,8 @@ body.live-on { padding-top: 44px; }
           <div class="r"><input type="text" id="net-proxy" placeholder="127.0.0.1:10808" autocomplete="off"><button type="button" class="btn small" id="net-save">Сохранить</button><button type="button" class="btn small" id="net-clear">Убрать</button></div></div>
         <div class="setrow"><div class="l">Проверка<small id="net-way">…</small></div>
           <div class="r"><button type="button" class="btn small" id="net-detect">Найти прокси на этом компьютере</button><button type="button" class="btn small primary" id="net-check">Проверить сеть</button></div></div>
+        <div class="setrow"><div class="l">Своё реле для Telegram<small>Адрес вашего реле (Cloudflare Worker, см. docs/relay), вида <code>https://воркер/СЕКРЕТ/api.telegram.org</code>. Только https. Пусто: напрямую (или через прокси). Токен бота пройдёт через ваше реле.</small></div>
+          <div class="r"><input type="text" id="tg-base" placeholder="https://…workers.dev/…/api.telegram.org" autocomplete="off"><button type="button" class="btn small" id="tg-base-save">Сохранить</button></div></div>
         <div id="net-result" class="msgline"></div>
       </div>
 
@@ -4419,9 +4423,10 @@ async function loadSettings() {
     $('#oai-key').placeholder = s.openai_key_saved ? 'ключ сохранён (оставьте пустым, чтобы не менять)' : s.openai_key_from_ai ? 'используется ключ из раздела «ИИ»' : 'ключ OpenAI';
     $('#stt-cloud').checked = !!s.stt_cloud;
     $('#mem-ai').checked = !!s.mem_ai;
+    if (document.activeElement !== $('#notes-dir')) $('#notes-dir').value = s.notes_dir || '';
     $('#mcp-on').checked = !!s.mcp_enabled;
     $('#net-mode').value = s.net_mode || 'auto';
-    netWay();
+    netWay(); if (document.activeElement !== $('#tg-base')) $('#tg-base').value = s.tg_base || '';
     $('#net-saved').textContent = s.net_proxy_saved ? 'сохранён: ' + (s.net_proxy_masked || '') : 'не задан. Примеры: 127.0.0.1:10808, socks5://хост:1080, http://логин:пароль@хост:3128';
     if (document.activeElement !== $('#google-id')) $('#google-id').value = s.google_client_id || '';
     $('#google-secret').placeholder = s.google_client_saved ? 'секрет сохранён (оставьте пустым, чтобы не менять)' : 'секрет клиента';
@@ -4494,6 +4499,7 @@ $('#oai-save').onclick = async () => {
   voicesLoaded = false; setTimeout(loadSettings, 300);
 };
 $('#oai-forget').onclick = async () => { await action('openai_key_forget'); $('#oai-key').placeholder = 'ключ OpenAI'; voicesLoaded = false; setTimeout(loadSettings, 300); };
+$('#notes-dir-save').onclick = async () => { await api('/settings', { notes_dir: $('#notes-dir').value.trim() }); setTimeout(loadSettings, 300); };
 $('#mem-ai').onchange = async e => { await api('/settings', { mem_ai: e.target.checked }); };
 $('#stt-cloud').onchange = async e => { await api('/settings', { stt_cloud: e.target.checked }); };
 // network without VPN: the way out, the proxy of the owner, a search for proxies on this computer, a check of the key hosts
@@ -4502,6 +4508,7 @@ $('#net-save').onclick = async () => {
   const v = $('#net-proxy').value.trim(); if (!v) return;
   await api('/settings', { net_proxy: v }); $('#net-proxy').value = ''; setTimeout(loadSettings, 300);
 };
+$('#tg-base-save').onclick = async () => { await api('/settings', { tg_base: $('#tg-base').value.trim() }); setTimeout(loadSettings, 300); };
 $('#net-clear').onclick = async () => { await api('/settings', { net_proxy: '' }); setTimeout(loadSettings, 300); };
 async function netWay() { const r = await action('net_status'); if (r && r.way) $('#net-way').textContent = 'Сейчас: ' + r.way; }
 $('#net-detect').onclick = async () => {

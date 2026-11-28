@@ -50,12 +50,16 @@ const fails = []; const ok = (c, m) => { if (!c) fails.push(m); };
   await p.click('#net-check'); await p.waitForTimeout(500);
   const res = await p.$eval('#net-result', e => e.textContent);
   ok(res.includes('❌ Telegram напрямую') && res.includes('✅ через прокси') && res.includes('✅ Погода напрямую'), 'the check shows direct and proxy results: ' + res);
+  await p.fill('#tg-base', 'https://w.example.workers.dev/s/api.telegram.org'); await p.click('#tg-base-save'); await p.waitForTimeout(400);
+  ok(patches.some(x => x.tg_base === 'https://w.example.workers.dev/s/api.telegram.org'), 'the relay of Telegram is saved');
   await p.click('#net-clear'); await p.waitForTimeout(500);
   ok(patches.some(x => x.net_proxy === ''), 'the proxy can be removed');
   // the switch «Запоминать с помощью ИИ» (memory card): off by default, says that the phrase goes to the AI, saves
   await p.evaluate(() => { setCat = 'off'; setSub['off'] = 'mem-card'; setView(); loadSettings(); }); await p.waitForTimeout(600);
   ok(!(await p.$eval('#mem-ai', e => e.checked)), 'memory by AI is off by default');
   ok((await p.$eval('#mem-ai', e => e.closest('.setrow').textContent)).includes('уходит ИИ'), 'it says the phrase goes to the AI');
+  await p.evaluate(() => { document.querySelector('#notes-dir').value = 'D:/Obsidian'; document.querySelector('#notes-dir-save').click(); }); await p.waitForTimeout(400);
+  ok(patches.some(x => x.notes_dir === 'D:/Obsidian'), 'the notes folder is saved');
   await p.evaluate(() => { document.querySelector('#mem-ai').click(); }); await p.waitForTimeout(500);
   ok(patches.some(x => x.mem_ai === true), 'the switch is saved');
   await b.close();

@@ -102,6 +102,10 @@ pub struct UiSettings {
     pub stt_cloud: bool,
     // the AI picks long-term facts about the owner out of his phrases (factminer.rs): off by default, the phrase goes to the AI
     pub mem_ai: bool,
+    // a folder of notes (Obsidian) whose last titles go to the briefing (vault.rs); empty: none
+    pub notes_dir: String,
+    // the address of the Bot API through the relay of the owner (empty: api.telegram.org); only https
+    pub tg_base: String,
     // the way to the internet (net.rs): "auto" | "proxy" | "direct"; the proxy of the owner is kept encrypted (it can hold a password)
     pub net_mode: String,
     pub net_proxy: String,
@@ -188,7 +192,7 @@ pub fn browser_exe(key: &str) -> Option<&'static str> {
 impl Default for UiSettings {
     fn default() -> Self {
         Self {
-            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: true, city: String::new(), reaction_voice: String::new(), voice_mode: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_mode: String::new(), ai_talk: String::new(), window_fullscreen: true, ai_key: String::new(), ai_search_key: String::new(), cloud_tts_key: String::new(), openai_key: String::new(), stt_cloud: false, mem_ai: false, net_mode: "auto".into(), net_proxy: String::new(), mcp_enabled: false, google_client_id: String::new(), google_client_secret: String::new(), google_refresh: String::new(), ai_search_auto: true, ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
+            voice_rate: 1.0, voice_name: String::new(), assistant_name: String::new(), assistant_named: true, city: String::new(), reaction_voice: String::new(), voice_mode: String::new(), ai_provider: "none".into(), ai_model: String::new(), ai_mode: String::new(), ai_talk: String::new(), window_fullscreen: true, ai_key: String::new(), ai_search_key: String::new(), cloud_tts_key: String::new(), openai_key: String::new(), stt_cloud: false, mem_ai: false, notes_dir: String::new(), tg_base: String::new(), net_mode: "auto".into(), net_proxy: String::new(), mcp_enabled: false, google_client_id: String::new(), google_client_secret: String::new(), google_refresh: String::new(), ai_search_auto: true, ai_url: String::new(), ai_route: String::new(), ai_fallback: false,
             ai_enabled: true, mic_off: false,
             notify_show: true, notify_speak: true, notify_sound: true, dnd: false,
             ext_enabled: false, ext_show: true, ext_speak: false, ext_strict: true, ext_allowed: Vec::new(), ext_blocked: Vec::new(), ext_seen: Vec::new(),
@@ -580,6 +584,11 @@ pub fn update_settings(patch: &Value) {
         // empty clears; a text that is not a proxy address is ignored (the old one stays)
         if v.trim().is_empty() { s.net_proxy.clear(); } else if let Some(p) = crate::net::normalize_proxy(v) { s.net_proxy = p; }
     }
+    if let Some(v) = patch.get("tg_base").and_then(|v| v.as_str()) {
+        let v = v.trim().trim_end_matches('/');
+        if v.is_empty() { s.tg_base.clear(); } else if v.starts_with("https://") && v.len() <= 250 && !v.chars().any(|c| c.is_whitespace() || c.is_control()) && !v.contains('?') && !v.contains('#') { s.tg_base = v.to_string(); }
+    }
+    if let Some(v) = patch.get("notes_dir").and_then(|v| v.as_str()) { s.notes_dir = v.trim().trim_matches('"').chars().filter(|c| !c.is_control()).take(300).collect(); }
     if let Some(v) = patch.get("mem_ai").and_then(|v| v.as_bool()) { s.mem_ai = v; }
     if let Some(v) = patch.get("stt_cloud").and_then(|v| v.as_bool()) { s.stt_cloud = v; }
     if let Some(v) = patch.get("mcp_enabled").and_then(|v| v.as_bool()) { s.mcp_enabled = v; }
@@ -688,6 +697,8 @@ pub fn settings_json() -> Value {
     out["openai_key_from_ai"] = json!(s.openai_key.is_empty() && s.ai_provider == "openai" && !s.ai_key.is_empty());
     out["stt_cloud"] = json!(s.stt_cloud);
     out["mem_ai"] = json!(s.mem_ai);
+    out["notes_dir"] = json!(s.notes_dir);
+    out["tg_base"] = json!(s.tg_base);
     out["net_mode"] = json!(s.net_mode);
     out["net_proxy_saved"] = json!(!s.net_proxy.is_empty());
     out["net_proxy_masked"] = json!(crate::net::mask(&s.net_proxy));

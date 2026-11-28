@@ -206,7 +206,7 @@ pub fn collect() -> Data {
         hour: now.hour(),
         weather: weather_info(),
         reminders: reminders(now.timestamp()),
-        notes: notes(),
+        notes: { let mut n = notes(); n.extend(digest::safe_items(crate::vault::recent_titles(&uistate::settings().notes_dir, 3, 8), 5).into_iter().map(|t| format!("в папке заметок: {}", t))); n },
         news: news(),
         calendar,
         mail_unread,

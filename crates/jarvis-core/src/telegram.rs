@@ -129,6 +129,16 @@ static GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 // the address of the Bot API (a local imitation in the tests)
 static BASE: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new("https://api.telegram.org".to_string()));
 
+// where the Bot API is asked: the relay of the owner (net card; docs/relay) when he set one, else the usual address (the tests change BASE)
+fn base() -> String {
+    let b = BASE.lock().clone();
+    if b != "https://api.telegram.org" {
+        return b;
+    }
+    let r = crate::uistate::settings().tg_base;
+    if r.is_empty() { b } else { r }
+}
+
 fn file() -> Option<std::path::PathBuf> {
     crate::APP_CONFIG_DIR.get().map(|d| d.join("telegram.json"))
 }
@@ -485,7 +495,7 @@ mod net {
     }
 
     pub(super) fn call(c: &reqwest::blocking::Client, token: &str, method: &str, body: &Value) -> Result<Value, String> {
-        let url = format!("{}/bot{}/{}", BASE.lock(), token, method);
+        let url = format!("{}/bot{}/{}", base(), token, method);
         // (the address holds the token: errors are reported without it)
         let resp = c.post(url).json(body).send().map_err(|e| if e.is_timeout() { "нет ответа от Telegram".to_string() } else if e.is_connect() { "нет связи с api.telegram.org".to_string() } else { "ошибка сети".to_string() })?;
         let status = resp.status().as_u16();
@@ -543,7 +553,7 @@ mod net {
         body.extend_from_slice(format!("--{}\r\nContent-Disposition: form-data; name=\"{}\"; filename=\"{}\"\r\nContent-Type: {}\r\n\r\n", boundary, field, filename, mime).as_bytes());
         body.extend_from_slice(bytes);
         body.extend_from_slice(format!("\r\n--{}--\r\n", boundary).as_bytes());
-        let url = format!("{}/bot{}/{}", BASE.lock(), token, method);
+        let url = format!("{}/bot{}/{}", base(), token, method);
         let resp = c
             .post(url)
             .header("Content-Type", format!("multipart/form-data; boundary={}", boundary))
@@ -561,7 +571,7 @@ mod net {
         if path.is_empty() || path.len() > 200 || path.contains("..") || !path.chars().all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '/' | '.' | '_' | '-')) {
             return Err("Telegram прислал странный адрес файла".into());
         }
-        let url = format!("{}/file/bot{}/{}", BASE.lock(), token, path);
+        let url = format!("{}/file/bot{}/{}", base(), token, path);
         let resp = c.get(url).send().map_err(|_| "не удалось скачать голосовое".to_string())?;
         if !resp.status().is_success() {
             return Err("Telegram не отдал голосовое".into());

@@ -447,6 +447,10 @@ pub fn templates() -> Value {
         t("Режим кино", "режим кино", vec![("volume", "70", ""), ("link", "https://www.youtube.com", "max")]),
         t("Режим учёбы", "режим учёбы", vec![("volume", "20", ""), ("app", "ворд", "max"), ("link", "https://translate.google.com", "")]),
         t("Игровой режим", "игровой вечер", vec![("app", "стим", ""), ("volume", "60", "")]),
+        t("Перерыв", "перерыв", vec![("volume", "25", ""), ("link", "https://www.youtube.com", "max")]),
+        t("Подготовка к встрече", "подготовь меня к встрече", vec![("volume", "15", ""), ("link", "https://calendar.google.com", "max"), ("app", "телеграм", "")]),
+        t("Новости утром", "утренние новости", vec![("if_time", "05:00-11:00", ""), ("link", "https://news.google.com", "max"), ("search", "погода сегодня", "")]),
+        t("Спокойной ночи", "спокойной ночи", vec![("volume", "8", ""), ("keys", "win+d", "")]),
         t("Я дома", "я дома", vec![("link", "https://www.youtube.com", "grid"), ("app", "телеграм", "grid"), ("app", "стим", "grid")]),
     ])
 }
